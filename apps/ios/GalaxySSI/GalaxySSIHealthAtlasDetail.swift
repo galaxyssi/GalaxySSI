@@ -9,6 +9,11 @@ struct GalaxySSIHealthAtlasDetail: View {
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @State private var research = false
+  @State private var principleExpanded = false
+  private var usesInlineModels: Bool { GalaxySSIHealthAtlasState.usesInlineModels(entry) }
+  private var tabs: [GalaxySSIHealthAtlasState.Tab] {
+    GalaxySSIHealthAtlasState.Tab.allCases.filter { !usesInlineModels || $0 != .simulation }
+  }
 
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
   private var functionCatalogue: GalaxySSIHealthAtlasFunctionCatalogue? { try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() }
@@ -28,7 +33,7 @@ struct GalaxySSIHealthAtlasDetail: View {
   var body: some View {
     VStack(spacing: 0) {
       Picker(name, selection: selection.tab) {
-        ForEach(GalaxySSIHealthAtlasState.Tab.allCases, id: \.self) { Text(t($0.rawValue)).tag($0) }
+        ForEach(tabs, id: \.self) { Text(t($0.rawValue)).tag($0) }
       }.pickerStyle(.segmented).padding()
         .onChange(of: selection.wrappedValue.tab) { tab in
           if tab != .values { selection.wrappedValue.revealTrend = false }
@@ -68,23 +73,22 @@ struct GalaxySSIHealthAtlasDetail: View {
             if selection.wrappedValue.tab == .structure {
               structure
             } else if selection.wrappedValue.tab == .function {
-              Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(atlas.model(entry).title, language))).font(.headline)
-              ForEach(Array(atlas.model(entry).stages.enumerated()), id: \.offset) { index, key in
-                Text("\(index + 1). " + GalaxySSIHealthAtlasText.get(key, language))
-              }
-              Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
+              DisclosureGroup(isExpanded: $principleExpanded) {
+                VStack(alignment: .leading, spacing: 12) {
+                  ForEach(Array(atlas.model(entry).stages.enumerated()), id: \.offset) { index, key in
+                    Text(String(format: t("stage"), Int64(index + 1), Int64(atlas.model(entry).stages.count), GalaxySSIHealthAtlasText.get(key, language)))
+                  }
+                  Text(t("process_note")).font(.footnote).foregroundColor(.secondary)
+                }.accessibilityIdentifier("atlas-function-principle")
+              } label: {
+                Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(atlas.model(entry).title, language)))
+                  .font(.headline).frame(minHeight: 44)
+              }.accessibilityIdentifier("atlas-function-principle-toggle")
               if showFunctionStructurePreview {
                 GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
               }
             } else {
-              GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
-                physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
-                destination: { id in
-                  if let target = atlas.entry(id), depth < 32 {
-                    return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
-                  }
-                  return AnyView(EmptyView())
-                })
+              simulationPanel
             }
             Button(t("research")) { research = true }
             Divider()
@@ -102,7 +106,10 @@ struct GalaxySSIHealthAtlasDetail: View {
     .safeAreaInset(edge: .bottom) {
       if selection.wrappedValue.tab != .values {
         GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry),
-          selectionSnapshot: { state.functionSnapshot(entry) }, onPreviewStateChange: { state.previewPresented = $0 })
+          selectionSnapshot: { state.functionSnapshot(entry) }, onPreviewStateChange: {
+            if $0 { state.playback.pause() }
+            state.previewPresented = $0
+          })
           .padding(.horizontal)
       }
     }
@@ -110,8 +117,19 @@ struct GalaxySSIHealthAtlasDetail: View {
       GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
+    .environmentObject(state.playback)
   }
-  private var numericalModelButton: some View {
+  @ViewBuilder private var numericalModelButton: some View {
+    if usesInlineModels {
+      DisclosureGroup(isExpanded: Binding(get: { selection.wrappedValue.modelsExpanded == true }, set: { expanded in
+        // Claiming the model surface freezes the lesson before expanding or saving it.
+        state.playback.claim("models-disclosure|" + entry.id)
+        selection.wrappedValue.modelsExpanded = expanded
+      })) {
+        simulationPanel.accessibilityIdentifier("atlas-inline-models")
+      } label: { Text(t("inline_models")).frame(minHeight: 44) }
+        .accessibilityIdentifier("atlas-open-simulation")
+    } else {
     Button {
       state.openNumericalModel(entry)
     } label: {
@@ -121,6 +139,17 @@ struct GalaxySSIHealthAtlasDetail: View {
         Image(systemName: "chevron.right").accessibilityHidden(true)
       }.frame(minHeight: 44).contentShape(Rectangle())
     }.buttonStyle(.plain).accessibilityIdentifier("atlas-open-simulation")
+    }
+  }
+  private var simulationPanel: some View {
+    GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
+      physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
+      destination: { id in
+        if let target = atlas.entry(id), depth < 32 {
+          return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
+        }
+        return AnyView(EmptyView())
+      }, inline: usesInlineModels)
   }
   @ViewBuilder private var structure: some View {
     if entry.kind == .organ {

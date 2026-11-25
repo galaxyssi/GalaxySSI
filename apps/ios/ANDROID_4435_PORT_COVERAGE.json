@@ -1,0 +1,438 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4435,
+    "mergeCommit": "83188e7ce30a174e766e68fcf4db6f751a046d7a"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "9e98e25dba88a6c0a11892a25abb020e4b57f0b0386de267830cf768e8603e18",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA in this port."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasAgentDeviceTest.kt",
+      "sourceSHA256": "8fd7e1e12c73c41a96054b3432de54fa9b6fbc8899ebd75c6e111dab514967cf",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasAgentDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCellDeviceTest.kt",
+      "sourceSHA256": "1d9b17b3b4d508306b660d269204ebe26fe01ae1cc0f71ed755c3bfc8a088a27",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasCellDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCirculationDeviceTest.kt",
+      "sourceSHA256": "c2ea87f80ae03ec35fead8af2355cd57de21ff2accd190d34f8fa88261b1eb44",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasCirculationDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasDigestiveDeviceTest.kt",
+      "sourceSHA256": "da9ea011b4c915062f8a5d3e7423a60b5f6769c2a8b5f1f1f7c00e8c5f1c07e6",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasDigestiveDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasElbowDeviceTest.kt",
+      "sourceSHA256": "9308c2ad76490b1016d0762566e9eb33919abe99b651e9e1e17bdd53927f5471",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasElbowDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasEndocrineDeviceTest.kt",
+      "sourceSHA256": "05c7d8bbfe8957e94e1c594fa9f207a6e3e268f4f409889258544938728a9da3",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasEndocrineDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasEyeOpticsDeviceTest.kt",
+      "sourceSHA256": "353c7e78c32b0bb1f40b4af523b19978a4276f209a05a71f23ab172af692188e",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasEyeOpticsDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "sourceSHA256": "07d3f838214c89532eb11dc894c9ffd6cbce629f045bebeaa0d58e70f1317380",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasFunctionStoryDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGasExchangeDeviceTest.kt",
+      "sourceSHA256": "594c96b168af7396c99f77275a7459285488249a2364d5c02a2454858dc5f2ac",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasGasExchangeDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGermlineDeviceTest.kt",
+      "sourceSHA256": "eab43b2e96fc58979a53652a797ed1db08d4ec6c636361c0f4043b809c6171cb",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasGermlineDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "657e1114059f23371740c726d2e240a548473ac09282faec47816064a5cb4480",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGutSectionsDeviceTest.kt",
+      "sourceSHA256": "ebfad36f4b92a79c12e02c3818046045b5096d99ea48b93dbfe08861373ef67b",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasGutSectionsDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasHeartDeviceTest.kt",
+      "sourceSHA256": "78bacada8bc3d2c000bb5f09d477b80baebf9c9146cc3197152ce15d1e3f6e6c",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasHeartDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasIllustrationStyleDeviceTest.kt",
+      "sourceSHA256": "8cfefd72965e7bd9dab5829f1cd5964ad3ded91364f436a476f150ea68a4253a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasIllustrationStyleDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasImmuneDeviceTest.kt",
+      "sourceSHA256": "57e3db58f27f593f670744f2ee9806be51f13c656a00930b205323518379cbdb",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasImmuneDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasLymphOrgansDeviceTest.kt",
+      "sourceSHA256": "f69e3f1e22e92e9dfcebc6b4903d653dab1653c42b7633c642ab5ddb3a801c69",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasLymphOrgansDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMicroscopicDeviceTest.kt",
+      "sourceSHA256": "40168105c6dbaa3b0b746e528a183bb37e28de0dc02813e21c0a95cf1ba67c7f",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasMicroscopicDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMiddleEarDeviceTest.kt",
+      "sourceSHA256": "b5730174c58e07a32f6aaa8cf43f90a23b8cd4e45920ae8f61d3dfa0dd6a8911",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasMiddleEarDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasModelTestNavigation.kt",
+      "sourceSHA256": "128cacea3433c460f28940682b04408f7f7c9431fc3e97b18cd9afd63db4d992",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasModelTestNavigation.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMusculoskeletalDeviceTest.kt",
+      "sourceSHA256": "fd325622c0f4f135c19ac93357f8a2cb9523814baf0da89ba4d4c79a8fa20512",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasMusculoskeletalDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasOxygenDeviceTest.kt",
+      "sourceSHA256": "b8e0817f8836b465f5aac6ac2cad390bd3146f784bce10d62573b5b3d0dc42e5",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasOxygenDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "0b46fa4e2d486f65894abbcb1cfcbe74d9bd07ebf853778753e6b6bdf743d8aa",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasPhysiologyDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRenalDeviceTest.kt",
+      "sourceSHA256": "4a7c2b4fe194bb0573d8b9c2fc74ebf0d5501fa62c6dfab64dc005323649ef49",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasRenalDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSensoryDeviceTest.kt",
+      "sourceSHA256": "896dcf490a04487d80b4d408a65a0a173ba8e1bf319ecc0eea4323f92d7cd657",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasSensoryDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "sourceSHA256": "6090c6ca5280fe71dfceaa7a6c7718fac556d14b75782283643e95059b4b7eec",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasSystemOverviewDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "sourceSHA256": "0cf89d10796ca8dfba2ea92d84bd74c216b5dca96fbd1c357e851ae5184d96d0",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasTissueContextDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueDeviceTest.kt",
+      "sourceSHA256": "85ffc374ae451008abfb90521a327eee89f4b332e127e62b1dca2f43bae0e008",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasTissueDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasVesselFlowDeviceTest.kt",
+      "sourceSHA256": "60b850cbc398feb1c6d9453785ee95a212939e3a7444127255dca26d0bc40f15",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasVesselFlowDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "b99358289de35edc7551a87a7b522c12bc849cc0e56b190b124d5553e1e3a0c2",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthBodyAtlasDeviceTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasChapterClock.kt",
+      "sourceSHA256": "0fb8c5e3dbb772aaa7a71846815912d6825a18995e7973543a38cda36142cf7b",
+      "kind": "native-guided-function-behavior",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasChapterClock.swift"
+      ],
+      "note": "Five-second monotonic chapter clock with fractional pause/resume, accessible artwork toggle and complete localized seekable transcript; three system/organ tabs, remembered inline models and legacy destination migration; mutually exclusive playback. Preserve existing numerical bindings, renderer bodies, research, personal metrics and sources. SwiftUI sampling is 30Hz for lessons and 10Hz for inline models; reduced motion publishes only chapter transitions plus precise pause snapshots. This is not Android callback scheduling or native visual certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "sourceSHA256": "7f20a3117415bafcfc8c47f043689ae47aca7b938771255256eb7196f87b6131",
+      "kind": "native-guided-function-behavior",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlayer.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift"
+      ],
+      "note": "Five-second monotonic chapter clock with fractional pause/resume, accessible artwork toggle and complete localized seekable transcript; three system/organ tabs, remembered inline models and legacy destination migration; mutually exclusive playback. Preserve existing numerical bindings, renderer bodies, research, personal metrics and sources. SwiftUI sampling is 30Hz for lessons and 10Hz for inline models; reduced motion publishes only chapter transitions plus precise pause snapshots. This is not Android callback scheduling or native visual certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSimulationPanel.kt",
+      "sourceSHA256": "a2f979f5b01493a42fe1ef55a5dee9b7bc2130eacc34d36a9a4096c7a384e9b1",
+      "kind": "native-guided-function-behavior",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSimulationPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift"
+      ],
+      "note": "Five-second monotonic chapter clock with fractional pause/resume, accessible artwork toggle and complete localized seekable transcript; three system/organ tabs, remembered inline models and legacy destination migration; mutually exclusive playback. Preserve existing numerical bindings, renderer bodies, research, personal metrics and sources. SwiftUI sampling is 30Hz for lessons and 10Hz for inline models; reduced motion publishes only chapter transitions plus precise pause snapshots. This is not Android callback scheduling or native visual certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "39fdc31ad6f24ae61ad5b93262525d9e5cb292d37f5e50378d5ad181ea58e730",
+      "kind": "native-guided-function-behavior",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlayer.swift"
+      ],
+      "note": "Five-second monotonic chapter clock with fractional pause/resume, accessible artwork toggle and complete localized seekable transcript; three system/organ tabs, remembered inline models and legacy destination migration; mutually exclusive playback. Preserve existing numerical bindings, renderer bodies, research, personal metrics and sources. SwiftUI sampling is 30Hz for lessons and 10Hz for inline models; reduced motion publishes only chapter transitions plus precise pause snapshots. This is not Android callback scheduling or native visual certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "ce5b14981c682721e6bac7b2a8d23e0d80657bf936005be23e7de631112da15f",
+      "kind": "native-guided-function-behavior",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasChapterClock.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAgentContext.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAgentHandoff.swift"
+      ],
+      "note": "Five-second monotonic chapter clock with fractional pause/resume, accessible artwork toggle and complete localized seekable transcript; three system/organ tabs, remembered inline models and legacy destination migration; mutually exclusive playback. Preserve existing numerical bindings, renderer bodies, research, personal metrics and sources. SwiftUI sampling is 30Hz for lessons and 10Hz for inline models; reduced motion publishes only chapter transitions plus precise pause snapshots. This is not Android callback scheduling or native visual certification."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "362f4884a7b238dfb370be0b6a38684a5234d25d16a5f6afb79965dd68f8f393",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasGuidedFunction.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasGuidedFunction.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Exactly two original English/Chinese labels from the pinned XML delta; native variant group and language lookup registered."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "c242c6343cf19028116a2161b0dddec23a7104f546df0ee3e7614da97bda4b05",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasGuidedFunction.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasGuidedFunction.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Exactly two original English/Chinese labels from the pinned XML delta; native variant group and language lookup registered."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasChapterClockTest.kt",
+      "sourceSHA256": "18b32ba08bfd8eda6c3ef4a181cc76c15db5b71065fb9456c42c884e9d93a8dd",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasChapterClockTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-guided-function-scope.cjs"
+      ],
+      "note": "HealthAtlasChapterClockTest.kt: original navigation/retention/clock assertions reviewed as source references. iOS source fixtures cover chapter boundaries, remaining time, pause/seek/replay, handoff timestamp, full-catalogue migration and bilingual captions; source contracts check same-scroll inline wiring and preservation of existing model modules. No Android device tests, XCTest, UI instance identity, pixels, tap timing or VoiceOver execution performed."
+    },
+    {
+      "source": "docs/architecture/android-body-atlas.md",
+      "sourceSHA256": "a4c35c90e3c89ce0dd1439f993c4504dde5d05556e3dbba29bbc618848b81342",
+      "kind": "architecture-reference",
+      "ios": [
+        "apps/ios/ANDROID_4435_PORT_STATUS.md"
+      ],
+      "note": "Document native behavior, cumulative dependency and verification limits without claiming runtime or screenshot acceptance."
+    }
+  ]
+}

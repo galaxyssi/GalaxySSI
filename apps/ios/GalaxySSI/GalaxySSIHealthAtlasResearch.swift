@@ -38,9 +38,13 @@ struct GalaxySSIHealthAtlasResearch: View {
       }.padding()
     }
     .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
+    .environmentObject(state.playback)
     .safeAreaInset(edge: .bottom) {
       GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,
-        selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: { state.previewPresented = $0 })
+        selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: {
+          if $0 { state.playback.pause() }
+          state.previewPresented = $0
+        })
         .padding(.horizontal)
     }
   }

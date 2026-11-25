@@ -19,7 +19,11 @@ struct GalaxySSIHealthAtlasFunctionPanel: View {
         if choices.count > 3 { picker.pickerStyle(.menu) }
         else if choices.count > 1 { picker.pickerStyle(.segmented) }
         GalaxySSIHealthAtlasFunctionPlayer(story: story, language: language, phase: phase(story.id),
-          previewPresented: previewPresented, onPhase: { onPhase(story.id, $0) }) { position in
+          previewPresented: previewPresented,
+          showTitle: !(2...3).contains(choices.count) ||
+            GalaxySSIHealthAtlasFunctionText.get(story.choiceTitle, language) != GalaxySSIHealthAtlasFunctionText.get(story.title, language),
+          playbackID: "function|" + entryID + "|" + story.id,
+          onPhase: { onPhase(story.id, $0) }) { position in
             GalaxySSIHealthAtlasFunctionArtwork(story: story, phase: position, language: language)
           }.id(entryID + "|" + story.id)
           .onAppear { selection.choose(story.id, entryID: entryID, catalogue: catalogue) }

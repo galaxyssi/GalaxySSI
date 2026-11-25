@@ -33,6 +33,8 @@ enum GalaxySSIHealthAtlasQuestion {
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
     guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
+    let inlineModels = !research && selection.tab == .function && selection.modelsExpanded == true &&
+      (entry?.kind == .system || entry?.kind == .organ)
     let function: GalaxySSIHealthAtlasFunctionContext?
     if !research, selection.tab == .function, let entry {
       function = .init(entryID: entry.id, selection: selection.functionSelection,
@@ -55,7 +57,7 @@ enum GalaxySSIHealthAtlasQuestion {
     }
     var quantitative: GalaxySSIHealthAtlasAgentContext.Quantitative? = nil
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
-    if let entry, screen.includesPhysiology,
+    if let entry, screen.includesPhysiology || inlineModels,
        let model = GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
          legacyVentilation: ["lungs", "respiratory"].contains(entry.id) ? [selection.simulation.first, selection.simulation.second] : nil) {
       quantitative = .init(entryID: entry.id, context: GalaxySSIHealthAtlasPhysiologyText.context(model, language: language))
@@ -76,7 +78,7 @@ enum GalaxySSIHealthAtlasQuestion {
     return GalaxySSIHealthAtlasAgentContext.prompt(anatomy: anatomy, screen: screen, simulation: simulation,
       quantitative: quantitative, elimination: elimination, illustration: illustration,
       drugs: GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs),
-      aging: selection.aging, function: function, language: language,
+      aging: selection.aging, function: function, inlineModels: inlineModels, language: language,
       locale: GalaxySSILocalization.interfaceLocale(language: language), text: t) ?? ""
     #else
     guard let entry else { return t("ask_whole_context") }
@@ -91,7 +93,7 @@ enum GalaxySSIHealthAtlasQuestion {
     }
     if let function { prompt += "\n" + function.lines(for: entry.id, language: language).joined(separator: "\n") }
     #if GALAXYSSI_ATLAS_PHYSIOLOGY
-    let physiology = ((!research && selection.tab == .simulation) || (research && selection.research == .physiology))
+    let physiology = ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology))
       ? GalaxySSIHealthAtlasPhysiology.resolved(entry.id, inputs: selection.physiologyInputs,
           legacyVentilation: ["lungs", "respiratory"].contains(entry.id) ? [selection.simulation.first, selection.simulation.second] : nil) : nil
     let hasAssociatedPhysiology = physiology != nil
@@ -101,15 +103,15 @@ enum GalaxySSIHealthAtlasQuestion {
     #else
     let hasAssociatedPhysiology = false
     #endif
-    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+    if ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)),
        let counts = GalaxySSIHealthAtlasGermline.counts(entry.id, stage: selection.simulation.stage) {
       prompt += "\n" + GalaxySSIHealthAtlasGermline.context(counts, language: language)
     }
-    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+    if ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)),
        let context = GalaxySSIHealthAtlasHeartSection.context(entry.id, stage: selection.simulation.stage, atlas: atlas, language: language) {
       prompt += "\n" + context
     }
-    if ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+    if ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       let context = GalaxySSIHealthAtlasPancreatic.context(entry.id, text: t)
       if !context.isEmpty { prompt += "\n" + context.joined(separator: "\n") }
       let retinal = GalaxySSIHealthAtlasRetinaPath.context(entry.id, text: t)
@@ -120,28 +122,28 @@ enum GalaxySSIHealthAtlasQuestion {
       if let context = GalaxySSIHealthAtlasEndocrinePath.context(entry.id, language: language) { prompt += "\n" + context }
     }
     if entry.id == GalaxySSIHealthAtlasFiltrationStage.owner,
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       prompt += "\n" + t("podocyte_scope")
     }
     if entry.id == GalaxySSIHealthAtlasSarcomere.owner,
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)),
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)),
        let sarcomere = GalaxySSIHealthAtlasSarcomere(stage: selection.simulation.stage) {
       prompt += "\n" + sarcomere.context(text: t).joined(separator: "\n")
     }
     if entry.id == GalaxySSIHealthAtlas.ImmunePack.phagocytosisOwner,
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       prompt += "\n" + t("phagocytosis_scope")
     }
     if let lesson = GalaxySSIHealthAtlasGranulocyte(rawValue: entry.id),
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       prompt += "\n" + t(lesson.scopeKey)
     }
     if let lesson = GalaxySSIHealthAtlasImmuneLink(rawValue: entry.id),
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       prompt += "\n" + t(lesson.scopeKey)
     }
     if let lesson = GalaxySSIHealthAtlasBloodDefense(rawValue: entry.id),
-       ((!research && selection.tab == .simulation) || (research && selection.research == .physiology)) {
+       ((!research && (selection.tab == .simulation || inlineModels)) || (research && selection.research == .physiology)) {
       prompt += "\n" + t(lesson.scopeKey)
     }
     if research {

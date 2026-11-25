@@ -27,7 +27,13 @@ assert(oldAfter > 0 && afterEnd > oldAfter);
 expectedPanel = expectedPanel.slice(0, oldAfter) + '      if quantitativeAfterArt {\n        quantitative.accessibilityIdentifier("atlas-quantitative-after-art")\n      }\n' + expectedPanel.slice(afterEnd);
 expectedPanel = expectedPanel.replace("  private var playbackControls: some View {",
   '  #if GALAXYSSI_ATLAS_PHYSIOLOGY\n  private var quantitative: some View {\n    GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,\n      legacyVentilation: (lung || entry.id == "alveoli") ? [simulation.first, simulation.second] : nil)\n  }\n  #endif\n  private var playbackControls: some View {');
-assert.equal(panel, expectedPanel, "Only placement and a shared panel invocation change; mechanisms/timers/reset/navigation stay intact");
+// #4435 intentionally replaces playback and adds inline controls. Preserve the
+// original renderer block and quantitative invocation rather than freezing its old timer.
+const rendererBlock = s => s.slice(s.indexOf('      Text(String(format: t("related_process")'), s.indexOf('      ProgressView(value: simulation.phase)'));
+assert.equal(rendererBlock(panel), rendererBlock(expectedPanel).replaceAll("playing = false;", "pause();"));
+const quantitativeBlock = s => s.split("  private var quantitative: some View {")[1].split("  private var playbackControls:")[0];
+assert.equal(quantitativeBlock(panel), quantitativeBlock(expectedPanel));
+assert(panel.includes('mechanismFirst || gasExchange || entry.id == "pancreas" || endocrine != nil || sweat || quantitativeAfterSection'));
 assert.equal((panel.match(/GalaxySSIHealthAtlasPhysiologyPanel\(/g) || []).length, 1);
 const beforeAt = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-before-art")');
 const mechanismAt = panel.indexOf("GalaxySSIHealthAtlasCirculationView(");
@@ -38,7 +44,9 @@ const expectedResearch = prior("Research").replace("            })\n        case
 assert.equal(research.split("        case .drugs:")[0], expectedResearch.split("        case .drugs:")[0]);
 assert.equal(research.split("  private var aging:")[1], expectedResearch.split("  private var aging:")[1]);
 assert(!source("Detail").includes("mechanismFirst:"));
-assert.equal(state, prior("State").replace("decoded.count <= 300", "decoded.count <= max(300, atlas.entries.count)"));
+const restoreBlock = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
+assert.equal(restoreBlock(state).replace('      if let entry = atlas.entry(id), let saved = entries[id] { entries[id] = Self.migrated(saved, entry: entry) }\n', ""),
+  restoreBlock(prior("State")).replace("decoded.count <= 300", "decoded.count <= max(300, atlas.entries.count)"));
 for (const token of ["text.utf8.count <= 256_000", "entries = decoded.filter { atlas.entry($0.key) != nil }", "entries[id]?.simulation.sanitize(id)",
   "Physiology.restore(id, inputs: entries[id]?.physiologyInputs)"]) assert(state.includes(token));
 const tests = read("apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift");
