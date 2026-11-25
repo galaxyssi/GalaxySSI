@@ -3,6 +3,29 @@ import CryptoKit
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCodexRecoveryRanksOnlyCurrentlyEligibleDesktopAgents() throws {
+    let first = AgentCallableTarget(id: "claude", title: "Claude", kind: .agent,
+      status: .available, capabilities: [.chat, .reasoning])
+    let second = AgentCallableTarget(id: "specialist", title: "Specialist", kind: .agent,
+      status: .available, capabilities: [.chat, .reasoning, .knowledgeSearch])
+    let foreign = AgentCallableTarget(id: "codex", title: "Other Desktop Codex", kind: .agent,
+      status: .available, capabilities: [.chat, .reasoning])
+    let cloud = AgentCallableTarget(id: "cloud", title: "Cloud", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning])
+    let ids = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(targets: [foreign, first, second, cloud],
+      eligibleIds: [first.id, second.id, cloud.id], goal: "Explain the document")
+    XCTAssertEqual(Set(ids), [first.id, second.id])
+    XCTAssertEqual(ids.count, Set(ids).count)
+    let currentFirst = try XCTUnwrap(ids.first)
+    var budget = AgentCodexSilenceRecoveryPolicy.Budget(origin: "codex")
+    XCTAssertEqual(budget.next(failed: "codex", attemptId: "first", confirmedTimeout: true,
+      alternatives: Array(ids.reversed())), "codex")
+    XCTAssertEqual(budget.next(failed: "codex", attemptId: "second", confirmedTimeout: true,
+      alternatives: ids), currentFirst)
+    XCTAssertTrue(AgentCodexSilenceRecoveryPolicy.rankedAlternatives(targets: [foreign, cloud],
+      eligibleIds: [first.id], goal: "Explain the document").isEmpty)
+  }
+
   func testLargeResearchReplyKeepsOriginalBytesThroughBothResponseStores() throws {
     let note = String(repeating: "evidence ", count: 4_000)
     let raw = "  ```json\n{\"format\":\"galaxyssi.research-artifact.v1\",\"summary\":\"[Report](outputs/final.pdf)\","

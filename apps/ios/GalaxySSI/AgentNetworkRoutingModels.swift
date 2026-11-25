@@ -473,6 +473,96 @@ enum AgentConnectorFailureScope {
   }
 }
 
+enum AgentAutomaticRouteAdmission {
+  static func targets(
+    _ targets: [AgentCallableTarget],
+    registrations: [AgentRegistration],
+    requirements: AgentTaskRequirements,
+    budget: AgentTaskBudget,
+    environment: AgentTaskBudgetEnvironment,
+    connectorCallsAllowed: Bool
+  ) -> [AgentCallableTarget] {
+    let resources = AgentResourceCatalog.build(targets: targets, tools: [])
+    return targets.filter { target in
+      guard AgentConnectorRouteSelector.isDeliverable(target),
+            let resource = resources.first(where: { $0.targetId == target.id }) else { return false }
+      return rejectionReason(resource: resource,
+        registration: registrations.first(where: { $0.agentId == target.id }),
+        requirements: requirements, budget: budget, environment: environment,
+        connectorCallsAllowed: connectorCallsAllowed) == nil
+    }
+  }
+
+  static func rejectionReason(
+    resource: AgentResourceDescriptor,
+    registration: AgentRegistration?,
+    requirements: AgentTaskRequirements,
+    budget: AgentTaskBudget,
+    environment: AgentTaskBudgetEnvironment,
+    connectorCallsAllowed: Bool
+  ) -> String? {
+    // A catalog label must not borrow another installation's capacity or trust.
+    let exact = registration?.agentId == resource.targetId ? registration : nil
+    let location = exact?.location ?? resource.location
+    let trust = exact?.trust ?? resource.trust
+    let capabilities = exact?.capabilities ?? resource.capabilities
+    let active = max(resource.activeTasks, exact?.activeRuns ?? 0)
+    let capacity = max(1, exact?.maxParallelRuns ?? resource.maxParallelTasks)
+    if let status = exact?.status, ![.online, .idle, .busy].contains(status) {
+      return "registration_unavailable"
+    }
+    if active >= capacity { return "at_capacity" }
+    if !connectorCallsAllowed, location != .phone { return "connector_calls_disabled" }
+    if requirements.localOnly, location == .cloud { return "privacy_boundary" }
+    if requirements.dataSensitivity == .restricted,
+       ![AgentResourceTrust.phoneSystem, .verifiedPaired].contains(trust) {
+      return "restricted_data_boundary"
+    }
+    if !AgentCapabilityRoutingPolicy.missingRequired(requirements, available: capabilities).isEmpty {
+      return "mandatory_capability_missing"
+    }
+    let decision = AgentTaskBudgetPolicy.evaluate(
+      budget: budget, usage: AgentTaskBudgetUsage(usageEstimated: true), environment: environment,
+      networkRequired: location != .phone,
+      trustedNetworkTarget: [.phone, .trustedDesktop, .privateNetwork].contains(location),
+      cloudProvider: location == .cloud,
+      paidProvider: (exact?.cost ?? resource.cost) != .free)
+    return decision.allowed ? nil : "task_budget:\(decision.limit?.rawValue ?? "denied")"
+  }
+}
+
+enum AgentAutomaticConnectorRoutePolicy {
+  static func refresh(_ action: AgentAction, selection: AgentConnectorRouteSelection?) -> AgentAction {
+    guard action.kind == .callConnector, action.parameters["manual_target_locked"] != "true",
+          action.parameters["auto_reroute_on_failure"] != "false",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          !AgentConnectorFallbackAction.hasActiveTrail(action) else { return action }
+    var routed = action
+    guard let selection else {
+      routed.parameters["connector_id"] = AgentPlanFactory.unavailableReasoningConnectorId
+      routed.parameters["routing_fallback_ids"] = ""
+      return routed
+    }
+    let selected = selection.target
+    if action.parameters["connector_id"] != selected.id {
+      for key in ["manual_model_id", "agent_model_id", "agent_reasoning_effort", "agent_instance_id"] {
+        routed.parameters.removeValue(forKey: key)
+      }
+    }
+    routed.target = selected.title
+    routed.parameters["connector_id"] = selected.id
+    routed.parameters["connector_kind"] = selected.kind.rawValue.lowercased()
+    routed.parameters["connector_adapter_type"] = selected.adapterType
+    routed.parameters["connector_failure_domain"] = selected.failureDomain
+    routed.parameters["auto_reroute_on_failure"] = "true"
+    routed.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(
+      (selection.decision?.orderedTargetIds ?? []).filter { $0 != selected.id })
+    routed.parameters["routing_score"] = selection.decision?.primary.map { String($0.score) } ?? ""
+    routed.parameters["routing_reasons"] = selection.decision?.primary?.reasons.joined(separator: "|") ?? ""
+    return routed
+  }
+}
+
 enum AgentConnectorFallbackAction {
   static let attemptedParameter = "routing_attempted_resource_ids"
   static let attemptedResult = "attempted_resource_ids"
@@ -553,12 +643,74 @@ enum AgentConnectorFallbackAction {
       .union(AgentConnectorFallbackTrail.parse(metadata["retried_resource_ids"] ?? ""))
   }
 
+  static func mergingRoutingMetadata(_ result: AgentActionResult, action: AgentAction) -> AgentActionResult {
+    guard action.kind == .callConnector else { return result }
+    var merged = result
+    merged.metadata.merge(resultMetadata(action)) { current, _ in current }
+    if isTargetLocked(action: action, metadata: result.metadata) {
+      merged.metadata["manual_target_locked"] = "true"
+      merged.metadata["auto_reroute_on_failure"] = "false"
+    }
+    if action.parameters["auto_reroute_on_failure"] == "false" {
+      merged.metadata["auto_reroute_on_failure"] = "false"
+    }
+    return merged
+  }
+
+  static func freshFallback(action: AgentAction, failure: AgentActionResult,
+                            currentResourceIds: [String], targets: [AgentCallableTarget]) -> AgentAction? {
+    guard action.kind == .callConnector, !failure.success, failure.actionId == action.id,
+          !isTargetLocked(action: action, metadata: failure.metadata),
+          action.parameters["auto_reroute_on_failure"] != "false",
+          action.parameters["auto_reroute_on_failure"] == "true" || failure.metadata["auto_reroute_on_failure"] == "true",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          failure.metadata["awaiting_response"] != "true",
+          failure.metadata["effect_outcome_unknown"] != "true",
+          failure.metadata["non_retriable"] != "true",
+          !["effect_outcome_unknown", "idempotency_key_conflict", "action_effect_receipt_invalid"].contains(failure.metadata["error_code"] ?? ""),
+          failure.metadata["plan_node_outcome_unknown"] != "true",
+          failure.metadata["outcome_unknown"] != "true" else { return nil }
+    let failed = (failure.metadata["resource_id"] ?? "").ifBlank(action.parameters["connector_id"] ?? "")
+    guard !failed.isBlank else { return nil }
+    if !(failure.metadata["timeout_stage"] ?? "").isBlank,
+       AgentConnectorHandoffRecovery.requiresRemoteObservation(metadata: failure.metadata, hasDesktopBinding: false),
+       !["failed", "timed_out", "cancelled"].contains((failure.metadata["remote_task_status"] ?? "").lowercased()) {
+      return nil
+    }
+    let allowed = Set(currentResourceIds)
+    let tried = attempted(failure.metadata).union(hasActiveTrail(action)
+      ? AgentConnectorFallbackTrail.parse(action.parameters[attemptedParameter] ?? "") : [])
+      .union([action.parameters["connector_id"] ?? ""])
+    let permits: (String) -> Bool = { id in
+      guard let target = targets.first(where: { $0.id == id }) else { return false }
+      let domain = (failure.metadata["failure_domain"] ?? "")
+        .ifBlank(targets.first { $0.id == failed }?.failureDomain ?? "")
+      return AgentConnectorRouteSelector.isDeliverable(target) &&
+        AgentConnectorFailureScope.permitsFallback(failure.metadata, candidateDomain: target.failureDomain) &&
+        ((failure.metadata["timeout_stage"] ?? "").isBlank || domain.isBlank || target.failureDomain != domain)
+    }
+    let candidates = AgentConnectorFallbackTrail.mergeAvailable(rememberedResourceIds: [],
+      currentResourceIds: currentResourceIds, failedResourceId: failed, attemptedResourceIds: tried).filter(permits)
+    let deferred = AgentConnectorFallbackTrail.parse(failure.metadata["deferred_retry_ids"] ?? "")
+      .filter { allowed.contains($0) && permits($0) }
+    guard let selected = AgentConnectorFallbackTrail.selectNext(failedResourceId: failed,
+      remainingResourceIds: candidates, deferredRetryIds: deferred,
+      retriedResourceIds: Set(AgentConnectorFallbackTrail.parse(failure.metadata["retried_resource_ids"] ?? "")),
+      retryFailedResource: allowed.contains(failed) && permits(failed) && failure.metadata["non_retriable"] != "true",
+      attemptedResourceIds: tried),
+      let target = targets.first(where: { $0.id == selected.resourceId }),
+      AgentConnectorRouteSelector.isDeliverable(target) else { return nil }
+    return prepare(action: action, selection: selected, target: target)
+  }
+
   static func resultMetadata(_ action: AgentAction) -> [String: String] {
     [
       attemptedResult: action.parameters[attemptedParameter] ?? "",
       "remaining_fallback_ids": action.parameters["routing_fallback_ids"] ?? "",
       "deferred_retry_ids": action.parameters["routing_deferred_retry_ids"] ?? "",
       "retried_resource_ids": action.parameters["routing_retried_resource_ids"] ?? "",
+      "auto_reroute_on_failure": String(action.parameters["auto_reroute_on_failure"] == "true" &&
+        action.parameters["manual_target_locked"] != "true"),
       "manual_target_locked": action.parameters["manual_target_locked"] ?? ""
     ]
   }
@@ -698,12 +850,15 @@ enum AgentConnectorRouteSelector {
     targets: [AgentCallableTarget],
     decision: AgentRoutingDecision?,
     preferredTargetId: String = "",
-    goal: String = ""
+    goal: String = "",
+    preserveHealthyPrimary: Bool = false
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
+    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }
     let requirements = decision?.requirements ?? AgentTaskRequirementAnalyzer.analyze(routingGoal)
     let reasoningTargets = targets.filter {
+      (admittedTargetIds?.contains($0.id) ?? true) &&
       hasReasoningCapability($0) && AgentCapabilityRoutingPolicy.missingRequired(
         requirements, available: Set($0.capabilities)
       ).isEmpty
@@ -719,6 +874,13 @@ enum AgentConnectorRouteSelector {
     }
     let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
     let baselineTarget = preferredTarget ?? defaultTarget(eligible)
+    if preserveHealthyPrimary, decision == nil,
+       let preferredTarget, preferredTarget.status == .available {
+      let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
+        goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
+        requirements: requirements)
+      return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
+    }
     var routingDecision = decision
     if routingDecision == nil, !routingGoal.isBlank {
       routingDecision = AgentQualityRoutingService.baselineDecision(

@@ -7803,3 +7803,10 @@
 "galaxyssi.conversation_actions.failed" = "名称保存失败，请重试。";
 "galaxyssi.conversation_actions.saving" = "正在保存名称";
 "galaxyssi.conversation_actions.more" = "更多操作";
+"galaxyssi.agent.connector.checkpoint_unsaved" = "未能保存执行检查点，下一次连接器请求未发送。";
+"galaxyssi.agent.connector.wait_unowned" = "排队回执与原任务不匹配，未重复执行。";
+"galaxyssi.agent.connector.waiting" = "正在等待原连接器的回复";
+"galaxyssi.agent.connector.wait_unsaved" = "未能保存连接器的后续状态，未重复执行。";
+"galaxyssi.agent.connector.response_unsaved" = "未能保存连接器回复，未重复发送原请求。";
+"galaxyssi.agent.connector.outcome_unknown" = "连接器可能已开始执行，但结果尚不确定。未重复发送原请求。";
+"galaxyssi.agent.connector.fallback_pending" = "原连接器已失败，正在检查下一条允许的执行路径。";

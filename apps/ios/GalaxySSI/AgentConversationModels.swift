@@ -740,6 +740,23 @@ struct AgentCollaborationRoster: Codable, Equatable {
   }
 }
 
+struct AgentStableAutoRouteState: Codable, Equatable {
+  var targetId: String
+  var turnId: String
+  var turnStartedAt: Int64
+}
+
+enum AgentStableAutoRoutePolicy {
+  static func displayedTarget(targets: [AgentCallableTarget], rememberedId: String) -> AgentCallableTarget? {
+    targets.first { $0.id == rememberedId && $0.kind != .device } ??
+      AgentConnectorRouteSelector.select(targets: targets, decision: nil)?.target
+  }
+
+  static func acceptsUpdate(state: AgentStableAutoRouteState?, turnId: String) -> Bool {
+    !turnId.isBlank && state?.turnId == turnId
+  }
+}
+
 struct AgentConversation: Codable, Equatable, Identifiable {
   var id: String
   var title: String
@@ -764,6 +781,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
   var contextCompactedThroughEntryId: String
   var latestDialogueAt: Int64?
   var collaborationRoster: AgentCollaborationRoster?
+  var stableAutoRoute: AgentStableAutoRouteState?
 
   var dialogueActivityAt: Int64 {
     guard let latestDialogueAt else { return updatedAt }
@@ -794,6 +812,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     case contextCompactedThroughEntryId = "context_compacted_through_entry_id"
     case latestDialogueAt = "latest_dialogue_at"
     case collaborationRoster = "collaboration_roster"
+    case stableAutoRoute = "stable_auto_route"
   }
 
   init(
@@ -819,7 +838,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     contextCompactedThroughMillis: Int64 = 0,
     contextCompactedThroughEntryId: String = "",
     latestDialogueAt: Int64? = 0,
-    collaborationRoster: AgentCollaborationRoster? = nil
+    collaborationRoster: AgentCollaborationRoster? = nil,
+    stableAutoRoute: AgentStableAutoRouteState? = nil
   ) {
     self.id = id
     self.title = title
@@ -844,6 +864,7 @@ struct AgentConversation: Codable, Equatable, Identifiable {
     self.contextCompactedThroughEntryId = contextCompactedThroughEntryId
     self.latestDialogueAt = latestDialogueAt.map { max(0, $0) }
     self.collaborationRoster = collaborationRoster
+    self.stableAutoRoute = stableAutoRoute
   }
 
   init(from decoder: Decoder) throws {
@@ -871,7 +892,8 @@ struct AgentConversation: Codable, Equatable, Identifiable {
       contextCompactedThroughMillis: try container.decodeIfPresent(Int64.self, forKey: .contextCompactedThroughMillis) ?? 0,
       contextCompactedThroughEntryId: try container.decodeIfPresent(String.self, forKey: .contextCompactedThroughEntryId) ?? "",
       latestDialogueAt: try container.decodeIfPresent(Int64.self, forKey: .latestDialogueAt),
-      collaborationRoster: try container.decodeIfPresent(AgentCollaborationRoster.self, forKey: .collaborationRoster)
+      collaborationRoster: try container.decodeIfPresent(AgentCollaborationRoster.self, forKey: .collaborationRoster),
+      stableAutoRoute: try container.decodeIfPresent(AgentStableAutoRouteState.self, forKey: .stableAutoRoute)
     )
   }
 }

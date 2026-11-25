@@ -10,6 +10,7 @@ struct GalaxySSIAgentHomeHeaderPresentation {
     selection: AgentModelSelection,
     liveExecutionTargetLabel: String?,
     contacts: [GalaxySSIContact],
+    automaticTarget: AgentCallableTarget? = nil,
     language: String
   ) -> GalaxySSIAgentHomeHeaderPresentation {
     let modelLogoLabel = modelLabel(
@@ -18,6 +19,7 @@ struct GalaxySSIAgentHomeHeaderPresentation {
       selection: selection,
       liveExecutionTargetLabel: liveExecutionTargetLabel,
       contacts: contacts,
+      automaticTarget: automaticTarget,
       language: language
     )
     let automaticLabel = localized(
@@ -30,16 +32,14 @@ struct GalaxySSIAgentHomeHeaderPresentation {
       // Match Android: a manual choice is already explicit in the selected model name.
       modelStatusLabel = modelLogoLabel
     } else {
-      let automaticRouteLabel = modelLogoLabel.caseInsensitiveCompare(automaticLabel) == .orderedSame
-        ? "Codex"
-        : modelLogoLabel
-      modelStatusLabel = String(
+      modelStatusLabel = modelLogoLabel.caseInsensitiveCompare(automaticLabel) == .orderedSame
+        ? automaticLabel : String(
         format: localized(
           "galaxyssi.agent.header.routing.auto",
           fallback: "Auto · %@",
           language: language
         ),
-        automaticRouteLabel
+        modelLogoLabel
       )
     }
     return GalaxySSIAgentHomeHeaderPresentation(
@@ -59,26 +59,16 @@ struct GalaxySSIAgentHomeHeaderPresentation {
     selection: AgentModelSelection,
     liveExecutionTargetLabel: String?,
     contacts: [GalaxySSIContact],
+    automaticTarget: AgentCallableTarget?,
     language: String
   ) -> String {
     guard hasManualSelection(selection) else {
-      if let liveExecutionTargetLabel,
-         !liveExecutionTargetLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        return liveExecutionTargetLabel
-      }
-      let sessionLabel = session?.selectedModelOrAgent
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       let automaticLabel = localized(
         "galaxyssi.agent.model_selection.automatic",
-        fallback: "Automatic",
+        fallback: "Auto",
         language: language
       )
-      guard !sessionLabel.isEmpty,
-            sessionLabel.caseInsensitiveCompare("automatic") != .orderedSame,
-            sessionLabel.caseInsensitiveCompare(contact.displayName) != .orderedSame else {
-        return automaticLabel
-      }
-      return sessionLabel
+      return automaticTarget?.title.ifBlank(automaticLabel) ?? automaticLabel
     }
 
     let automaticLabel = localized(

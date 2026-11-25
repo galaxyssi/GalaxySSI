@@ -145,6 +145,10 @@ final class GalaxySSIStore: ObservableObject {
   private var committingSupervisedBrowserState = false
 
   func commitSupervisedBrowserState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {
+    commitOwnedAgentTaskState(expected: expected, updated: updated)
+  }
+
+  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {
     guard !committingSupervisedBrowserState, !updated.taskId.isBlank,
           agentTask(id: updated.taskId) == expected, expected?.phase != .cancelled,
           expected == nil || expected?.sessionId == updated.sessionId else { return false }

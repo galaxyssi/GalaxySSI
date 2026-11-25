@@ -45,6 +45,7 @@ extension AgentHomeView {
   }
 
   func resetAgentSessionPresentation() {
+    composerSubmissionID = nil
     invalidateVoiceAppAnchor()
     cancelScreenPagePDFImport()
     fileAttachmentOwner = nil
@@ -81,6 +82,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    composerSubmissionID = nil
     invalidateVoiceAppAnchor()
     clearAgentTranscriptWindow()
     committedTurnProgress = AgentCommittedTurnProgress()

@@ -1,5 +1,17 @@
 import Foundation
 
+struct AgentMessageSubmissionScope: Equatable {
+  let requestId = UUID()
+  let owner: String
+  let conversationId: String
+
+  func matches(owner currentOwner: String, conversationId currentConversation: String) -> Bool {
+    !owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !conversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      owner == currentOwner && conversationId == currentConversation
+  }
+}
+
 struct AgentAttachmentContinuityReuse {
   var attachments: [GalaxySSIDraftAttachment]
   var stagedAttachments: [AgentStagedAttachment]

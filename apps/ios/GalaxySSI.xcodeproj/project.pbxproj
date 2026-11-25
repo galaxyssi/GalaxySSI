@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */; };
     C42790000000000000000001 /* AgentConversationScheduleProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */; };
     C42790000000000000000003 /* ScheduleProvenance.strings in Resources */ = {isa = PBXBuildFile; fileRef = C42790000000000000000004 /* ScheduleProvenance.strings */; };
     C42780000000000000000001 /* GalaxySSIHealthCareAgentPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42780000000000000000002 /* GalaxySSIHealthCareAgentPanel.swift */; };
@@ -2185,6 +2186,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSConnectorDispatch.swift; sourceTree = "<group>"; };
     C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationScheduleProvenance.swift; sourceTree = "<group>"; };
     C42790000000000000000005 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/ScheduleProvenance.strings; sourceTree = "<group>"; };
     C42790000000000000000006 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/ScheduleProvenance.strings"; sourceTree = "<group>"; };
@@ -5360,6 +5362,7 @@
         A20000000000000000000681 /* AgentActionNotificationModels.swift */,
         A20000000000000000000462 /* AgentIOSUserNotificationPublisher.swift */,
         A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */,
+        C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */,
         A2000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift */,
         A2000000000000000000B002 /* AgentIOSComposerInputBridge.swift */,
         A2000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift */,
@@ -7572,6 +7575,7 @@
         A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */,
         A10000000000000000000462 /* AgentIOSUserNotificationPublisher.swift in Sources */,
         A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */,
+        C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */,
         A1000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift in Sources */,
         A1000000000000000000B002 /* AgentIOSComposerInputBridge.swift in Sources */,
         A1000000000000000000B004 /* AgentIOSAgentHomeSwipeBridge.swift in Sources */,

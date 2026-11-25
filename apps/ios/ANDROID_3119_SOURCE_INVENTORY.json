@@ -1,0 +1,93 @@
+{
+  "androidPR": 3119,
+  "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
+  "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
+  "scope": "Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; queued producer, exact local/cloud-image/paired-text paths and encrypted responses; guarded known-terminal asynchronous fallback with attempt-specific run identity. Full scored router, broader attachments/rich outputs, active timeout/deferred observation and broader resume parity incomplete",
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "sha256": "987f63a60a6533519eef3a5e14f0503040fae66189fbb560aa1ffcbda6f94e1e",
+      "disposition": "Android-only version bump excluded"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentStableAutoRouteDeviceTest.kt",
+      "sha256": "278f4cbd9933b9791e4c945a970016baf18a95e57fe1e3d1fbb891a36c243408",
+      "disposition": "Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorFallbackAction.kt",
+      "sha256": "ed6579dba4317a1625aa8eccda3d471f133623d6141d2d9c4d9544b47e1b95f1",
+      "disposition": "Auto metadata propagates through actual native/control-plane results; manual/false flags dominate. Synchronous and committed known-terminal asynchronous fallback use fresh admission and owned trails; run/source/task identities share the effect-attempt key"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorHandoffRecovery.kt",
+      "sha256": "c1fb7bfbbf7f6fbf45bfc4404ddae4f1be6f075227e808637ec8b575e62121de",
+      "disposition": "Fresh fallback refuses unobserved remote timeout outcomes. Native managed query expiry preserves pending original ownership and passive observation instead of synthetic failure; generic pre-timeout/deferred discovery remains incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelSelectionSettings.kt",
+      "sha256": "4e595b7d861d85f7fa56fb78010767ef1cbc799b73dc350a2d66fc39c9771c8c",
+      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentResourceRouter.kt",
+      "sha256": "d95d5d072eb0637ee20e0a883559918979bf0be48daf4dfb9021fbbcfb37663f",
+      "disposition": "Live exact-ID registration/global-slot capacity, privacy/capability and explicit provider/network budget admission precedes stable primary selection and fresh synchronous fallback. Current telemetry-only counters retained; full scored/circuit-health/failure-domain router remains incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentStableAutoRoute.kt",
+      "sha256": "3e8d08646bf0b88cc5a4c809f7f799f3946ecee0385c3591ec00949dfeca92dc",
+      "disposition": "Candidate admission, exact target ID, begin-turn and stale update guards adapted using encrypted native session payload, not a new plaintext preference store"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
+      "sha256": "d3782bd49ab9a079bdcbba426044d24894c86b71dbfe8b7fb9eec0e9ccf80082",
+      "disposition": "Native header uses the same exact target identity as dispatch, not stale display labels or a fabricated Codex fallback"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
+      "sha256": "b55d6d444c7a944c7aa16bb001a1ab53c1216d2de6d65e74fc634a75ee13984c",
+      "disposition": "Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileAgentPlanning.kt",
+      "sha256": "19450cb2f8983a574db9d56862f661d1c2438e521c4d9b1b6cf88c7c62c32387",
+      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
+      "sha256": "6152841da29de9c420c56c509343fce30777142d47fd58c148ba62240224be85",
+      "disposition": "Existing Desktop recovery uses fresh paired/verified same-Desktop ranking and original retry budget. Exact native waits retain legacy/journal status/result queries across observation expiry without synthetic failure. Generic timeout/candidate callback remains unwired; no journal Codex replay"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
+      "sha256": "a85baed4f3c1dfba36d3a70c8e783b29f561483ed692989b049e7fd35cb6f363",
+      "disposition": "Primary branch snapshot and parallel/synchronous pre-dispatch refresh retain exact context. Committed owned terminal failures stage validated fallback before normal confirmation/dispatch; active timeout/deferred observation remains incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntimeTiming.kt",
+      "sha256": "50e4ea7c8e68bffad75b785714e1358f52253d75d404cb489d263d6fb4a28497",
+      "disposition": "Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentConnectorFallbackActionTest.kt",
+      "sha256": "3b90928060a207693037ef588984617fdb3b4e891de87372f447cd9e34cfdbb2",
+      "disposition": "Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentConnectorHandoffRecoveryTest.kt",
+      "sha256": "bcfdad4630f018eb76e22ab46f11dfbfbbdf9c44306647943f9b067d8e793d40",
+      "disposition": "Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentStableAutoRoutePolicyTest.kt",
+      "sha256": "4f7b2fb2f66cfde7bc455c6b6c18e03b0fb0428e8fbb11073f03a7ebbee4273b",
+      "disposition": "Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim"
+    },
+    {
+      "path": "docs/testing/STABLE_AUTO_ROUTING.md",
+      "sha256": "f1b4af36dd3fbdd6aa642c5fbd661f2ed9de0b9d19ab5204d6ce469375293246",
+      "disposition": "Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim"
+    }
+  ]
+}

@@ -36,6 +36,11 @@ extension AgentHomeView {
       attachmentError = t("composer_attachment_review_required", "Review the selected images before sending.")
       return
     }
+    let submissionScope = AgentMessageSubmissionScope(owner: store.profile.identityFingerprint,
+      conversationId: store.activeAgentConversationId)
+    guard submissionScope.matches(owner: store.profile.identityFingerprint,
+      conversationId: store.activeAgentConversationId) else { return }
+    let submittingContact = contact
     let text = cleanDraft.ifBlank(attachmentLabel(for: outgoingAttachments))
     let isVoiceSubmission = voiceAttachmentSnapshot != nil
     let agentGoal = cleanDraft.isEmpty && !outgoingAttachments.isEmpty
@@ -57,8 +62,9 @@ extension AgentHomeView {
       screenAssistantStartedAt = Date()
       screenAssistantOwnedTurns = []
     }
-    let submissionID = UUID()
-    let submittingConversation = store.activeAgentConversationId
+    let submissionID = submissionScope.requestId
+    composerSubmissionID = submissionID
+    let submittingConversation = submissionScope.conversationId
     let assistantRunID = screenAssistantConversationID == store.activeAgentConversationId
       ? screenAssistantRunID : nil
     let submission = Task { @MainActor in
@@ -68,12 +74,16 @@ extension AgentHomeView {
         screenAssistantSubmissions.removeValue(forKey: submissionID)
       }
       guard !Task.isCancelled, assistantRunID == nil || screenAssistantRunID == assistantRunID else { return }
+      guard submissionScope.matches(owner: store.profile.identityFingerprint,
+        conversationId: store.activeAgentConversationId), homeVisible, scenePhase == .active,
+        store.canReadAgentTranscript, UIApplication.shared.isProtectedDataAvailable else { return }
       let sent = await coordinator.send(
         text,
-        to: contact,
+        to: submittingContact,
         attachments: sensitiveAttachments,
         agentGoalOverride: agentGoal,
         voiceAppAnchor: voiceAppAnchor,
+        requiredAgentConversationID: submittingConversation,
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
@@ -87,12 +97,17 @@ extension AgentHomeView {
         }
       )
       guard !Task.isCancelled, assistantRunID == nil || screenAssistantRunID == assistantRunID else { return }
-      voicePendingAttachments.wipeSensitive()
+      guard composerSubmissionID == submissionID else { return }
+      guard submissionScope.matches(owner: store.profile.identityFingerprint,
+        conversationId: store.activeAgentConversationId), homeVisible, scenePhase == .active,
+        store.canReadAgentTranscript, UIApplication.shared.isProtectedDataAvailable else { return }
+      for id in outgoingAttachments.map(\.id) { voicePendingAttachments.removeAndWipe(id: id) }
       if !sent {
-        if !draftForRecovery.isEmpty {
+        if draft.isEmpty, !draftForRecovery.isEmpty {
           draft = draftForRecovery
         }
-        restoreAgentVoiceAttachments(sensitiveAttachments)
+        let existingIDs = Set(attachments.map(\.id))
+        attachments.insert(contentsOf: sensitiveAttachments.filter { !existingIDs.contains($0.id) }, at: 0)
         if isVoiceSubmission {
           voiceTranscriptionPending = false
         }

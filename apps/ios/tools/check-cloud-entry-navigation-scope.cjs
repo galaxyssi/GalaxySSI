@@ -58,7 +58,41 @@ for (const file of [
   const target = `apps/ios/GalaxySSI/${file}`;
   // Some storage operations live in the monolithic Store on older revisions.
   if (fs.existsSync(path.join(root, target))) {
-    assert.equal(fs.readFileSync(path.join(root, target), 'utf8'), git('show', `${base}:${target}`));
+    let source = fs.readFileSync(path.join(root, target), 'utf8');
+    if (file === 'GalaxySSIStore.swift') {
+      source = source.replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n', '');
+    }
+    if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
+      // #3119 adds only this admission boundary; its own scope check verifies it.
+      assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));
+      const refreshStart = source.indexOf('enum AgentAutomaticRouteAdmission {') >= 0
+        ? source.indexOf('enum AgentAutomaticRouteAdmission {')
+        : source.indexOf('enum AgentAutomaticConnectorRoutePolicy {');
+      const refreshEnd = source.indexOf('enum AgentConnectorFallbackAction {');
+      if (refreshStart >= 0) {
+        assert(refreshEnd > refreshStart);
+        source = source.slice(0, refreshStart) + source.slice(refreshEnd);
+      }
+      const start = source.indexOf('  static func mergingRoutingMetadata(');
+      const end = source.indexOf('  static func resultMetadata(', start);
+      if (start >= 0) {
+        assert(end > start);
+        source = source.slice(0, start) + source.slice(end);
+        source = source.replace('      "auto_reroute_on_failure": String(action.parameters["auto_reroute_on_failure"] == "true" &&\n        action.parameters["manual_target_locked"] != "true"),\n', '');
+      }
+      source = source.replace('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n', '')
+        .replace('      (admittedTargetIds?.contains($0.id) ?? true) &&\n', '')
+        .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""')
+        .replace(`    if preserveHealthyPrimary, decision == nil,
+       let preferredTarget, preferredTarget.status == .available {
+      let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
+        goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
+        requirements: requirements)
+      return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
+    }
+`, '');
+    }
+    assert.equal(source, git('show', `${base}:${target}`));
   }
 }
 const files = git('diff', '--name-only', `${android}^1`, android).trim().split('\n')

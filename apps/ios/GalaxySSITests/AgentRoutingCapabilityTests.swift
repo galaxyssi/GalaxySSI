@@ -1325,6 +1325,144 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(AgentConnectorRouteSelector.isDeliverable(recovering))
   }
 
+  func testAutoAdmissionRejectsFullPrimaryBeforeStablePreference() throws {
+    let busy = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    var registration = AgentMentionCandidatePolicy.registration(for: busy)
+    registration.activeRuns = registration.maxParallelRuns
+    let admitted = AgentAutomaticRouteAdmission.targets([busy, cloud], registrations: [registration],
+      requirements: AgentTaskRequirements(), budget: .default,
+      environment: AgentTaskBudgetEnvironment(networkAvailable: true), connectorCallsAllowed: true)
+    XCTAssertEqual(admitted.map(\.id), [cloud.id])
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: admitted, decision: nil,
+      preferredTargetId: busy.id, preserveHealthyPrimary: true)?.target.id, cloud.id)
+  }
+
+  func testAutoAdmissionRetainsExplicitPrivacyNetworkAndProviderRestrictions() {
+    var resource = routingResource(targetId: "cloud-model:deepseek", type: .cloudModel, location: .cloud)
+    resource.trust = .cloudConfigured
+    resource.cost = .high
+    let online = AgentTaskBudgetEnvironment(networkAvailable: true, networkMetered: true)
+    func reject(_ requirements: AgentTaskRequirements = AgentTaskRequirements(),
+                budget: AgentTaskBudget = .default,
+                environment: AgentTaskBudgetEnvironment = AgentTaskBudgetEnvironment(networkAvailable: true),
+                connectors: Bool = true) -> String? {
+      AgentAutomaticRouteAdmission.rejectionReason(resource: resource, registration: nil,
+        requirements: requirements, budget: budget, environment: environment,
+        connectorCallsAllowed: connectors)
+    }
+    XCTAssertEqual(reject(AgentTaskRequirements(localOnly: true)), "privacy_boundary")
+    XCTAssertEqual(reject(AgentTaskRequirements(dataSensitivity: .restricted)), "restricted_data_boundary")
+    XCTAssertEqual(reject(connectors: false), "connector_calls_disabled")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(allowCloud: false)), "task_budget:cloud")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(allowPaidProviders: false)), "task_budget:paid_provider")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(networkPolicy: .trustedOnly)), "task_budget:network")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(networkPolicy: .unmeteredOnly), environment: online), "task_budget:network")
+    XCTAssertEqual(reject(environment: AgentTaskBudgetEnvironment()), "task_budget:network")
+    resource.location = .phone
+    resource.trust = .phoneSystem
+    resource.cost = .free
+    XCTAssertNil(reject(AgentTaskRequirements(localOnly: true, dataSensitivity: .restricted),
+      budget: AgentTaskBudget(networkPolicy: .offlineOnly, allowCloud: false, allowPaidProviders: false),
+      environment: AgentTaskBudgetEnvironment(), connectors: false))
+  }
+
+  func testAutoAdmissionUsesExactRegistrationCapabilitiesAndTrust() {
+    let target = routeTarget("codex", kind: .agent)
+    var registration = AgentMentionCandidatePolicy.registration(for: target)
+    var resource = routingResource(targetId: target.id, type: .remoteAgent, location: .trustedDesktop)
+    resource.trust = .unknown
+    registration.capabilities = [.chat]
+    let online = AgentTaskBudgetEnvironment(networkAvailable: true)
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(capabilities: [.code]),
+      budget: .default, environment: online, connectorCallsAllowed: true), "mandatory_capability_missing")
+    registration.status = .permissionRequired
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(), budget: .default,
+      environment: online, connectorCallsAllowed: true), "registration_unavailable")
+    registration.status = .online
+    registration.agentId = "another-installation"
+    registration.trust = .verifiedPaired
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(dataSensitivity: .restricted),
+      budget: .default, environment: online, connectorCallsAllowed: true), "restricted_data_boundary")
+  }
+
+  func testConnectorPreferenceCannotResurrectCatalogOnlyTarget() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(cloudResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    for goal in ["", "Explain this document"] {
+      let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud],
+        decision: decision, preferredTargetId: codex.id, goal: goal))
+      XCTAssertEqual(selected.target.id, cloud.id)
+      XCTAssertEqual(selected.decision?.orderedTargetIds, [cloud.id])
+    }
+  }
+
+  func testStableAutoDisplayedPrimarySkipsAlternateRankingButKeepsCapabilityGate() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let specialist = AgentCallableTarget(id: "cloud:knowledge", title: "Knowledge", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning, .knowledgeSearch])
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, specialist],
+      decision: nil, preferredTargetId: codex.id, goal: "Explain PDF retrieval",
+      preserveHealthyPrimary: true))
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertTrue(selected.decision?.fallbacks.isEmpty == true)
+    XCTAssertEqual(selected.decision?.catalog.map(\.targetId), [codex.id])
+    let declared = try XCTUnwrap(AgentQualityRoutingService.baselineDecision(goal: "Read a document",
+      targets: [codex, specialist], primaryTargetId: codex.id,
+      requirements: AgentTaskRequirements(capabilities: [.knowledgeSearch], capabilitySource: .declared)))
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: [codex, specialist], decision: declared,
+      preferredTargetId: codex.id, preserveHealthyPrimary: true)?.target.id, specialist.id)
+    XCTAssertEqual(AgentStableAutoRoutePolicy.displayedTarget(targets: [codex, specialist],
+      rememberedId: specialist.id)?.id, specialist.id)
+    XCTAssertFalse(AgentStableAutoRoutePolicy.acceptsUpdate(state: nil, turnId: "turn"))
+    XCTAssertFalse(AgentStableAutoRoutePolicy.acceptsUpdate(state: .init(targetId: codex.id,
+      turnId: "new", turnStartedAt: 1), turnId: "old"))
+  }
+
+  func testUnavailableAdmittedTargetDoesNotFallBackToExcludedHealthyTarget() {
+    var codex = routeTarget("codex", kind: .agent)
+    codex.status = .needsSetup
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(codexResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision))
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision,
+      preferredTargetId: cloud.id, goal: "Explain this document"))
+  }
+
+  func testAdmittedRecoveringTargetIsNotHiddenByExcludedAvailableTarget() throws {
+    var codex = routeTarget("codex", kind: .agent)
+    codex.status = .disconnected
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let cloudResource = routingResource(targetId: cloud.id, type: .cloudModel, location: .cloud)
+    let decision = routingDecision(primary: resourceCandidate(codexResource, score: 800),
+      fallbacks: [], catalog: [codexResource, cloudResource])
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision))
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertEqual(selected.decision?.orderedTargetIds, [codex.id])
+  }
+
+  func testToolOnlyDecisionDoesNotFabricateReasoningCandidateFromCatalog() {
+    let codex = routeTarget("codex", kind: .agent)
+    let phoneWeb = routingResource(targetId: "web.search", type: .localTool, location: .phone)
+    let codexResource = routingResource(targetId: codex.id, type: .remoteAgent, location: .trustedDesktop)
+    let decision = routingDecision(primary: resourceCandidate(phoneWeb, score: 900),
+      fallbacks: [], catalog: [phoneWeb, codexResource])
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: decision))
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [codex], decision: decision,
+      preferredTargetId: codex.id))
+  }
+
   func testAgentConnectorRouteSelectorRejectsSetupAndDeviceOnlyTargets() {
     var unavailable = routeTarget("codex", kind: .agent)
     unavailable.status = .needsSetup
@@ -1437,6 +1575,104 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: [:]))
     XCTAssertFalse(AgentConnectorFallbackAction.isTargetLocked(action: nil, metadata: [:]))
     XCTAssertEqual(AgentConnectorFallbackAction.prepare(action: action, selection: fallback, target: nil).parameters["connector_id"], "other")
+  }
+
+  func testFreshAutoFallbackIgnoresOldOrderAndPreservesAttemptAndScopeIdentity() throws {
+    let original = routeTarget("codex", kind: .agent)
+    let old = routeTarget("old-cloud", kind: .model)
+    let fresh = routeTarget("fresh-cloud", kind: .model)
+    let action = AgentAction(id: "auto-failure", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true", "routing_fallback_ids": old.id,
+        "_galaxyssi_conversation_id": "conversation-a", "_galaxyssi_turn_id": "turn-a",
+        "manual_model_id": "stale-model", "agent_reasoning_effort": "high"], requiresConfirmation: false)
+    let failure = AgentConnectorFallbackAction.mergingRoutingMetadata(
+      AgentActionResult(actionId: action.id, success: false, message: "Failed",
+        metadata: ["resource_id": original.id, "non_retriable": "true"]), action: action)
+    let selected = try XCTUnwrap(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+      currentResourceIds: [original.id, fresh.id, old.id], targets: [original, old, fresh]))
+    XCTAssertEqual(selected.parameters["connector_id"], fresh.id)
+    XCTAssertEqual(selected.parameters["_galaxyssi_conversation_id"], "conversation-a")
+    XCTAssertEqual(selected.parameters["_galaxyssi_turn_id"], "turn-a")
+    XCTAssertNil(selected.parameters["manual_model_id"])
+    XCTAssertNil(selected.parameters["agent_reasoning_effort"])
+    XCTAssertTrue(AgentConnectorFallbackAction.hasActiveTrail(selected))
+    XCTAssertNotEqual(AgentConnectorFallbackAction.effectAttemptKey(selected), action.id)
+    let nextFailure = AgentConnectorFallbackAction.mergingRoutingMetadata(
+      AgentActionResult(actionId: action.id, success: false, message: "Failed again",
+        metadata: ["resource_id": fresh.id, "non_retriable": "true"]), action: selected)
+    let next = try XCTUnwrap(AgentConnectorFallbackAction.freshFallback(action: selected, failure: nextFailure,
+      currentResourceIds: [original.id, fresh.id, old.id], targets: [original, old, fresh]))
+    XCTAssertEqual(next.parameters["connector_id"], old.id)
+    XCTAssertNotEqual(AgentConnectorFallbackAction.effectAttemptKey(next), AgentConnectorFallbackAction.effectAttemptKey(selected))
+  }
+
+  func testFreshAutoFallbackRejectsUnknownAwaitingManualAndUnobservedRemoteOutcomes() {
+    let original = routeTarget("codex", kind: .agent), other = routeTarget("other", kind: .model)
+    var action = AgentAction(id: "guarded", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true"], requiresConfirmation: false)
+    for extra in [["error_code": "effect_outcome_unknown"], ["error_code": "idempotency_key_conflict"],
+                  ["awaiting_response": "true"], ["plan_node_outcome_unknown": "true"],
+                  ["manual_target_locked": "true"],
+                  ["timeout_stage": "NOT_ACCEPTED", "resource_location": "desktop", "remote_task_status": "running"]] {
+      var metadata = extra
+      metadata["resource_id"] = original.id
+      let result = AgentActionResult(actionId: action.id, success: false, message: "Uncertain", metadata: metadata)
+      XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: result,
+        currentResourceIds: [other.id], targets: [original, other]))
+    }
+    let result = AgentActionResult(actionId: action.id, success: false, message: "Failed",
+      metadata: ["resource_id": original.id, "auto_reroute_on_failure": "true"])
+    action.parameters["auto_reroute_on_failure"] = "false"
+    XCTAssertEqual(AgentConnectorFallbackAction.mergingRoutingMetadata(result, action: action)
+      .metadata["auto_reroute_on_failure"], "false")
+    XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: result,
+      currentResourceIds: [other.id], targets: [original, other]))
+  }
+
+  func testFreshAutoFallbackCannotReviveExcludedDeferredTarget() {
+    let original = routeTarget("codex", kind: .agent), excluded = routeTarget("excluded", kind: .model)
+    let action = AgentAction(id: "excluded-deferred", kind: .callConnector, target: "Codex", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": original.id,
+        "auto_reroute_on_failure": "true"], requiresConfirmation: false)
+    let failure = AgentActionResult(actionId: action.id, success: false, message: "Failed", metadata: [
+      "resource_id": original.id, "remaining_fallback_ids": excluded.id, "deferred_retry_ids": excluded.id,
+      "non_retriable": "true"])
+    XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+      currentResourceIds: [], targets: [original, excluded]))
+  }
+
+  func testAutomaticRouteRefreshKeepsRoutedParametersWhenContextIsAppended() {
+    let original = AgentAction(id: "parallel-auto", kind: .callConnector, target: "Old", risk: .low,
+      status: .proposed, description: "Run", parameters: ["connector_id": "old",
+        "custom_parameter": "keep", "prompt": "Original goal", "agent_model_id": "old-model",
+        "_galaxyssi_conversation_id": "conversation-a", "_galaxyssi_turn_id": "turn-a"], requiresConfirmation: false)
+    let target = routeTarget("fresh", kind: .agent)
+    let routed = AgentAutomaticConnectorRoutePolicy.refresh(original,
+      selection: AgentConnectorRouteSelection(target: target, decision: nil))
+    var prepared = routed
+    prepared.parameters["_galaxyssi_task_id"] = "task-a"
+    XCTAssertEqual(prepared.parameters["connector_id"], target.id)
+    XCTAssertEqual(prepared.target, target.title)
+    XCTAssertEqual(prepared.parameters["custom_parameter"], "keep")
+    XCTAssertEqual(prepared.parameters["prompt"], "Original goal")
+    XCTAssertEqual(prepared.parameters["_galaxyssi_conversation_id"], "conversation-a")
+    XCTAssertEqual(prepared.parameters["_galaxyssi_turn_id"], "turn-a")
+    XCTAssertEqual(prepared.parameters["auto_reroute_on_failure"], "true")
+    XCTAssertNil(prepared.parameters["agent_model_id"])
+    XCTAssertEqual(prepared.id, original.id)
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(original, selection: nil)
+      .parameters["connector_id"], AgentPlanFactory.unavailableReasoningConnectorId)
+    var locked = original
+    locked.parameters["manual_target_locked"] = "true"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
+    locked = original
+    locked.parameters[agentTeamSpecParameter] = "group-owned"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
+    locked = original
+    locked.parameters["auto_reroute_on_failure"] = "false"
+    XCTAssertEqual(AgentAutomaticConnectorRoutePolicy.refresh(locked, selection: nil), locked)
   }
 
   func testFallbackActionTrailBelongsOnlyToItsOwningAction() {

@@ -195,6 +195,8 @@ final class MessageCoordinator: ObservableObject {
   private var activePublicAttentionResponses = Set<Int64>()
   private var globalCognitionResponseToken: UUID?
   private var globalAutonomousResponseToken: UUID?
+  private var nativeConnectorResponseToken: UUID?
+  private var nativeConnectorDispatches = Set<String>()
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var capturePermissionRequests = AgentCapturePermissionRequests()
   private var capturePermissionsReady: [String: UUID] = [:]
@@ -227,9 +229,15 @@ final class MessageCoordinator: ObservableObject {
         ).importPage(url, actionId: actionId)
       }
     )
+    let connectorExecutor = AgentIOSQueuedConnectorExecutor(delegate: nativeExecutor) { [weak self] action, receipt in
+      Task { @MainActor [weak self] in
+        await self?.dispatchQueuedNativeConnector(action: action, receipt: receipt)
+      }
+    }
     let controlPlaneExecutor = AgentControlPlaneActionExecutor(
       registrationSource: { [weak self] in self?.callableAgentRegistrations() ?? [] },
-      delegate: nativeExecutor,
+      delegate: connectorExecutor,
+      managedResponseLedger: self.managedDesktopReplyLedger,
       globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
     )
     AgentEvolutionLabRuntimeRegistry.shared.install(controlPlaneExecutor.makeEvolutionLabRuntime())
@@ -425,14 +433,14 @@ final class MessageCoordinator: ObservableObject {
     return pendingPhonePublicPageExport
   }
 
-  private func callableAgentRegistrations() -> [AgentRegistration] {
-    let targets = AgentCallableTargetCatalog.build(
+  private func callableAgentRegistrations(targets: [AgentCallableTarget]? = nil) -> [AgentRegistration] {
+    let candidates = (targets ?? AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
-    )
+    ))
       .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
     let activeCounts = UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts()
-    return targets.map { target in
+    return candidates.map { target in
       var registration = AgentMentionCandidatePolicy.registration(for: target)
       registration.activeRuns = max(
         registration.activeRuns,
@@ -505,6 +513,11 @@ final class MessageCoordinator: ObservableObject {
     let deliveryWake = GlobalProactiveDeliveryWake { _ = store.deliverPendingGlobalProactiveMessages() }
     self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { deliveryWake.request() }
     VoiceRemoteWhisperCaptureRuntime.shared.bind(coordinator: self)
+    nativeConnectorResponseToken = AgentLateManagedResponseBus.shared.addListener { [weak self] record in
+      Task { @MainActor [weak self] in
+        self?.resumeWaitingNativeConnectors(owner: record.ownerRunId)
+      }
+    }
     self.globalResearchResponseToken = connectorResponseBus.addListener { [weak self] response in
       Task { @MainActor in
         guard let self else { return }
@@ -1068,6 +1081,8 @@ final class MessageCoordinator: ObservableObject {
 
   func resumePendingAgentDelivery() {
     guard reconcileLegacyConversationSchedules() else { return }
+    drainNativeConnectorResponseOutbox()
+    resumeWaitingNativeConnectors()
     guard mqttClient.relationshipSubscriptionsReady else {
       pendingReplyRecoveryWake.request(isConnected: false)
       return
@@ -1159,6 +1174,9 @@ final class MessageCoordinator: ObservableObject {
     if let token = globalAutonomousResponseToken {
       connectorResponseBus.removeListener(token)
     }
+    if let token = nativeConnectorResponseToken {
+      AgentLateManagedResponseBus.shared.removeListener(token)
+    }
   }
 
   @discardableResult
@@ -1208,6 +1226,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func refreshAgentHomeState() {
+    drainNativeConnectorResponseOutbox()
+    resumeWaitingNativeConnectors()
     reconcileSavedTeamParents()
     recoverAcceptedGoalDeliveries()
     recoverSavedResearchPublications()
@@ -1952,23 +1972,37 @@ final class MessageCoordinator: ObservableObject {
       conversationOverride: conversation, sourceTrace: AgentConversationSchedule.occurrenceStage)
     let desktop = AgentConversationSchedule.targetsDesktop(goal)
     do {
+      if AgentModelSelectionSettings.selection(for: conversation).mode == .automatic {
+        guard store.beginAgentAutoRouteTurn(for: outgoing, targets: AgentCallableTargetCatalog.build(
+          contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })) else {
+          throw AgentModelLoopRecoveryError(code: "auto_route_turn_not_committed")
+        }
+      }
+      let automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: conversation, goal: goal)?.target.id ?? ""
       if !desktop, let plan = deterministicLocalNativePlan(for: goal, hasAttachments: false) {
         try await receiveLocalModelReply(profile: LocalModelRuntimeSettings.selectedProfile(),
           requestText: goal, attachments: [], outgoing: outgoing, initialPlan: plan)
-      } else if !desktop, let local = selectedLocalModel(for: contact, conversationId: conversation, goal: goal) {
+      } else if !desktop, let local = selectedLocalModel(for: contact, conversationId: conversation, goal: goal,
+        automaticTargetId: automaticTargetId) {
+        try recordAutomaticDispatch(targetId: "local-llm", outgoing: outgoing)
         try await receiveLocalModelReply(profile: local, requestText: goal, attachments: [],
           outgoing: outgoing, useSelectedProvider: true)
-      } else if !desktop, let cloud = selectedCloudModelContact(for: contact, conversationId: conversation, goal: goal),
+      } else if !desktop, let cloud = selectedCloudModelContact(for: contact, conversationId: conversation, goal: goal,
+                  automaticTargetId: automaticTargetId),
                 let snapshot = AgentModelPlannerContactResolver(store: store).capturePhoneTurnSnapshot(
                   settings: store.modelPlannerSettings, selectedContact: cloud) {
+        try recordAutomaticDispatch(targetId: cloud.id, outgoing: outgoing)
         try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: cloud.displayName,
           requestText: goal, outgoing: outgoing, executionMode: mode)
-      } else if let agent = selectedAgentContact(for: contact, conversationId: conversation, goal: goal) {
+      } else if let agent = selectedAgentContact(for: contact, conversationId: conversation, goal: goal,
+        automaticTargetId: automaticTargetId) {
         if !desktop, AgentConversationSchedule.expectsPhone(goal) {
           guard agent.connectorAgentId == "codex" else {
             throw AgentProactiveTaskError.invalid("This model cannot plan phone tools from the scheduled conversation")
           }
           let snapshot = try capturePairedPhonePlannerSnapshot(contact: agent, outgoing: outgoing)
+          try recordAutomaticDispatch(targetId: agent.id, outgoing: outgoing)
           try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: agent.displayName,
             requestText: goal, outgoing: outgoing, executionMode: mode)
         } else {
@@ -1979,6 +2013,7 @@ final class MessageCoordinator: ObservableObject {
           guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: agent.displayName) }
           agentHomeDisplayContactIdsByTurnId[run.runId] = contact.id
           do {
+            try recordAutomaticDispatch(targetId: agent.id, outgoing: outgoing)
             let status = try await publishLinkMessage(request, contact: agent, outgoing: outgoing, attachments: [],
               executionMode: mode)
             AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
@@ -2863,6 +2898,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func beginPendingAgentReply(for message: ChatMessage) {
+    if message.contactId == "hermes" {
+      _ = store.beginAgentAutoRouteTurn(for: message, targets: AgentCallableTargetCatalog.build(
+        contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }))
+    }
     pendingAgentReplyTurnIds.insert(AgentReplyWaitingIndicatorPolicy.turnKey(for: message))
     if pendingAgentReplyTurnIds.count > 256,
        let oldest = pendingAgentReplyTurnIds.first {
@@ -4355,7 +4394,8 @@ final class MessageCoordinator: ObservableObject {
       persistRecoveredManagedDesktopResult(payload, record: record)
       return false
     }
-    if let reason = record.expiryReason(now: now) {
+    if let reason = record.expiryReason(now: now),
+       !preserveNativeConnectorObservation(source) {
       if source.state == .pending {
         let detail = reason == "desktop_result_unavailable"
           ? localizedReply("galaxyssi.agent.desktop_result_unavailable", fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
@@ -4778,6 +4818,7 @@ final class MessageCoordinator: ObservableObject {
       guard AgentDesktopAcceptedReply.digest(message.content) == accepted.contentSHA256,
             store.commitAcceptedDesktopTask(binding, message: message, acceptedAt: accepted.acceptedAt, status: accepted.status)
       else { return .retryLocal }
+      recordRecoveredAutoTarget(record)
     }
     guard desktopResultRecovery.receipts.insert(accepted.receipt) else { return .retryLocal }
     finishPendingAgentReply(turnId: binding.identity.turnId)
@@ -4855,7 +4896,10 @@ final class MessageCoordinator: ObservableObject {
         catch { onFailure(error) }
         continue
       }
-      guard record.expiryReason(now: now) == nil else { continue }
+      if record.expiryReason(now: now) != nil {
+        guard let managed = currentManagedDesktopReply(record.binding),
+              preserveNativeConnectorObservation(managed) else { continue }
+      }
       let terminal = AgentDesktopReplyRecovery.terminalStatuses.contains(record.status)
       if terminal, record.acceptedReply != nil, completeAcceptedDesktopReply(record) != .missing { continue }
       if terminal, var payload = desktopResultRecovery.assembled(record),
@@ -5071,6 +5115,20 @@ final class MessageCoordinator: ObservableObject {
     }.sorted { $0.id < $1.id }
   }
 
+  private func recordRecoveredAutoTarget(_ record: AgentDesktopReplyRecoveryRecord) {
+    let binding = record.binding
+    guard binding.displayContactId == "hermes", binding.teamSource == nil, binding.managedSource == nil,
+          binding.goalWork != true, !record.isManualTargetLocked,
+          desktopReplyRecovery.record(for: binding) != nil,
+          let source = currentDesktopReplySource(binding), source.contactId == "hermes",
+          let target = store.contact(id: binding.contactId), !target.deleted, target.trustState == .verified,
+          target.desktopId == binding.desktopId, target.connectorAgentId == binding.agentId,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return }
+    _ = store.recordAgentAutoRouteDispatch(conversationId: binding.identity.conversationId,
+      turnId: binding.identity.turnId, targetId: target.id)
+  }
+
   private func scheduleCodexReplay(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord,
                                   source: ChatMessage) -> Bool {
     let binding = record.binding
@@ -5081,9 +5139,12 @@ final class MessageCoordinator: ObservableObject {
           !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil,
           store.agentTask(id: binding.identity.turnId)?.phase != .cancelled else { return false }
     let eligible = codexReplayTargets(desktopId: binding.desktopId)
-    let alternatives = eligible.filter {
+    let eligibleIds = Set(eligible.filter {
       !AgentCodexSilenceRecoveryPolicy.isCodex(adapter: $0.connectorAdapterName, agentId: $0.connectorAgentId)
-    }.map(\.id)
+    }.map(\.id))
+    let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(
+      targets: automaticRoutingTargets(goal: source.content),
+      eligibleIds: eligibleIds, goal: source.content)
     let timeout = AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: status,
       failureCode: payload.string("failure_code"), error: payload.string("error"))
     guard let nextId = replay.budget.next(failed: binding.contactId, attemptId: binding.sourceIdentity,
@@ -5160,6 +5221,7 @@ final class MessageCoordinator: ObservableObject {
                                                executionMode: .planOnly, codexReplay: record)
       _ = desktopReplyRecovery.markCodexReplayDispatched(binding)
       AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
+      if status == .queued || status == .sent { recordRecoveredAutoTarget(record) }
       if desktopReplyRecovery.record(for: binding) != nil {
         store.appendDeliveryTrace(source.id, contactId: source.contactId, stage: "codex_recovery_dispatched",
           detail: localizedReply("galaxyssi.agent.codex_recovery_dispatched",
@@ -6058,11 +6120,22 @@ final class MessageCoordinator: ObservableObject {
         finishPendingAgentReply(for: outgoing)
         return true
       }
+      if contact.id == "hermes",
+         AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic,
+         !AgentStableAutoRoutePolicy.acceptsUpdate(
+           state: store.agentSession(id: outgoing.conversationId)?.stableAutoRoute,
+           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
+        throw AgentModelLoopRecoveryError(code: "auto_route_turn_not_committed")
+      }
+      let automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: outgoing.conversationId, goal: requestText)?.target.id ?? ""
       if let localProfile = selectedLocalModel(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: "local-llm", outgoing: outgoing)
         updateAgentExecutionTarget(
           conversationId: outgoing.conversationId,
           runtimeTarget: localProfile.displayName
@@ -6109,8 +6182,10 @@ final class MessageCoordinator: ObservableObject {
       if let selectedCloudContact = selectedCloudModelContact(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: selectedCloudContact.id, outgoing: outgoing)
         let cloudContact = CloudModelRequestRoutingPolicy.resolve(
           contact: selectedCloudContact,
           requestedModelId: selectedCloudContact.selectedCloudModelId,
@@ -6170,8 +6245,10 @@ final class MessageCoordinator: ObservableObject {
       if let agentContact = selectedAgentContact(
         for: contact,
         conversationId: outgoing.conversationId,
-        goal: requestText
+        goal: requestText,
+        automaticTargetId: automaticTargetId
       ) {
+        try recordAutomaticDispatch(targetId: agentContact.id, outgoing: outgoing)
         if !readOnlyAnalysis, !compositeDesktopStatus, effectiveAttachments.isEmpty, agentContact.connectorAgentId == "codex" {
           let snapshot = try capturePairedPhonePlannerSnapshot(contact: agentContact, outgoing: outgoing)
           try await receivePhoneOwnedProviderReply(
@@ -6555,6 +6632,37 @@ final class MessageCoordinator: ObservableObject {
     return AgentManualTargetUnavailableError(targetName: targetName)
   }
 
+  func displayedAutoRouteTarget(conversationId: String) -> AgentCallableTarget? {
+    guard let session = store.agentSession(id: conversationId) else { return nil }
+    let targets = AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })
+    return AgentStableAutoRoutePolicy.displayedTarget(targets: targets,
+      rememberedId: session.stableAutoRoute?.targetId ?? "")
+  }
+
+  private func recordAutomaticDispatch(targetId: String, outgoing: ChatMessage) throws {
+    guard outgoing.contactId == "hermes",
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return }
+    guard store.recordAgentAutoRouteDispatch(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), targetId: targetId) else {
+      throw AgentModelLoopRecoveryError(code: "auto_route_dispatch_not_committed")
+    }
+  }
+
+  private func automaticRoutingTargets(goal: String) -> [AgentCallableTarget] {
+    let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) })
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    return AgentAutomaticRouteAdmission.targets(targets, registrations: callableAgentRegistrations(targets: targets),
+      requirements: AgentTaskRequirementAnalyzer.analyze(
+        AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)),
+      budget: store.agentTaskBudget,
+      environment: AgentTaskBudgetEnvironment(
+        networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated, networkMetered: probe.metered),
+      connectorCallsAllowed: store.agentSafetySettings.connectorCallsAllowed)
+  }
+
   private func automaticRouteSelection(
     for contact: GalaxySSIContact,
     conversationId: String,
@@ -6563,28 +6671,29 @@ final class MessageCoordinator: ObservableObject {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes", selection.mode == .automatic else { return nil }
 
-    let targets = AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
-    return AgentConnectorRouteSelector.select(targets: targets, decision: nil, goal: goal)
+    let targets = automaticRoutingTargets(goal: goal)
+    let preferredTargetId = (store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
+      .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
+    return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
+      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true)
   }
 
   private func selectedLocalModel(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> LocalModelRuntimeProfile? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes" else {
       return nil
     }
     let manualSelection = selection.mode == .manual && selection.targetId == "local-llm"
-    let legacySelection = !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
+    let legacySelection = automaticTargetId == nil && !AgentModelSelectionSettings.hasStoredSelection(for: conversationId) &&
       store.modelPlannerSettings.enabled &&
       store.modelPlannerSettings.cloudContactId == "local-llm"
     let automaticSelection = selection.mode == .automatic &&
-      automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id == "local-llm"
+      (automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id) == "local-llm"
     guard manualSelection || legacySelection || automaticSelection else { return nil }
     let profile = selection.mode == .manual
       ? LocalModelRuntimeCatalog.find(selection.modelId)
@@ -6597,12 +6706,13 @@ final class MessageCoordinator: ObservableObject {
   private func selectedCloudModelContact(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> GalaxySSIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     let targetId = selection.mode == .manual
       ? selection.targetId
-      : automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
+      : automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
     guard contact.id == "hermes",
           !targetId.isEmpty,
           targetId != "local-llm",
@@ -6635,12 +6745,13 @@ final class MessageCoordinator: ObservableObject {
   private func selectedAgentContact(
     for contact: GalaxySSIContact,
     conversationId: String,
-    goal: String
+    goal: String,
+    automaticTargetId: String? = nil
   ) -> GalaxySSIContact? {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     let targetId = selection.mode == .manual
       ? selection.targetId
-      : automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
+      : automaticTargetId ?? automaticRouteSelection(for: contact, conversationId: conversationId, goal: goal)?.target.id ?? ""
     guard contact.id == "hermes",
           !targetId.isEmpty,
           let selected = store.contact(id: targetId),
@@ -7162,16 +7273,30 @@ final class MessageCoordinator: ObservableObject {
     let localOnly = AgentTaskRequirementAnalyzer.analyze(task.goal).localOnly
     let connectorsAllowed = store.agentSafetySettings.connectorCallsAllowed
     let resolver = AgentModelPlannerContactResolver(store: store)
+    let needsAutomaticRoute = task.plannerSnapshot == nil && contact.id == "hermes" &&
+      AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic
+    let automaticTargetId: String?
+    if needsAutomaticRoute {
+      guard store.beginAgentAutoRouteTurn(for: outgoing, targets: AgentCallableTargetCatalog.build(
+        contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })) else { return nil }
+      automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: outgoing.conversationId, goal: task.goal)?.target.id ?? ""
+    } else {
+      automaticTargetId = nil
+    }
     let snapshot: AgentPlannerModelSnapshot?
     if let existing = task.plannerSnapshot {
       snapshot = existing
-    } else if let local = selectedLocalModel(for: contact, conversationId: outgoing.conversationId, goal: task.goal) {
+    } else if let local = selectedLocalModel(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+      automaticTargetId: automaticTargetId) {
       snapshot = resolver.capturePhoneTurnSnapshot(settings: store.modelPlannerSettings, localProfile: local)
     } else if !localOnly, !session.privateMode, connectorsAllowed,
-              let cloud = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal) {
+              let cloud = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+                automaticTargetId: automaticTargetId) {
       snapshot = resolver.capturePhoneTurnSnapshot(settings: store.modelPlannerSettings, selectedContact: cloud)
     } else if !localOnly, !session.privateMode, connectorsAllowed,
-              let agent = selectedAgentContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal),
+              let agent = selectedAgentContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+                automaticTargetId: automaticTargetId),
               agent.connectorAgentId == "codex" {
       snapshot = try? capturePairedPhonePlannerSnapshot(contact: agent, outgoing: outgoing)
     } else {
@@ -7179,6 +7304,14 @@ final class MessageCoordinator: ObservableObject {
     }
     guard let snapshot, AgentEffectRecoveryRecord.permitsReviewProvider(snapshot, localOnly: localOnly,
       privateMode: session.privateMode, connectorsAllowed: connectorsAllowed) else { return nil }
+    if needsAutomaticRoute {
+      guard let automaticTargetId, !automaticTargetId.isEmpty else { return nil }
+      do {
+        try recordAutomaticDispatch(targetId: automaticTargetId, outgoing: outgoing)
+      } catch {
+        return nil
+      }
+    }
     return snapshot
   }
 
@@ -7460,6 +7593,17 @@ final class MessageCoordinator: ObservableObject {
     if automatic {
       guard store.agentSafetySettings.taskExecutionMode == .autoComplete,
             AgentSavedTeamReplyPolicy.canContinueAutomatically(task) else { return false }
+    }
+    if AgentNativeConnectorContinuation.hasWaitingAction(task) {
+      guard !store.agentSafetySettings.executionPaused,
+            !PhoneExecutionAuthority.isCancelled(taskId: taskId),
+            let previous = store.agentTask(id: taskId), previous.phase == .paused else { return false }
+      task.phase = .waitingResponse
+      task.blocked = false
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      guard store.commitOwnedAgentTaskState(expected: previous, updated: task) else { return false }
+      resumeWaitingNativeConnectors()
+      return true
     }
     task.localOperationProcessId = AgentOwnedOperationContext.processId
     if task.pendingPlanning?.isReplanning == true {
@@ -13465,7 +13609,8 @@ final class MessageCoordinator: ObservableObject {
     store.upsertAgentTask(task)
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .running)
     let executionActions = actions.map { action in
-      preparedLocalNativeAction(action, outgoing: outgoing, task: task)
+      let routed = refreshAutomaticConnectorAction(action, outgoing: outgoing, goal: task.goal)
+      return preparedLocalNativeAction(routed, outgoing: outgoing, task: task)
     }
     let nodeKeys = actions.map { action in
       AgentPlanNodeKey.make(
@@ -13562,6 +13707,9 @@ final class MessageCoordinator: ObservableObject {
       let action = actions[index]
       let executionAction = executionActions[index]
       let result = results[index]
+      if result.success || result.metadata["awaiting_response"] == "true" {
+        recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
+      }
       rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
       AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
@@ -13735,20 +13883,7 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: AgentTaskRecord
   ) -> AgentAction {
-    var executionAction = action
-    executionAction.parameters["_galaxyssi_task_id"] = task.taskId
-    executionAction.parameters["_galaxyssi_session_id"] = task.sessionId
-    executionAction.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
-    executionAction.parameters["_galaxyssi_turn_id"] = outgoing.turnId.ifBlank(outgoing.id.uuidString)
-    executionAction.parameters["_galaxyssi_contact_id"] = outgoing.contactId
-    executionAction.parameters["response_language"] = LanguagePolicySettings.resolve(
-      store.languagePolicy.responseLanguage
-    )
-    executionAction.parameters["_galaxyssi_workspace_id"] = AgentWorkspaceScope.id(
-      conversationId: outgoing.conversationId,
-      sessionId: task.sessionId
-    )
-    return executionAction
+    scopedLocalNativeExecutionAction(action, outgoing: outgoing, task: task)
   }
 
   private func recordLocalNativeBatchSummary(_ results: [String]) -> String {
@@ -13791,6 +13926,11 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     task: inout AgentTaskRecord
   ) -> Bool {
+    if AgentNativeConnectorContinuation.hasWaitingAction(task) {
+      resumeWaitingNativeConnectors()
+      task = store.agentTask(id: task.taskId) ?? task
+      return true
+    }
     if task.pendingActions.isEmpty {
       task.pendingActions = [action]
     }
@@ -14171,19 +14311,36 @@ final class MessageCoordinator: ObservableObject {
 
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
-    var executionAction = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
-    var result = runtime.actionExecutor.execute(
+    var original = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
+    if let language = boundAction.parameters["response_language"] { original.parameters["response_language"] = language }
+    let priorDispatch = runtime.nativeActionExecutor.observedConnectorDispatch(action: original)
+    let routed = priorDispatch == nil
+      ? refreshAutomaticConnectorAction(boundAction, outgoing: outgoing, goal: task.goal) : boundAction
+    var executionAction = priorDispatch == nil
+      ? scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task) : original
+    if executionAction.kind == .callConnector, priorDispatch == nil {
+      executionAction.parameters[AgentIOSConnectorDispatch.sourceKey] = outgoing.id.uuidString
+      executionAction.parameters[AgentIOSConnectorDispatch.profileKey] = store.profile.identityFingerprint
+      executionAction.parameters[AgentIOSConnectorDispatch.permissionKey] = store.agentSafetySettings.permissionMode.rawValue
+      guard checkpointNativeConnectorDispatch(executionAction, task: &task) else { return true }
+    }
+    recordAutomaticConnectorTarget(executionAction, outgoing: outgoing)
+    var result = priorDispatch ?? runtime.actionExecutor.execute(
       action: executionAction,
       screen: screen
     )
     if !result.success,
        action.kind == .callConnector,
        AgentSupervisorRecoveryPolicy.stopReason(action: executionAction, result: result, history: history) == nil,
-       let fallbackAction = connectorFallbackAction(
+       var fallbackAction = connectorFallbackAction(
         action: executionAction,
         failedResult: result,
         goal: task.goal
        ) {
+      fallbackAction.parameters[AgentIOSConnectorDispatch.sourceKey] = outgoing.id.uuidString
+      fallbackAction.parameters[AgentIOSConnectorDispatch.profileKey] = store.profile.identityFingerprint
+      fallbackAction.parameters[AgentIOSConnectorDispatch.permissionKey] = store.agentSafetySettings.permissionMode.rawValue
+      guard checkpointNativeConnectorDispatch(fallbackAction, task: &task) else { return true }
       task.executionLog.append(
         "Connector fallback: \(action.parameters["connector_id"] ?? action.target) -> " +
           (fallbackAction.parameters["connector_id"] ?? fallbackAction.target)
@@ -14196,15 +14353,17 @@ final class MessageCoordinator: ObservableObject {
         status: .sent
       )
       executionAction = fallbackAction
+      recordAutomaticConnectorTarget(fallbackAction, outgoing: outgoing)
       result = runtime.actionExecutor.execute(action: fallbackAction, screen: screen)
     }
     if action.kind == .callConnector {
+      recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
       updateAgentExecutionTarget(
         conversationId: outgoing.conversationId,
-        connectorId: action.parameters["connector_id"] ?? "",
+        connectorId: executionAction.parameters["connector_id"] ?? "",
         contactId: result.metadata["contact_id"] ?? "",
         runtimeTarget: result.metadata["target"] ?? "",
-        fallbackTarget: action.target
+        fallbackTarget: executionAction.target
       )
     }
     finishLocalNativeAction(action: action, executionAction: executionAction, result: result,
@@ -14212,10 +14371,29 @@ final class MessageCoordinator: ObservableObject {
     return true
   }
 
+  private func refreshAutomaticConnectorAction(_ action: AgentAction, outgoing: ChatMessage, goal: String) -> AgentAction {
+    guard action.kind == .callConnector, action.parameters["manual_target_locked"] != "true",
+          action.parameters["auto_reroute_on_failure"] != "false",
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
+          !AgentConnectorFallbackAction.hasActiveTrail(action),
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return action }
+    let targets = automaticRoutingTargets(goal: goal)
+    let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
+      preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true)
+    return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
+  }
+
   private func scopedLocalNativeExecutionAction(
     _ action: AgentAction, outgoing: ChatMessage, task: AgentTaskRecord
   ) -> AgentAction {
-    var scoped = action
+    var scoped = AgentConnectorFallbackAction.forDispatch(action)
+    if scoped.kind == .callConnector,
+       scoped.parameters["manual_target_locked"] != "true",
+       scoped.parameters["auto_reroute_on_failure"] != "false",
+       (scoped.parameters[agentTeamSpecParameter] ?? "").isBlank,
+       AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic {
+      scoped.parameters["auto_reroute_on_failure"] = "true"
+    }
     scoped.parameters["_galaxyssi_task_id"] = task.taskId
     scoped.parameters["_galaxyssi_session_id"] = task.sessionId
     scoped.parameters["_galaxyssi_conversation_id"] = outgoing.conversationId
@@ -14227,10 +14405,460 @@ final class MessageCoordinator: ObservableObject {
     return scoped
   }
 
+  private func recordAutomaticConnectorTarget(_ action: AgentAction, result: AgentActionResult? = nil,
+                                            outgoing: ChatMessage) {
+    guard outgoing.contactId == "hermes", action.kind == .callConnector,
+          !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: result?.metadata ?? [:]),
+          (action.parameters[agentTeamSpecParameter] ?? "").isBlank else { return }
+    let selected = action.parameters["connector_id"] ?? ""
+    let actual = result?.success == true ? (result?.metadata["resource_id"] ?? "").ifBlank(selected) : selected
+    _ = store.recordAgentAutoRouteDispatch(conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), targetId: actual)
+  }
+
+  private func queuedNativeConnectorContext(_ dispatch: AgentIOSConnectorDispatch, requireExecution: Bool = true)
+    -> (task: AgentTaskRecord, outgoing: ChatMessage, waiting: AgentAction, pending: AgentActionResult)? {
+    guard dispatch.action.parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint else { return nil }
+    if requireExecution {
+      guard dispatch.action.parameters[AgentIOSConnectorDispatch.permissionKey] == store.agentSafetySettings.permissionMode.rawValue,
+            UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
+            !store.agentSafetySettings.executionPaused, store.agentSafetySettings.taskExecutionMode != .planOnly,
+            ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
+            !PhoneExecutionAuthority.isCancelled(taskId: dispatch.turnId) else { return nil }
+    }
+    guard let task = store.agentTask(id: dispatch.turnId), task.phase == .waitingResponse || (!requireExecution && task.phase == .paused),
+          !requireExecution || task.activePlan?.executionMode != .planOnly,
+          let session = store.agentSession(id: dispatch.conversationId), session.status == .active,
+          !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          !requireExecution || !session.privateMode || dispatch.contactId == "local-llm",
+          let outgoing = store.persistedMessage(id: dispatch.outgoingId, contactId: "hermes"),
+          let waiting = task.activePlan?.actions.first(where: { $0.id == dispatch.action.id }),
+          dispatch.matchesWaitingAction(waiting),
+          let pending = AgentNativeConnectorContinuation.pendingResult(waiting),
+          pending.metadata["control_plane_run_id"] == dispatch.owner,
+          pending.metadata["source_message_id"] == String(dispatch.sourceMessageId),
+          AgentNativeConnectorContinuation.waitingAction(waiting, result: pending, task: task, outgoing: outgoing) != nil,
+          let record = try? managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner), record.state == .pending,
+          record.correlates(dispatch.response("", success: false)) else { return nil }
+    return (task, outgoing, waiting, pending)
+  }
+
+  private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord) -> Bool {
+    guard record.state == .pending, let task = store.agentTask(id: record.turnId),
+          task.sessionId == record.conversationId,
+          let waiting = task.activePlan?.actions.first(where: { action in
+            AgentNativeConnectorContinuation.pendingResult(action)?.metadata["control_plane_run_id"] == record.ownerRunId
+          }), let pending = AgentNativeConnectorContinuation.pendingResult(waiting),
+          let dispatch = AgentIOSConnectorDispatch(action: waiting, receipt: pending),
+          waiting.parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint,
+          let outgoing = store.persistedMessage(id: dispatch.outgoingId, contactId: "hermes"),
+          AgentNativeConnectorContinuation.waitingAction(waiting, result: pending, task: task, outgoing: outgoing) != nil,
+          record.correlates(dispatch.response("", success: false)) else { return false }
+    // A query deadline is not proof that the external task failed. Keep its owner queryable.
+    guard pending.metadata["native_connector_observation_overdue"] != "true",
+          var plan = task.activePlan, let index = plan.actions.firstIndex(where: { $0.id == waiting.id }) else { return true }
+    var observed = pending
+    observed.metadata["native_connector_observation_overdue"] = "true"
+    guard let retained = AgentNativeConnectorContinuation.waitingAction(waiting, result: observed,
+      task: task, outgoing: outgoing) else { return true }
+    var updated = task
+    plan.actions[index] = retained
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.lastNativeActionResult = observed
+    if updated.pendingAction?.id == waiting.id { updated.pendingAction = retained }
+    updated.verification = localizedReply("galaxyssi.agent.desktop_status_unavailable",
+      fallback: "The Desktop task status could not be confirmed. Check the connection before retrying.")
+    updated.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    _ = store.commitOwnedAgentTaskState(expected: task, updated: updated)
+    return true
+  }
+
+  private func markQueuedConnectorUnknown(_ dispatch: AgentIOSConnectorDispatch) -> Bool {
+    guard let context = queuedNativeConnectorContext(dispatch, requireExecution: false), var plan = context.task.activePlan,
+          let index = plan.actions.firstIndex(where: { $0.id == dispatch.action.id }) else { return false }
+    var pending = context.pending
+    pending.metadata["effect_outcome_unknown"] = "true"
+    pending.metadata["non_retriable"] = "true"
+    pending.metadata["error_code"] = "effect_outcome_unknown"
+    pending.metadata["native_connector_dispatch_uncertain"] = "true"
+    pending.metadata["evidence"] = AgentMcpJSONCodec.stringify([
+      "outcome": .string("unknown"), "code": .string("effect_outcome_unknown"), "dispatch_attempted": .bool(true)])
+    guard let waiting = AgentNativeConnectorContinuation.waitingAction(context.waiting, result: pending,
+      task: context.task, outgoing: context.outgoing) else { return false }
+    var updated = context.task
+    plan.actions[index] = waiting
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.pendingAction = waiting
+    updated.lastNativeActionResult = pending
+    updated.phase = .blocked
+    updated.blocked = true
+    updated.verification = localizedReply("galaxyssi.agent.connector.outcome_unknown",
+      fallback: "The connector may have started, but its outcome is unknown. The original request was not repeated.")
+    updated.result = updated.verification
+    updated.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    return store.commitOwnedAgentTaskState(expected: context.task, updated: updated)
+  }
+
+  private func dispatchQueuedNativeConnector(action: AgentAction, receipt: AgentActionResult) async {
+    guard let dispatch = AgentIOSConnectorDispatch(action: action, receipt: receipt),
+          action.parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint,
+          nativeConnectorDispatches.insert(dispatch.owner).inserted else { return }
+    var started = false
+    do {
+      guard let context = queuedNativeConnectorContext(dispatch) else {
+        throw GalaxySSIError.invalidPayload("The original connector continuation is no longer active. Nothing was sent.")
+      }
+      let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+        apiKey: { store.apiKey(for: $0) })
+      guard let target = targets.first(where: { $0.id == dispatch.contactId }),
+            AgentConnectorRouteSelector.isDeliverable(target),
+            let resource = AgentResourceCatalog.build(targets: [target], tools: []).first(where: { $0.targetId == target.id }) else {
+        throw GalaxySSIError.invalidPayload("The selected connector is unavailable.")
+      }
+      let requirements = AgentTaskRequirementAnalyzer.analyze(
+        AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(dispatch.prompt))
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      let budget = AgentTaskBudgetPolicy.evaluate(budget: store.agentTaskBudget,
+        usage: AgentTaskBudgetUsage(usageEstimated: true),
+        environment: AgentTaskBudgetEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+          networkValidated: probe.validated, networkMetered: probe.metered),
+        networkRequired: resource.location != .phone,
+        trustedNetworkTarget: [.phone, .trustedDesktop, .privateNetwork].contains(resource.location),
+        cloudProvider: resource.location == .cloud, paidProvider: resource.cost != .free)
+      guard budget.allowed,
+            resource.location == .phone || (store.agentSafetySettings.connectorCallsAllowed && !context.task.sessionId.isBlank &&
+              store.agentSession(id: dispatch.conversationId)?.privateMode == false),
+            !requirements.localOnly || resource.location != .cloud,
+            requirements.dataSensitivity != .restricted || [.phoneSystem, .verifiedPaired].contains(resource.trust) else {
+        throw GalaxySSIError.invalidPayload("The current privacy, connector or task-budget policy does not allow this request.")
+      }
+      let blocks = AgentRichContentCodec.decode(context.outgoing.richOutputJson).filter {
+        [.image, .file, .video, .audio].contains($0.type) && $0.metadata["source"] == "user_attachment"
+      }
+      let attachments = AgentAttachmentWorkspaceStager.restore(conversationId: dispatch.conversationId,
+        turnId: dispatch.turnId, blocks: blocks, matchExactIDs: true).map(\.attachment)
+      guard attachments.count == blocks.count else {
+        throw GalaxySSIError.invalidPayload("The original scoped attachments could not be restored. Nothing was sent.")
+      }
+      if dispatch.contactId == "local-llm" {
+        guard attachments.isEmpty else { throw GalaxySSIError.invalidPayload("This local connector needs extracted text rather than raw attachments.") }
+        let model = (action.parameters["model_id"] ?? "").ifBlank(LocalModelRuntimeSettings.selectedProfile().id)
+        let profile = LocalModelRuntimeCatalog.find(model)
+        guard profile.id == model, LocalModelRuntimeSettings.isProfileEnabled(profile),
+              LocalModelInferenceRuntime.shared.ready(profile: profile) else { throw LocalModelInferenceError.modelNotReady }
+        started = true
+        let answer = try await LocalModelInferenceRuntime.shared.generateAsync(profile: profile,
+          systemPrompt: (action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? "")
+            .ifBlank("Complete the scoped user request and return only the useful final response."),
+          userPrompt: dispatch.prompt, maximumTokens: 1_500, temperature: 0.2, taskId: dispatch.taskId)
+        guard !answer.text.isBlank else { throw GalaxySSIError.invalidPayload("The local connector returned an empty response.") }
+        publishNativeConnectorResponse(dispatch.response(answer.text, success: true), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
+      } else if let contact = store.contact(id: dispatch.contactId), contact.deliveryMode == .cloudAPI {
+        guard attachments.allSatisfy(\.isImage),
+              (action.parameters["reasoning_effort"] ?? "auto").ifBlank("auto") == "auto" else {
+          throw GalaxySSIError.invalidPayload("This cloud connector needs extracted text for non-image attachments and does not accept an effort override.")
+        }
+        let modelID = (action.parameters["model_id"] ?? "").ifBlank(contact.selectedCloudModel?.modelId ?? "")
+        guard let model = CloudModelRequestRoutingPolicy.models(for: contact).first(where: { $0.modelId == modelID }),
+              AgentConnectorAvailability.cloudModelReady(model: model, apiKey: store.apiKey(for: model),
+                provider: contact.cloudProvider, setupStatus: contact.setupStatus) else {
+          throw GalaxySSIError.invalidPayload("The selected cloud model is unavailable.")
+        }
+        var selected = contact
+        selected.selectedCloudModelId = modelID
+        let images = try CloudImagePayloadFactory.prepare(attachments, taskId: dispatch.outgoingId.uuidString)
+        let turn = ChatMessage(contactId: contact.id, content: dispatch.executionPrompt, isMine: true,
+          conversationId: dispatch.conversationId, turnId: dispatch.turnId)
+        var text = ""
+        var completed = false
+        started = true
+        for try await event in cloudStreamEngine.streamConversation(contact: selected, store: store,
+          turns: [turn], images: images, requestId: dispatch.owner) {
+          guard queuedNativeConnectorContext(dispatch) != nil else { throw CancellationError() }
+          switch event {
+          case .textDelta(let delta): text += delta.text
+          case .completed: completed = true
+          case .failed(let failure): throw GalaxySSIError.invalidPayload(failure.error.message)
+          case .connected, .usage, .toolCallDelta, .citationPreview: break
+          }
+        }
+        guard completed, !text.isBlank else { throw GalaxySSIError.invalidPayload("The cloud connector did not return a completed response.") }
+        publishNativeConnectorResponse(dispatch.response(text, success: true), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
+      } else {
+        guard attachments.isEmpty, let contact = store.contact(id: dispatch.contactId),
+              contact.type == "agent", contact.trustState == .verified, contact.deliveryMode.isGalaxySSILinkFamily,
+              !contact.desktopId.isBlank, !contact.connectorAgentId.isBlank else {
+          throw GalaxySSIError.invalidPayload("A verified paired text connector is required; raw attachments were not sent.")
+        }
+        let links = store.serverLinks.filter { $0.paired && $0.desktopId == contact.desktopId }
+        guard links.count == 1, let link = links.first else { throw GalaxySSIError.notPaired }
+        let modelID = action.parameters["model_id"] ?? ""
+        let rawEffort = (action.parameters["reasoning_effort"] ?? "auto").ifBlank("auto")
+        guard let effort = AgentModelReasoningEffort(rawValue: rawEffort),
+              modelID.isBlank || contact.connectorInvocationProfile.models.contains(where: { $0.id == modelID }),
+              effort == .automatic || contact.connectorInvocationProfile.reasoningEfforts.contains(effort) else {
+          throw GalaxySSIError.invalidPayload("The selected paired model or effort is unavailable.")
+        }
+        let invocation = AgentInvocationRequestJsonCodec.encode(modelId: modelID, reasoningEffort: effort)
+        guard modelID.isBlank || invocation?["model_id"] == modelID else {
+          throw GalaxySSIError.invalidPayload("The selected model was retired.")
+        }
+        let identity = AgentTaskIdentity(clientRouteId: link.routes.clientRouteId,
+          conversationId: dispatch.conversationId, taskId: dispatch.taskId, turnId: dispatch.turnId)
+        guard taskIdentityStore.register(contactId: contact.id, sourceMessageId: String(dispatch.sourceMessageId), identity: identity) else {
+          throw GalaxySSIError.invalidPayload("The connector response identity could not be saved.")
+        }
+        let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: contact.id,
+          desktopId: contact.desktopId, providerId: contact.galaxySSIId, title: contact.displayName, text: dispatch.executionPrompt,
+          attachments: [], conversationId: dispatch.conversationId, taskId: dispatch.taskId, turnId: dispatch.turnId)
+        guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: contact.displayName) }
+        var payload: [String: Any] = ["type": "text", "message_id": dispatch.owner, "content": dispatch.executionPrompt,
+          "source_message_id": String(dispatch.sourceMessageId), "client_message_id": String(dispatch.sourceMessageId),
+          "contact_id": contact.id, "agent_id": contact.connectorAgentId, "desktop_id": contact.desktopId,
+          "client_route_id": identity.clientRouteId, "conversation_id": identity.conversationId,
+          "turn_id": identity.turnId, "task_id": identity.taskId, "execution_generation": 1,
+          "sender": store.profile.galaxySSIId, "time": AgentControlPlaneClock.nowMillis(),
+          "response_language": LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage),
+          "execution_mode": (context.task.activePlan?.executionMode ?? store.agentSafetySettings.taskExecutionMode).rawValue]
+        if let invocation {
+          payload["agent_invocation"] = invocation
+        }
+        started = true
+        do {
+          _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
+            clientSourceMessageId: String(dispatch.sourceMessageId), contactId: contact.id)
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .queued)
+          scheduleOutboxFlushFromStore()
+        } catch {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)
+          throw error
+        }
+      }
+    } catch {
+      if started {
+        _ = markQueuedConnectorUnknown(dispatch)
+        return
+      }
+      publishNativeConnectorResponse(dispatch.response(error.localizedDescription, success: false), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
+    }
+  }
+
+  private func nativeConnectorResponseOutbox() -> UserDefaultsAgentConnectorResponseStore {
+    UserDefaultsAgentConnectorResponseStore(defaults: store.defaults,
+      storageKey: "galaxyssi_ios_native_connector_responses.\(store.profile.identityFingerprint)", secrets: store.secrets)
+  }
+
+  private func publishNativeConnectorResponse(_ response: AgentConnectorResponse, profile: String) {
+    guard profile == store.profile.identityFingerprint else { return }
+    if let saved = try? managedDesktopReplyLedger.recoveryRecord(matching: response),
+       saved.matchesCommittedResult(response) {
+      resumeWaitingNativeConnectors(owner: saved.ownerRunId)
+      return
+    }
+    guard let record = try? managedDesktopReplyLedger.recoveryRecord(matching: response),
+          record.state == .pending || record.matchesCommittedResult(response),
+          nativeConnectorResponseOutbox().publish(response) else {
+      lastError = localizedReply("galaxyssi.agent.connector.response_unsaved",
+        fallback: "The connector response could not be saved. Its request was not repeated.")
+      return
+    }
+    drainNativeConnectorResponseOutbox()
+  }
+
+  private func drainNativeConnectorResponseOutbox() {
+    let outbox = nativeConnectorResponseOutbox()
+    let pending = outbox.pending()
+    for response in pending.prefix(16) {
+      guard let record = try? managedDesktopReplyLedger.recoveryRecord(matching: response),
+            record.state == .pending || record.matchesCommittedResult(response),
+            let committed = managedDesktopReplyLedger.complete(response), committed.matchesCommittedResult(response) else { continue }
+      UserDefaultsAgentGlobalRunSlotStore.shared.release(sourceMessageId: String(response.sourceMessageId))
+      _ = connectorResponseBus.publish(response)
+      outbox.remove(response)
+    }
+    if pending.count > 16, outbox.pending().count < pending.count {
+      Task { @MainActor [weak self] in self?.drainNativeConnectorResponseOutbox() }
+    }
+  }
+
+  private func checkpointNativeConnectorDispatch(_ action: AgentAction, task: inout AgentTaskRecord) -> Bool {
+    let previous = store.agentTask(id: task.taskId)
+    if var plan = task.activePlan, plan.actions.filter({ $0.id == action.id }).count == 1,
+       let index = plan.actions.firstIndex(where: { $0.id == action.id }) {
+      var running = action
+      running.status = .running
+      plan.actions[index] = running
+      task.activePlan = plan
+      task.planContext = AgentTaskPlanContext(plan: plan)
+      task.phase = .executing
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      if store.commitOwnedAgentTaskState(expected: previous, updated: task) { return true }
+    }
+    task.phase = .blocked
+    task.blocked = true
+    task.verification = localizedReply("galaxyssi.agent.connector.checkpoint_unsaved",
+      fallback: "The next connector dispatch was not sent because its checkpoint could not be saved.")
+    return false
+  }
+
+  private func retainWaitingNativeConnector(
+    action: AgentAction, result: AgentActionResult, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) {
+    let previous = store.agentTask(id: task.taskId)
+    var pendingResult = result
+    if let prior = previous?.lastNativeActionResult,
+       prior.metadata["control_plane_run_id"] == result.metadata["control_plane_run_id"],
+       prior.metadata["source_message_id"] == result.metadata["source_message_id"],
+       prior.metadata["effect_outcome_unknown"] == "true" {
+      pendingResult.metadata["effect_outcome_unknown"] = "true"
+      pendingResult.metadata["non_retriable"] = "true"
+      pendingResult.metadata["error_code"] = prior.metadata["error_code"]
+      pendingResult.metadata["evidence"] = prior.metadata["evidence"]
+      pendingResult.metadata["native_connector_dispatch_uncertain"] = prior.metadata["native_connector_dispatch_uncertain"]
+    }
+    guard let waiting = AgentNativeConnectorContinuation.waitingAction(action, result: pendingResult,
+      task: task, outgoing: outgoing), var plan = task.activePlan,
+      plan.actions.filter({ $0.id == action.id }).count == 1,
+      let index = plan.actions.firstIndex(where: { $0.id == action.id }) else {
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = localizedReply("galaxyssi.agent.connector.wait_unowned",
+        fallback: "The queued connector receipt has no matching owned continuation. Nothing was repeated.")
+      task.lastNativeActionResult = pendingResult
+      _ = store.commitOwnedAgentTaskState(expected: previous, updated: task)
+      return
+    }
+    var updated = task
+    plan.actions[index] = waiting
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.lastNativeActionResult = pendingResult
+    updated.pendingAction = waiting
+    updated.phase = .waitingResponse
+    updated.blocked = false
+    updated.result = ""
+    updated.verification = localizedReply("galaxyssi.agent.connector.waiting",
+      fallback: "Waiting for the original connector response")
+    updated.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    guard store.commitOwnedAgentTaskState(expected: previous, updated: updated) else {
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = localizedReply("galaxyssi.agent.connector.wait_unsaved",
+        fallback: "The connector continuation could not be saved. Nothing was repeated.")
+      return
+    }
+    task = updated
+    localRecordedRunStore.recordNativeExecution([.init(action: waiting, result: pendingResult)],
+      task: task, outgoing: outgoing, status: .running)
+    store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
+      stage: "local_connector_waiting_response", detail: action.target, status: .sent)
+    Task { @MainActor [weak self] in
+      self?.resumeWaitingNativeConnectors(owner: result.metadata["control_plane_run_id"])
+    }
+  }
+
+  private func continueFailedNativeConnector(
+    action: AgentAction, result: AgentActionResult, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) -> Bool {
+    guard !result.success, result.metadata["connector_disposition"] == "response",
+          ["failed", "timed_out"].contains(result.metadata["remote_task_status"] ?? ""),
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic,
+          AgentSupervisorRecoveryPolicy.stopReason(action: action, result: result,
+            history: supervisorHistory(task: task, outgoing: outgoing)) == nil,
+          let fallback = connectorFallbackAction(action: action, failedResult: result, goal: task.goal),
+          var plan = task.activePlan, plan.actions.filter({ $0.id == action.id }).count == 1,
+          let index = plan.actions.firstIndex(where: { $0.id == action.id }) else { return false }
+    let previous = task
+    var failed = action
+    failed.status = .failed
+    failed.result = result.message
+    failed.evidence = AgentMcpJSONCodec.stringify([
+      "type": .string("connector_terminal_observation"), "success": .bool(false),
+      "task_status": .string(result.metadata["remote_task_status"] ?? ""),
+      "source_message_id": .string(result.metadata["source_message_id"] ?? ""),
+      "message": .string(String(result.message.prefix(2_000)))])
+    plan.actionHistory = Array((plan.actionHistory + [failed]).suffix(AgentLongTaskPersistenceLimits.maximumActions))
+    plan.actions[index] = fallback
+    plan.selectedAgentOrModel = fallback.target
+    plan.route = AgentRouteResolver.resolve(action: fallback, targets: AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }))
+    plan.validation = AgentPlanValidator.validate(plan)
+    guard plan.validation.valid else { return false }
+    task.activePlan = plan
+    task.planContext = AgentTaskPlanContext(plan: plan)
+    task.pendingActions = [fallback] + task.pendingActions.filter { $0.id != action.id }
+    task.pendingAction = fallback
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = localizedReply("galaxyssi.agent.connector.fallback_pending",
+      fallback: "The original connector failed. The next permitted route is awaiting dispatch checks.")
+    task.executionLog.append("Connector terminal fallback: \(action.target) -> \(fallback.target)")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    guard store.commitOwnedAgentTaskState(expected: previous, updated: task) else {
+      task = previous
+      task.phase = .blocked
+      task.blocked = true
+      return true
+    }
+    if !applyLocalNativeAction(action: fallback, outgoing: outgoing, task: &task) {
+      let saved = store.agentTask(id: task.taskId)
+      task.phase = .blocked
+      task.blocked = true
+      _ = store.commitOwnedAgentTaskState(expected: saved, updated: task)
+    }
+    return true
+  }
+
+  private func resumeWaitingNativeConnectors(owner: String? = nil) {
+    guard UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
+          !store.agentSafetySettings.executionPaused,
+          store.agentSafetySettings.taskExecutionMode != .planOnly,
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode) else { return }
+    for var task in store.recentAgentTasks(limit: 200) where task.phase == .waitingResponse ||
+      (task.phase == .blocked && task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true") {
+      guard !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+            let session = store.agentSession(id: task.sessionId), session.status == .active,
+            !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+            let action = task.activePlan?.actions.first(where: { $0.parameters[AgentNativeConnectorContinuation.receiptKey] != nil }),
+            let pending = AgentNativeConnectorContinuation.pendingResult(action),
+            let run = pending.metadata["control_plane_run_id"], owner == nil || owner == run,
+            let sourceID = action.parameters[AgentNativeConnectorContinuation.sourceKey].flatMap(UUID.init(uuidString:)),
+            let outgoing = store.persistedMessage(id: sourceID, contactId: "hermes"),
+            AgentNativeConnectorContinuation.waitingAction(action, result: pending, task: task, outgoing: outgoing) != nil,
+            let record = try? managedDesktopReplyLedger.recoveryRecord(owner: run),
+            let settled = AgentNativeConnectorContinuation.settle(pending, record: record) else { continue }
+      let previous = task
+      task.lastNativeActionResult = settled
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      guard store.commitOwnedAgentTaskState(expected: previous, updated: task) else { continue }
+      var executed = action
+      executed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.receiptKey)
+      executed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.sourceKey)
+      if continueFailedNativeConnector(action: executed, result: settled, outgoing: outgoing, task: &task) { continue }
+      recordAutomaticConnectorTarget(executed, result: settled, outgoing: outgoing)
+      finishLocalNativeAction(action: executed, executionAction: executed, result: settled,
+        outgoing: outgoing, rollbackAction: nil, task: &task)
+      if task.phase == .failed {
+        retainFailedLocalNativeAction(executed, task: &task)
+      } else if task.phase == .completed, !task.pendingActions.isEmpty {
+        task.phase = .executing
+        store.upsertAgentTask(task)
+        _ = advanceLocalNativeActions(outgoing: outgoing, task: &task)
+      }
+    }
+  }
+
   private func finishLocalNativeAction(
     action: AgentAction, executionAction: AgentAction, result: AgentActionResult,
     outgoing: ChatMessage, rollbackAction: AgentAction?, task: inout AgentTaskRecord
   ) {
+    if result.metadata["awaiting_response"] == "true" {
+      retainWaitingNativeConnector(action: executionAction, result: result, outgoing: outgoing, task: &task)
+      return
+    }
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(
       action, history: supervisorHistory(task: task, outgoing: outgoing))
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
@@ -14362,6 +14990,8 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     var completed = plan.actions[index]
+    completed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.receiptKey)
+    completed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.sourceKey)
     completed.status = result.success ? .completed : .failed
     completed.result = result.message
     completed.artifactReceipt = AgentArtifactOperationReceipt.from(result)
@@ -14388,6 +15018,8 @@ final class MessageCoordinator: ObservableObject {
           let previousResult = task.lastNativeActionResult else {
       return
     }
+    guard !AgentNativeConnectorContinuation.hasWaitingAction(task),
+          previousResult.metadata["awaiting_response"] != "true" else { return }
     if let wait = task.supervisedBrowserWait {
       guard wait.resolution != nil, supervisedBrowserRecoveries.contains(wait.id),
             supervisedBrowserContext(wait) != nil else { return }
@@ -14801,14 +15433,7 @@ final class MessageCoordinator: ObservableObject {
   ) -> AgentAction? {
     guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata) else { return nil }
 
-    let failedResourceId = (failedResult.metadata["resource_id"] ?? "")
-      .ifBlank(action.parameters["connector_id"] ?? "")
-      .ifBlank(action.target)
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-    let targets = AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
+    let targets = automaticRoutingTargets(goal: goal)
     let currentRoute = AgentConnectorRouteSelector.select(
       targets: targets,
       decision: nil,
@@ -14816,49 +15441,8 @@ final class MessageCoordinator: ObservableObject {
     )
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
       currentRoute.map { [$0.target.id] } ?? []
-    let rememberedResourceIds = AgentConnectorFallbackTrail.parse(
-      (failedResult.metadata["remaining_fallback_ids"] ?? "")
-        .ifBlank(action.parameters["routing_fallback_ids"] ?? "")
-    )
-    let failedDomain = (failedResult.metadata["failure_domain"] ?? "")
-      .ifBlank(targets.first { $0.id == failedResourceId }?.failureDomain ?? "")
-    let timeoutFailure = !(failedResult.metadata["timeout_stage"] ?? "").isBlank
-    let candidates = AgentConnectorFallbackTrail.mergeAvailable(
-      rememberedResourceIds: rememberedResourceIds,
-      currentResourceIds: currentResourceIds,
-      failedResourceId: failedResourceId
-    ).filter { candidateId in
-      guard timeoutFailure, !failedDomain.isBlank else { return true }
-      return targets.first { $0.id == candidateId }?.failureDomain != failedDomain
-    }
-    guard let selection = AgentConnectorFallbackTrail.selectNext(
-      failedResourceId: failedResourceId,
-      remainingResourceIds: candidates,
-      deferredRetryIds: AgentConnectorFallbackTrail.parse(
-        (failedResult.metadata["deferred_retry_ids"] ?? "")
-          .ifBlank(action.parameters["routing_deferred_retry_ids"] ?? "")
-      ),
-      retriedResourceIds: Set(AgentConnectorFallbackTrail.parse(
-        (failedResult.metadata["retried_resource_ids"] ?? "")
-          .ifBlank(action.parameters["routing_retried_resource_ids"] ?? "")
-      )),
-      retryFailedResource: (failedResult.metadata["non_retriable"] ?? "") != "true"
-    ) else {
-      return nil
-    }
-
-    var retryAction = action
-    retryAction.parameters["connector_id"] = selection.resourceId
-    retryAction.parameters["routing_fallback_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.remainingResourceIds
-    )
-    retryAction.parameters["routing_deferred_retry_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.deferredRetryIds
-    )
-    retryAction.parameters["routing_retried_resource_ids"] = AgentConnectorFallbackTrail.encode(
-      selection.retriedResourceIds.sorted()
-    )
-    return retryAction
+    return AgentConnectorFallbackAction.freshFallback(action: action, failure: failedResult,
+      currentResourceIds: currentResourceIds, targets: targets)
   }
 
   private func markLocalNativeActionBlocked(

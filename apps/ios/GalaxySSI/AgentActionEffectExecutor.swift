@@ -356,7 +356,7 @@ final class AgentActionEffectExecutor {
       idempotencyKey: AgentConnectorHandoffRecovery.effectAttemptKey(action),
       scope: AgentNativeEffectScope(context: context)
     )
-    guard let claim = store.observe(key), claim.result != nil else { return nil }
+    guard let claim = store.observe(key) else { return nil }
     return Self.observedResult(action: action, digest: Self.inputDigest(action), claim: claim)
   }
 

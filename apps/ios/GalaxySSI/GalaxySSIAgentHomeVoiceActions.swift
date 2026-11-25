@@ -159,6 +159,7 @@ extension AgentHomeView {
   }
 
   func beginAgentVoiceCapture() {
+    composerSubmissionID = nil
     invalidateVoiceAppAnchor()
     voiceAppCaptureInvalidated = false
     voiceAttachmentSnapshot.removeAll()

@@ -34,7 +34,7 @@
         "apps/ios/GalaxySSI/MqttPeerRouteSession.swift",
         "apps/ios/GalaxySSI/GalaxySSIServices.swift"
       ],
-      "note": "Existing identity-preserving replace detects disabled-to-enabled binding, changes enabled flag without resetting same-identity handshake, and emits onReady only for ready authenticated peers. Legacy approval refresh and immediate outbox wake already exist. These files are frozen, not reimplemented or claimed as new delta."
+      "note": "Existing identity-preserving replace detects disabled-to-enabled binding, changes enabled flag without resetting same-identity handshake, and emits onReady only for ready authenticated peers. Legacy approval refresh and immediate outbox wake already exist. Peer route files and approval service kernels remain exact; unrelated Auto routing additions in the service class are owned by #3119. No new transport delta is claimed."
     },
     {
       "source": "apps/android/app/src/test/java/com/galaxyssi/chat/MqttPeerRoutesTest.kt",

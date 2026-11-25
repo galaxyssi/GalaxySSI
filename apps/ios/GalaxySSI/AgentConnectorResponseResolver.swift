@@ -1,5 +1,79 @@
 import Foundation
 
+enum AgentNativeConnectorContinuation {
+  static let receiptKey = "_galaxyssi_native_connector_wait_receipt"
+  static let sourceKey = "_galaxyssi_native_connector_wait_source"
+
+  static func waitingAction(_ action: AgentAction, result: AgentActionResult,
+                            task: AgentTaskRecord, outgoing: ChatMessage) -> AgentAction? {
+    let conversation = outgoing.conversationId
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    let metadata = result.metadata
+    guard outgoing.isMine, outgoing.contactId == "hermes", !outgoing.readOnlyAnalysis,
+          !conversation.isBlank, !turn.isBlank, task.sessionId == conversation, task.taskId == turn,
+          action.kind == .callConnector, action.id == result.actionId,
+          (action.parameters["_galaxyssi_agent_team_spec"] ?? "").isBlank,
+          action.parameters["_galaxyssi_conversation_id"] == conversation,
+          action.parameters["_galaxyssi_turn_id"] == turn,
+          action.parameters["_galaxyssi_task_id"] == task.taskId,
+          metadata["awaiting_response"] == "true",
+          let source = Int64(metadata["source_message_id"] ?? ""), source > 0,
+          let generation = Int64(metadata["execution_generation"] ?? "1"),
+          AgentRemoteOutcomePolicy.validGeneration(generation),
+          metadata["conversation_id"] == conversation, metadata["turn_id"] == turn,
+          !(metadata["contact_id"] ?? "").isBlank, !(metadata["task_id"] ?? "").isBlank,
+          let owner = metadata["control_plane_run_id"], !owner.isBlank,
+          let agent = metadata["control_plane_agent_id"], !agent.isBlank,
+          owner == AgentControlPlaneActionExecutor.connectorRunId(action: action, agentId: agent),
+          let encoded = try? JSONEncoder().encode(result), encoded.count <= 128 * 1_024 else { return nil }
+    var waiting = action
+    waiting.status = .waitingResponse
+    waiting.result = ""
+    waiting.evidence = "awaiting_connector_response"
+    waiting.parameters[receiptKey] = String(decoding: encoded, as: UTF8.self)
+    waiting.parameters[sourceKey] = outgoing.id.uuidString
+    return waiting
+  }
+
+  static func pendingResult(_ action: AgentAction) -> AgentActionResult? {
+    guard action.kind == .callConnector, action.status == .waitingResponse,
+          let raw = action.parameters[receiptKey], raw.utf8.count <= 128 * 1_024,
+          let result = try? JSONDecoder().decode(AgentActionResult.self, from: Data(raw.utf8)),
+          result.actionId == action.id, result.metadata["awaiting_response"] == "true" else { return nil }
+    return result
+  }
+
+  static func hasWaitingAction(_ task: AgentTaskRecord) -> Bool {
+    task.activePlan?.actions.contains { $0.parameters[receiptKey] != nil } == true
+  }
+
+  static func settle(_ pending: AgentActionResult, record: AgentManagedResponseRecord) -> AgentActionResult? {
+    guard record.state != .pending, let response = record.response,
+          record.matchesCommittedResult(response),
+          record.ownerRunId == pending.metadata["control_plane_run_id"],
+          record.agentId == pending.metadata["control_plane_agent_id"],
+          record.sourceMessageId == Int64(pending.metadata["source_message_id"] ?? ""),
+          record.contactId == pending.metadata["contact_id"], response.contactId == record.contactId,
+          record.conversationId == pending.metadata["conversation_id"], response.conversationId == record.conversationId,
+          record.turnId == pending.metadata["turn_id"], response.turnId == record.turnId,
+          record.taskId == pending.metadata["task_id"], response.taskId == record.taskId,
+          record.executionGeneration == Int64(pending.metadata["execution_generation"] ?? "1"),
+          response.executionGeneration == record.executionGeneration,
+          response.taskStatus.isEmpty || AgentRemoteOutcomePolicy.isTerminal(response.taskStatus) else { return nil }
+    var result = AgentConnectorResponseResolver.settle(pending: pending, response: response)?.result
+    if !response.taskStatus.isEmpty {
+      result?.metadata["remote_task_status"] = response.taskStatus
+      if response.taskStatus == "completed", response.success,
+         pending.metadata["native_connector_dispatch_uncertain"] == "true" {
+        for key in ["effect_outcome_unknown", "non_retriable", "error_code", "evidence", "native_connector_dispatch_uncertain"] {
+          result?.metadata.removeValue(forKey: key)
+        }
+      }
+    }
+    return result
+  }
+}
+
 struct AgentConnectorResponseSettlement: Equatable {
   var result: AgentActionResult
   var eventType: AgentRunControlEventType
