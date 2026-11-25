@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image cache/streamed-body/cancellation lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Image DNS preflight is not connection pinning. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped source learning/health, pinned catalogs/adapters, text fusion/adaptive routing, exact encrypted response cache and local feature-hash similarity. Image DNS preflight is not connection pinning. Learned-image/mixed-vertical coverage, indexed storage/workspace/large-corpus limits, media performance, other media/relevance, timing spans and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -102,12 +102,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete Native image-only fusion now uses reference logistic weights, image title overlap/specificity and source-page diversity before final truncation over Sogou/Brave/DuckDuckGo candidate pools, reusing stored credentials with fixed-origin per-hop Brave headers and a shared-deadline two-step DuckDuckGo JSON path. Other image adapters, complete catalog/text ranker and native numeric/semantic/UI acceptance remain incomplete"
+      "disposition": "Partial: all 41 actual base IDs and 247 indexed sites, query-aware completion and unified weight/language/authority/health scoring with category/vertical coverage; explicit IDs preserve order. Fresh text/image fusion uses pinned logistic weights and untrusted provenance; local feature-hash vectors implement ordered UTF-16 token/trigram SHA-256 Float32 semantics. Image-only Sogou/Brave/DDG retain scoped credential and deadline policy. Learned-image/mixed-vertical coverage, other media and native numeric/relevance/UI/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete"
+      "disposition": "Partial: native scoped learning/health, pinned catalogs and adapters, text fusion/adaptive source selection, exact encrypted response caching and feature-hash document similarity for find_similar/cache query. Optional response/vector fields preserve legacy decode; exact hits retain original evidence and clear generations reject stale writes. Existing bounded iOS cache/evidence limits retained. Indexed database/workspace performance, large-corpus/result caps, other context/timing and native acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

@@ -11,6 +11,8 @@ struct AgentIOSWebIntelligenceCacheDocument: Codable, Equatable {
   var expiresAtMillis: Int64
   var links: [String]
   var metadata: [String: String]
+  var vector: [Float]? = nil
+  var embeddingModelID: String? = nil
 
   func value(includeContent: Bool = true) -> AgentMcpJSONObject {
     var result: AgentMcpJSONObject = [
@@ -238,6 +240,8 @@ final class AgentIOSWebIntelligenceCacheStore {
       document.metadata = document.metadata.reduce(into: [:]) { values, entry in
         values[String(entry.key.prefix(128))] = String(entry.value.prefix(512))
       }
+      document.vector = AgentIOSWebFeatureHashEmbedder.standard.embedDocument(title: document.title, content: document.content)
+      document.embeddingModelID = AgentIOSWebFeatureHashEmbedder.standard.modelID
       bounded.removeAll { $0.url == document.url }
       bounded.append(document)
     }
@@ -289,6 +293,32 @@ final class AgentIOSWebIntelligenceCacheStore {
       }
       .prefix(max(1, min(limit, Self.maxDocuments)))
       .map { $0.0 }
+  }
+
+  struct SimilarityHit {
+    var document: AgentIOSWebIntelligenceCacheDocument
+    var score: Double
+  }
+
+  func similarDocuments(query: String, limit: Int, excludingURL: String = "", target: [Float]? = nil) -> [SimilarityHit] {
+    let embedder = AgentIOSWebFeatureHashEmbedder.standard
+    let queryVector = target ?? embedder.embed(query)
+    let excluded = excludingURL.isEmpty ? "" : canonicalURL(excludingURL)
+    return read().documents.enumerated().filter { excluded.isEmpty || canonicalURL($0.element.url) != excluded }
+      .map { offset, document -> (Int, SimilarityHit) in
+        let vector: [Float]
+        if document.embeddingModelID == embedder.modelID, let saved = document.vector,
+          saved.count == embedder.dimensions, saved.allSatisfy(\.isFinite) { vector = saved }
+        else { vector = embedder.embedDocument(title: document.title, content: document.content) }
+        let score = (embedder.cosine(queryVector, vector) + 1) / 2
+        return (offset, SimilarityHit(document: document, score: score))
+      }.sorted {
+        if $0.1.score != $1.1.score { return $0.1.score > $1.1.score }
+        if $0.1.document.retrievedAtMillis != $1.1.document.retrievedAtMillis {
+          return $0.1.document.retrievedAtMillis > $1.1.document.retrievedAtMillis
+        }
+        return $0.0 < $1.0
+      }.prefix(max(1, min(limit, Self.maxDocuments))).map { $0.1 }
   }
 
   func stats() -> AgentMcpJSONObject {
@@ -507,6 +537,8 @@ final class AgentIOSWebIntelligenceCacheStore {
           let sealed = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag),
           let plaintext = try? AES.GCM.open(sealed, using: key),
           let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext), snapshot.version == 1,
+          snapshot.documents.count <= Self.maxDocuments,
+          snapshot.documents.allSatisfy({ ($0.vector?.count ?? 0) <= 2048 && ($0.vector ?? []).allSatisfy(\.isFinite) }),
           (snapshot.learnedSources?.count ?? 0) <= AgentIOSWebSourceLearningPolicy.maximumSources,
           (snapshot.learnedSources ?? []).allSatisfy(\.isValid),
           Set((snapshot.learnedSources ?? []).map(\.sourceID)).count == (snapshot.learnedSources?.count ?? 0),

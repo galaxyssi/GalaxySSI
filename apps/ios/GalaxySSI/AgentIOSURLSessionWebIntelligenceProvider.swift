@@ -132,11 +132,11 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     case "status":
       break
     case "query":
-      documents = cacheStore.search(
-        query: string(input, "query", limit: 4_096),
-        limit: int(input, "limit", defaultValue: 10, minimum: 1, maximum: 100)
-      ).map { $0.value(includeContent: false) }
-      results = documents
+      let query = string(input, "query", limit: 4_096)
+      guard !query.isEmpty else { return failure("invalid_query", "Cache similarity query requires non-empty text") }
+      results = similarityResults(cacheStore.similarDocuments(query: query,
+        limit: int(input, "limit", defaultValue: 10, minimum: 1, maximum: 100)))
+      actionMetadata["embedding_model"] = .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)
     case "get":
       let url = string(input, "url", limit: 4_096)
       guard let document = cacheStore.document(url: url, allowStale: true),
@@ -202,58 +202,92 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
+    let networkAllowed = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission) &&
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent)
+    var networkAttempted = false
     let requestedURL = string(input, "url", limit: 4_096)
     var query = string(input, "query", limit: 4_096)
-    if query.isEmpty, !requestedURL.isEmpty {
+    var target: [Float]?
+    if !requestedURL.isEmpty {
+      let title: String, content: String
       if let document = cacheStore.document(url: requestedURL, allowStale: true) {
-        query = "\(document.title) \(document.content.prefix(32_000))"
+        title = document.title; content = document.content
       } else {
+        guard networkAllowed else {
+          return failure("public_web_scope_required", "Fetching an uncached URL requires public web permission and consent")
+        }
+        networkAttempted = true
         let fetched = fetch(input: ["url": .string(requestedURL)], invocation: invocation, operation: .fetch)
         guard fetched.isSuccess else { return fetched }
-        query = fetched.output["text"]?.stringValue ?? ""
+        title = fetched.output["title"]?.stringValue ?? ""
+        content = fetched.output["text"]?.stringValue ?? ""
       }
+      query = title + "\n" + String(decoding: content.utf16.prefix(32_000), as: UTF16.self)
+      target = AgentIOSWebFeatureHashEmbedder.standard.embedDocument(title: title, content: content, bodyLimit: 32_000)
     }
-    guard !query.isEmpty else {
+    guard !query.isBlank else {
       return failure("similar_query_required", "Similar web intelligence requires a query or cached URL")
     }
     let limit = int(input, "limit", defaultValue: 10, minimum: 1, maximum: 100)
     let excluded = requestedURL.isEmpty ? "" : canonicalURL(requestedURL)
-    var matches = cacheStore.search(query: query, limit: limit + 1)
-      .filter { canonicalURL($0.url) != excluded }
-      .prefix(limit)
-      .map { $0.value(includeContent: false) }
-    if matches.count < min(3, limit), input["search_web"]?.boolValue ?? true {
-      let searched = search(
-        input: [
-          "query": .string(String(query.prefix(4_096))),
-          "limit": .int(Int64(limit))
-        ],
-        invocation: invocation,
-        operation: .findSimilar
-      )
+    let local = cacheStore.similarDocuments(query: query, limit: limit, excludingURL: excluded, target: target)
+    var matches = similarityResults(local)
+    var receipts: [AgentMcpJSONValue] = []
+    if matches.count < max(3, limit / 2), input["search_web"]?.boolValue ?? true, networkAllowed {
+      let searched = search(input: [
+        "query": .string(String(decoding: query.utf16.prefix(4_096), as: UTF16.self)),
+        "limit": .int(Int64(min(limit, 24))), "engine_fanout": .int(12),
+        "timeout_ms": .int(min(input["timeout_ms"]?.intValue ?? 15_000, invocation.remainingTimeMillis))
+      ], invocation: invocation, operation: .search)
+      networkAttempted = networkAttempted || (searched.metadata["network_attempted"]?.boolValue ?? true)
       if searched.isSuccess {
-        let existing = Set(matches.compactMap { $0["url"]?.stringValue })
-        let additional = (searched.output["results"]?.arrayValue ?? [])
-          .compactMap(\.objectValue)
-          .filter { value in
-            guard let url = value["url"]?.stringValue else { return false }
-            return !existing.contains(url) && url != excluded
-          }
-        matches.append(contentsOf: additional.prefix(max(0, limit - matches.count)))
+        var seen = Set(matches.compactMap { $0["url"]?.stringValue }.map(canonicalURL))
+        for value in (searched.output["results"]?.arrayValue ?? []).compactMap(\.objectValue) {
+          guard matches.count < limit, let raw = value["url"]?.stringValue else { continue }
+          let url = canonicalURL(raw)
+          guard !url.isEmpty, url != excluded, seen.insert(url).inserted else { continue }
+          matches.append(value)
+        }
+        receipts = searched.output["source_receipts"]?.arrayValue ?? []
       }
     }
     var output = baseOutput(operation: .findSimilar, invocation: invocation, status: matches.isEmpty ? "partial" : "completed")
-    output["query"] = .string(String(query.prefix(4_096)))
-    output["results"] = .array(matches.map { .object($0) })
-    output["cache"] = .object(cacheStore.stats().merging([
-      "hit": .bool(!cacheStore.search(query: query, limit: 1).isEmpty)
-    ]) { _, next in next })
-    return AgentNativeToolExecutionResult.success(
-      output: output,
-      message: "Similar web intelligence sources collected",
-      metadata: metadata(operation: .findSimilar)
-    )
+    output["query"] = .string(String(decoding: query.utf16.prefix(4_096), as: UTF16.self))
+    output["results"] = .array(matches.prefix(limit).map { .object($0) })
+    output["receipts"] = .array(receipts)
+    output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(!local.isEmpty)]) { _, next in next })
+    output["metadata"] = .object(["embedding_model": .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)])
+    var resultMetadata = metadata(operation: .findSimilar)
+    resultMetadata["embedding_model"] = .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)
+    resultMetadata["network_attempted"] = .bool(networkAttempted)
+    if !networkAllowed, input["search_web"]?.boolValue ?? true {
+      resultMetadata["network_fallback_skipped"] = .string("public_web_scope_required")
+    }
+    return .success(output: output, message: "Similar web intelligence sources collected", metadata: resultMetadata)
   }
+
+  private func similarityResults(_ hits: [AgentIOSWebIntelligenceCacheStore.SimilarityHit]) -> [AgentMcpJSONObject] {
+    hits.enumerated().map { index, hit -> AgentMcpJSONObject in
+      let document = hit.document
+      let identity = Array(canonicalURL(document.url).utf16) + [10] + Array(document.content.utf16.prefix(500))
+      let citation = SHA256.hash(data: Data(AgentIOSWebFeatureHashEmbedder.jvmUTF8(identity)))
+        .map { String(format: "%02x", $0) }.joined()
+      return [
+        "citation_id": .string(String(citation.prefix(24))),
+        "title": .string(document.title), "url": .string(document.url),
+        "excerpt": .string(String(decoding: document.content.utf16.prefix(1_000), as: UTF16.self)),
+        "published_at": .string(""), "language": .string(AgentIOSWebIntelligenceQueryRouting.queryLanguage(document.content)),
+        "vertical": .string("local"), "engines": .array([.string("local_cache")]),
+        "rank": .int(Int64(index + 1)), "trust": .string("untrusted_public_web"),
+        "cache_document_retrieved_at_millis": .int(document.retrievedAtMillis),
+        "cache_document_expires_at_millis": .int(document.expiresAtMillis),
+        "score": .object(["final": .double(hit.score), "reciprocal_rank": .double(0),
+          "lexical": .double(0), "consensus": .double(0), "authority": .double(1),
+          "freshness": .double(1), "local_model": .double(hit.score)])
+      ]
+    }
+  }
+
 
   private func watch(
     input: AgentMcpJSONObject,

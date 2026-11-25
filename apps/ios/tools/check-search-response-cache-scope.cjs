@@ -36,6 +36,7 @@ const cacheHooks = [
   ]
 ];
 function retainedResponseCache(source) {
+  source = require('./check-feature-hash-similarity-scope.cjs').retainedEmbeddingCache(source);
   if (!source.includes('    var searchResponses: [SearchResponse]? = nil')) return source;
   for (const [before, after] of cacheHooks) {
     assert.equal(source.split(after).length, 2, 'One exact response cache hook: ' + before);
@@ -44,6 +45,7 @@ function retainedResponseCache(source) {
   return source;
 }
 function retainedResponseSearch(source) {
+  source = require('./check-feature-hash-similarity-scope.cjs').retainedEmbeddingProvider(source);
   if (!source.includes('let cacheGeneration = cacheScope ?')) return source;
   const old = show(base, app + 'AgentIOSURLSessionWebIntelligenceProvider.swift');
   const section = value => value.slice(value.indexOf('  private func search('), value.indexOf('  func fetchCapturingHTML('));
