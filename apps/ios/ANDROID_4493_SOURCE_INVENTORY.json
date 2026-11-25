@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4493,
+    "headCommit": "d858b91af063b6a77960480d4acf1c1398f8a620",
+    "stateAtReview": "OPEN",
+    "note": "Pinned open PR head, not a merged Android commit."
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "a0ad694f273e6b20957ef5fd4c9cd5e3d7c34c4db656851c2a79f8f53a67d43e"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthComparisonUiDeviceTest.kt",
+      "status": "M",
+      "sha256": "bc94b31db76801b34c7112e16bc5482277333b38842fbd3e880387db15188ae1"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparison.kt",
+      "status": "M",
+      "sha256": "1944b2aba6016cbc88adedf6e471a82f6e67cab82ece00213838a273042e854e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonActivity.kt",
+      "status": "M",
+      "sha256": "aea25c29a1ea0a43151c657e068d4f509438005de9267bc2a7aa707500584c60"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonChart.kt",
+      "status": "M",
+      "sha256": "a3805090118a89fc579d34c1113e4a54c1d1fb21057d64f68609ead68a7c63ee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_comparison_strings.xml",
+      "status": "M",
+      "sha256": "9c782d93f1d5db2358080624cbc7e63b6c4e6bde318d15cd4a736f65f6dba4a1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_comparison_strings.xml",
+      "status": "M",
+      "sha256": "7e682aa9a94b68a7ebe4262ce9f06ae7825036c5305d40cfbb816d6dac5d7303"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthActivityComparisonTest.kt",
+      "status": "M",
+      "sha256": "0eef9bac94ec6d452f334032538078de37d699e911ef137db103b55dcebae32c"
+    }
+  ]
+}

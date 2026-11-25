@@ -15,18 +15,15 @@ struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
   struct Pair: Identifiable, Equatable, Sendable {
     let id: Int
     let day: Date
-    let previousDay: Date
     let current: Int64?
-    let previous: Int64?
   }
   private(set) var pairs: [Pair]
   var coverage: Int { pairs.filter { $0.current != nil }.count }
-  var paired: [Pair] { pairs.filter { $0.current != nil && $0.previous != nil } }
   var currentTotal: Int64 { pairs.compactMap(\.current).reduce(0, +) }
-  var currentPaired: Int64 { paired.compactMap(\.current).reduce(0, +) }
-  var previousPaired: Int64 { paired.compactMap(\.previous).reduce(0, +) }
-  var changePercent: Double? {
-    previousPaired > 0 ? Double(currentPaired - previousPaired) * 100 / Double(previousPaired) : nil
+  func dateTickIndices(limit: Int) -> [Int] {
+    let count = min(max(2, min(7, limit)), pairs.count)
+    guard count > 1 else { return Array(pairs.indices) }
+    return (0..<count).map { $0 * (pairs.count - 1) / (count - 1) }
   }
 
   static func dayKey(_ date: Date, zone: TimeZone) -> String {
@@ -67,8 +64,7 @@ struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
           now.timeIntervalSinceReferenceDate.isFinite else { throw GalaxySSIHealthRecords.Failure.invalid }
     let start = calendar.startOfDay(for: first), end = calendar.startOfDay(for: last)
     guard let count = calendar.dateComponents([.day], from: start, to: end).day.map({ $0 + 1 }),
-          (1...366).contains(count), end <= calendar.startOfDay(for: now),
-          let previousStart = calendar.date(byAdding: .day, value: -count, to: start) else {
+          (1...366).contains(count), end <= calendar.startOfDay(for: now) else {
       throw GalaxySSIHealthRecords.Failure.invalid
     }
     var totals: [String: Int64] = [:]
@@ -77,13 +73,10 @@ struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
       totals[row.day] = max(totals[row.day] ?? 0, row.total)
     }
     pairs = try (0..<count).map { index in
-      guard let day = calendar.date(byAdding: .day, value: index, to: start),
-            let prior = calendar.date(byAdding: .day, value: index, to: previousStart) else {
+      guard let day = calendar.date(byAdding: .day, value: index, to: start) else {
         throw GalaxySSIHealthRecords.Failure.invalid
       }
-      return Pair(id: index, day: day, previousDay: prior,
-        current: totals[Self.dayKey(day, zone: calendar.timeZone)],
-        previous: totals[Self.dayKey(prior, zone: calendar.timeZone)])
+      return Pair(id: index, day: day, current: totals[Self.dayKey(day, zone: calendar.timeZone)])
     }
   }
 
@@ -101,8 +94,7 @@ struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
     guard let index = pairs.firstIndex(where: { Self.dayKey($0.day, zone: zone) == row.day }) else { return self }
     var result = self
     let pair = pairs[index]
-    result.pairs[index] = Pair(id: pair.id, day: pair.day, previousDay: pair.previousDay,
-      current: max(pair.current ?? 0, row.total), previous: pair.previous)
+    result.pairs[index] = Pair(id: pair.id, day: pair.day, current: max(pair.current ?? 0, row.total))
     return result
   }
 

@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4493,
+    "headCommit": "d858b91af063b6a77960480d4acf1c1398f8a620",
+    "stateAtReview": "OPEN",
+    "note": "Pinned open PR head, not a merged Android commit."
+  },
+  "verification": "source-and-resource-contracts-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "a0ad694f273e6b20957ef5fd4c9cd5e3d7c34c4db656851c2a79f8f53a67d43e",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthComparisonUiDeviceTest.kt",
+      "sourceSHA256": "bc94b31db76801b34c7112e16bc5482277333b38842fbd3e880387db15188ae1",
+      "kind": "native-fixture-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthActivityComparisonTests.swift"
+      ],
+      "note": "Android date ticks/current-only range, missing-vs-zero, live overlay, cycling and steps point switch/dismissal/accessibility/guide sources reviewed. iOS model/accessibility fixture sources updated but NOT run. No device screenshot or native pixel/layout/gesture acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparison.kt",
+      "sourceSHA256": "1944b2aba6016cbc88adedf6e471a82f6e67cab82ece00213838a273042e854e",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityComparison.swift"
+      ],
+      "note": "Selected-range-only dated values, nil versus zero, calendar tick endpoints and monotonic live overlay; no previous-period data."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonActivity.kt",
+      "sourceSHA256": "aea25c29a1ea0a43151c657e068d4f509438005de9267bc2a7aa707500584c60",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityComparisonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityChart.swift"
+      ],
+      "note": "Narrow history reads to the selected range; remove all-values sheet; owner-scoped SceneStorage for kind/range/date selection, clear on kind/range/timezone/identity changes; keep protected-data/consent/request checks and live rollover behavior."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthActivityComparisonChart.kt",
+      "sourceSHA256": "a3805090118a89fc579d34c1113e4a54c1d1fb21057d64f68609ead68a7c63ee",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthActivityChart.swift"
+      ],
+      "note": "Current-only green curve, current-only rounded Y scale, date ticks, nil gaps/visible zero, one-day centering, point hit testing, guide/ring/wrapping inline tooltip, blank/outside tap clearing, drag cancellation, VoiceOver and keyboard recorded-point selection. No native gesture/pixel/layout claim."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_comparison_strings.xml",
+      "sourceSHA256": "9c782d93f1d5db2358080624cbc7e63b6c4e6bde318d15cd4a736f65f6dba4a1",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthActivitySelection.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthActivitySelection.strings"
+      ],
+      "note": "One exact changed source pair per locale, positional object format adaptation only."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_comparison_strings.xml",
+      "sourceSHA256": "7e682aa9a94b68a7ebe4262ce9f06ae7825036c5305d40cfbb816d6dac5d7303",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/HealthActivitySelection.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/HealthActivitySelection.strings"
+      ],
+      "note": "One exact changed source pair per locale, positional object format adaptation only."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthActivityComparisonTest.kt",
+      "sourceSHA256": "0eef9bac94ec6d452f334032538078de37d699e911ef137db103b55dcebae32c",
+      "kind": "native-fixture-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthActivityComparisonTests.swift"
+      ],
+      "note": "Android date ticks/current-only range, missing-vs-zero, live overlay, cycling and steps point switch/dismissal/accessibility/guide sources reviewed. iOS model/accessibility fixture sources updated but NOT run. No device screenshot or native pixel/layout/gesture acceptance claimed."
+    }
+  ]
+}

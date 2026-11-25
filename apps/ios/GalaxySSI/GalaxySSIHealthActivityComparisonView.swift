@@ -10,11 +10,12 @@ struct GalaxySSIHealthActivityComparisonView: View {
   @Environment(\.locale) private var locale
   @Environment(\.sizeCategory) private var sizeCategory
   let records: GalaxySSIHealthRecords
-  @State private var kind = GalaxySSIHealthActivityKind.steps
-  @State private var days = 7
-  @State private var first = Date()
-  @State private var last = Date()
-  @State private var initialized = false
+  @SceneStorage private var kindID: Int
+  @SceneStorage private var days: Int
+  @SceneStorage private var firstStamp: Double
+  @SceneStorage private var lastStamp: Double
+  @SceneStorage private var initialized: Bool
+  @SceneStorage private var selectedDay: String
   @State private var comparison: GalaxySSIHealthActivityComparison?
   @State private var loaded: GalaxySSIHealthActivityComparison?
   @State private var liveMotion: GalaxySSIHealthMotion.State?
@@ -24,7 +25,19 @@ struct GalaxySSIHealthActivityComparisonView: View {
   @State private var historyTask: Task<[GalaxySSIHealthActivityDay], Error>?
   @State private var request: UUID?
   @State private var failure: Failure?
-  @State private var showsData = false
+  init(records: GalaxySSIHealthRecords) {
+    self.records = records
+    let prefix = "galaxyssi.health.activity." + records.owner + "."
+    _kindID = SceneStorage(wrappedValue: 0, prefix + "kind")
+    _days = SceneStorage(wrappedValue: 7, prefix + "days")
+    _firstStamp = SceneStorage(wrappedValue: Date().timeIntervalSince1970, prefix + "first")
+    _lastStamp = SceneStorage(wrappedValue: Date().timeIntervalSince1970, prefix + "last")
+    _initialized = SceneStorage(wrappedValue: false, prefix + "initialized")
+    _selectedDay = SceneStorage(wrappedValue: "", prefix + "selected")
+  }
+  private var kind: GalaxySSIHealthActivityKind { GalaxySSIHealthActivityKind(rawValue: kindID) ?? .steps }
+  private var first: Date { get { Date(timeIntervalSince1970: firstStamp) } nonmutating set { firstStamp = newValue.timeIntervalSince1970 } }
+  private var last: Date { get { Date(timeIntervalSince1970: lastStamp) } nonmutating set { lastStamp = newValue.timeIntervalSince1970 } }
   private enum Failure { case unavailable, permission, dates }
   private var calendar: Calendar { var value = Calendar(identifier: .gregorian); value.timeZone = timeZone; return value }
   private var canRead: Bool {
@@ -38,8 +51,8 @@ struct GalaxySSIHealthActivityComparisonView: View {
           kindPicker
           periodPicker
           if days == 0 {
-            DatePicker(t("from", "From"), selection: $first, in: ...today, displayedComponents: .date)
-            DatePicker(t("through", "Through"), selection: $last, in: ...today, displayedComponents: .date)
+            DatePicker(t("from", "From"), selection: Binding(get: { first }, set: { first = $0 }), in: ...today, displayedComponents: .date)
+            DatePicker(t("through", "Through"), selection: Binding(get: { last }, set: { last = $0 }), in: ...today, displayedComponents: .date)
           }
         }
         if let failure {
@@ -48,9 +61,9 @@ struct GalaxySSIHealthActivityComparisonView: View {
         } else if let comparison {
           summary(comparison)
           Section {
-            Button { showsData = true } label: { chart(comparison).frame(height: 180).contentShape(Rectangle()) }
-              .buttonStyle(.plain).accessibilityLabel(t("data", "Chart data"))
-              .accessibilityIdentifier("health-activity-chart")
+            GalaxySSIHealthActivityChart(result: comparison, kind: kind, locale: locale, zone: timeZone,
+              language: language, selectedDay: $selectedDay)
+              .frame(height: max(220, UIFontMetrics(forTextStyle: .body).scaledValue(for: 220)))
           }
         } else { ProgressView().accessibilityLabel(t("loading", "Loading activity history")) }
       }
@@ -65,12 +78,12 @@ struct GalaxySSIHealthActivityComparisonView: View {
       reload()
     }
     .onDisappear { visible = false; clear() }
-    .onChange(of: kind) { _ in reload() }
-    .onChange(of: days) { _ in reload() }
-    .onChange(of: first) { _ in if days == 0 { reload() } }
-    .onChange(of: last) { _ in if days == 0 { reload() } }
-    .onChange(of: timeZone) { _ in reload() }
-    .onChange(of: store.profile.identityFingerprint) { _ in clear() }
+    .onChange(of: kindID) { _ in selectedDay = ""; reload() }
+    .onChange(of: days) { _ in selectedDay = ""; reload() }
+    .onChange(of: firstStamp) { _ in if days == 0 { selectedDay = ""; reload() } }
+    .onChange(of: lastStamp) { _ in if days == 0 { selectedDay = ""; reload() } }
+    .onChange(of: timeZone) { _ in selectedDay = ""; reload() }
+    .onChange(of: store.profile.identityFingerprint) { _ in selectedDay = ""; clear() }
     .onChange(of: scene) { if $0 == .active { reload() } else { clear() } }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.motionChanged)) { motionChanged($0) }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { changed($0) }
@@ -78,14 +91,13 @@ struct GalaxySSIHealthActivityComparisonView: View {
     .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clear() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
-    .sheet(isPresented: $showsData) { chartData }
   }
 
   private var today: Date { calendar.startOfDay(for: Date()) }
   private var kindPicker: some View {
-    Picker(t("kind", "Activity"), selection: $kind) {
-      Text(t("steps", "Steps")).tag(GalaxySSIHealthActivityKind.steps)
-      Text(t("cycling", "Cycling")).tag(GalaxySSIHealthActivityKind.cycling)
+    Picker(t("kind", "Activity"), selection: $kindID) {
+      Text(t("steps", "Steps")).tag(GalaxySSIHealthActivityKind.steps.rawValue)
+      Text(t("cycling", "Cycling")).tag(GalaxySSIHealthActivityKind.cycling.rawValue)
     }.pickerStyle(.segmented)
   }
   @ViewBuilder private var periodPicker: some View {
@@ -110,39 +122,8 @@ struct GalaxySSIHealthActivityComparisonView: View {
       }
     }
   }
-  private func chart(_ result: GalaxySSIHealthActivityComparison) -> some View {
-    Canvas { context, size in
-      let divisor: Double = kind == .cycling ? 60_000 : 1
-      let maximum = max(3 * divisor, Double(result.pairs.flatMap { [$0.current, $0.previous].compactMap { $0 } }.max() ?? 0))
-      let left: CGFloat = 44, right = max(left, size.width - 10), top: CGFloat = 14, bottom = max(top, size.height - 10)
-      for tick in 0...3 {
-        let y = bottom - (bottom - top) * CGFloat(tick) / 3
-        var line = Path(); line.move(to: CGPoint(x: left, y: y)); line.addLine(to: CGPoint(x: right, y: y))
-        context.stroke(line, with: .color(.secondary.opacity(0.2)), lineWidth: 0.5)
-        let value = (maximum * Double(tick) / 3 / divisor).formatted(.number.precision(.fractionLength(0)).locale(locale))
-        context.draw(Text(value).font(.caption2).foregroundColor(.secondary), at: CGPoint(x: left - 6, y: y), anchor: .trailing)
-      }
-      for previous in [true, false] {
-        var lastPoint: CGPoint?
-        let color: Color = previous ? .blue : .green
-        for pair in result.pairs {
-          guard let value = previous ? pair.previous : pair.current else { lastPoint = nil; continue }
-          let point = CGPoint(x: left + (right - left) * CGFloat(pair.id) / CGFloat(max(1, result.pairs.count - 1)),
-            y: bottom - (bottom - top) * CGFloat(Double(value) / maximum))
-          if let lastPoint {
-            var line = Path(); line.move(to: lastPoint); line.addLine(to: point)
-            context.stroke(line, with: .color(color), lineWidth: 2)
-          }
-          context.fill(Path(ellipseIn: CGRect(x: point.x - 2, y: point.y - 2, width: 4, height: 4)), with: .color(color))
-          lastPoint = point
-        }
-      }
-    }.accessibilityHidden(true)
-  }
   private func reload() {
-    let retainedExpansion = showsData
     clear()
-    showsData = retainedExpansion
     guard canRead else { return }
     let now = Date(), local = calendar, selected = kind
     do {
@@ -150,7 +131,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
       let start = preset?.lowerBound ?? local.startOfDay(for: first)
       let end = preset?.upperBound ?? local.startOfDay(for: last)
       let window = try GalaxySSIHealthActivityComparison(first: start, last: end, now: now, calendar: local, rows: [], kind: selected)
-      guard let floor = window.pairs.first?.previousDay else { throw GalaxySSIHealthRecords.Failure.invalid }
+      guard let floor = window.pairs.first?.day else { throw GalaxySSIHealthRecords.Failure.invalid }
       let archive = try records.load(), consent = archive.privacyEvents?.last?.id
       guard archive.derivesOverview == true else { failure = .permission; return }
       liveMotion = try records.loadMotion()
@@ -181,28 +162,6 @@ struct GalaxySSIHealthActivityComparisonView: View {
     } catch GalaxySSIHealthRecords.Failure.invalid { failure = .dates }
     catch { failure = .unavailable }
   }
-  private var chartData: some View {
-    NavigationView {
-      List {
-        if canRead, let comparison {
-          ForEach(comparison.pairs) { pair in
-            VStack(alignment: .leading, spacing: 5) {
-              Text(pair.day, style: .date).font(.subheadline)
-              Text(t("current", "Current period") + ": " + amount(pair.current))
-              Text(pair.previousDay, style: .date).font(.caption).foregroundColor(.secondary)
-              Text(t("previous", "Previous period") + ": " + amount(pair.previous))
-            }.fixedSize(horizontal: false, vertical: true)
-          }
-        }
-      }.navigationTitle(t("data", "Chart data")).galaxySSIHealthTheme().privacySensitive()
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
-            Button { showsData = false } label: { Image(systemName: "xmark") }
-              .accessibilityLabel(t("close", "Close"))
-          }
-        }
-    }.navigationViewStyle(.stack)
-  }
   private func motionChanged(_ notification: Notification) {
     guard notification.object as? String == records.owner, canRead else { return }
     guard let state = notification.userInfo?["state"] as? GalaxySSIHealthMotion.State else { reload(); return }
@@ -226,7 +185,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
   private func clear() {
     task?.cancel(); task = nil; historyTask?.cancel(); historyTask = nil
     liveTask?.cancel(); liveTask = nil; request = nil
-    comparison = nil; loaded = nil; liveMotion = nil; failure = nil; showsData = false
+    comparison = nil; loaded = nil; liveMotion = nil; failure = nil
   }
   private func amount(_ value: Int64?) -> String {
     guard let value else { return "\u{2014}" }
