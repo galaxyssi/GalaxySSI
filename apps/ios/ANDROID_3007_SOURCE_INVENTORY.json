@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Partial public web search DOM and Sogou image-only integration, image evidence preservation and honest source diagnostics. Other image engines/relevance, renderer recovery, maintenance/index atomicity, model-loop budgets and performance acceptance remain incomplete.",
+  "scope": "Public web/Sogou image parsing and evidence integration; native renderer cooldown, bounded DNS/startup and cleanup adaptation. Other image engines/relevance, maintenance/index atomicity, model-loop budgets and native/performance recovery acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -57,12 +57,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentIsolatedWebRenderService.kt",
       "sha256": "0c58b01f02d9f744a11405b7d9d8277063aa09bd6cb8f64864a9ce84cc35c7cc",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentIsolatedWebViewRenderer.kt",
       "sha256": "49abbce896e0416f62407b1db10c4493dddec49f5629dedd89a44bdb10f56675",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentMarkdownImageStore.kt",
@@ -122,7 +122,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebRendererHealth.kt",
       "sha256": "315fe44cd8a3c8bb0b5f0ea5f64b00cecee41b5de7130defb3b947bb8e2cad03",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",

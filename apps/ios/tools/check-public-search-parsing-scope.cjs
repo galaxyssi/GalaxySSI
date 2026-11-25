@@ -43,9 +43,34 @@ const section = (source, start, end) => source.slice(source.indexOf(start), sour
 assert.equal(section(provider, '  private func requestResource(', '  private func failure(_ error:'),
   section(oldProvider, '  private func requestResource(', '  private func failure(_ error:'),
   'HTTP bounds, redirect/public-host policy, resource extraction and browser transport stay unchanged');
-for (const name of ['AgentIOSDynamicWebRenderer', 'CloudConversationStreamEngine', 'CloudWebGrounding', 'GalaxySSIServices']) {
+for (const name of ['CloudConversationStreamEngine', 'CloudWebGrounding', 'GalaxySSIServices']) {
   assert.equal(read(swift(name)), git('show', base + ':' + swift(name)), name + ' unchanged in this increment');
 }
+const renderer = read(swift('AgentIOSDynamicWebRenderer'));
+const oldRenderer = git('show', base + ':' + swift('AgentIOSDynamicWebRenderer'));
+assert.equal(section(renderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
+  section(oldRenderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
+  'Static shell detection, HTTPS/private-address resolution, same-origin and subresource policy unchanged');
+assert.equal(section(renderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
+  section(oldRenderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
+  'Authentication, popup, media-capture and dialog policy unchanged');
+for (const token of ['cooldownNanoseconds: UInt64 = 30_000_000_000', 'DispatchTime.now().uptimeNanoseconds',
+  'case .contentProcessTerminated, .startupTimeout, .unavailable: return true',
+  'queue.maxConcurrentOperationCount = 1', 'defer { state.close(); operation.cancel() }',
+  'AgentIOSWebRenderPreflight.resolve(deadline: deadline', 'defer { coordinator.cancel() }',
+  'if AgentIOSWebRendererHealth.isProcessFailure(error) { health.failed() }', 'health.succeeded()',
+  'configuration.websiteDataStore = .nonPersistent()', 'configuration.processPool = WKProcessPool()',
+  'let startupDeadline = min(deadline, DispatchTime.now() + .seconds(5))',
+  'guard !isFinished else { return }', 'self.webView?.stopLoading()']) assert(renderer.includes(token), token);
+const render = section(renderer, 'final class AgentIOSWKWebViewRenderer:', 'private final class AgentIOSWKWebViewRenderCoordinator:');
+assert(render.indexOf('let deadline =') < render.indexOf('AgentIOSWebRenderPreflight.resolve('));
+assert.equal((render.match(/try health.checkAvailable\(\)/g) || []).length, 2);
+assert(render.indexOf('defer { coordinator.cancel() }') < render.indexOf('DispatchQueue.main.async { coordinator.start() }'));
+const lifecycleTests = read('apps/ios/GalaxySSITests/AgentIOSDynamicWebRendererTests.swift');
+for (const name of ['testRendererHealthUsesSharedCooldownWithoutExtendingRejectedChecks',
+  'testRendererHealthDoesNotPoisonAvailabilityForPageOrCallerFailures',
+  'testRendererPreflightRejectsCancellationCheckpointAndDeadlineBeforeResolver',
+  'testRendererPreflightUsesCompletedResolutionWithoutNetwork']) assert(lifecycleTests.includes('func ' + name + '('));
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const token of ['AgentIOSPublicSearchParser.swift in Sources', 'SwiftSoup in Frameworks',
   'productName = SwiftSoup;', 'repositoryURL = "https://github.com/scinfu/SwiftSoup";', 'version = 2.6.0;']) assert(project.includes(token));
@@ -66,12 +91,15 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
   if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: actual iOS search provider now returns excerpts and unavailable-source codes; remaining ranking/cache/maintenance behavior not ported by this increment';
+  if (file.endsWith('/AgentWebRendererHealth.kt')) return 'Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed';
+  if (file.endsWith('/AgentIsolatedWebViewRenderer.kt')) return 'iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance';
+  if (file.endsWith('/AgentIsolatedWebRenderService.kt')) return 'Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee';
   if (file.endsWith('/build.gradle.kts') || file.endsWith('/AndroidManifest.xml') || file.endsWith('/GalaxySSIApplication.kt')) return 'Android platform/build change, not copied into iOS; no iOS version change';
   if (file.includes('/androidTest/') || file.includes('/src/test/') || file.startsWith('docs/')) return 'Reference evidence inventoried, not reproduced or claimed as iOS acceptance';
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Partial public web search DOM and Sogou image-only integration, image evidence preservation and honest source diagnostics. Other image engines/relevance, renderer recovery, maintenance/index atomicity, model-loop budgets and performance acceptance remain incomplete.',
+  scope: 'Public web/Sogou image parsing and evidence integration; native renderer cooldown, bounded DNS/startup and cleanup adaptation. Other image engines/relevance, maintenance/index atomicity, model-loop budgets and native/performance recovery acceptance remain incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

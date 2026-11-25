@@ -39,8 +39,106 @@ enum AgentIOSDynamicWebRenderError: Error, Equatable {
   case navigationBlocked
   case navigationFailed(String)
   case contentProcessTerminated
+  case temporarilyUnavailable
+  case startupTimeout
   case emptyDocument
   case responseTooLarge(Int64, Int64)
+}
+
+final class AgentIOSWebRendererHealth {
+  static let shared = AgentIOSWebRendererHealth()
+  private let lock = NSLock()
+  private let now: () -> UInt64
+  private let cooldown: UInt64
+  private var failedAt: UInt64?
+
+  init(cooldownNanoseconds: UInt64 = 30_000_000_000,
+       now: @escaping () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+    cooldown = cooldownNanoseconds
+    self.now = now
+  }
+
+  func checkAvailable() throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if let failedAt {
+      let current = now()
+      if current >= failedAt, current - failedAt < cooldown {
+        throw AgentIOSDynamicWebRenderError.temporarilyUnavailable
+      }
+      self.failedAt = nil
+    }
+  }
+
+  func failed() {
+    lock.lock()
+    failedAt = now()
+    lock.unlock()
+  }
+
+  func succeeded() {
+    lock.lock()
+    failedAt = nil
+    lock.unlock()
+  }
+
+  static func isProcessFailure(_ error: Error) -> Bool {
+    guard let failure = error as? AgentIOSDynamicWebRenderError else { return false }
+    switch failure {
+    case .contentProcessTerminated, .startupTimeout, .unavailable: return true
+    default: return false
+    }
+  }
+}
+
+enum AgentIOSWebRenderPreflight {
+  private final class State: @unchecked Sendable {
+    let completion = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var closed = false
+    private var value: Bool?
+    func complete(_ value: Bool) {
+      lock.lock()
+      defer { lock.unlock() }
+      guard !closed else { return }
+      self.value = value
+      completion.signal()
+    }
+    func close() {
+      lock.lock(); closed = true; lock.unlock()
+    }
+    func result() -> Bool {
+      lock.lock()
+      defer { lock.unlock() }
+      return value == true
+    }
+  }
+
+  private static let queue: OperationQueue = {
+    let queue = OperationQueue()
+    queue.name = "galaxyssi.web-renderer-preflight"
+    queue.maxConcurrentOperationCount = 1
+    return queue
+  }()
+
+  static func resolve(deadline: DispatchTime, isCancellationRequested: () -> Bool,
+                      checkpoint: () throws -> Void, resolver: @escaping () -> Bool) throws -> Bool {
+    func check() throws {
+      if isCancellationRequested() { throw AgentIOSDynamicWebRenderError.cancelled }
+      try checkpoint()
+      if DispatchTime.now() >= deadline { throw AgentIOSDynamicWebRenderError.timedOut }
+    }
+    try check()
+    let state = State()
+    let operation = BlockOperation { state.complete(resolver()) }
+    defer { state.close(); operation.cancel() }
+    queue.addOperation(operation)
+    while state.completion.wait(timeout: min(deadline, .now() + .milliseconds(50))) == .timedOut {
+      try check()
+    }
+    try check()
+    return state.result()
+  }
 }
 
 enum AgentIOSDynamicWebFallbackPolicy {
@@ -194,6 +292,9 @@ enum AgentIOSWebRenderURLPolicy {
 #if canImport(WebKit) && canImport(UIKit)
 final class AgentIOSWKWebViewRenderer: AgentIOSDynamicWebRendering {
   var isAvailable: Bool { true }
+  private let health: AgentIOSWebRendererHealth
+
+  init(health: AgentIOSWebRendererHealth = .shared) { self.health = health }
 
   func render(
     url: URL,
@@ -203,35 +304,52 @@ final class AgentIOSWKWebViewRenderer: AgentIOSDynamicWebRendering {
     checkpoint: @escaping () throws -> Void
   ) throws -> AgentIOSDynamicWebRenderedPage {
     guard !Thread.isMainThread else { throw AgentIOSDynamicWebRenderError.mainThreadInvocation }
+    let boundedTimeout = min(max(timeoutMillis, 1_000), 60_000)
+    let deadline = DispatchTime.now() + .milliseconds(Int(boundedTimeout))
+    if isCancellationRequested() { throw AgentIOSDynamicWebRenderError.cancelled }
+    try checkpoint()
+    try health.checkAvailable()
     guard AgentIOSWebRenderURLPolicy.allows(url.absoluteString) else {
       throw AgentIOSDynamicWebRenderError.invalidURL
     }
-    guard AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(url.absoluteString) else {
+    guard try AgentIOSWebRenderPreflight.resolve(deadline: deadline,
+      isCancellationRequested: isCancellationRequested, checkpoint: checkpoint,
+      resolver: { AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(url.absoluteString) }) else {
       throw AgentIOSDynamicWebRenderError.privateAddress
     }
-    let boundedTimeout = min(max(timeoutMillis, 1_000), 60_000)
-    let deadline = DispatchTime.now() + .milliseconds(Int(boundedTimeout))
     try acquireCapacity(
       deadline: deadline,
       isCancellationRequested: isCancellationRequested,
       checkpoint: checkpoint
     )
     defer { Self.renderCapacity.signal() }
-
+    if isCancellationRequested() { throw AgentIOSDynamicWebRenderError.cancelled }
+    try checkpoint()
+    if DispatchTime.now() >= deadline { throw AgentIOSDynamicWebRenderError.timedOut }
+    try health.checkAvailable()
     let coordinator = AgentIOSWKWebViewRenderCoordinator(url: url, maxBytes: maxBytes)
+    defer { coordinator.cancel() }
+    let startupDeadline = min(deadline, DispatchTime.now() + .seconds(5))
     DispatchQueue.main.async { coordinator.start() }
-    while coordinator.completion.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
-      if isCancellationRequested() {
-        DispatchQueue.main.async { coordinator.cancel() }
-        throw AgentIOSDynamicWebRenderError.cancelled
+    do {
+      while coordinator.completion.wait(timeout: min(deadline, .now() + .milliseconds(50))) == .timedOut {
+        if isCancellationRequested() { throw AgentIOSDynamicWebRenderError.cancelled }
+        try checkpoint()
+        if !coordinator.hasStarted, DispatchTime.now() >= startupDeadline {
+          throw AgentIOSDynamicWebRenderError.startupTimeout
+        }
+        if DispatchTime.now() >= deadline { throw AgentIOSDynamicWebRenderError.timedOut }
       }
+      if isCancellationRequested() { throw AgentIOSDynamicWebRenderError.cancelled }
       try checkpoint()
-      if DispatchTime.now() >= deadline {
-        DispatchQueue.main.async { coordinator.cancel() }
-        throw AgentIOSDynamicWebRenderError.timedOut
-      }
+      if DispatchTime.now() >= deadline { throw AgentIOSDynamicWebRenderError.timedOut }
+      let page = try coordinator.result().get()
+      health.succeeded()
+      return page
+    } catch {
+      if AgentIOSWebRendererHealth.isProcessFailure(error) { health.failed() }
+      throw error
     }
-    return try coordinator.result().get()
   }
 
   private func acquireCapacity(
@@ -258,6 +376,19 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
   private let lock = NSLock()
   private var webView: WKWebView?
   private var outcome: Result<AgentIOSDynamicWebRenderedPage, Error>?
+  private var started = false
+
+  var hasStarted: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return started
+  }
+
+  private var isFinished: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return outcome != nil
+  }
 
   init(url: URL, maxBytes: Int64) {
     initialURL = url
@@ -265,6 +396,7 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
   }
 
   func start() {
+    guard !isFinished else { return }
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.processPool = WKProcessPool()
@@ -278,6 +410,10 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
     view.customUserAgent = AgentIOSPublicArticleRequestPolicy.headers(for: initialURL)["User-Agent"]
       ?? "GalaxySSI-iOS/1.0 Mobile Web Evidence Renderer"
     webView = view
+    guard !isFinished else { view.stopLoading(); return }
+    lock.lock()
+    started = true
+    lock.unlock()
     var request = URLRequest(url: initialURL)
     request.cachePolicy = .reloadIgnoringLocalCacheData
     request.httpShouldHandleCookies = false
@@ -286,7 +422,6 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
   }
 
   func cancel() {
-    webView?.stopLoading()
     finish(.failure(AgentIOSDynamicWebRenderError.cancelled))
   }
 
@@ -301,6 +436,7 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
     decidePolicyFor navigationAction: WKNavigationAction,
     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
   ) {
+    guard !isFinished else { decisionHandler(.cancel); return }
     guard let candidate = navigationAction.request.url?.absoluteString else {
       decisionHandler(.cancel)
       finish(.failure(AgentIOSDynamicWebRenderError.navigationBlocked))
@@ -324,7 +460,7 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) { [weak self, weak webView] in
-      guard let self, let webView else { return }
+      guard let self, let webView, !self.isFinished else { return }
       let maximumCharacters = max(1, min(Int(self.maxBytes), 4_000_000))
       let script = "document.documentElement ? document.documentElement.outerHTML.slice(0, \(maximumCharacters)) : ''"
       webView.evaluateJavaScript(script) { value, error in
@@ -433,9 +569,12 @@ private final class AgentIOSWKWebViewRenderCoordinator: NSObject, WKNavigationDe
     }
     outcome = result
     lock.unlock()
-    webView?.navigationDelegate = nil
-    webView?.uiDelegate = nil
-    webView = nil
+    DispatchQueue.main.async {
+      self.webView?.stopLoading()
+      self.webView?.navigationDelegate = nil
+      self.webView?.uiDelegate = nil
+      self.webView = nil
+    }
     completion.signal()
   }
 }
