@@ -1211,6 +1211,7 @@
     C3007D000000000000000001 /* AgentIOSIndexedWebSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000002 /* AgentIOSIndexedWebSourceCatalog.swift */; };
     C3007E000000000000000001 /* AgentIOSJSONWebSearchAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007E000000000000000002 /* AgentIOSJSONWebSearchAdapter.swift */; };
     C3007F000000000000000001 /* AgentIOSHTMLWebSearchAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007F000000000000000002 /* AgentIOSHTMLWebSearchAdapter.swift */; };
+    C3007A100000000000000001 /* AgentIOSWebSearchFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007A100000000000000002 /* AgentIOSWebSearchFusion.swift */; };
     C3007F000000000000000003 /* AgentIOSArxivSearchAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007F000000000000000004 /* AgentIOSArxivSearchAdapter.swift */; };
     C3007F000000000000000005 /* AgentIOSDevDocsSearchAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007F000000000000000006 /* AgentIOSDevDocsSearchAdapter.swift */; };
     C3007D000000000000000003 /* web-indexed-sources.json in Resources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000004 /* web-indexed-sources.json */; };
@@ -2176,6 +2177,7 @@
     C3007D000000000000000005 /* AgentIOSIndexedWebSourceCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */; };
     C3007E000000000000000003 /* AgentIOSJSONWebSearchAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */; };
     C3007F000000000000000007 /* AgentIOSAdditionalWebSearchAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */; };
+    C3007A100000000000000003 /* AgentIOSWebSearchFusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */; };
     D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */; };
     D12632000000000000000006 /* AgentIOSCoreMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */; };
     D12632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */; };
@@ -3441,6 +3443,7 @@
     C3007D000000000000000002 /* AgentIOSIndexedWebSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSIndexedWebSourceCatalog.swift; sourceTree = "<group>"; };
     C3007E000000000000000002 /* AgentIOSJSONWebSearchAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSJSONWebSearchAdapter.swift; sourceTree = "<group>"; };
     C3007F000000000000000002 /* AgentIOSHTMLWebSearchAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHTMLWebSearchAdapter.swift; sourceTree = "<group>"; };
+    C3007A100000000000000002 /* AgentIOSWebSearchFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchFusion.swift; sourceTree = "<group>"; };
     C3007F000000000000000004 /* AgentIOSArxivSearchAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSArxivSearchAdapter.swift; sourceTree = "<group>"; };
     C3007F000000000000000006 /* AgentIOSDevDocsSearchAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDevDocsSearchAdapter.swift; sourceTree = "<group>"; };
     C3007D000000000000000004 /* web-indexed-sources.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "web-indexed-sources.json"; sourceTree = "<group>"; };
@@ -4416,6 +4419,7 @@
     C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSIndexedWebSourceCatalogTests.swift; sourceTree = "<group>"; };
     C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSJSONWebSearchAdapterTests.swift; sourceTree = "<group>"; };
     C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSAdditionalWebSearchAdapterTests.swift; sourceTree = "<group>"; };
+    C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchFusionTests.swift; sourceTree = "<group>"; };
     D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDynamicWebRendererTests.swift; sourceTree = "<group>"; };
     D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCoreMemoryTests.swift; sourceTree = "<group>"; };
     D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSCognitionSchedulePolicyTests.swift; sourceTree = "<group>"; };
@@ -6258,6 +6262,7 @@
         C3007D000000000000000002 /* AgentIOSIndexedWebSourceCatalog.swift */,
         C3007E000000000000000002 /* AgentIOSJSONWebSearchAdapter.swift */,
         C3007F000000000000000002 /* AgentIOSHTMLWebSearchAdapter.swift */,
+        C3007A100000000000000002 /* AgentIOSWebSearchFusion.swift */,
         C3007F000000000000000004 /* AgentIOSArxivSearchAdapter.swift */,
         C3007F000000000000000006 /* AgentIOSDevDocsSearchAdapter.swift */,
         C3007D000000000000000004 /* web-indexed-sources.json */,
@@ -6645,6 +6650,7 @@
         C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */,
         C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */,
         C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */,
+        C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */,
         D22631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift */,
         D22632000000000000000006 /* AgentIOSCoreMemoryTests.swift */,
         D22632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift */,
@@ -8596,6 +8602,7 @@
         C3007D000000000000000001 /* AgentIOSIndexedWebSourceCatalog.swift in Sources */,
         C3007E000000000000000001 /* AgentIOSJSONWebSearchAdapter.swift in Sources */,
         C3007F000000000000000001 /* AgentIOSHTMLWebSearchAdapter.swift in Sources */,
+        C3007A100000000000000001 /* AgentIOSWebSearchFusion.swift in Sources */,
         C3007F000000000000000003 /* AgentIOSArxivSearchAdapter.swift in Sources */,
         C3007F000000000000000005 /* AgentIOSDevDocsSearchAdapter.swift in Sources */,
         A10000000000000000001351 /* GalaxySSIWebIntelligenceSourcesView.swift in Sources */,
@@ -8982,6 +8989,7 @@
         C3007D000000000000000005 /* AgentIOSIndexedWebSourceCatalogTests.swift in Sources */,
         C3007E000000000000000003 /* AgentIOSJSONWebSearchAdapterTests.swift in Sources */,
         C3007F000000000000000007 /* AgentIOSAdditionalWebSearchAdapterTests.swift in Sources */,
+        C3007A100000000000000003 /* AgentIOSWebSearchFusionTests.swift in Sources */,
         D12631000000000000000002 /* AgentIOSDynamicWebRendererTests.swift in Sources */,
         D12632000000000000000006 /* AgentIOSCoreMemoryTests.swift in Sources */,
         D12632000000000000000007 /* AgentIOSCognitionSchedulePolicyTests.swift in Sources */,

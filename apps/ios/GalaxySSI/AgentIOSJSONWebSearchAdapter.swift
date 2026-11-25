@@ -81,6 +81,11 @@ enum AgentIOSJSONWebSearchAdapter {
     let root = value as? [String: Any] ?? [:]
     func object(_ value: Any?) -> [String: Any] { value as? [String: Any] ?? [:] }
     func text(_ value: Any?) -> String { value as? String ?? "" }
+    func publication(_ value: Any?) -> String {
+      if let value = value as? String { return String(value.prefix(64)) }
+      if let value = value as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID() { return String(value.stringValue.prefix(64)) }
+      return ""
+    }
     func first(_ values: String...) -> String { values.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? "" }
     let rawRows: Any?
     switch source {
@@ -102,7 +107,7 @@ enum AgentIOSJSONWebSearchAdapter {
     var hits: [AgentIOSPublicSearchParser.Hit] = [], seen = Set<String>()
     for value in rows.prefix(100) {
       var row = object(value)
-      var title = "", url = "", excerpt = ""
+      var title = "", url = "", excerpt = "", publishedAt = ""
       switch source {
       case "wikipedia", "wikipedia_zh":
         guard let number = row["pageid"] as? NSNumber,
@@ -114,25 +119,32 @@ enum AgentIOSJSONWebSearchAdapter {
         url = "https://\(language).wikipedia.org/?curid=\(number.int64Value)"
       case "github":
         title = text(row["full_name"]); url = text(row["html_url"]); excerpt = text(row["description"])
+        publishedAt = publication(row["updated_at"])
       case "github_code":
         let repo = object(row["repository"]), file = first(text(row["path"]), text(row["name"]))
         title = [text(repo["full_name"]), file].filter { !$0.isEmpty }.joined(separator: " \u{00b7} ")
         url = text(row["html_url"]); excerpt = first(text(repo["description"]), file)
+        publishedAt = publication(repo["updated_at"])
       case "gitlab":
         title = text(row["path_with_namespace"]); url = text(row["web_url"]); excerpt = text(row["description"])
+        publishedAt = publication(row["last_activity_at"])
       case "stackoverflow":
         title = text(row["title"]); url = text(row["link"]); excerpt = text(row["excerpt"])
+        publishedAt = publication(row["last_activity_date"])
       case "hacker_news":
         title = first(text(row["title"]), text(row["story_title"]))
         let id = text(row["objectID"])
         url = first(text(row["url"]), text(row["story_url"]),
           numericID(id) ? "https://news.ycombinator.com/item?id=\(id)" : "")
         excerpt = first(text(row["story_text"]), text(row["comment_text"]))
+        publishedAt = publication(row["created_at"])
       case "lobsters", "marginalia":
         title = text(row["title"]); url = text(row["url"]); excerpt = text(row["description"])
+        if source == "lobsters" { publishedAt = publication(row["created_at"]) }
       case "reddit":
         row = object(row["data"])
         title = text(row["title"]); excerpt = text(row["selftext"])
+        publishedAt = publication(row["created_utc"])
         let path = text(row["permalink"])
         url = first(text(row["url_overridden_by_dest"]),
           path.hasPrefix("/") && !path.hasPrefix("//") ? "https://www.reddit.com" + path : "")
@@ -140,17 +152,20 @@ enum AgentIOSJSONWebSearchAdapter {
         title = (row["title"] as? [String])?.first ?? ""; url = text(row["URL"]); excerpt = text(row["abstract"])
       case "semantic_scholar":
         title = text(row["title"]); url = text(row["url"]); excerpt = text(row["abstract"])
+        publishedAt = publication(row["year"])
       case "pubmed":
         let id = text(value)
         guard numericID(id) else { continue }
         title = "PubMed record \(id)"; url = "https://pubmed.ncbi.nlm.nih.gov/\(id)/"
       case "crates_io":
         title = first(text(row["name"]), text(row["id"])); excerpt = text(row["description"])
+        publishedAt = publication(row["updated_at"])
         url = first(text(row["repository"]), pathURL(base: "https://crates.io/crates/", segment: title))
       case "npm":
         row = object(row["package"])
         let links = object(row["links"])
         title = text(row["name"]); excerpt = text(row["description"])
+        publishedAt = publication(row["date"])
         url = first(text(links["npm"]), text(links["repository"]))
       case "mdn":
         title = text(row["title"]); excerpt = text(row["summary"])
@@ -166,7 +181,7 @@ enum AgentIOSJSONWebSearchAdapter {
       let cleanTitle = String(try SwiftSoup.parse(String(title.prefix(8192))).text().prefix(2048))
       guard !cleanTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, seen.insert(cleanURL).inserted else { continue }
       hits.append(.init(title: cleanTitle, url: cleanURL,
-        excerpt: String(try SwiftSoup.parse(String(excerpt.prefix(16384))).text().prefix(2048))))
+        excerpt: String(try SwiftSoup.parse(String(excerpt.prefix(16384))).text().prefix(2048)), publishedAt: publishedAt))
       if hits.count >= min(limit, 100) { break }
     }
     return hits

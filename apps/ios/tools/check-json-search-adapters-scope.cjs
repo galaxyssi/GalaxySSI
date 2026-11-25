@@ -56,7 +56,7 @@ if (require.main === module) {
     'token.utf8.count <= 8192', '(33...126).contains($0.value)']) assert(adapter.includes(token), token);
   for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSPublicSearchParser.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) {
-    const current = read(app + name).replace('    var retrievalStatus: String? = nil\n', '');
+    const current = require('./check-text-search-fusion-scope.cjs').retainedFusionHit(read(app + name)).replace('    var retrievalStatus: String? = nil\n', '');
     assert.equal(current, show(base, app + name), name + ' retained (optional local-reference hit metadata only)');
   }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSJSONWebSearchAdapterTests.swift');

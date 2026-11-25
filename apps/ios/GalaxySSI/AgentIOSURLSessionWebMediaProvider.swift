@@ -596,22 +596,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
 
       var merged: [AgentIOSWebSearchResult] = []
-      var seenURLs: Set<String> = []
       if imageSearch {
         merged = AgentIOSImageSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil }.map {
           .init(sourceID: $0.provider, results: $0.results,
             weight: AgentIOSImageSearchRequestPolicy.weight($0.provider), authority: AgentIOSImageSearchRequestPolicy.authority($0.provider))
         }, limit: maxResults)
       }
-      for attempt in attempts where !imageSearch && (attempt.resource != nil || attempt.localIndex) {
-        for result in attempt.results {
-          let identity = result.image?["url"]?.stringValue ?? result.url
-          let key = URL(string: identity).map(canonicalURL) ?? identity.lowercased()
-          guard !key.isEmpty, seenURLs.insert(key).inserted else { continue }
-          merged.append(result)
-          if merged.count >= maxResults { break }
-        }
-        if merged.count >= maxResults { break }
+      if !imageSearch {
+        merged = AgentIOSWebSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil || $0.localIndex }.map {
+          AgentIOSWebSearchFusion.group(sourceID: $0.provider, results: $0.results)
+        }, limit: maxResults, nowMillis: nowMillis())
       }
       var output = first.resource.map(commonOutput) ?? ["retrieval_status": .string("local_index_reference")]
       output["query"] = .string(query)
@@ -628,6 +622,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           value["lead_image_url"] = image["url"]
         }
         if let status = result.retrievalStatus { value["retrieval_status"] = .string(status) }
+        if !result.publishedAt.isBlank { value["published_at"] = .string(String(result.publishedAt.prefix(64))) }
+        if let score = result.searchScore {
+          value["score"] = .object(score.value)
+          value["engines"] = .array(result.searchEngines.map(AgentMcpJSONValue.string))
+        }
         return .object(value)
       })
       output["result_count"] = .int(Int64(merged.count))
@@ -643,6 +642,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       var resultMetadata = metadata(operation: .webSearch, method: .get)
       if imageSearch { resultMetadata["image_ranker"] = .string(AgentIOSImageSearchFusion.modelID) }
+      else { resultMetadata["text_ranker"] = .string(AgentIOSWebSearchFusion.modelID) }
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
       let completedProviders = Set(attempts.map(\.provider))
       let cancelledProviders = earlyCompleted

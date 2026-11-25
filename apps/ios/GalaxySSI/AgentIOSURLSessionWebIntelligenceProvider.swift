@@ -521,12 +521,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       .prefix(limit).enumerated().map { index, document in
       let rank = index + 1
       let receipt = cachedSourceReceipt(document, rank: rank)
-      let result: AgentMcpJSONObject = [
+      var result: AgentMcpJSONObject = [
         "rank": .int(Int64(rank)),
         "title": .string(document.title),
         "url": .string(document.url)
       ]
-      let evidence: AgentMcpJSONObject = [
+      var evidence: AgentMcpJSONObject = [
         "id": .string(evidenceId(url: document.url, rank: rank)),
         "rank": .int(Int64(rank)),
         "title": .string(document.title),
@@ -535,6 +535,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         "trust": .string("untrusted_public_web"),
         "source_receipt": .object(receipt)
       ]
+      if let published = document.metadata["published_at"], !published.isBlank {
+        result["published_at"] = .string(String(published.prefix(64)))
+        evidence["published_at"] = result["published_at"]
+      }
       return (result: result, evidence: evidence)
     }
   }
@@ -583,6 +587,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard !url.isEmpty else { return nil }
       let title = item.result["title"]?.stringValue ?? ""
       let snippet = item.evidence["snippet"]?.stringValue ?? ""
+      var documentMetadata = ["source": "web_search"]
+      if let published = item.result["published_at"]?.stringValue, !published.isBlank {
+        documentMetadata["published_at"] = String(published.prefix(64))
+      }
       return AgentIOSWebIntelligenceCacheDocument(
         url: url,
         title: title,
@@ -595,7 +603,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         ]),
         retrievedAtMillis: retrievedAt,
         expiresAtMillis: retrievedAt + ttl,
-        links: [], metadata: ["source": "web_search"]
+        links: [], metadata: documentMetadata
       )
     }
     return cacheStore.putDocuments(documents)
@@ -1390,6 +1398,16 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         result["retrieval_status"] = .string("local_index_reference")
         evidence["retrieval_status"] = .string("local_index_reference")
       }
+      if let published = object["published_at"]?.stringValue, !published.isBlank {
+        result["published_at"] = .string(String(published.prefix(64)))
+        evidence["published_at"] = result["published_at"]
+      }
+      if let score = object["score"]?.objectValue {
+        result["score"] = .object(score)
+        evidence["score"] = .object(score)
+        result["engines"] = object["engines"]
+        evidence["engines"] = object["engines"]
+      }
       if object["vertical"] == .string("image"), let images = object["images"]?.arrayValue {
         result["vertical"] = .string("image")
         result["images"] = .array(images)
@@ -1441,7 +1459,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         result["unavailable_sources"] = unavailable
       }
       for key in ["circuits_skipped", "source_health_receipts", "source_health_available", "source_health_write_committed",
-                  "selected_learned_sources", "official_sources"] {
+                  "selected_learned_sources", "official_sources", "text_ranker"] {
         if let value = webResult.metadata[key] { result[key] = value }
       }
     }

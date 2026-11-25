@@ -52,7 +52,7 @@ enum AgentIOSArxivSearchAdapter {
       } else if depth == 2, atom, elementName == "entry" {
         inEntry = true; fields = [:]; field = nil
       } else if inEntry, depth == 3, atom {
-        if ["title", "summary", "id"].contains(elementName) { field = elementName; fieldDepth = depth }
+        if ["title", "summary", "id", "published"].contains(elementName) { field = elementName; fieldDepth = depth }
         if elementName == "link", ["", "alternate"].contains(attributeDict["rel"] ?? ""), let href = attributeDict["href"] {
           fields["link"] = String(href.prefix(4097))
         }
@@ -86,7 +86,8 @@ enum AgentIOSArxivSearchAdapter {
               let title = String(try SwiftSoup.parse(fields["title"] ?? "").text().prefix(2048))
               if !title.isEmpty, seen.insert(url).inserted {
                 hits.append(.init(title: title, url: url,
-                  excerpt: String(try SwiftSoup.parse(fields["summary"] ?? "").text().prefix(2048))))
+                  excerpt: String(try SwiftSoup.parse(fields["summary"] ?? "").text().prefix(2048)),
+                  publishedAt: String((fields["published"] ?? "").prefix(64))))
               }
             } catch { invalid = true; parser.abortParsing() }
           }

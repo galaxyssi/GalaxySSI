@@ -7,6 +7,9 @@ const normalize = value => value.replace(/\r\n/g, '\n');
 const read = file => normalize(fs.readFileSync(path.join(root, file), 'utf8'));
 const show = (ref, file) => normalize(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 function retainedAdditionalProvider(source) {
+  if (source.includes('merged = AgentIOSWebSearchFusion.fuse')) {
+    source = require('./check-text-search-fusion-scope.cjs').retainedTextFusionProvider(source);
+  }
   for (const [before, after] of [
     ['          if endpoint.localIndex {\n            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider,\n              results: AgentIOSDevDocsSearchAdapter.search(query, limit: maxResults), didStart: true,\n              durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis()), localIndex: true))\n            return\n          }\n', ''],
     ['            } else if endpoint.specialistParser == "arxiv" {\n              results = try AgentIOSArxivSearchAdapter.parse(resource.body, limit: maxResults,\n                isCancelled: { searchInvocation.isCancellationRequested })\n              if searchInvocation.isTimedOut { throw AgentIOSURLSessionWebError.timeout }\n            } else if let parser = endpoint.specialistParser {\n              results = try AgentIOSHTMLWebSearchAdapter.parse(html, id: parser, baseURL: resource.finalURL, limit: maxResults)\n', ''],
@@ -63,11 +66,14 @@ if (require.main === module) {
   assert(json.includes('parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")'));
   for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) assert.equal(read(app + name), show(base, app + name), name);
   const parserFile = app + 'AgentIOSPublicSearchParser.swift';
-  assert.equal(read(parserFile).replace('    var retrievalStatus: String? = nil\n', ''), show(base, parserFile), 'Existing HTML/image/redirect parsing unchanged');
+  assert.equal(require('./check-text-search-fusion-scope.cjs').retainedFusionHit(read(parserFile)).replace('    var retrievalStatus: String? = nil\n', ''), show(base, parserFile), 'Existing HTML/image/redirect parsing unchanged');
   const tests = read('apps/ios/GalaxySSITests/AgentIOSAdditionalWebSearchAdapterTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 8);
   const intelligenceFile = app + 'AgentIOSURLSessionWebIntelligenceProvider.swift';
   let intelligence = read(intelligenceFile);
+  if (intelligence.includes('var documentMetadata = ["source": "web_search"]')) {
+    intelligence = require('./check-text-search-fusion-scope.cjs').retainedTextFusionIntelligence(intelligence);
+  }
   intelligence = intelligence.replace('    let networkAttempted = !(searchProvider is AgentIOSURLSessionWebMediaToolProvider && webResult.metadata["local_index_only"] == .bool(true))\n', '');
   assert.equal(intelligence.split('networkAttempted: networkAttempted\n').length, 3);
   intelligence = intelligence.replaceAll('networkAttempted: networkAttempted\n', 'networkAttempted: true\n');
