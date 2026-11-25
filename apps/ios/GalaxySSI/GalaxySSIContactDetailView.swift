@@ -361,6 +361,15 @@ struct ContactDetailView: View {
     if contact.deliveryMode == .cloudAPI {
       VStack(alignment: .leading, spacing: 8) {
         GalaxySSISecuritySectionTitle(title: t("galaxyssi.status.cloud_model", "Cloud Model"))
+        GalaxySSISecurityNavigationRow(
+          title: t("galaxyssi.cloud.config_title", "Configure Model"),
+          subtitle: "",
+          systemImage: "slider.horizontal.3",
+          tint: .blue,
+          badge: t("common_edit", "Edit")
+        ) {
+          CloudModelProviderDetailView(contactId: contact.id)
+        }
         GalaxySSISecurityStatusRow(
           title: contact.cloudProvider.ifBlank(t("galaxyssi.status.cloud_model", "Cloud Model")),
           subtitle: t("galaxyssi.contact_detail.cloud_provider_subtitle", "Configured cloud model provider"),
