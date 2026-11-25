@@ -69,8 +69,8 @@ for (const file of [
 const services = read('apps/ios/GalaxySSI/GalaxySSIServices.swift');
 assert(services.includes('store.beginAgentAutoRouteTurn(for: message'));
 assert(services.includes('preserveHealthyPrimary: true'));
-assert.equal((services.match(/automaticTargetId: automaticTargetId/g) || []).length, 3);
-assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 3);
+assert.equal((services.match(/automaticTargetId: automaticTargetId/g) || []).length, 6);
+assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 7);
 assert(services.includes('code: "auto_route_turn_not_committed"'));
 assert(services.includes('code: "auto_route_dispatch_not_committed"'));
 assert(services.includes('rememberedId: session.stableAutoRoute?.targetId ?? ""'));
@@ -133,6 +133,16 @@ assert(!header.includes('return liveExecutionTargetLabel'));
 assert(read('apps/ios/GalaxySSI/GalaxySSIAndroidParityUI.swift').includes(
   'automaticTarget: coordinator.displayedAutoRouteTarget(conversationId: store.activeAgentConversationId)'));
 const runtimeTests = read('apps/ios/GalaxySSITests/AgentConversationRuntimeTests.swift');
+const scheduled = services.slice(services.indexOf('  private func executeConversationSchedule('),
+  services.indexOf('  private func reconcileConversationScheduleRuns('));
+assert(scheduled.includes('guard store.beginAgentAutoRouteTurn(for: outgoing'));
+assert(scheduled.indexOf('auto_route_turn_not_committed') < scheduled.indexOf('let automaticTargetId'));
+assert.equal((scheduled.match(/automaticRouteSelection\(for: contact/g) || []).length, 1);
+assert.equal((scheduled.match(/automaticTargetId: automaticTargetId/g) || []).length, 3);
+assert.equal((scheduled.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 4);
+assert(scheduled.includes('AgentConversationScheduleProvenance.verified(current), current.revision == task.revision'));
+assert(scheduled.indexOf('guard ticket.allowed') < scheduled.lastIndexOf('try recordAutomaticDispatch'));
+assert(scheduled.includes('AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)'));
 assert(runtimeTests.includes('func testStableAutoRoutePersistsExactConversationAndRejectsOldTurnsAndManualUpdates'));
 assert(runtimeTests.includes('func testAutoHeaderUsesExactTargetNotOldSessionOrLiveDisplayLabels'));
 assert(runtimeTests.includes('func testMessageSubmissionScopeRejectsOtherConversationOwnerAndBlankIdentity'));

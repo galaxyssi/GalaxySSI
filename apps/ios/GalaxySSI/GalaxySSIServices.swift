@@ -1952,23 +1952,37 @@ final class MessageCoordinator: ObservableObject {
       conversationOverride: conversation, sourceTrace: AgentConversationSchedule.occurrenceStage)
     let desktop = AgentConversationSchedule.targetsDesktop(goal)
     do {
+      if AgentModelSelectionSettings.selection(for: conversation).mode == .automatic {
+        guard store.beginAgentAutoRouteTurn(for: outgoing, targets: AgentCallableTargetCatalog.build(
+          contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })) else {
+          throw AgentModelLoopRecoveryError(code: "auto_route_turn_not_committed")
+        }
+      }
+      let automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: conversation, goal: goal)?.target.id ?? ""
       if !desktop, let plan = deterministicLocalNativePlan(for: goal, hasAttachments: false) {
         try await receiveLocalModelReply(profile: LocalModelRuntimeSettings.selectedProfile(),
           requestText: goal, attachments: [], outgoing: outgoing, initialPlan: plan)
-      } else if !desktop, let local = selectedLocalModel(for: contact, conversationId: conversation, goal: goal) {
+      } else if !desktop, let local = selectedLocalModel(for: contact, conversationId: conversation, goal: goal,
+        automaticTargetId: automaticTargetId) {
+        try recordAutomaticDispatch(targetId: "local-llm", outgoing: outgoing)
         try await receiveLocalModelReply(profile: local, requestText: goal, attachments: [],
           outgoing: outgoing, useSelectedProvider: true)
-      } else if !desktop, let cloud = selectedCloudModelContact(for: contact, conversationId: conversation, goal: goal),
+      } else if !desktop, let cloud = selectedCloudModelContact(for: contact, conversationId: conversation, goal: goal,
+                  automaticTargetId: automaticTargetId),
                 let snapshot = AgentModelPlannerContactResolver(store: store).capturePhoneTurnSnapshot(
                   settings: store.modelPlannerSettings, selectedContact: cloud) {
+        try recordAutomaticDispatch(targetId: cloud.id, outgoing: outgoing)
         try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: cloud.displayName,
           requestText: goal, outgoing: outgoing, executionMode: mode)
-      } else if let agent = selectedAgentContact(for: contact, conversationId: conversation, goal: goal) {
+      } else if let agent = selectedAgentContact(for: contact, conversationId: conversation, goal: goal,
+        automaticTargetId: automaticTargetId) {
         if !desktop, AgentConversationSchedule.expectsPhone(goal) {
           guard agent.connectorAgentId == "codex" else {
             throw AgentProactiveTaskError.invalid("This model cannot plan phone tools from the scheduled conversation")
           }
           let snapshot = try capturePairedPhonePlannerSnapshot(contact: agent, outgoing: outgoing)
+          try recordAutomaticDispatch(targetId: agent.id, outgoing: outgoing)
           try await receivePhoneOwnedProviderReply(snapshot: snapshot, targetTitle: agent.displayName,
             requestText: goal, outgoing: outgoing, executionMode: mode)
         } else {
@@ -1979,6 +1993,7 @@ final class MessageCoordinator: ObservableObject {
           guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: agent.displayName) }
           agentHomeDisplayContactIdsByTurnId[run.runId] = contact.id
           do {
+            try recordAutomaticDispatch(targetId: agent.id, outgoing: outgoing)
             let status = try await publishLinkMessage(request, contact: agent, outgoing: outgoing, attachments: [],
               executionMode: mode)
             AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
