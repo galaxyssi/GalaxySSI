@@ -49,23 +49,29 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 | KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance, bounded catalog and published-event replay-page API added; no native replay engine yet |
 | KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; whole-source hydration removed |
 | AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
-| KnowledgeNativeBridge, KnowledgeNativeWire, JNI owner/arrays/mod | Not ported; iOS requires checked C ABI, not JNI |
+| KnowledgeNativeBridge, JNI owner/arrays/mod | iOS C ABI sources added under memory-native with checked buffers and monotonic owners; framework and Swift caller still absent |
+| KnowledgeNativeWire | C ABI preserves Rust binary records; Swift decoding still required |
 | KnowledgeNativeFiles key wrapping | Not ported; requires iOS Keychain-backed index key and protected files |
 | KnowledgeModelWork bounded durable successors | Not ported; requires iOS lifecycle/background scheduling |
-| memory-native Cargo files, lib.rs and replay format | Unchanged; native framework integration remains required |
+| memory-native Cargo files, lib.rs and replay format | Android engine unchanged; separate iOS crate uses current 0.6.0 path dependency and a derived lockfile; native framework integration remains required |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android-specific build inputs untouched; iOS linking/signing still required |
 | Two Android device fixtures | Not executable on iOS; nine Swift fixture methods authored, not run |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
 Still required before native activation: legacy published-document bootstrap,
 native model/epoch ownership, replay-page consumption, transactional progress recovery,
-checked ABI ownership/cancellation, framework packaging, key lifecycle, privacy
+compiled ABI ownership/cancellation acceptance, framework packaging, key lifecycle, privacy
 invalidation, query freshness fencing and lexical fallback during replay.
 No native framework, build, device, latency or scale acceptance is claimed here.
 
 ## Verification Scope
 
 `node apps/ios/tools/check-knowledge-native-source-scope.cjs` checks source wiring.
+`node apps/ios/tools/check-knowledge-native-abi-scope.cjs` checks C ABI source
+contracts, header exports, owner structure and dependency pins. Nine Rust unit
+fixture functions are authored but not executed; Rust compilation, dependency
+resolution and ABI layout acceptance remain unverified. The lockfile is derived
+from the audited shared engine lock, not claimed as Cargo-validated on Windows.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,
