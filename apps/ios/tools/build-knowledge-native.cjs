@@ -48,7 +48,7 @@ function build() {
     env[`CARGO_TARGET_${key.toUpperCase()}_LINKER`] = clang;
     env[`CC_${key}`] = clang;
     env[`AR_${key}`] = ar;
-    run('cargo', [`+${toolchain}`, 'build', '--manifest-path', path.join(crate, 'Cargo.toml'),
+    run('rustup', ['run', toolchain, 'cargo', 'build', '--manifest-path', path.join(crate, 'Cargo.toml'),
       '--locked', '--release', '--target', target], env);
     const binary = path.join(env.CARGO_TARGET_DIR, target, 'release', 'libGalaxySSIMemory.dylib');
     if (!fs.statSync(binary).isFile()) throw new Error(`Missing native memory binary: ${target}`);

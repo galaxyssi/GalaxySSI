@@ -2,7 +2,7 @@ import Foundation
 import GalaxySSIMemory
 
 // Synchronous borrows only. Rust owns operation serialization and handle retirement.
-final class AgentKnowledgeNativeBridge {
+final class AgentKnowledgeNativeBridge: AgentKnowledgeNativeSession {
   private let lock = NSLock()
   private var handle: Int64 = 0
   private let dimensions: Int

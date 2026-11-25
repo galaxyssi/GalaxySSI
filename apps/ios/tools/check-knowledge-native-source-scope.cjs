@@ -32,9 +32,9 @@ assert.match(vectors, /Self.sourceRevision\(for: item\) == sourceRevision/);
 assert.match(vectors, /0xdc00\.\.\.0xdfff/);
 assert.match(vectors, /afterUTF16: sourceCursor/);
 assert.match(vectors, /sourceCursor = offsets.location \+ offsets.length/);
-assert.match(search, /database.items\(ids: candidateIds\)/);
-assert.match(search, /database.vectorCatalogPage\(/);
-assert.doesNotMatch(search, /database\.all\(|database\.vectorCatalog\(|offset:/);
+assert.match(search, /database.validatedLexicalHits\(/);
+assert.match(search, /index.search\(queryVector/);
+assert.doesNotMatch(search, /USearchIndex|loadCatalog|database\.all\(|database\.vectorCatalog|offset:/);
 const tests = fs.readFileSync(path.join(root, 'GalaxySSITests', 'AgentKnowledgeDatabaseTests.swift'), 'utf8');
 for (const name of ['SourceRangesLocateRepeatedChunksWithoutSplittingSurrogates',
   'SourceRangeStorageRoundTripAndLegacyCompatibility', 'SourceRangeRejectsPartialReversedOutOfBoundsAndStaleSource',

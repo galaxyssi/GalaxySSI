@@ -1,6 +1,4 @@
-import CryptoKit
 import Foundation
-import USearch
 
 enum AgentKnowledgeHybridRanking {
   static func reciprocalRankFusion(
@@ -56,168 +54,115 @@ final class AgentKnowledgeRetrievalAdmission {
 }
 
 final class AgentKnowledgeSemanticSearch {
-  private struct IndexedEntry {
-    var checkpoint: AgentKnowledgeVectorCheckpoint
-    var item: AgentKnowledgeItem
-  }
-
-  private struct Cache {
-    var index: USearchIndex
-    var entriesByLabel: [UInt64: IndexedEntry]
-    var signature: String
-    var builtAtMillis: Int64
-  }
-
   private let database: AgentKnowledgeDatabase
   private let runtime: GalaxySSIEmbeddingRuntime
   private let provenance: AgentKnowledgeVectorProvenance
-  private let queue = DispatchQueue(label: "com.galaxyssi.knowledge-hnsw", qos: .utility)
+  private let queue = DispatchQueue(label: "com.galaxyssi.knowledge-native", qos: .utility)
   private let ttlMillis: Int64
   private let admission: AgentKnowledgeRetrievalAdmission
-  private var cache: Cache?
+  private let index: AgentKnowledgeNativeIndex
+  private var lastAccessMillis: Int64 = 0
 
-  init(
-    database: AgentKnowledgeDatabase,
-    runtime: GalaxySSIEmbeddingRuntime,
-    provenance: AgentKnowledgeVectorProvenance,
-    ttlMillis: Int64 = 300_000,
-    admission: AgentKnowledgeRetrievalAdmission = AgentKnowledgeRetrievalAdmission()
-  ) {
+  init(database: AgentKnowledgeDatabase, runtime: GalaxySSIEmbeddingRuntime,
+    provenance: AgentKnowledgeVectorProvenance, ttlMillis: Int64 = 30_000,
+    admission: AgentKnowledgeRetrievalAdmission = AgentKnowledgeRetrievalAdmission()) {
     self.database = database
     self.runtime = runtime
     self.provenance = provenance
     self.ttlMillis = max(ttlMillis, 1_000)
     self.admission = admission
+    index = AgentKnowledgeNativeIndex(database: database, provenance: provenance)
   }
 
-  func search(
-    query: String,
-    lexicalHits: [AgentKnowledgeHit],
-    limit: Int = 24,
-    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
-  ) async throws -> [AgentKnowledgeHit] {
+  func search(query: String, lexicalHits: [AgentKnowledgeHit], limit: Int = 24,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) async throws -> [AgentKnowledgeHit] {
+    let limit = min(max(limit, 0), 256)
+    guard limit > 0 else { return [] }
+    guard let token = database.nativeFiles.activeToken() else { throw CancellationError() }
     guard let lease = admission.acquire() else {
-      return Array(lexicalHits.prefix(max(limit, 0)))
+      return try await freshLexical(lexicalHits, limit: limit, token: token)
     }
     defer { lease.release() }
-    let queryVector = try await runtime.embed(query)
+    return try await withTaskCancellationHandler(operation: {
+      try Task.checkCancellation()
+      let queryVector = try await runtime.embed(query)
+      try Task.checkCancellation()
+      return try await withCheckedThrowingContinuation { continuation in
+        queue.async { [self] in
+          do {
+            try active(token)
+            expireIfIdle(nowMillis: nowMillis)
+            let ready = try index.advance(token: token)
+            let semantic: [AgentKnowledgeHit]
+            if ready { semantic = try index.search(queryVector, count: min(max(limit * 4, 32), 256), token: token) }
+            else { semantic = [] }
+            let stamp = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+            if ready, index.readyStamp != stamp { throw AgentKnowledgeDatabaseError.staleCursor }
+            let lexical = try database.validatedLexicalHits(Array(lexicalHits.prefix(256)),
+              stamp: stamp, modelSHA256: provenance.modelSHA256)
+            let fused = AgentKnowledgeHybridRanking.reciprocalRankFusion(
+              lexicalIds: lexical.map(\.item.id), semanticIds: semantic.map(\.item.id))
+            let lexicalById = Dictionary(lexical.map { ($0.item.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let semanticById = Dictionary(semantic.map { ($0.item.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let results = fused.prefix(limit).compactMap { ranked -> AgentKnowledgeHit? in
+              guard let hit = lexicalById[ranked.id] ?? semanticById[ranked.id] else { return nil }
+              return AgentKnowledgeHit(item: hit.item, score: min(ranked.score * 30, 1),
+                excerpt: hit.excerpt, matchedTerms: hit.matchedTerms)
+            }
+            guard try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
+              throw AgentKnowledgeDatabaseError.staleCursor
+            }
+            try active(token)
+            continuation.resume(returning: results)
+          } catch { continuation.resume(throwing: error) }
+        }
+      }
+    }, onCancel: { self.clearTransientIndex() })
+  }
+
+  // True means another bounded replay slice is required, not that replay failed.
+  func advanceReplay() async throws -> Bool {
+    guard let token = database.nativeFiles.activeToken() else { return false }
     return try await withCheckedThrowingContinuation { continuation in
       queue.async { [self] in
         do {
-          let semantic = try semanticHits(vector: queryVector, limit: max(limit * 4, 32), nowMillis: nowMillis)
-          let fused = AgentKnowledgeHybridRanking.reciprocalRankFusion(
-            lexicalIds: lexicalHits.map(\.item.id),
-            semanticIds: semantic.map(\.item.id)
-          )
-          let lexicalById = Dictionary(uniqueKeysWithValues: lexicalHits.map { ($0.item.id, $0) })
-          let semanticById = Dictionary(semantic.map { ($0.item.id, $0) }, uniquingKeysWith: { first, _ in first })
-          let results = fused.prefix(max(limit, 0)).compactMap { ranked -> AgentKnowledgeHit? in
-            guard let hit = lexicalById[ranked.id] ?? semanticById[ranked.id] else { return nil }
-            return AgentKnowledgeHit(
-              item: hit.item,
-              score: min(ranked.score * 30, 1),
-              excerpt: hit.excerpt,
-              matchedTerms: hit.matchedTerms
-            )
-          }
-          continuation.resume(returning: results)
-        } catch {
-          continuation.resume(throwing: error)
-        }
+          try active(token)
+          expireIfIdle(nowMillis: Int64(Date().timeIntervalSince1970 * 1_000))
+          _ = try index.advance(token: token)
+          try active(token)
+          continuation.resume(returning: index.needsReplay)
+        } catch { continuation.resume(throwing: error) }
       }
     }
   }
 
   func clearTransientIndex() {
-    queue.async { [weak self] in self?.cache = nil }
+    database.nativeFiles.invalidate()
+    queue.async { [weak self] in self?.index.close() }
   }
 
-  private func semanticHits(
-    vector: [Float],
-    limit: Int,
-    nowMillis: Int64
-  ) throws -> [AgentKnowledgeHit] {
-    let cache = try currentCache(nowMillis: nowMillis)
-    guard !cache.entriesByLabel.isEmpty, vector.count == provenance.dimensions else { return [] }
-    let (labels, distances) = try cache.index.search(
-      vector: vector,
-      count: min(limit, 256, cache.entriesByLabel.count)
-    )
-    let candidateIds = Array(Set(labels.compactMap { cache.entriesByLabel[$0]?.item.id }))
-    let currentItems = try database.items(ids: candidateIds)
-    let currentById = Dictionary(uniqueKeysWithValues: currentItems.map { ($0.id, $0) })
-    return zip(labels, distances).compactMap { label, distance in
-      guard let entry = cache.entriesByLabel[label],
-            let current = currentById[entry.item.id],
-            AgentKnowledgeVectorCheckpoint.sourceRevision(for: current) == entry.checkpoint.sourceRevision else {
-        return nil
+  private func freshLexical(_ hits: [AgentKnowledgeHit], limit: Int, token: UInt64) async throws -> [AgentKnowledgeHit] {
+    try await withCheckedThrowingContinuation { continuation in
+      queue.async { [self] in
+        do {
+          let stamp = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+          let fresh = try database.validatedLexicalHits(Array(hits.prefix(256)), stamp: stamp, modelSHA256: provenance.modelSHA256)
+          guard try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
+            throw AgentKnowledgeDatabaseError.staleCursor
+          }
+          try active(token)
+          continuation.resume(returning: Array(fresh.prefix(limit)))
+        } catch { continuation.resume(throwing: error) }
       }
-      return AgentKnowledgeHit(
-        item: current,
-        score: max(0, min(1, 1 - Double(distance))),
-        excerpt: String(current.content.prefix(360)),
-        matchedTerms: []
-      )
     }
   }
 
-  private func currentCache(nowMillis: Int64) throws -> Cache {
-    let catalog = try loadCatalog()
-    let signature = catalogSignature(catalog.map(\.checkpoint))
-    if let cache,
-       cache.signature == signature,
-       nowMillis - cache.builtAtMillis <= ttlMillis {
-      return cache
-    }
-    let bytes = catalog.count * provenance.dimensions * MemoryLayout<Float>.size
-    guard bytes <= 64 * 1_024 * 1_024 else { throw AgentKnowledgeDatabaseError.unavailable }
-    let index = try USearchIndex.make(
-      metric: .cos,
-      dimensions: UInt32(provenance.dimensions),
-      connectivity: 16,
-      quantization: .f32
-    )
-    try index.reserve(UInt32(max(catalog.count, 1)))
-    var entries: [UInt64: IndexedEntry] = [:]
-    for (offset, entry) in catalog.enumerated() {
-      let label = UInt64(offset + 1)
-      try index.add(key: label, vector: entry.checkpoint.vector)
-      entries[label] = entry
-    }
-    let next = Cache(index: index, entriesByLabel: entries, signature: signature, builtAtMillis: nowMillis)
-    cache = next
-    return next
+  private func active(_ token: UInt64) throws {
+    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
   }
 
-  private func loadCatalog() throws -> [IndexedEntry] {
-    var cursor: String?
-    var output: [IndexedEntry] = []
-    while true {
-      let page = try database.vectorCatalogPage(
-        modelSHA256: provenance.modelSHA256,
-        afterVectorKey: cursor,
-        limit: 256
-      )
-      let ids = Array(Set(page.checkpoints.map(\.itemId)))
-      let itemsById = Dictionary(uniqueKeysWithValues: try database.items(ids: ids).map { ($0.id, $0) })
-      for checkpoint in page.checkpoints {
-        guard checkpoint.provenance == provenance,
-              let item = itemsById[checkpoint.itemId],
-              AgentKnowledgeVectorCheckpoint.sourceRevision(for: item) == checkpoint.sourceRevision else {
-          continue
-        }
-        output.append(IndexedEntry(checkpoint: checkpoint, item: item))
-      }
-      guard let next = page.nextVectorKey else { break }
-      cursor = next
-    }
-    return output
-  }
-
-  private func catalogSignature(_ checkpoints: [AgentKnowledgeVectorCheckpoint]) -> String {
-    let material = checkpoints.map {
-      "\($0.id)|\($0.sourceRevision)|\($0.updatedAtMillis)"
-    }.joined(separator: "\n")
-    return SHA256.hash(data: Data(material.utf8)).map { String(format: "%02x", $0) }.joined()
+  private func expireIfIdle(nowMillis: Int64) {
+    if lastAccessMillis > 0, nowMillis >= lastAccessMillis, nowMillis - lastAccessMillis > ttlMillis { index.close() }
+    lastAccessMillis = max(nowMillis, 0)
   }
 }

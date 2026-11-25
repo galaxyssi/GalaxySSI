@@ -59,6 +59,11 @@ struct AgentKnowledgeNativePublicationPage: Equatable {
   var nextItemHash: String?
 }
 
+struct AgentKnowledgeNativeRootSeed {
+  var vector: [Float]?
+  var pending: Bool
+}
+
 final class AgentKnowledgeDatabase {
   let nativeFiles: AgentKnowledgeNativeFiles
   private let fileURL: URL
@@ -435,6 +440,77 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  // The seed scan also resumes after process death; it never scans the whole
+  // catalog in one query or substitutes invented vectors for a real source.
+  func nativeRootSeed(provenance: AgentKnowledgeVectorProvenance,
+    stamp: AgentKnowledgeVectorFeedStamp) throws -> AgentKnowledgeNativeRootSeed {
+    try locked {
+      let modelHash = keyedHash(provenance.modelSHA256.lowercased())
+      let contractHash = try vectorProvenanceHash(provenance)
+      guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+      guard let update = prepare("""
+        INSERT INTO knowledge_vector_native_root_seek(model_hash, contract_hash, epoch, head, source_revision)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(model_hash) DO UPDATE SET contract_hash = excluded.contract_hash,
+          epoch = excluded.epoch, head = excluded.head, source_revision = excluded.source_revision, after_item_hash = ''
+        WHERE contract_hash != excluded.contract_hash OR epoch != excluded.epoch OR head != excluded.head
+          OR source_revision != excluded.source_revision
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(modelHash, at: 1, to: update)
+      bind(contractHash, at: 2, to: update)
+      bind(stamp.epoch, at: 3, to: update)
+      sqlite3_bind_int64(update, 4, stamp.head)
+      sqlite3_bind_int64(update, 5, stamp.sourceRevision)
+      let updated = sqlite3_step(update) == SQLITE_DONE
+      sqlite3_finalize(update)
+      guard updated, let cursor = prepare("SELECT after_item_hash FROM knowledge_vector_native_root_seek WHERE model_hash = ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(modelHash, at: 1, to: cursor)
+      guard sqlite3_step(cursor) == SQLITE_ROW, let text = sqlite3_column_text(cursor, 0) else {
+        sqlite3_finalize(cursor)
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let after = String(cString: text)
+      sqlite3_finalize(cursor)
+      let page = try nativePublicationPage(modelSHA256: provenance.modelSHA256, afterItemHash: after.isEmpty ? nil : after)
+      for event in page.events {
+        if let vector = try vectorReplayPage(event: event, provenance: provenance, limit: 1)?.checkpoints.first?.vector {
+          guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+          return AgentKnowledgeNativeRootSeed(vector: vector, pending: false)
+        }
+      }
+      guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp,
+        let advance = prepare("""
+          UPDATE knowledge_vector_native_root_seek SET after_item_hash = ?
+          WHERE model_hash = ? AND contract_hash = ? AND epoch = ? AND head = ? AND source_revision = ?
+          """) else { throw AgentKnowledgeDatabaseError.staleCursor }
+      defer { sqlite3_finalize(advance) }
+      bind(page.nextItemHash ?? "", at: 1, to: advance)
+      bind(modelHash, at: 2, to: advance)
+      bind(contractHash, at: 3, to: advance)
+      bind(stamp.epoch, at: 4, to: advance)
+      sqlite3_bind_int64(advance, 5, stamp.head)
+      sqlite3_bind_int64(advance, 6, stamp.sourceRevision)
+      guard sqlite3_step(advance) == SQLITE_DONE, sqlite3_changes(database) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
+      return AgentKnowledgeNativeRootSeed(vector: nil, pending: page.nextItemHash != nil)
+    }
+  }
+
+  func validatedLexicalHits(_ hits: [AgentKnowledgeHit], stamp: AgentKnowledgeVectorFeedStamp,
+    modelSHA256: String) throws -> [AgentKnowledgeHit] {
+    guard hits.count <= 256 else { throw AgentKnowledgeNativeError.invalidRecord }
+    return try locked {
+      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { _ = execute("ROLLBACK") }
+      guard try readVectorFeedStamp(modelHash: keyedHash(modelSHA256.lowercased())) == stamp else {
+        throw AgentKnowledgeDatabaseError.staleCursor
+      }
+      let current = Dictionary(uniqueKeysWithValues: try items(ids: hits.map(\.item.id)).map { ($0.id, $0) })
+      return hits.filter { current[$0.item.id] == $0.item }
+    }
+  }
+
   // A native node is not an authority to release text. Re-resolve publication,
   // encrypted vector provenance and the current encrypted source in one snapshot.
   func resolveNativeMatches(_ matches: [AgentKnowledgeNativeMatch], provenance: AgentKnowledgeVectorProvenance,
@@ -531,6 +607,8 @@ final class AgentKnowledgeDatabase {
       sqlite3_finalize(latest)
       guard latestStatus == SQLITE_ROW || latestStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard latestStatus == SQLITE_ROW, latestSequence == event.sequence else { return nil }
+      guard try hasNativePublication(modelHash: modelHash, itemHash: event.itemHash,
+        revisionHash: event.sourceRevisionHash, chunkCount: event.chunkCount) else { return nil }
       guard let source = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -2281,6 +2359,11 @@ final class AgentKnowledgeDatabase {
         model_hash TEXT NOT NULL, item_hash TEXT NOT NULL, epoch TEXT NOT NULL,
         sequence INTEGER NOT NULL, operation TEXT NOT NULL, source_revision_hash TEXT NOT NULL,
         chunk_count INTEGER NOT NULL, PRIMARY KEY(model_hash, item_hash)
+      )
+      """), execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_native_root_seek (
+        model_hash TEXT PRIMARY KEY NOT NULL, contract_hash TEXT NOT NULL, epoch TEXT NOT NULL,
+        head INTEGER NOT NULL, source_revision INTEGER NOT NULL, after_item_hash TEXT NOT NULL DEFAULT ''
       )
       """), execute("""
       CREATE INDEX IF NOT EXISTS knowledge_vector_publication_ready

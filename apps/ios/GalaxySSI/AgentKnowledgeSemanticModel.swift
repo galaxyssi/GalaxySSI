@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 
 enum AgentKnowledgeEmbeddingModel {
   static let id = "bge-small-zh-v1.5-q8_0"
@@ -227,7 +228,11 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   private var work: Task<Void, Never>?
   private var countWork: Task<Void, Never>?
   private var runtime: GalaxySSIEmbeddingRuntime?
+  private var runtimeOpening: (id: UUID, task: Task<GalaxySSIEmbeddingRuntime, Error>)?
   private var semanticSearch: AgentKnowledgeSemanticSearch?
+  private var nativeObservers: [NSObjectProtocol] = []
+  private var idleCleanupTask: Task<Void, Never>?
+  private var activeQueries = 0
   private let stateKey = "galaxyssi.agent.knowledge.semantic-model.v1"
 
   init(
@@ -244,12 +249,32 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     state.installed = storage.installed
     state.downloadedBytes = storage.partialBytes
     if !state.installed && state.phase == .ready { state.phase = .notInstalled }
+    for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
+      UIApplication.protectedDataWillBecomeUnavailableNotification] {
+      nativeObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          if name == UIApplication.didBecomeActiveNotification { self.startIndexing() }
+          else if !self.canUseNativeIndex || self.database.nativeFiles.activeToken() == nil {
+            if self.state.phase == .indexing { self.work?.cancel() }
+            await self.closeRuntime()
+            if self.canUseNativeIndex { self.startIndexing() }
+          }
+        }
+      })
+    }
     startCountMaintenance()
     if !state.downloadRequestId.isEmpty {
       startDownload(recovering: true)
     } else if state.installed, state.enabled {
       startIndexing()
     }
+  }
+
+  deinit {
+    for observer in nativeObservers { NotificationCenter.default.removeObserver(observer) }
+    idleCleanupTask?.cancel()
+    runtimeOpening?.task.cancel()
   }
 
   func startDownload(recovering: Bool = false) {
@@ -343,24 +368,33 @@ final class AgentKnowledgeSemanticController: ObservableObject {
 
   func startIndexing() {
     guard state.enabled, state.installed, work == nil else { return }
+    idleCleanupTask?.cancel()
+    idleCleanupTask = nil
     work = Task { [weak self] in
       guard let self else { return }
+      var interrupted = false
       do {
         state.phase = .indexing
+        state.error = ""
         let runtime = try await ensureRuntime()
         let indexer = AgentKnowledgeVectorIndexer(database: database, runtime: runtime, provenance: provenance)
+        let search = ensureSemanticSearch(runtime: runtime)
         while true {
           try Task.checkCancellation()
           let nativeEnrollmentComplete = try await Task.detached(priority: .utility) { [database = self.database, provenance = self.provenance] in
             try database.maintainNativeVectorEnrollment(provenance: provenance)
           }.value
+          try Task.checkCancellation()
           let indexed = try await indexer.indexPending(pageSize: 32)
           let enrollmentPending = try database.vectorEnrollmentPending(
             modelSHA256: AgentKnowledgeEmbeddingModel.sha256
           )
           state.enrollmentPending = enrollmentPending || !nativeEnrollmentComplete
           try refreshCounts()
-          if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete { break }
+          let replayPending: Bool
+          if canUseNativeIndex { replayPending = try await search.advanceReplay() }
+          else { replayPending = false }
+          if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete && !replayPending { break }
           await Task.yield()
         }
         try refreshCounts()
@@ -368,27 +402,63 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         state.phase = .ready
         persist()
       } catch is CancellationError {
-        state.phase = .ready
+        interrupted = true
+        state.phase = state.enabled && state.installed ? .ready : (state.installed ? .disabled : .notInstalled)
       } catch {
-        state.phase = .failed
-        state.error = String(error.localizedDescription.prefix(180))
-        persist()
+        if Task.isCancelled {
+          state.phase = state.enabled && state.installed ? .ready : (state.installed ? .disabled : .notInstalled)
+        } else {
+          state.phase = .failed
+          state.error = String(error.localizedDescription.prefix(180))
+          persist()
+        }
       }
       work = nil
+      if Task.isCancelled || interrupted, canUseNativeIndex, database.nativeFiles.activeToken() != nil,
+        state.enabled, state.installed { startIndexing() }
+      else { scheduleIdleCleanup() }
     }
   }
 
   func hybridSearch(query: String, lexicalHits: [AgentKnowledgeHit], limit: Int) async -> [AgentKnowledgeHit] {
     guard state.enabled, state.installed else { return lexicalHits }
+    idleCleanupTask?.cancel()
+    idleCleanupTask = nil
+    activeQueries += 1
+    defer { activeQueries -= 1; scheduleIdleCleanup() }
+    guard canUseNativeIndex, let token = database.nativeFiles.activeToken() else { return [] }
     do {
       let runtime = try await ensureRuntime()
-      if semanticSearch == nil {
-        semanticSearch = AgentKnowledgeSemanticSearch(database: database, runtime: runtime, provenance: provenance)
-      }
-      return try await semanticSearch?.search(query: query, lexicalHits: lexicalHits, limit: limit) ?? lexicalHits
+      guard database.nativeFiles.activeToken() == token, state.enabled, state.installed else { return [] }
+      let hits = try await ensureSemanticSearch(runtime: runtime).search(query: query, lexicalHits: lexicalHits, limit: limit)
+      guard !Task.isCancelled, canUseNativeIndex, database.nativeFiles.activeToken() == token,
+        state.enabled, state.installed else { return [] }
+      return hits
     } catch {
-      return lexicalHits
+      guard !Task.isCancelled, canUseNativeIndex, database.nativeFiles.activeToken() == token,
+        state.enabled, state.installed else { return [] }
+      let database = self.database, model = provenance.modelSHA256
+      let fresh = try? await Task.detached(priority: .utility) {
+        let stamp = try database.vectorFeedStamp(modelSHA256: model)
+        let hits = try database.validatedLexicalHits(Array(lexicalHits.prefix(256)), stamp: stamp, modelSHA256: model)
+        guard try database.vectorFeedStamp(modelSHA256: model) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+        return Array(hits.prefix(min(max(limit, 0), 256)))
+      }.value
+      guard !Task.isCancelled, canUseNativeIndex, database.nativeFiles.activeToken() == token,
+        state.enabled, state.installed else { return [] }
+      return fresh ?? []
     }
+  }
+
+  private var canUseNativeIndex: Bool {
+    UIApplication.shared.applicationState == .active && UIApplication.shared.isProtectedDataAvailable
+  }
+
+  private func ensureSemanticSearch(runtime: GalaxySSIEmbeddingRuntime) -> AgentKnowledgeSemanticSearch {
+    if let semanticSearch { return semanticSearch }
+    let search = AgentKnowledgeSemanticSearch(database: database, runtime: runtime, provenance: provenance)
+    semanticSearch = search
+    return search
   }
 
   func destroyPrivateData() {
@@ -419,21 +489,51 @@ final class AgentKnowledgeSemanticController: ObservableObject {
 
   private func ensureRuntime() async throws -> GalaxySSIEmbeddingRuntime {
     if let runtime { return runtime }
-    let opened = try await GalaxySSIEmbeddingRuntime.open(
-      modelURL: storage.modelURL,
-      contextTokens: AgentKnowledgeEmbeddingModel.contextTokens,
-      threads: min(max(ProcessInfo.processInfo.activeProcessorCount - 1, 1), 8)
-    )
-    runtime = opened
-    return opened
+    if let runtimeOpening { return try await runtimeOpening.task.value }
+    let token = database.nativeFiles.token()
+    let requestId = UUID()
+    let opening = Task { [self] in
+      defer { if runtimeOpening?.id == requestId { runtimeOpening = nil } }
+      let opened = try await GalaxySSIEmbeddingRuntime.open(
+        modelURL: storage.modelURL,
+        contextTokens: AgentKnowledgeEmbeddingModel.contextTokens,
+        threads: min(max(ProcessInfo.processInfo.activeProcessorCount - 1, 1), 8)
+      )
+      guard !Task.isCancelled, database.nativeFiles.token() == token, state.enabled, state.installed,
+        runtimeOpening?.id == requestId else {
+        await opened.close()
+        throw CancellationError()
+      }
+      runtime = opened
+      return opened
+    }
+    runtimeOpening = (requestId, opening)
+    return try await opening.value
   }
 
   private func closeRuntime() async {
+    idleCleanupTask?.cancel()
+    idleCleanupTask = nil
+    runtimeOpening?.task.cancel()
+    runtimeOpening = nil
     database.nativeFiles.invalidate()
     semanticSearch?.clearTransientIndex()
     semanticSearch = nil
-    await runtime?.close()
+    let closing = runtime
     runtime = nil
+    await closing?.close()
+  }
+
+  private func scheduleIdleCleanup() {
+    idleCleanupTask?.cancel()
+    idleCleanupTask = nil
+    guard state.enabled, state.installed, canUseNativeIndex, work == nil, activeQueries == 0 else { return }
+    idleCleanupTask = Task { [weak self] in
+      do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+      guard let self, self.work == nil, self.activeQueries == 0 else { return }
+      self.idleCleanupTask = nil
+      await self.closeRuntime()
+    }
   }
 
   private func startCountMaintenance() {

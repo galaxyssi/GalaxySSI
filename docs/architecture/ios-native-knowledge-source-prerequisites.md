@@ -2,7 +2,8 @@
 
 Partial port of Android PR #3005, pinned to
 `5d1a668ee1288fc6ef013dc853d9758f9283ad94` (native crate 0.4.0).
-This change does NOT activate native retrieval or complete that Android PR.
+The default semantic query is now routed to the native consumer in source.
+This does NOT prove a native build/activation or complete that Android PR.
 
 ## Production Changes
 
@@ -19,9 +20,9 @@ This change does NOT activate native retrieval or complete that Android PR.
 - Vector catalog traversal uses model-scoped opaque keyset cursors and indexed
   pages of at most 256 rows. Cursor keys contain no plaintext source identifiers.
   Individual reads re-use existing encryption and purpose authentication.
-- Existing semantic search hydrates only each page's sources and the at-most-256
-  retrieved candidates. It no longer calls the whole-source `all()` API or uses
-  OFFSET traversal. Candidate source revision/policy checks remain in place.
+- Default semantic search no longer builds a USearch graph, loads a vector
+  catalog, or hydrates all sources. The native result resolver reads at most
+  256 authenticated candidate chunks/sources and checks their current policy.
 - New vector writes also maintain an indexed ordinal directory in the same
   transaction. Offset-free legacy writes remove any prior ordinal entry instead
   of leaving stale native eligibility. Vector deletion cleans up the directory
@@ -38,31 +39,32 @@ This change does NOT activate native retrieval or complete that Android PR.
   out-of-head sequences as errors rather than returning a truncated success page.
 
 Pages are individually consistent reads, not a corpus snapshot. Concurrent edits
-require source revalidation; a cursor does not grant source access. The current
-USearch cache STILL accumulates a whole vector catalog. Bounded page reads are
-not a bounded total-memory guarantee and are not a durable graph implementation.
+require source revalidation; a cursor does not grant source access. The default
+whole-vector cache has been removed, but bounded reads do not establish a
+whole-App memory/RSS guarantee. Native progress is stored through Rust replay
+transactions, whose iOS execution has not been verified here.
 
 ## Android Comparison and Remaining Work
 
 | Android #3005 area | iOS disposition |
 | --- | --- |
-| KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance, bounded catalog and published-event replay-page API added; no native replay engine yet |
-| KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; new bounded native-match resolver verifies current publication, authenticated vector/source, exact ranges and feed/source stamps; production consumer still missing |
-| AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
+| KnowledgeNativeIndex source offsets and bounded vector loading | Serial native owner advances four pages per slice, resumes pending chunk progress, skips obsolete events and fences epoch/head before queries; source-wired, not native-tested |
+| KnowledgeSemanticSearch source-policy re-resolution | Default semantic consumer uses native search plus authenticated current-source resolution; lexical fallback and late controller returns are revalidated/fenced |
+| AgentKnowledgeDatabase native index directory | Protected per-database/specification/epoch ownership and persistent bounded real-vector seed seek added |
 | KnowledgeNativeBridge, JNI owner/arrays/mod | C ABI and synchronous Swift bridge added; Xcode framework build/link/embed configured but uncompiled |
 | KnowledgeNativeWire | Swift decoder preserves Rust binary records, pending progress and match provenance with strict lengths/flags/bounds |
 | KnowledgeNativeFiles key wrapping | Per-database ThisDeviceOnly Keychain root, HKDF spec/epoch keys, keyed directories, complete protection, backup exclusion and reset/invalidation sources added; native storage acceptance unverified |
-| KnowledgeModelWork bounded durable successors | Existing iOS embedding worker now resumes bounded source enrollment/reindex with contract hash; native replay and durable background successors still required |
-| memory-native Cargo files, lib.rs and replay format | Android engine unchanged; separate iOS crate uses current 0.6.0 path dependency and a derived lockfile; native framework integration remains required |
+| KnowledgeModelWork bounded durable successors | Embedding worker pumps source/replay slices, resumes on launch/foreground, and releases runtime/handles at 30-second idle; OS-managed background successors still required |
+| memory-native Cargo files, lib.rs and replay format | Android engine unchanged; iOS crate uses exact 0.6.0 path dependency and derived lockfile; native framework configuration is connected but unbuilt |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android inputs untouched; iOS-only locked framework build/export isolation/CodeSignOnCopy configured, not executed |
-| Two Android device fixtures | Not executable on iOS; twenty-five Swift fixture methods authored, not run |
+| Two Android device fixtures | Not executable on iOS; thirty-one Swift fixture methods authored, not run; replay-driver fixtures simulate the ABI boundary |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
-Still required before native activation: production native model/epoch ownership,
-replay-page consumption and transactional progress recovery, published-source
-query resolution, compiled ABI/lifecycle acceptance, framework packaging
-validation, late-result privacy/freshness fencing and lexical fallback during
-replay. Producer-side legacy enrollment is connected, but graph replay is not.
+Still required for full parity/acceptance: ordinary Agent/RAG asynchronous
+integration, OS-managed durable background successors, Cargo dependency resolution,
+compiled ABI/lifecycle acceptance, framework packaging/signing/installation
+validation and real graph/recovery/latency/scale acceptance. Default semantic UI
+queries and the existing embedding worker now consume the native driver in source.
 No native framework, build, device, latency or scale acceptance is claimed here.
 
 ## Verification Scope
@@ -89,6 +91,12 @@ stamps and authenticated native-match resolution. Six additional fixture methods
 cover publication pagination/re-addition, current source-policy enforcement,
 policy-only mutations, stale result batches, schema upgrade without invented
 history and non-recursive feed-registration failure. These fixtures have not run.
+`node apps/ios/tools/check-knowledge-native-routing-scope.cjs` checks actual
+default routing, bounded replay, committed-cursor use, source/lexical revalidation,
+generation/foreground gates, resume and idle-close wiring. Six fixture methods
+cover a 130-chunk simulated session recreation, obsolete/removal publications,
+late append/search invalidation, persistent seed seek and stale lexical policy.
+The simulated session is explicitly not a Rust or native disk acceptance result.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,

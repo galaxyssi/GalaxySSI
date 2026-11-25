@@ -42,30 +42,35 @@ machine/CI must have rustup, Node.js and Xcode command-line tools available.
 
 Swift source imports the module directly, decodes bounded little-endian records,
 and makes synchronous borrowed-buffer calls. It handles opaque-handle retirement
-and clears owned temporary configuration/vector/result buffers. This does not
-replace the existing semantic search by itself.
+and clears owned temporary configuration/vector/result buffers. The default
+`AgentKnowledgeSemanticSearch` now owns the native replay/query consumer instead
+of a whole-corpus USearch graph. This is source wiring, not native acceptance.
 
 No native compilation, dependency resolution or device test has been run. Still
-required before activation:
+required for full parity and native acceptance:
 
 - Verify the framework build, C/Swift ABI layout, module discovery, architecture
   slices, export isolation, signing and installation with Xcode.
-- Connect the production replay/query consumer to the new protected file store.
-  That store keeps a random master key in the database's ThisDeviceOnly Keychain
+- Verify the connected production consumer with the protected file store. That
+  store keeps a random master key in the database's ThisDeviceOnly Keychain
   namespace, derives per-specification/epoch index keys with HKDF, and uses
   master-keyed directory names. Directories inherit complete file protection and
   are excluded from backups. Missing keys and symbolic links fail closed.
-- Consume durable replay pages and fence feed freshness before replacing the
-  existing in-memory USearch path. Generation invalidation and handle retirement
-  now run on loss of foreground/protected data, model close and private reset;
-  the future consumer must reject late query results too.
+- Complete ordinary Agent/RAG asynchronous routing and OS-managed durable
+  background successors. The existing controller pumps bounded replay while
+  active and resumes on process start/foreground; it is not a BGProcessingTask
+  acceptance result.
 
 The existing indexing worker now enrolls legacy documents in transactional
 64-source slices with a persisted cursor. The full embedding contract is hashed
 into enrollment state; a change resets that cursor. Old offset-free vectors and
 incompatible contracts are actually re-embedded, not assigned synthetic offsets.
-Current ranged checkpoints are skipped without duplicate publication. This
-producer-side migration does not itself advance native graph replay checkpoints.
+Current ranged checkpoints are skipped without duplicate publication. After
+embedding batches, the worker advances at most four replay pages per slice and
+yields before scheduling another slice. A pending event resumes at its committed
+chunk offset; obsolete events are skipped, removals are applied and a graph is
+queryable only after its epoch/head checkpoint catches up. Initial real-vector
+seed lookup is bounded to 64 publications and has its own durable source cursor.
 
 Current publications are materialized transactionally with each durable event,
 using opaque model/item identities. Schema introduction resets bounded source
@@ -73,9 +78,15 @@ enrollment instead of synthesizing historical publication events. The query
 resolver checks current event sequence, encrypted checkpoint/specification,
 actual source revision and exact offsets before building a local excerpt. A
 feed/source-revision stamp is checked both inside the read snapshot and after
-resolution. These APIs are ready for the replay/query consumer, not proof that
-production queries already use that consumer. Target-specific cloud/Agent grants
+resolution. The default semantic consumer uses this resolver and revalidates its
+lexical fallback too. Target-specific cloud/Agent grants
 remain enforced by the existing RAG evidence policy on the fresh source metadata.
 
-Do not claim native activation from source checks alone. Existing App retrieval
-remains USearch until the production replay/query consumer is implemented.
+Generation and foreground/protected-data gates reject late opens, native hits
+and controller-level returns after cancellation/reset. Foreground resumes work;
+30 seconds idle closes both embedding runtime and native handles, not the graph.
+Concurrent runtime opens share one task, and a late obsolete open is closed.
+
+Do not claim successful native activation, performance, scale or installation
+from source checks. The driver fixture's persistent-session double is not proof
+of Rust durability; real native acceptance remains unperformed.

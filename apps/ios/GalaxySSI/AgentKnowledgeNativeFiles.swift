@@ -23,6 +23,8 @@ final class AgentKnowledgeNativeFiles {
   private let secrets: GalaxySSISecretStore
   private var generation: UInt64 = 0
   private var destroying = false
+  private var suspended = false
+  private var protectedUnavailable = false
   private var bridges: [WeakBridge] = []
   private var observers: [NSObjectProtocol] = []
 
@@ -32,9 +34,10 @@ final class AgentKnowledgeNativeFiles {
     rootDirectory = URL(fileURLWithPath: path + ".native", isDirectory: true)
     masterKeyAccount = "agent.knowledge.native.master.v1.\(namespace)"
     self.secrets = secrets
-    for name in [UIApplication.willResignActiveNotification, UIApplication.protectedDataWillBecomeUnavailableNotification] {
+    for name in [UIApplication.willResignActiveNotification, UIApplication.protectedDataWillBecomeUnavailableNotification,
+      UIApplication.didBecomeActiveNotification, UIApplication.protectedDataDidBecomeAvailableNotification] {
       observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
-        self?.invalidate()
+        self?.transition(name)
       })
     }
   }
@@ -50,6 +53,23 @@ final class AgentKnowledgeNativeFiles {
     return generation
   }
 
+  func activeToken() -> UInt64? {
+    Self.keyLock.lock()
+    defer { Self.keyLock.unlock() }
+    return destroying || suspended || protectedUnavailable ? nil : generation
+  }
+
+  private func transition(_ name: Notification.Name) {
+    Self.keyLock.lock()
+    if name == UIApplication.willResignActiveNotification { suspended = true }
+    if name == UIApplication.didBecomeActiveNotification { suspended = false }
+    if name == UIApplication.protectedDataWillBecomeUnavailableNotification { protectedUnavailable = true }
+    if name == UIApplication.protectedDataDidBecomeAvailableNotification { protectedUnavailable = false }
+    let cancel = suspended || protectedUnavailable
+    Self.keyLock.unlock()
+    if cancel { invalidate() }
+  }
+
   func identity(provenance: AgentKnowledgeVectorProvenance, epoch: String) throws -> Data {
     let normalized = try AgentKnowledgeNativeWire.epoch(epoch).map { String(format: "%02x", $0) }.joined()
     return Data(SHA256.hash(data: try JSONEncoder.galaxySSI.encode(Identity(
@@ -57,7 +77,7 @@ final class AgentKnowledgeNativeFiles {
   }
 
   func open(provenance: AgentKnowledgeVectorProvenance, epoch: String, token expected: UInt64,
-    cacheBytes: Int = 16 * 1_024 * 1_024, root: [Float]? = nil) throws -> AgentKnowledgeNativeBridge {
+    cacheBytes: Int = 16 * 1_024 * 1_024, root: [Float]? = nil) throws -> AgentKnowledgeNativeBridge? {
     let identity = try identity(provenance: provenance, epoch: epoch)
     var directory = rootDirectory
     var key = Data()
@@ -65,8 +85,12 @@ final class AgentKnowledgeNativeFiles {
     let exists: Bool
     Self.keyLock.lock()
     do {
-      guard !destroying, generation == expected else { throw CancellationError() }
+      guard !destroying, !suspended, !protectedUnavailable, generation == expected else { throw CancellationError() }
       try rejectSymbolicLink(rootDirectory)
+      if root == nil && !FileManager.default.fileExists(atPath: rootDirectory.path) {
+        Self.keyLock.unlock()
+        return nil
+      }
       var master = try masterKey()
       defer { master.wipeSensitive() }
       let folder = HMAC<SHA256>.authenticationCode(for: identity, using: SymmetricKey(data: master))
@@ -83,11 +107,11 @@ final class AgentKnowledgeNativeFiles {
       Self.keyLock.unlock()
       throw error
     }
-    guard exists || root != nil else { throw AgentKnowledgeNativeError.invalidRecord }
+    guard exists || root != nil else { return nil }
     let bridge = try AgentKnowledgeNativeBridge(directory: directory, key: key, identity: identity, epoch: epoch,
       dimensions: provenance.dimensions, cacheBytes: cacheBytes, root: exists ? nil : root)
     Self.keyLock.lock()
-    guard !destroying, generation == expected else {
+    guard !destroying, !suspended, !protectedUnavailable, generation == expected else {
       Self.keyLock.unlock()
       bridge.close()
       throw CancellationError()

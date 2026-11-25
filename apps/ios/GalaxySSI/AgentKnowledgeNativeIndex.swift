@@ -1,0 +1,129 @@
+import Foundation
+
+protocol AgentKnowledgeNativeSession: AnyObject {
+  func checkpoint() throws -> AgentKnowledgeNativeCheckpoint
+  func begin(_ event: AgentKnowledgeNativeEvent, skip: Bool) throws -> AgentKnowledgeNativeCheckpoint
+  func append(_ page: AgentKnowledgeVectorReplayPage) throws -> AgentKnowledgeNativeCheckpoint
+  func search(_ query: [Float], count: Int, breadth: Int) throws -> [AgentKnowledgeNativeMatch]
+  func cancel()
+  func close()
+}
+
+// Owned by one serial utility queue. Each advance is bounded; Rust checkpoints
+// commit with graph transactions and survive queue/handle/process lifetimes.
+final class AgentKnowledgeNativeIndex {
+  typealias Factory = (AgentKnowledgeVectorFeedStamp, UInt64, [Float]?) throws -> AgentKnowledgeNativeSession?
+  private let database: AgentKnowledgeDatabase
+  private let provenance: AgentKnowledgeVectorProvenance
+  private let factory: Factory
+  private var session: AgentKnowledgeNativeSession?
+  private var epoch = ""
+  private var generation: UInt64?
+  private(set) var readyStamp: AgentKnowledgeVectorFeedStamp?
+  private(set) var needsReplay = false
+
+  init(database: AgentKnowledgeDatabase, provenance: AgentKnowledgeVectorProvenance, factory: Factory? = nil) {
+    self.database = database
+    self.provenance = provenance
+    self.factory = factory ?? { [files = database.nativeFiles] stamp, token, root in
+      try files.open(provenance: provenance, epoch: stamp.epoch, token: token, root: root)
+        .map { $0 as AgentKnowledgeNativeSession }
+    }
+  }
+
+  deinit { close() }
+
+  func advance(maxPages: Int = 4, token: UInt64) throws -> Bool {
+    guard (1...16).contains(maxPages) else { throw AgentKnowledgeNativeError.invalidRecord }
+    readyStamp = nil
+    needsReplay = false
+    try active(token)
+    let initial = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+    if epoch != initial.epoch || generation != token {
+      close()
+      epoch = initial.epoch
+      generation = token
+    }
+    do {
+      if session == nil { session = try factory(initial, token, nil) }
+      if session == nil {
+        var seed = try database.nativeRootSeed(provenance: provenance, stamp: initial)
+        defer {
+          if seed.vector != nil { for index in seed.vector!.indices { seed.vector![index] = 0 } }
+        }
+        guard seed.vector != nil else { needsReplay = seed.pending; return false }
+        try active(token)
+        session = try factory(initial, token, seed.vector)
+      }
+      guard let session else { throw AgentKnowledgeNativeError.nativeFailure }
+      let expectedEpoch = try AgentKnowledgeNativeWire.epoch(initial.epoch).map { String(format: "%02x", $0) }.joined()
+      for _ in 0..<maxPages {
+        try active(token)
+        let checkpoint = try session.checkpoint()
+        guard checkpoint.epoch == expectedEpoch else { throw AgentKnowledgeDatabaseError.staleCursor }
+        let page = try database.vectorChangePage(modelSHA256: provenance.modelSHA256,
+          epoch: initial.epoch, afterSequence: checkpoint.sequence, limit: 1)
+        guard let change = page.events.first else {
+          guard checkpoint.pending == nil else { throw AgentKnowledgeNativeError.invalidRecord }
+          return try markReady(checkpoint: checkpoint, token: token)
+        }
+        let event = AgentKnowledgeNativeEvent(change: change)
+        if let pending = checkpoint.pending, pending.event != event { throw AgentKnowledgeNativeError.invalidRecord }
+        if change.operation == .removal {
+          _ = try session.begin(event, skip: false)
+        } else {
+          let next = checkpoint.pending?.next ?? 0
+          guard next >= 0, next < Int64(change.chunkCount) else { throw AgentKnowledgeNativeError.invalidRecord }
+          let vectors = try database.vectorReplayPage(event: change, provenance: provenance, afterChunkIndex: Int(next), limit: 64)
+          _ = try session.begin(event, skip: vectors == nil)
+          if let vectors {
+            try active(token)
+            _ = try session.append(vectors)
+          }
+        }
+      }
+      return try markReady(checkpoint: session.checkpoint(), token: token)
+    } catch {
+      close()
+      throw error
+    }
+  }
+
+  func search(_ vector: [Float], count: Int, token: UInt64) throws -> [AgentKnowledgeHit] {
+    try active(token)
+    guard generation == token, let session, let stamp = readyStamp,
+      try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
+      throw AgentKnowledgeDatabaseError.staleCursor
+    }
+    let count = min(max(count, 1), 256)
+    let matches = try session.search(vector, count: count, breadth: max(256, count + 1))
+    try active(token)
+    let hits = try database.resolveNativeMatches(matches, provenance: provenance, stamp: stamp)
+    try active(token)
+    return hits
+  }
+
+  func close() {
+    readyStamp = nil
+    needsReplay = false
+    session?.cancel()
+    session?.close()
+    session = nil
+  }
+
+  private func active(_ token: UInt64) throws {
+    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+  }
+
+  private func markReady(checkpoint: AgentKnowledgeNativeCheckpoint, token: UInt64) throws -> Bool {
+    try active(token)
+    let current = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+    let expectedEpoch = try AgentKnowledgeNativeWire.epoch(current.epoch).map { String(format: "%02x", $0) }.joined()
+    if checkpoint.epoch == expectedEpoch, checkpoint.sequence == current.head, checkpoint.pending == nil {
+      readyStamp = current
+      return true
+    }
+    needsReplay = true
+    return false
+  }
+}
