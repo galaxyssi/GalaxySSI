@@ -30,6 +30,9 @@ struct GalaxySSIHealthAtlasDetail: View {
       Picker(name, selection: selection.tab) {
         ForEach(GalaxySSIHealthAtlasState.Tab.allCases, id: \.self) { Text(t($0.rawValue)).tag($0) }
       }.pickerStyle(.segmented).padding()
+        .onChange(of: selection.wrappedValue.tab) { tab in
+          if tab != .values { selection.wrappedValue.revealTrend = false }
+        }
       if selection.wrappedValue.tab == .values {
         GalaxySSIHealthAtlasValues(entry: entry, records: records, selection: selection)
       } else {
@@ -178,6 +181,9 @@ struct GalaxySSIHealthAtlasValues: View {
   @Binding var selection: GalaxySSIHealthAtlasState.Selection
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   private var metrics: [GalaxySSIHealthMetric] { GalaxySSIHealthAtlasMetrics.forEntry(entry.id) }
+  private var revealTrend: Binding<Bool> {
+    Binding(get: { selection.revealTrend == true }, set: { selection.revealTrend = $0 })
+  }
   var body: some View {
     if let first = metrics.first {
       VStack(spacing: 8) {
@@ -201,11 +207,11 @@ struct GalaxySSIHealthAtlasValues: View {
   @ViewBuilder private func trend(_ first: GalaxySSIHealthMetric) -> some View {
     #if GALAXYSSI_ATLAS_AGENT_CONTEXT
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
-      atlasWindow: $selection.window).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
+      atlasWindow: $selection.window, revealAtlasTrend: revealTrend).id(selection.metric ?? first).environment(\.galaxySSIAtlasPinnedAnalysis, true)
       .environment(\.galaxySSIAtlasAnalysisSelection, entry.id + ":" + (selection.metric ?? first).rawValue + ":" + selection.window.rawValue)
     #else
     GalaxySSIHealthTrendView(records: records, fixedMetric: selection.metric ?? first,
-      atlasWindow: $selection.window).id(selection.metric ?? first)
+      atlasWindow: $selection.window, revealAtlasTrend: revealTrend).id(selection.metric ?? first)
     #endif
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }

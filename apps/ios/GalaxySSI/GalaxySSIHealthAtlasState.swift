@@ -20,6 +20,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var aging: GalaxySSIHealthAtlasAgingSelection?
     var structureLayer: String?
     var functionSelection: GalaxySSIHealthAtlasFunctionSelection?
+    var revealTrend: Bool?
     var selectedStructureLayer: StructureLayer {
       get { StructureLayer(rawValue: structureLayer ?? "") ?? .organ }
       set { structureLayer = newValue.rawValue }
@@ -27,6 +28,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   }
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
+  @Published var wholeFocus = "heart"
   private var liveFunctionPhases: [String: [String: Double]] = [:]
 
   func recordFunctionPhase(entryID: String, storyID: String, phase: Double) {
@@ -47,6 +49,23 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   func openNumericalModel(_ entry: GalaxySSIHealthAtlas.Entry) {
     var next = functionSnapshot(entry)
     next.tab = .simulation
+    entries[entry.id] = next
+  }
+
+  func wholeEntry(in atlas: GalaxySSIHealthAtlas) -> GalaxySSIHealthAtlas.Entry? {
+    atlas.entry(wholeFocus) ?? atlas.entry("heart")
+  }
+
+  func rememberWholeSelection(_ id: String, in atlas: GalaxySSIHealthAtlas) {
+    guard atlas.entry(id) != nil else { return }
+    wholeFocus = id
+  }
+
+  func openWholeBody(_ entry: GalaxySSIHealthAtlas.Entry, tab: Tab, showTrend: Bool = false) {
+    wholeFocus = entry.id
+    var next = binding(entry).wrappedValue
+    next.tab = tab
+    next.revealTrend = showTrend && tab == .values && !GalaxySSIHealthAtlasMetrics.forEntry(entry.id).isEmpty
     entries[entry.id] = next
   }
 
@@ -93,12 +112,14 @@ struct GalaxySSIHealthAtlasView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @StateObject private var state = GalaxySSIHealthAtlasState()
   @SceneStorage("galaxyssi.health.atlas.public-selection.v1") private var saved = "{}"
+  @SceneStorage("galaxyssi.health.atlas.whole-focus.v1") private var savedWholeFocus = "heart"
   @State private var atlas: GalaxySSIHealthAtlas?
   @SceneStorage("galaxyssi.health.atlas.query.v1") private var query = ""
   @SceneStorage("galaxyssi.health.atlas.kind.v1") private var kind = "whole"
   @SceneStorage("galaxyssi.health.atlas.system.v1") private var system = ""
   @SceneStorage("galaxyssi.health.atlas.tissue-catalogue.v1") private var showTissues = false
   @State private var limit = 24
+  @State private var quickTarget: String?
 
   var body: some View {
     Group {
@@ -112,13 +133,16 @@ struct GalaxySSIHealthAtlasView: View {
           }.pickerStyle(.segmented)
           if kind == "whole" {
             GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: nil, state: state, records: records, depth: 0)
+            if let focus = state.wholeEntry(in: atlas) {
+              GalaxySSIHealthAtlasWholeBodyActions(atlas: atlas, entry: focus, language: language) { tab, trend in
+                state.openWholeBody(focus, tab: tab, showTrend: trend)
+                quickTarget = focus.id
+              }
+            }
             Text(String(format: t("counts"), Int64(atlas.entries.filter { $0.kind == .system }.count),
               Int64(atlas.entries.filter { $0.kind == .organ }.count), Int64(atlas.entries.filter { $0.kind == .tissue }.count),
               Int64(atlas.entries.filter { $0.kind == .cell }.count)))
               .font(.subheadline).foregroundColor(.secondary)
-            ForEach(["heart", "cell-pancreatic-beta-cell"], id: \.self) { id in
-              if let entry = atlas.entry(id) { link(entry, atlas: atlas) }
-            }
             Text(t("category_note")).font(.footnote).foregroundColor(.secondary)
             NavigationLink(GalaxySSIHealthBodyText.string("entry", language: language)) {
               GalaxySSIHealthBodyView {
@@ -162,11 +186,20 @@ struct GalaxySSIHealthAtlasView: View {
     .navigationTitle(t("whole"))
     .navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
-      if let atlas { GalaxySSIHealthAtlasAsk(atlas: atlas, entry: nil, selection: .init()).padding(.horizontal) }
+      if let atlas {
+        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: kind == "whole" ? state.wholeEntry(in: atlas) : nil,
+          selection: .init()).padding(.horizontal)
+      }
     }
+    .background(NavigationLink(isActive: Binding(get: { quickTarget != nil }, set: { if !$0 { quickTarget = nil } })) {
+      if let atlas, let quickTarget, let entry = atlas.entry(quickTarget) {
+        GalaxySSIHealthAtlasDetail(atlas: atlas, entry: entry, state: state, records: records, depth: 1)
+      }
+    } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
     .onAppear { if atlas == nil { load() } }
     .onChange(of: state.serialized) { saved = $0 }
+    .onChange(of: state.wholeFocus) { savedWholeFocus = $0 }
     .onChange(of: kind) { _ in system = ""; limit = 24 }
     .onChange(of: system) { _ in limit = 24 }
     .onChange(of: showTissues) { _ in limit = 24 }
@@ -183,7 +216,9 @@ struct GalaxySSIHealthAtlasView: View {
       if !["whole", "system", "organ", "cell"].contains(kind) { kind = "whole" }
       if !system.isEmpty, content.entry(system)?.kind != .system { system = "" }
       query = String(query.prefix(100))
-      state.restore(saved, atlas: content); atlas = content
+      state.restore(saved, atlas: content)
+      state.wholeFocus = content.entry(savedWholeFocus)?.id ?? "heart"
+      atlas = content
     }
     catch { atlas = nil }
   }

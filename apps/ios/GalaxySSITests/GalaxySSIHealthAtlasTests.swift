@@ -3972,6 +3972,44 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testWholeBodyFocusActionsPreserveSelectionsAndStayPublic() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let heart = try XCTUnwrap(atlas.entry("heart")), liver = try XCTUnwrap(atlas.entry("liver"))
+    let brain = try XCTUnwrap(atlas.entry("brain"))
+    let liverInputs = try XCTUnwrap(GalaxySSIHealthAtlasPhysiology.Kind.forEntry(liver.id)).inputs.map(\.initial)
+    XCTAssertEqual(state.wholeEntry(in: atlas)?.id, heart.id)
+    state.wholeFocus = "unknown-entry"
+    XCTAssertEqual(state.wholeEntry(in: atlas)?.id, heart.id)
+    state.rememberWholeSelection(liver.id, in: atlas)
+    state.rememberWholeSelection("unknown-entry", in: atlas)
+    XCTAssertEqual(state.wholeEntry(in: atlas)?.id, liver.id)
+    state.binding(liver).wrappedValue.window = .month
+    state.binding(liver).wrappedValue.physiologyInputs = liverInputs
+    state.openWholeBody(liver, tab: .values, showTrend: true)
+    XCTAssertEqual(state.binding(liver).wrappedValue.tab, .values)
+    XCTAssertEqual(state.binding(liver).wrappedValue.revealTrend, true)
+    XCTAssertEqual(state.binding(liver).wrappedValue.window, .month)
+    XCTAssertEqual(state.binding(liver).wrappedValue.physiologyInputs, liverInputs)
+    XCTAssertEqual(GalaxySSIHealthAtlasMetrics.forEntry(liver.id).first, .alt)
+    state.openWholeBody(liver, tab: .values)
+    XCTAssertEqual(state.binding(liver).wrappedValue.revealTrend, false)
+    state.openWholeBody(liver, tab: .structure, showTrend: true)
+    XCTAssertEqual(state.binding(liver).wrappedValue.revealTrend, false)
+    XCTAssertTrue(GalaxySSIHealthAtlasMetrics.forEntry(brain.id).isEmpty)
+    state.openWholeBody(brain, tab: .values, showTrend: true)
+    XCTAssertEqual(state.binding(brain).wrappedValue.revealTrend, false)
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    restored.wholeFocus = state.wholeFocus
+    XCTAssertEqual(restored.wholeEntry(in: atlas)?.id, brain.id)
+    XCTAssertEqual(restored.binding(brain).wrappedValue.tab, .values)
+    XCTAssertEqual(restored.binding(liver).wrappedValue.physiologyInputs, liverInputs)
+    for language in ["en", "zh-Hans"] {
+      let question = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: liver, selection: .init(), research: false, language: language)
+      XCTAssertTrue(question.contains(GalaxySSIHealthAtlasText.get(liver.name, language)))
+      XCTAssertFalse(question.contains("physiologyInputs")); XCTAssertFalse(question.contains("measuredAt"))
+    }
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

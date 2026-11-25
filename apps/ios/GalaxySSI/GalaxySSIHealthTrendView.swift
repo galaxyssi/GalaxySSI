@@ -213,6 +213,7 @@ struct GalaxySSIHealthTrendView: View {
   private let comparisonAnchor: GalaxySSIHealthReading?
   private let unverifiedComparison: Bool
   private let atlasWindow: Binding<GalaxySSIHealthAtlasWindow>?
+  private let revealAtlasTrend: Binding<Bool>?
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -245,13 +246,15 @@ struct GalaxySSIHealthTrendView: View {
 
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
        recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil, comparisonAnchor: GalaxySSIHealthReading? = nil,
-       unverifiedComparison: Bool = false, atlasWindow: Binding<GalaxySSIHealthAtlasWindow>? = nil) {
+       unverifiedComparison: Bool = false, atlasWindow: Binding<GalaxySSIHealthAtlasWindow>? = nil,
+       revealAtlasTrend: Binding<Bool>? = nil) {
     self.records = records
     self.fixedMetric = fixedMetric
     self.recordMeasurement = recordMeasurement
     self.comparisonAnchor = comparisonAnchor
     self.unverifiedComparison = unverifiedComparison
     self.atlasWindow = atlasWindow
+    self.revealAtlasTrend = revealAtlasTrend
     _metric = State(initialValue: fixedMetric ?? .bloodPressure)
     if atlasWindow != nil { _aggregation = State(initialValue: .latest) }
     if let comparisonAnchor {
@@ -265,6 +268,7 @@ struct GalaxySSIHealthTrendView: View {
   }
 
   var body: some View {
+    ScrollViewReader { proxy in
     List {
       if scene == .active {
         if error {
@@ -272,6 +276,7 @@ struct GalaxySSIHealthTrendView: View {
           Button(t("refresh", "Refresh"), action: reload)
         } else if !allowed {
           Text(t("permission", "Enable the local measurement summary in Health Privacy to view trends."))
+            .accessibilityIdentifier("atlas-personal-blocked")
         } else {
           if fixedMetric == nil {
             Picker(t("metric", "Measurement"), selection: $metric) {
@@ -369,7 +374,7 @@ struct GalaxySSIHealthTrendView: View {
                   Text(t("unverified_methods", "Laboratory methods are unverified; results are shown separately.")).font(.caption).foregroundColor(.secondary)
                 }
                 let data = trend.chartData(aggregation, component: component)
-                chart(trend, data: data)
+                chart(trend, data: data).id("atlas-personal-chart").accessibilityIdentifier("atlas-personal-chart")
                 Button { toggleChartData(data) } label: {
                   Label(t("chart_data", "Chart data"), systemImage: showsChartData ? "chevron.down" : "list.bullet")
                 }
@@ -384,6 +389,9 @@ struct GalaxySSIHealthTrendView: View {
           }
         }
       }
+    }
+    .onChange(of: canRevealAtlasTrend) { _ in revealAtlasChart(proxy) }
+    .onChange(of: revealAtlasTrend?.wrappedValue) { _ in revealAtlasChart(proxy) }
     }
     .navigationTitle(t("title", "Measurement Trends"))
     .galaxySSIHealthTheme()
@@ -507,6 +515,20 @@ struct GalaxySSIHealthTrendView: View {
         }
       }
       .navigationViewStyle(.stack)
+    }
+  }
+
+  private var canRevealAtlasTrend: Bool {
+    scene == .active && allowed && !changed && !error &&
+      trend?.minimum != nil && trend?.maximum != nil
+  }
+
+  private func revealAtlasChart(_ proxy: ScrollViewProxy) {
+    guard revealAtlasTrend?.wrappedValue == true, canRevealAtlasTrend else { return }
+    DispatchQueue.main.async {
+      guard revealAtlasTrend?.wrappedValue == true, canRevealAtlasTrend else { return }
+      proxy.scrollTo("atlas-personal-chart", anchor: .center)
+      if let revealAtlasTrend { revealAtlasTrend.wrappedValue = false }
     }
   }
 

@@ -142,6 +142,9 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .alert(item: featureSelection(inSheet: false), content: featureAlert)
       .onChange(of: fullscreen) { _ in selectedFeature = nil }
       .onChange(of: art) { _ in selectedFeature = nil }
+      .onChange(of: selected) { id in
+        if entry == nil, let id { state.rememberWholeSelection(id, in: atlas) }
+      }
       .onDisappear { selectedFeature = nil }
     }
   }
