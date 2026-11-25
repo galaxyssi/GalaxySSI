@@ -81,9 +81,10 @@ enum AgentRecordedExecutionEvidence {
       ["unknown", "uncertain", "unverified"].contains(evidence["outcome"]?.stringValue?.lowercased() ?? "") ||
       evidence["code"]?.stringValue?.lowercased() == "effect_outcome_unknown"
     let status: AgentToolCallStatus
+    let awaiting = metadata["awaiting_response"] == "true"
     if nativeStatus == "cancelled" {
       status = .cancelled
-    } else if unknown {
+    } else if unknown || awaiting {
       status = .running
     } else if let receipt {
       status = receipt.success ? .succeeded : .failed
@@ -117,7 +118,8 @@ enum AgentRecordedExecutionEvidence {
     var output: AgentMcpJSONObject = [:]
     if !message.isBlank { output["message"] = .string(message) }
     if !nativeStatus.isEmpty { output["status"] = .string(String(nativeStatus.prefix(64))) }
-    if let receipt { output["observed"] = .bool(true); output["success"] = .bool(receipt.success && !unknown) }
+    if let receipt { output["observed"] = .bool(true); output["success"] = .bool(receipt.success && !unknown && !awaiting) }
+    if awaiting { output["awaiting_response"] = .bool(true) }
     if explicitlyUndispatched { output["execution_started"] = .bool(false) }
     if unknown { output["outcome_unverified"] = .bool(true) }
     if !receiptID.isBlank { output["invocation_id"] = .string(String(receiptID.prefix(512))) }

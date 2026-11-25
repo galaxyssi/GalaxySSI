@@ -14,8 +14,9 @@ const approval=store.split('  func approveFriendRequest(id:')[1].split('  func a
 check(approval,[snapshot.trim(),rollback.trim(),'upsert(next)','if request.opaquePhoneRoutes != nil']);
 assert(approval.indexOf(snapshot)<approval.indexOf('request.status = .approved'));
 assert(approval.indexOf(rollback)<approval.indexOf('appendSystemNotification('));
-const normalized=store.replace(snapshot,'').replace(rollback,'    save()');
-assert.equal(normalized,prior('GalaxySSIStore'),'Only snapshot/failed-save rollback changes; identities, contact fields, other persistence and schedule guards remain exact');
+const normalized=store.replace(snapshot,'').replace(rollback,'    save()')
+  .replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n','');
+assert.equal(normalized,prior('GalaxySSIStore'),'Only approval rollback and #3119 shared task-commit wrapper; original commit body, identities, other persistence and schedule guards exact');
 for(const name of ['MqttPeerRoutes','MqttPeerRouteSession','GalaxySSIMqttClient','GalaxySSIEncryptedStateStore','GalaxySSISignalEngine','GalaxySSIAddContactView','GalaxySSIAgentDirectoryView','GalaxySSIFriendRequestDetailView'])assert.equal(source(name),prior(name),name+' unchanged');
 // #3119 extends unrelated Auto routing in this class; keep approval kernels exact.
 for(const signature of ['  func publishPhoneContactDecision(', '  private func refreshApprovedPhoneContactSubscriptions(', '  private func handlePhoneContactIncoming(']) {

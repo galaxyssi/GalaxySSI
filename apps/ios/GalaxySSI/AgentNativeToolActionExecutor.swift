@@ -42,6 +42,10 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     return AgentConnectorFallbackAction.mergingRoutingMetadata(result, action: action)
   }
 
+  func observedConnectorDispatch(action: AgentAction) -> AgentActionResult? {
+    actionEffectExecutor?.dispatchedResult(action: action, context: Self.legacyActionContext(action))
+  }
+
   private func executeUntraced(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
     guard action.kind == .callNativeTool else {
       if let actionEffectExecutor {

@@ -59,6 +59,9 @@ for (const file of [
   // Some storage operations live in the monolithic Store on older revisions.
   if (fs.existsSync(path.join(root, target))) {
     let source = fs.readFileSync(path.join(root, target), 'utf8');
+    if (file === 'GalaxySSIStore.swift') {
+      source = source.replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n', '');
+    }
     if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
       // #3119 adds only this admission boundary; its own scope check verifies it.
       assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));

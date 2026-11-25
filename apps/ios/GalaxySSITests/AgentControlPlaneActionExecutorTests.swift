@@ -2,6 +2,99 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testNativeConnectorWaitRoundTripsAndOnlySettlesExactCommittedOwner() throws {
+    let fixture = nativeConnectorWaitFixture()
+    let waiting = try XCTUnwrap(AgentNativeConnectorContinuation.waitingAction(fixture.action,
+      result: fixture.result, task: fixture.task, outgoing: fixture.outgoing))
+    XCTAssertEqual(waiting.status, .waitingResponse)
+    let restored = try JSONDecoder().decode(AgentAction.self, from: JSONEncoder().encode(waiting))
+    XCTAssertEqual(AgentNativeConnectorContinuation.pendingResult(restored), fixture.result)
+    let response = AgentConnectorResponse(sourceMessageId: 9920, contactId: "codex", content: "Done",
+      conversationId: "conversation", turnId: "turn", taskId: "remote-task", taskStatus: "completed")
+    let record = AgentManagedResponseRecord(ownerRunId: fixture.result.metadata["control_plane_run_id"]!,
+      supervisorRunId: "parent", agentId: "codex", deliveryMode: .respond, sourceMessageId: 9920,
+      contactId: "codex", conversationId: "conversation", turnId: "turn", taskId: "remote-task",
+      state: .completed, response: response)
+    let settled = try XCTUnwrap(AgentNativeConnectorContinuation.settle(fixture.result, record: record))
+    XCTAssertTrue(settled.success)
+    XCTAssertEqual(settled.metadata["awaiting_response"], "false")
+    for field in ["owner", "agent", "source", "contact", "conversation", "turn", "task", "generation", "pending"] {
+      var foreign = record
+      switch field {
+      case "owner": foreign.ownerRunId = "other"
+      case "agent": foreign.agentId = "other"
+      case "source": foreign.sourceMessageId += 1
+      case "contact": foreign.contactId = "other"
+      case "conversation": foreign.conversationId = "other"
+      case "turn": foreign.turnId = "other"
+      case "task": foreign.taskId = "other"
+      case "generation": foreign.executionGeneration += 1
+      default: foreign.state = .pending
+      }
+      XCTAssertNil(AgentNativeConnectorContinuation.settle(fixture.result, record: foreign), field)
+    }
+  }
+
+  func testNativeConnectorQueueCannotProjectSuccessfulToolCompletion() throws {
+    let fixture = nativeConnectorWaitFixture()
+    let waiting = try XCTUnwrap(AgentNativeConnectorContinuation.waitingAction(fixture.action,
+      result: fixture.result, task: fixture.task, outgoing: fixture.outgoing))
+    var task = fixture.task
+    task.activePlan = AgentPlanFactory.singleAction(request: AgentPlanRequest(goal: task.goal,
+      screen: AgentScreenContext(foregroundApp: "GalaxySSI")), action: waiting)
+    XCTAssertTrue(AgentNativeConnectorContinuation.hasWaitingAction(task))
+    let projection = AgentRecordedExecutionEvidence.project(task: task,
+      scope: AgentPlanContinuationScope(conversationId: "conversation", turnId: "turn"), previous: [],
+      observations: [.init(action: waiting, result: fixture.result)], now: 1234)
+    let call = try XCTUnwrap(projection.calls.first)
+    XCTAssertEqual(call.status, .running)
+    XCTAssertEqual(call.completedAtMillis, 0)
+    XCTAssertEqual(call.result["success"], .bool(false))
+    XCTAssertEqual(call.result["awaiting_response"], .bool(true))
+    XCTAssertFalse(AgentRollingPlanPolicy.shouldRequestNextBatch(plan: task.activePlan, result: fixture.result))
+  }
+
+  func testNativeConnectorWaitRejectsMissingScopeAndUntrackedFailureCannotReroute() throws {
+    let fixture = nativeConnectorWaitFixture()
+    for key in ["conversation_id", "turn_id", "task_id", "contact_id", "control_plane_run_id", "source_message_id"] {
+      var invalid = fixture.result
+      invalid.metadata[key] = ""
+      XCTAssertNil(AgentNativeConnectorContinuation.waitingAction(fixture.action,
+        result: invalid, task: fixture.task, outgoing: fixture.outgoing), key)
+    }
+    var action = fixture.action
+    action.parameters["auto_reroute_on_failure"] = "true"
+    let cloud = AgentCallableTarget(id: "cloud-model:deepseek", title: "Cloud", kind: .model,
+      status: .available, capabilities: [.chat, .reasoning])
+    var failure = AgentActionResult(actionId: action.id, success: false, message: "Failed",
+      metadata: ["resource_id": "codex"])
+    XCTAssertNotNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+      currentResourceIds: [cloud.id], targets: [cloud]))
+    for flag in ["effect_outcome_unknown", "non_retriable"] {
+      failure.metadata[flag] = "true"
+      XCTAssertNil(AgentConnectorFallbackAction.freshFallback(action: action, failure: failure,
+        currentResourceIds: [cloud.id], targets: [cloud]))
+      failure.metadata.removeValue(forKey: flag)
+    }
+  }
+
+  private func nativeConnectorWaitFixture() -> (action: AgentAction, result: AgentActionResult,
+    task: AgentTaskRecord, outgoing: ChatMessage) {
+    let action = actionExecutorConnectorAction(parameters: ["_galaxyssi_task_id": "turn",
+      "_galaxyssi_session_id": "conversation"])
+    let result = AgentActionResult(actionId: action.id, success: true, message: "Queued",
+      metadata: ["awaiting_response": "true", "source_message_id": "9920", "contact_id": "codex",
+        "conversation_id": "conversation", "turn_id": "turn", "task_id": "remote-task",
+        "control_plane_agent_id": "codex",
+        "control_plane_run_id": AgentControlPlaneActionExecutor.stableRunId(conversationId: "conversation",
+          turnId: "turn", actionId: action.id, agentId: "codex")])
+    let task = AgentTaskRecord(taskId: "turn", sessionId: "conversation", goal: "Inspect project",
+      phase: .executing, routeKind: .localSystem, targetTitle: "Codex", risk: .low, blocked: false)
+    let outgoing = ChatMessage(contactId: "hermes", content: task.goal, isMine: true,
+      conversationId: "conversation", turnId: "turn")
+    return (action, result, task, outgoing)
+  }
+
   func testConnectorTrackingFailureIsUnknownNonRetriableAndNotRedispatched() {
     var executions = 0
     let delegate = TestAgentActionExecutor { action, _ in

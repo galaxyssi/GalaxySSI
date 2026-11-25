@@ -175,10 +175,53 @@ module.exports.normalizedProvider = normalizedProvider;
 const dispatchTests = read('apps/ios/GalaxySSITests/AgentControlPlaneActionExecutorTests.swift');
 assert(dispatchTests.includes('func testConnectorTrackingFailureIsUnknownNonRetriableAndNotRedispatched('));
 assert(dispatchTests.includes('func testMalformedQueuedConnectorReceiptCannotBecomeCompletedOrWaiting('));
+for (const name of ['testNativeConnectorWaitRoundTripsAndOnlySettlesExactCommittedOwner',
+  'testNativeConnectorQueueCannotProjectSuccessfulToolCompletion',
+  'testNativeConnectorWaitRejectsMissingScopeAndUntrackedFailureCannotReroute']) assert(dispatchTests.includes('func ' + name + '('));
+assert(source.includes('failure.metadata["effect_outcome_unknown"] != "true"'));
+assert(source.includes('failure.metadata["non_retriable"] != "true"'));
 for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutResolver.swift']) {
   const target = 'apps/ios/GalaxySSI/' + file;
-  assert.equal(read(target), git('show', `${base}:${target}`), file + ' effect/timeout kernel unchanged');
+  const current = file === 'AgentActionEffectExecutor.swift' ? read(target).replace(
+    '    guard let claim = store.observe(key) else { return nil }',
+    '    guard let claim = store.observe(key), claim.result != nil else { return nil }') : read(target);
+  assert.equal(current, git('show', `${base}:${target}`), file + ' only read-only pending-claim observation changes; execution/timeout kernels unchanged');
 }
+const taskStore = read('apps/ios/GalaxySSI/GalaxySSIStore.swift');
+assert.equal(taskStore.replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n', ''),
+  git('show', `${base}:apps/ios/GalaxySSI/GalaxySSIStore.swift`), 'Existing guarded task snapshot save/rollback body and other Store code unchanged');
+const resolverFile = 'apps/ios/GalaxySSI/AgentConnectorResponseResolver.swift';
+const resolver = read(resolverFile);
+const continuationStart = resolver.indexOf('enum AgentNativeConnectorContinuation {');
+const continuationEnd = resolver.indexOf('struct AgentConnectorResponseSettlement:');
+assert(continuationStart > 0 && continuationEnd > continuationStart);
+assert.equal(resolver.slice(0, continuationStart) + resolver.slice(continuationEnd), git('show', `${base}:${resolverFile}`));
+for (const token of ['record.matchesCommittedResult(response)', 'record.ownerRunId == pending.metadata["control_plane_run_id"]',
+  'response.contactId == record.contactId', 'response.executionGeneration == record.executionGeneration',
+  'AgentControlPlaneActionExecutor.stableRunId(', 'outgoing.contactId == "hermes"',
+  'waiting.status = .waitingResponse']) assert(resolver.includes(token));
+const waitHost = services.slice(services.indexOf('  private func retainWaitingNativeConnector('),
+  services.indexOf('  private func finishLocalNativeAction('));
+for (const token of ['store.commitOwnedAgentTaskState(expected: previous, updated: updated)',
+  'managedDesktopReplyLedger.recoveryRecord(owner: run)', 'store.persistedMessage(id: sourceID, contactId: "hermes")',
+  'store.commitOwnedAgentTaskState(expected: previous, updated: task)', 'AgentNativeConnectorContinuation.settle(',
+  'PhoneExecutionAuthority.isCancelled', 'session.mergedIntoConversationId.isBlank']) assert(waitHost.includes(token));
+assert(waitHost.indexOf('store.commitOwnedAgentTaskState(expected: previous, updated: task)') < waitHost.indexOf('finishLocalNativeAction('));
+const finishHost = services.slice(services.indexOf('  private func finishLocalNativeAction('), services.indexOf('  private func updateActiveNativePlan('));
+assert(finishHost.indexOf('result.metadata["awaiting_response"] == "true"') < finishHost.indexOf('updateActiveNativePlan('));
+assert(services.includes('nativeConnectorResponseToken = AgentLateManagedResponseBus.shared.addListener'));
+assert(services.includes('!AgentNativeConnectorContinuation.hasWaitingAction(task),'));
+const dispatchHost = services.slice(services.indexOf('  private func executeLocalNativeAction('),
+  services.indexOf('  private func refreshAutomaticConnectorAction('));
+assert(dispatchHost.indexOf('observedConnectorDispatch(action: original)') < dispatchHost.indexOf('refreshAutomaticConnectorAction('));
+assert(dispatchHost.indexOf('checkpointNativeConnectorDispatch(executionAction') < dispatchHost.indexOf('runtime.actionExecutor.execute('));
+assert(dispatchHost.indexOf('checkpointNativeConnectorDispatch(fallbackAction') < dispatchHost.indexOf('runtime.actionExecutor.execute(action: fallbackAction'));
+const projectionFile = 'apps/ios/GalaxySSI/AgentRecordedExecutionEvidence.swift';
+const projected = read(projectionFile);
+assert.equal(projected.replace('    let awaiting = metadata["awaiting_response"] == "true"\n', '')
+  .replace('} else if unknown || awaiting {', '} else if unknown {')
+  .replace('receipt.success && !unknown && !awaiting', 'receipt.success && !unknown')
+  .replace('    if awaiting { output["awaiting_response"] = .bool(true) }\n', ''), git('show', `${base}:${projectionFile}`));
 assert.equal(read('apps/ios/GalaxySSI/AgentTaskBudgetModels.swift'),
   git('show', `${base}:apps/ios/GalaxySSI/AgentTaskBudgetModels.swift`),
   'Reuse current explicit network/provider policy; do not restore old telemetry counter cutoffs');
@@ -255,7 +298,7 @@ const disposition = file => {
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Live registration/capacity/privacy/provider/network admission, encrypted Auto identity, primary/synchronous/parallel/scheduled and snapshot-less outcome-review preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; full scored router, generic connector/timeout and broader resume parity incomplete',
+  scope: 'Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; native queued receipt tracking/committed-owner continuation and read-before-reroute recovery; attachment UI scope and bounded Desktop recovery; full scored router, generic app connector producer, asynchronous failover/timeout and broader resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');

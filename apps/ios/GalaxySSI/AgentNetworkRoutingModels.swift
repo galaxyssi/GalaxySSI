@@ -665,7 +665,9 @@ enum AgentConnectorFallbackAction {
           action.parameters["auto_reroute_on_failure"] == "true" || failure.metadata["auto_reroute_on_failure"] == "true",
           (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
           failure.metadata["awaiting_response"] != "true",
-          !["effect_outcome_unknown", "idempotency_key_conflict"].contains(failure.metadata["error_code"] ?? ""),
+          failure.metadata["effect_outcome_unknown"] != "true",
+          failure.metadata["non_retriable"] != "true",
+          !["effect_outcome_unknown", "idempotency_key_conflict", "action_effect_receipt_invalid"].contains(failure.metadata["error_code"] ?? ""),
           failure.metadata["plan_node_outcome_unknown"] != "true",
           failure.metadata["outcome_unknown"] != "true" else { return nil }
     let failed = (failure.metadata["resource_id"] ?? "").ifBlank(action.parameters["connector_id"] ?? "")
