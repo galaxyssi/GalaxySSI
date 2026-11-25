@@ -4,6 +4,71 @@ import XCTest
 
 @MainActor
 final class GalaxySSIHealthCareModelReviewTests: XCTestCase {
+  func testUnexecutedHealthControlRepliesAreRetainedEncryptedWithoutCompletionOrReplay() throws {
+    let f = try HealthModelReviewFixture()
+    let control = #"{"actions":[{"kind":"native_tool","target":"private-fixture-tool"}]}"#
+    let before = try f.records.load().current
+    try f.records.finishLocalCareDiscussionTurn(f.approval, answer: control, now: f.now)
+    let reopened = GalaxySSIHealthRecords(owner: f.records.owner, secrets: f.secrets, isolatedFile: f.file)
+    let archive = try reopened.load()
+    let thread = try XCTUnwrap(archive.localCareDiscussions?[f.concern.id.uuidString])
+    let turn = try XCTUnwrap(thread.turns.last)
+    XCTAssertEqual(turn.id, f.approval.id)
+    XCTAssertEqual(thread.id, f.approval.threadID)
+    XCTAssertEqual(turn.question, f.approval.question)
+    XCTAssertEqual(turn.destination, f.approval.destinationDigest)
+    XCTAssertEqual(turn.interruptedReply, control)
+    XCTAssertTrue(turn.hasInterruptedReply)
+    XCTAssertNil(turn.answer)
+    XCTAssertNil(turn.retainedAnswer)
+    XCTAssertNil(turn.automaticResearchCompleted)
+    XCTAssertEqual(archive.localCareResearch?.jobs[f.concern.id.uuidString]?.state, .interrupted)
+    XCTAssertEqual(archive.current, before)
+    XCTAssertTrue(archive.localCarePlans?.isEmpty ?? true)
+    XCTAssertNil(archive.localCareModelReviews)
+    XCTAssertNil(try Data(contentsOf: f.file).range(of: Data(control.utf8)))
+    try reopened.finishLocalCareDiscussionTurn(f.approval, answer: control, now: f.now)
+    XCTAssertEqual(try reopened.load().localCareDiscussions, archive.localCareDiscussions)
+    XCTAssertEqual(try reopened.load().localCareResearch, archive.localCareResearch)
+    XCTAssertThrowsError(try reopened.finishLocalCareDiscussionTurn(f.approval, answer: "A replacement answer", now: f.now))
+    XCTAssertThrowsError(try reopened.validateLocalCareDiscussionTurn(f.approval, now: f.now))
+    XCTAssertThrowsError(try reopened.recordLocalCareModelReview(f.approval, arguments: f.arguments(), now: f.now))
+    XCTAssertTrue(try reopened.reconcileLocalCareResearch(now: f.now).isEmpty)
+    let next = try GalaxySSIHealthCareDiscussion.payload(concern: f.concern, question: "A new reviewed question",
+      thread: thread, destination: f.approval.destinationDigest)
+    XCTAssertFalse(next.contains("private-fixture-tool"))
+  }
+
+  func testHealthControlClassificationUsesStructuredEnvelopesAndReservedRecoveryMarker() throws {
+    for control in [#"{"actions":[]}"#, "```json\n{\"actions\": [{\"kind\": \"native_tool\"}]}\n```",
+                    "GALAXYSSI_RECOVERY_ACTION_V1 synthetic pending action"] {
+      XCTAssertTrue(AgentModelPlanParser.containsUnexecutedControlReply(control))
+    }
+    for prose in ["Discuss daily actions with your clinician.", #"{"summary":"Review with a clinician","plan":null}"#,
+                  #"{"actions":"Discuss options"}"#] {
+      XCTAssertFalse(AgentModelPlanParser.containsUnexecutedControlReply(prose))
+    }
+    let legacy = GalaxySSIHealthCareDiscussion.Turn(id: UUID(), question: "Synthetic question", destination: "fixture",
+      answer: #"{"actions":[]}"#)
+    let restored = try JSONDecoder().decode(GalaxySSIHealthCareDiscussion.Turn.self, from: JSONEncoder().encode(legacy))
+    XCTAssertNil(restored.interruptedReply)
+    XCTAssertTrue(restored.hasInterruptedReply)
+    XCTAssertNil(restored.retainedAnswer)
+    XCTAssertEqual(restored.answer, legacy.answer)
+  }
+
+  func testInterruptedHealthReplyCannotBypassRevocationExpiryOrSizeLimit() throws {
+    let f = try HealthModelReviewFixture()
+    let control = #"{"actions":[]}"#
+    XCTAssertThrowsError(try f.records.finishLocalCareDiscussionTurn(f.approval, answer: control,
+      now: f.now.addingTimeInterval(GalaxySSIHealthCareDiscussion.approvalLifetime + 1)))
+    XCTAssertThrowsError(try f.records.finishLocalCareDiscussionTurn(f.approval,
+      answer: control + String(repeating: "x", count: 6_145), now: f.now))
+    XCTAssertNil(try f.records.load().localCareDiscussions?[f.concern.id.uuidString]?.turns.last?.interruptedReply)
+    try f.records.setHealthOnlinePermission(false)
+    XCTAssertThrowsError(try f.records.finishLocalCareDiscussionTurn(f.approval, answer: control, now: f.now))
+  }
+
   func testStrictInputRejectsApprovalFlagsCoercionDuplicatesAndMissingPlanReceipt() throws {
     let f = try HealthModelReviewFixture()
     let valid = try f.arguments()

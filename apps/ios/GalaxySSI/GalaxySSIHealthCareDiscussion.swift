@@ -26,6 +26,14 @@ enum GalaxySSIHealthCareDiscussion {
     var feedbackHistoryAllowed: Bool?
     var relatedMeasurements: GalaxySSIHealthCareRelatedContext.Scope?
     var automaticQuestionRequestDigest: String?
+    // Stored only in the encrypted Health archive, never used as assistant history.
+    var interruptedReply: String?
+
+    var hasInterruptedReply: Bool {
+      interruptedReply != nil || answer.map(AgentModelPlanParser.containsUnexecutedControlReply) == true
+    }
+
+    var retainedAnswer: String? { hasInterruptedReply ? nil : answer }
   }
 
   struct Thread: Codable, Identifiable, Equatable {
@@ -257,12 +265,12 @@ enum GalaxySSIHealthCareDiscussion {
     else { throw GalaxySSIHealthRecords.Failure.invalid }
     // A new turn does not inherit consent to disclose a previous history-derived answer.
     let recent = thread.turns.lazy.filter {
-      $0.destination == destination && $0.answer != nil && $0.historyIncluded != true &&
+      $0.destination == destination && $0.retainedAnswer != nil && $0.historyIncluded != true &&
         GalaxySSIHealthCareRelatedContext.permits($0.relatedMeasurements, selected: relatedMeasurements) &&
         $0.questionContextIncluded != true && $0.actionFeedbackContextIncluded != true && $0.feedbackHistoryAllowed != true
     }.suffix(3)
     let previous = recent.compactMap { turn in
-      turn.answer.map {
+      turn.retainedAnswer.map {
         Exchange(question: turn.question, answer: $0, measurementScope: turn.measurement.map {
           $0 == concern.assessment.record ? "current_record" : "historical_record"
         } ?? "unknown", selectedMeasurementScope: turn.relatedMeasurements.map {
