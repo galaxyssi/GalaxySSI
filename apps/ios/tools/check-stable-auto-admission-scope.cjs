@@ -69,8 +69,8 @@ for (const file of [
 const services = read('apps/ios/GalaxySSI/GalaxySSIServices.swift');
 assert(services.includes('store.beginAgentAutoRouteTurn(for: message'));
 assert(services.includes('preserveHealthyPrimary: true'));
-assert.equal((services.match(/automaticTargetId: automaticTargetId/g) || []).length, 6);
-assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 7);
+assert.equal((services.match(/automaticTargetId: automaticTargetId/g) || []).length, 9);
+assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 8);
 assert(services.includes('code: "auto_route_turn_not_committed"'));
 assert(services.includes('code: "auto_route_dispatch_not_committed"'));
 assert(services.includes('rememberedId: session.stableAutoRoute?.targetId ?? ""'));
@@ -143,6 +143,15 @@ assert.equal((scheduled.match(/try recordAutomaticDispatch\(targetId:/g) || []).
 assert(scheduled.includes('AgentConversationScheduleProvenance.verified(current), current.revision == task.revision'));
 assert(scheduled.indexOf('guard ticket.allowed') < scheduled.lastIndexOf('try recordAutomaticDispatch'));
 assert(scheduled.includes('AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)'));
+const review = services.slice(services.indexOf('  private func shortcutReviewPlanner('),
+  services.indexOf('  private func continueObservedNativeOutcomeReview('));
+assert(review.includes('let needsAutomaticRoute = task.plannerSnapshot == nil && contact.id == "hermes"'));
+assert(review.includes('guard store.beginAgentAutoRouteTurn(for: outgoing'));
+assert(review.includes('if let existing = task.plannerSnapshot {\n      snapshot = existing'));
+assert.equal((review.match(/automaticRouteSelection\(for: contact/g) || []).length, 1);
+assert.equal((review.match(/automaticTargetId: automaticTargetId/g) || []).length, 3);
+assert(review.indexOf('AgentEffectRecoveryRecord.permitsReviewProvider(') < review.indexOf('try recordAutomaticDispatch('));
+assert(review.includes('if needsAutomaticRoute {\n      guard let automaticTargetId, !automaticTargetId.isEmpty'));
 assert(runtimeTests.includes('func testStableAutoRoutePersistsExactConversationAndRejectsOldTurnsAndManualUpdates'));
 assert(runtimeTests.includes('func testAutoHeaderUsesExactTargetNotOldSessionOrLiveDisplayLabels'));
 assert(runtimeTests.includes('func testMessageSubmissionScopeRejectsOtherConversationOwnerAndBlankIdentity'));

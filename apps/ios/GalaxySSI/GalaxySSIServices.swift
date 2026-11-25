@@ -7239,16 +7239,30 @@ final class MessageCoordinator: ObservableObject {
     let localOnly = AgentTaskRequirementAnalyzer.analyze(task.goal).localOnly
     let connectorsAllowed = store.agentSafetySettings.connectorCallsAllowed
     let resolver = AgentModelPlannerContactResolver(store: store)
+    let needsAutomaticRoute = task.plannerSnapshot == nil && contact.id == "hermes" &&
+      AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic
+    let automaticTargetId: String?
+    if needsAutomaticRoute {
+      guard store.beginAgentAutoRouteTurn(for: outgoing, targets: AgentCallableTargetCatalog.build(
+        contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })) else { return nil }
+      automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: outgoing.conversationId, goal: task.goal)?.target.id ?? ""
+    } else {
+      automaticTargetId = nil
+    }
     let snapshot: AgentPlannerModelSnapshot?
     if let existing = task.plannerSnapshot {
       snapshot = existing
-    } else if let local = selectedLocalModel(for: contact, conversationId: outgoing.conversationId, goal: task.goal) {
+    } else if let local = selectedLocalModel(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+      automaticTargetId: automaticTargetId) {
       snapshot = resolver.capturePhoneTurnSnapshot(settings: store.modelPlannerSettings, localProfile: local)
     } else if !localOnly, !session.privateMode, connectorsAllowed,
-              let cloud = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal) {
+              let cloud = selectedCloudModelContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+                automaticTargetId: automaticTargetId) {
       snapshot = resolver.capturePhoneTurnSnapshot(settings: store.modelPlannerSettings, selectedContact: cloud)
     } else if !localOnly, !session.privateMode, connectorsAllowed,
-              let agent = selectedAgentContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal),
+              let agent = selectedAgentContact(for: contact, conversationId: outgoing.conversationId, goal: task.goal,
+                automaticTargetId: automaticTargetId),
               agent.connectorAgentId == "codex" {
       snapshot = try? capturePairedPhonePlannerSnapshot(contact: agent, outgoing: outgoing)
     } else {
@@ -7256,6 +7270,14 @@ final class MessageCoordinator: ObservableObject {
     }
     guard let snapshot, AgentEffectRecoveryRecord.permitsReviewProvider(snapshot, localOnly: localOnly,
       privateMode: session.privateMode, connectorsAllowed: connectorsAllowed) else { return nil }
+    if needsAutomaticRoute {
+      guard let automaticTargetId, !automaticTargetId.isEmpty else { return nil }
+      do {
+        try recordAutomaticDispatch(targetId: automaticTargetId, outgoing: outgoing)
+      } catch {
+        return nil
+      }
+    }
     return snapshot
   }
 

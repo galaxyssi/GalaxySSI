@@ -50,9 +50,13 @@ Fixture sources cover eligible alternative containment, no duplicates and the or
 
 The existing conversation scheduler now commits its exact outgoing Auto turn before selecting a provider. A stale turn or failed encrypted binding stops dispatch through the existing failed-run path. Local, cloud and Agent branches consume one captured target ID, including an explicit empty ID when no target exists; they cannot independently re-rank or re-enable the legacy local-provider override. Selected provider identity is recorded before execution, with the paired-phone snapshot and Desktop disclosure checks retained. A rejected dispatch metadata write follows the existing disclosure failure path. Deterministic phone tools do not fabricate a model dispatch.
 
-Existing schedule provenance/revision, private/paused/collaboration restrictions, plan-only rejection, occurrence identity, duplicate suppression and result reconciliation remain unchanged. This does not implement resumed shortcut-review routing or generic connector continuation. Schedule assertions are source contracts only; no scheduler/provider/device acceptance was run.
+Existing schedule provenance/revision, private/paused/collaboration restrictions, plan-only rejection, occurrence identity, duplicate suppression and result reconciliation remain unchanged. Generic connector continuation is separate and remains incomplete. Schedule assertions are source contracts only; no scheduler/provider/device acceptance was run.
 
 ## Still Incomplete
+
+### Snapshot-less Outcome Review Recovery
+
+The actual shortcut outcome-review provider path now binds an Auto turn only when no persisted planner snapshot exists. It captures one target for all local/cloud/paired-phone branches, including explicit no-route, and records that target only after a real snapshot passes the existing review-provider privacy/local-only/connector gate. Failure to commit current-turn metadata rejects provider selection. A saved snapshot is retained unchanged and does not rebind or overwrite newer Auto metadata; manual recovery also retains its original selection behavior. Original effect readback, uncertain-effect evidence and continuation ownership are unchanged. Broader resumed planning paths remain unported; these assertions are source-only and do not prove native recovery behavior.
 
 This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. The local runtime currently delegates general callConnector actions to AgentIOSNativeActionExecutor, whose default branch rejects them; it is not a completed generic transport implementation. Coordinator's direct model/Agent sending is separate. The general control-plane timeout helper also lacks a Coordinator caller/candidate-observation source. These missing connections require implementation, not just policy tests.
 
