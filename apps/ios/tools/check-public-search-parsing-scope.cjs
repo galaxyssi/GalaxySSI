@@ -36,9 +36,10 @@ assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebInte
   oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   'Persisted document/watch schemas unchanged');
 assert.equal(cacheStore.slice(cacheStore.indexOf('  private struct Snapshot:'), cacheStore.indexOf('  static let maxDocuments'))
-  .replace('    var learnedSources: [AgentIOSLearnedWebSource]? = nil\n', ''),
+  .replace('    var learnedSources: [AgentIOSLearnedWebSource]? = nil\n', '')
+  .replace('    var sourceHealth: [AgentIOSWebSourceHealth]? = nil\n', ''),
   oldCacheStore.slice(oldCacheStore.indexOf('  private struct Snapshot:'), oldCacheStore.indexOf('  static let maxDocuments')),
-  'Encrypted envelope/document/watch v1 schema retained, with one optional legacy-decodable learned-source field');
+  'Encrypted envelope/document/watch v1 schema retained, with optional legacy-decodable learned-source and health fields');
 assert.equal(cacheStore.slice(cacheStore.indexOf('  private func canonicalURL(')),
   oldCacheStore.slice(oldCacheStore.indexOf('  private func canonicalURL(')), 'Cache URL policy unchanged');
 for (const token of ['let sharedState = Self.state(for: fileURL)', 'lock = sharedState.lock', 'url.standardizedFileURL.path',
@@ -93,6 +94,33 @@ for (const name of ['testSourceLearningRequiresRepeatedDiverseQueriesAndSafeDist
   'testLearningUsesEncryptedSnapshotAndLegacyDocumentsRemainReadable',
   'testFailedOrCancelledLearningDoesNotPublishOrReplaceEvidence',
   'testActualSearchQueuesLearningOnlyWithCacheScopeAndCacheToolListsIt']) assert(cacheTests.includes('func ' + name + '('));
+const sourceHealth = read(swift('AgentIOSWebSourceHealth'));
+for (const token of ['consecutiveFailures >= 3', 'if receipt.status == "cancelled" { return next }',
+  '["completed", "empty"].contains(receipt.status)', 'ewmaLatencyMillis * 0.75 + latency * 0.25',
+  'Int64(1_800_000)', 'Int64(60_000) * (Int64(1) << exponent)',
+  'end.overflow ? Int64.max', 'Double(attempts) + 1', 'if explicit { return Selection(',
+  'filter { !blocked.contains($0.element) }']) assert(sourceHealth.includes(token), token);
+for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSourceReceipts(',
+  'receipts.allSatisfy(\\.isValid)', 'health[receipt.sourceID]', '.evolved(receipt, now: nowMillis())',
+  'func resetSourceHealth()', 'snapshot.sourceHealth = []', '"source_health_removed"',
+  '(snapshot.sourceHealth ?? []).allSatisfy(\\.isValid)']) assert(cacheStore.includes(token), token);
+for (const token of ['native.sourceHealthStore = cacheStore', 'let webResult = searchProvider.invoke(',
+  'case "source_health":', 'case "reset_source_health":', 'let reset = cacheStore.resetSourceHealth()',
+  'cacheMetadata = cacheStore.stats().merging(reset)', 'result[key] = value']) assert(intelligence.includes(token), token);
+for (const token of ['? sourceHealthStore : nil', 'healthStore?.sourceHealth(ids: Set(candidates.map(\\.provider)))',
+  'AgentIOSWebSourceHealthRouting.select(', 'let endpoints = selection.selected.compactMap',
+  '"search_sources_cooling_down"', 'let healthReceipts = attempts.compactMap(\\.healthReceipt)',
+  'healthStore?.recordSourceReceipts(healthReceipts)', 'source_health_write_committed',
+  'guard didStart else { return nil }', 'if case .cancelled = error { status = "cancelled" }',
+  'results.isEmpty ? "empty" : "completed"', '(error as? URLError)?.code == .cancelled']) assert(provider.includes(token), token);
+assert.equal((provider.match(/recordSourceReceipts\(healthReceipts\)/g) || []).length, 1,
+  'One observed-attempt health batch, not one snapshot rewrite per provider');
+for (const name of ['testSourceHealthBackoffEmptyCancellationAndOverflowRules',
+  'testSourceHealthRoutingSkipsOpenCircuitsButRetainsExplicitAndSpecialistChoices',
+  'testSourceHealthBatchAndResetCommitTruthfullyWithoutReplacingDocuments',
+  'testActualNativeSearchUsesScopedHealthAndCacheHealthTools',
+  'testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence',
+  'testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts']) assert(cacheTests.includes('func ' + name + '('));
 for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty',
   'item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue',
   'result["images"] = .array(images)', 'evidence["images"] = .array(images)',
@@ -273,6 +301,7 @@ const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const token of ['AgentIOSPublicSearchParser.swift in Sources', 'SwiftSoup in Frameworks',
   'AgentIOSWebExecutionBudget.swift in Sources',
   'AgentIOSWebSourceLearning.swift in Sources',
+  'AgentIOSWebSourceHealth.swift in Sources',
   'productName = SwiftSoup;', 'repositoryURL = "https://github.com/scinfu/SwiftSoup";', 'version = 2.6.0;']) assert(project.includes(token));
 const pins = JSON.parse(read('apps/ios/GalaxySSI.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'));
 const pin = pins.pins.find(p => p.identity === 'swiftsoup');
@@ -294,12 +323,12 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, truthful partial evidence, atomic cache batches and failure-safe persistence. Actual scoped search queues bounded source observations into the same encrypted snapshot; cache listing and UI stats read saved records. Full clear invalidates queued generations. Source-health indexing, learned routing, full built-in catalog exclusion and indexed-storage performance incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, safe cache batches, scoped deferred source learning and real listing/UI counts. Source-health receipts batch into one encrypted snapshot, scope-gated search skips open circuits unless explicit, and source_health/reset dispatch is implemented. Full clear invalidates queued learning. Learned routing, full catalog/ranker and indexed-storage performance incomplete';
   if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
   if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
-  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: profile defaults, supported engine validation and actual early-completion policy use substantial query-overlap excerpts/canonical sources, balanced cross-engine evidence, distinct image URLs and NFKC/CJK tokens. Explicit/deep opt-out and existing disjoint guard retained. Full adapters/ranker/acceptance incomplete';
+  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: query-aware early completion and supported profiles; native health uses reference EWMA, reliability/latency/usefulness score and three-failure exponential circuit cooldown. Cancellation does not increment failures, empty counts as successful, explicit sources bypass circuit filtering. Existing specialist priority retained; full catalog/ranker and native acceptance incomplete';
   if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
   if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
   if (file.endsWith('/CloudToolBatchExecutor.kt')) return 'Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified';
@@ -311,9 +340,9 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image search, media citations, query-aware completion, renderer/research/cloud caps, atomic cache batches and workspace snapshot commits; actual scope-gated deferred source learning with encrypted records, generation invalidation, cache listing and live UI counts. Learned routing/full built-in catalog exclusion, source-health/indexed-storage performance, other image adapters/relevance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/image evidence, query-aware completion, renderer/research/cloud caps, atomic cache/workspace commits; scoped deferred learning and native source health with batched encrypted receipts, circuit-aware selection, query/reset dispatch and live learning UI counts. Learned routing/full catalog/ranker, indexed-storage performance, other image adapters/relevance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), inventory);
-console.log('Android #3007: public web/image evidence, scoped deferred source learning and cache/workspace persistence contracts. Partial port; source checks only, no native or network acceptance.');
+console.log('Android #3007: web/image evidence, scoped source learning/health and cache/workspace persistence contracts. Partial port; source checks only, no native or network acceptance.');

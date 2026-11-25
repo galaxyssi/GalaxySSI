@@ -2,6 +2,197 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSourceHealthBackoffEmptyCancellationAndOverflowRules() {
+    let failed = AgentIOSWebSourceReceipt(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
+    var health = AgentIOSWebSourceHealth(sourceID: "bing")
+    for _ in 0..<3 { health = health.evolved(failed, now: 1000) }
+    XCTAssertEqual(health.attempts, 3)
+    XCTAssertEqual(health.circuitOpenUntilMillis, 61_000)
+    XCTAssertEqual(health.circuitState(now: 2000), "open")
+    XCTAssertEqual(health.circuitState(now: 61_000), "half_open")
+    health = health.evolved(failed, now: 1000)
+    XCTAssertEqual(health.circuitOpenUntilMillis, 121_000)
+    let cancelled = health.evolved(.init(sourceID: "bing", status: "cancelled", durationMillis: 4000, resultCount: 0), now: 2000)
+    XCTAssertEqual(cancelled.attempts, health.attempts)
+    XCTAssertEqual(cancelled.failures, health.failures)
+    XCTAssertEqual(cancelled.ewmaLatencyMillis, health.ewmaLatencyMillis)
+    XCTAssertEqual(cancelled.circuitOpenUntilMillis, health.circuitOpenUntilMillis)
+    let empty = cancelled.evolved(.init(sourceID: "bing", status: "empty", durationMillis: 200, resultCount: 0), now: 3000)
+    XCTAssertEqual(empty.emptyResponses, 1)
+    XCTAssertEqual(empty.successes, 0)
+    XCTAssertEqual(empty.consecutiveFailures, 0)
+    XCTAssertEqual(empty.circuitState(now: 3000), "closed")
+    for _ in 0..<20 { health = health.evolved(failed, now: 1000) }
+    XCTAssertEqual(health.circuitOpenUntilMillis, 1_801_000)
+    health.attempts = Int64.max
+    health.consecutiveFailures = Int64.max
+    health = health.evolved(failed, now: Int64.max - 1)
+    XCTAssertEqual(health.attempts, Int64.max)
+    XCTAssertEqual(health.circuitOpenUntilMillis, Int64.max)
+    XCTAssertTrue(health.routingScore.isFinite)
+    XCTAssertTrue(health.isValid)
+    XCTAssertEqual(AgentIOSWebSourceHealth.elapsed(from: Int64.min, to: Int64.max), 0)
+  }
+
+  func testSourceHealthRoutingSkipsOpenCircuitsButRetainsExplicitAndSpecialistChoices() {
+    var failing = AgentIOSWebSourceHealth(sourceID: "bing")
+    for _ in 0..<3 { failing = failing.evolved(.init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0), now: 1000) }
+    let providers = ["bing", "baidu", "apple_developer"]
+    let selected = AgentIOSWebSourceHealthRouting.select(providers: providers, preferred: ["apple_developer"],
+      health: ["bing": failing], explicit: false, fanout: 3, now: 2000)
+    XCTAssertEqual(selected.selected, ["apple_developer", "baidu"])
+    XCTAssertEqual(selected.skipped.map(\.sourceID), ["bing"])
+    XCTAssertEqual(AgentIOSWebSourceHealthRouting.select(providers: providers, preferred: [],
+      health: ["bing": failing], explicit: true, fanout: 1, now: 2000).selected, ["bing"])
+    XCTAssertTrue(AgentIOSWebSourceHealthRouting.select(providers: providers, preferred: [],
+      health: ["bing": failing], explicit: false, fanout: 3, now: 61_000).selected.contains("bing"))
+    XCTAssertEqual(AgentIOSWebSourceHealthRouting.select(providers: providers, preferred: [],
+      health: [:], explicit: false, fanout: 2, now: 2000).selected, ["bing", "baidu"])
+  }
+
+  func testSourceHealthBatchAndResetCommitTruthfullyWithoutReplacingDocuments() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-batch-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    var writes = 0
+    var reject = false
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, nowMillis: { 1000 }, writeFile: { data, url in
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      writes += 1
+      try data.write(to: url, options: .atomic)
+    })
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("evidence")]))
+    let receipts = (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0) } +
+      [.init(sourceID: "baidu", status: "empty", durationMillis: 200, resultCount: 0)]
+    XCTAssertTrue(cache.recordSourceReceipts(receipts))
+    XCTAssertEqual(writes, 2)
+    XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?.count, 1)
+    XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?["bing"]?.attempts, 3)
+    XCTAssertEqual(cache.stats()["source_circuits_open"], .int(1))
+    let original = try Data(contentsOf: url)
+    reject = true
+    XCTAssertFalse(cache.recordSourceReceipts([.init(sourceID: "bing", status: "completed", durationMillis: 100, resultCount: 2)]))
+    XCTAssertEqual(cache.resetSourceHealth()["committed"], .bool(false))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertNotNil(cache.document(url: "https://cache.test/evidence", allowStale: true))
+    reject = false
+    XCTAssertEqual(cache.resetSourceHealth()["source_health_removed"], .int(2))
+    XCTAssertNotNil(cache.document(url: "https://cache.test/evidence", allowStale: true))
+    XCTAssertTrue(try XCTUnwrap(AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets).sourceHealth()).isEmpty)
+    XCTAssertTrue(cache.recordSourceReceipts(receipts))
+    XCTAssertEqual(cache.clear(expiredOnly: false)["committed"], .bool(true))
+    XCTAssertEqual(cache.sourceHealth()?.count, 2)
+  }
+
+  func testActualNativeSearchUsesScopedHealthAndCacheHealthTools() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-tools-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 })
+    XCTAssertTrue(cache.recordSourceReceipts((0..<3).map { _ in
+      .init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
+    }))
+    let transport = SourceHealthSearchFixture()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 })
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, cacheStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    var context = AgentNativeToolInvocationContext(invocationId: "health-broad",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission, AgentIOSWebIntelligenceNativeToolCatalog.cachePermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent, AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent])
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy research"), "limit": .int(2)], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertFalse(transport.hosts.contains(where: { $0.contains("bing.com") }))
+    XCTAssertEqual(result.metadata["circuits_skipped"]?.arrayValue?.first?.objectValue?["source_id"], .string("bing"))
+    XCTAssertEqual(result.metadata["source_health_write_committed"], .bool(true))
+    XCTAssertEqual(cache.sourceHealth()?["baidu"]?.attempts, 1)
+    context.invocationId = "health-explicit"
+    let explicit = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy research"), "engines": .array([.string("bing")])], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(explicit.isSuccess)
+    XCTAssertTrue(transport.hosts.contains(where: { $0.contains("bing.com") }))
+    context.invocationId = "health-status"
+    let status = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.cache,
+      input: ["action": .string("source_health"), "engines": .array([.string("bing")])], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(status.isSuccess)
+    XCTAssertEqual(status.output["metadata"]?.objectValue?["source_health"]?.arrayValue?.first?.objectValue?["circuit_state"], .string("closed"))
+    context.invocationId = "health-reset"
+    let reset = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.cache,
+      input: ["action": .string("reset_source_health")], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(reset.isSuccess)
+    XCTAssertEqual(reset.output["cache"]?.objectValue?["source_health_count"], .int(0))
+  }
+
+  func testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-scope-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    var reject = false
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 }, writeFile: { data, url in
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      try data.write(to: url, options: .atomic)
+    })
+    XCTAssertTrue(cache.recordSourceReceipts((0..<3).map { _ in
+      .init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
+    }))
+    let original = try Data(contentsOf: url)
+    reject = true
+    let transport = SourceHealthSearchFixture()
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(
+      webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 }),
+      cacheStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    var context = AgentNativeToolInvocationContext(invocationId: "health-network-only",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    let input: AgentMcpJSONObject = ["query": .string("Galaxy research"), "limit": .int(2)]
+    let unscoped = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input, context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(unscoped.isSuccess)
+    XCTAssertNil(unscoped.metadata["source_health_available"])
+    XCTAssertTrue(transport.hosts.contains(where: { $0.contains("bing.com") }))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    context.invocationId = "health-write-failed"
+    context.grantedPermissions.insert(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)
+    context.grantedConsents.insert(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+    let failedWrite = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input, context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(failedWrite.isSuccess)
+    XCTAssertEqual(failedWrite.metadata["source_health_write_committed"], .bool(false))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+  }
+
+  func testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-open-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 })
+    let receipts = ["bing", "baidu", "duckduckgo"].flatMap { provider in
+      (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: provider, status: "failed", durationMillis: 100, resultCount: 0) }
+    }
+    XCTAssertTrue(cache.recordSourceReceipts(receipts))
+    let original = try Data(contentsOf: url)
+    let transport = SourceHealthSearchFixture()
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(
+      webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 }),
+      cacheStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(invocationId: "health-all-open",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission, AgentIOSWebIntelligenceNativeToolCatalog.cachePermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent, AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent])
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy research")], context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(result.error?.code, "search_sources_cooling_down")
+    XCTAssertTrue(transport.hosts.isEmpty)
+    XCTAssertEqual(result.error?.details["circuits_skipped"]?.arrayValue?.count, 3)
+    XCTAssertEqual(try Data(contentsOf: url), original)
+  }
+
   func testSourceLearningRequiresRepeatedDiverseQueriesAndSafeDistinctHosts() throws {
     let policy = AgentIOSWebSourceLearningPolicy.self
     let results: [AgentMcpJSONObject] = [
@@ -691,6 +882,24 @@ extension GalaxySSIStoreTests {
     )
   }
 
+}
+
+private final class SourceHealthSearchFixture: AgentIOSURLSessionWebTransporting {
+  private let lock = NSLock()
+  private var requestedHosts: [String] = []
+  var hosts: [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return requestedHosts
+  }
+  func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+    lock.lock()
+    requestedHosts.append(request.url.host ?? "")
+    lock.unlock()
+    let html = #"<h2><a href="https://learn.microsoft.com/galaxy">Galaxy research evidence</a></h2><p>Galaxy research has a sufficiently detailed source excerpt for this fixture.</p>"#
+    return .init(statusCode: 200, finalURL: request.url, headers: ["content-type": "text/html; charset=utf-8"],
+      body: Data(html.utf8), retrievedAtEpochMillis: 1000)
+  }
 }
 
 private final class BudgetWebMediaFixture: AgentIOSWebMediaToolProviding {

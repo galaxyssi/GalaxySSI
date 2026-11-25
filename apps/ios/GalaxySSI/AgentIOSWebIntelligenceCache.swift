@@ -64,6 +64,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     var documents: [AgentIOSWebIntelligenceCacheDocument] = []
     var watches: [AgentIOSWebIntelligenceCacheWatch] = []
     var learnedSources: [AgentIOSLearnedWebSource]? = nil
+    var sourceHealth: [AgentIOSWebSourceHealth]? = nil
   }
 
   private struct EncryptedEnvelope: Codable {
@@ -246,6 +247,8 @@ final class AgentIOSWebIntelligenceCacheStore {
       "learned_source_count": .int(Int64(snapshot.learnedSources?.count ?? 0)),
       "verified_learned_source_count": .int(Int64(snapshot.learnedSources?.filter { $0.status == "verified" }.count ?? 0)),
       "last_learning_status": .string(state.lastLearningStatus),
+      "source_health_count": .int(Int64(snapshot.sourceHealth?.count ?? 0)),
+      "source_circuits_open": .int(Int64(snapshot.sourceHealth?.filter { $0.circuitState(now: now) == "open" }.count ?? 0)),
       "cache_version": .int(Int64(snapshot.version)),
       "entry_count": .int(Int64(snapshot.documents.count)),
       "content_chars": .int(snapshot.documents.reduce(0) { $0 + Int64($1.content.count) }),
@@ -295,6 +298,40 @@ final class AgentIOSWebIntelligenceCacheStore {
       if $0.lastSeenAtMillis != $1.lastSeenAtMillis { return $0.lastSeenAtMillis > $1.lastSeenAtMillis }
       return $0.sourceID < $1.sourceID
     }
+  }
+
+  func sourceHealth(ids: Set<String> = []) -> [String: AgentIOSWebSourceHealth]? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let snapshot = readUnlocked() else { return nil }
+    return Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).filter {
+      ids.isEmpty || ids.contains($0.sourceID)
+    }.map { ($0.sourceID, $0) })
+  }
+
+  @discardableResult
+  func recordSourceReceipts(_ receipts: [AgentIOSWebSourceReceipt]) -> Bool {
+    guard receipts.count <= AgentIOSWebSourceHealth.maximumSources, receipts.allSatisfy(\.isValid) else { return false }
+    if receipts.isEmpty { return true }
+    return mutate { snapshot in
+      var health = Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).map { ($0.sourceID, $0) })
+      for receipt in receipts {
+        health[receipt.sourceID] = (health[receipt.sourceID] ?? AgentIOSWebSourceHealth(sourceID: receipt.sourceID))
+          .evolved(receipt, now: nowMillis())
+      }
+      snapshot.sourceHealth = Array(health.values.sorted {
+        $0.lastAttemptAtMillis == $1.lastAttemptAtMillis ? $0.sourceID < $1.sourceID : $0.lastAttemptAtMillis > $1.lastAttemptAtMillis
+      }.prefix(AgentIOSWebSourceHealth.maximumSources))
+    }
+  }
+
+  func resetSourceHealth() -> AgentMcpJSONObject {
+    var removed = 0
+    let committed = mutate { snapshot in
+      removed = snapshot.sourceHealth?.count ?? 0
+      snapshot.sourceHealth = []
+    }
+    return ["committed": .bool(committed), "source_health_removed": .int(Int64(committed ? removed : 0))]
   }
 
   func learnSourceCandidates(query: String, categories: [String], results: [AgentMcpJSONObject],
@@ -399,7 +436,10 @@ final class AgentIOSWebIntelligenceCacheStore {
           let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext), snapshot.version == 1,
           (snapshot.learnedSources?.count ?? 0) <= AgentIOSWebSourceLearningPolicy.maximumSources,
           (snapshot.learnedSources ?? []).allSatisfy(\.isValid),
-          Set((snapshot.learnedSources ?? []).map(\.sourceID)).count == (snapshot.learnedSources?.count ?? 0) else {
+          Set((snapshot.learnedSources ?? []).map(\.sourceID)).count == (snapshot.learnedSources?.count ?? 0),
+          (snapshot.sourceHealth?.count ?? 0) <= AgentIOSWebSourceHealth.maximumSources,
+          (snapshot.sourceHealth ?? []).allSatisfy(\.isValid),
+          Set((snapshot.sourceHealth ?? []).map(\.sourceID)).count == (snapshot.sourceHealth?.count ?? 0) else {
       return nil
     }
     return snapshot

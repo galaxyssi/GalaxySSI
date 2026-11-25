@@ -283,6 +283,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var ocrProcessor: AgentIOSWebMediaOCRProcessing
   var dynamicRenderer: AgentIOSDynamicWebRendering
   var nowMillis: () -> Int64
+  var sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = nil
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
@@ -407,14 +408,25 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }),
         requestedEngineIds: Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
       )
-      let endpoints = try searchEndpoints(
+      let candidates = try searchEndpoints(
         query: query,
         maxResults: maxResults,
         routing: routing,
         imageSearch: imageSearch,
         requestedEngineIds: engineIds,
-        fanout: Int(input["engine_fanout"]?.intValue ?? 6)
+        fanout: 32
       )
+      let healthStore = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) ? sourceHealthStore : nil
+      let health = healthStore?.sourceHealth(ids: Set(candidates.map(\.provider)))
+      let selection = AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
+        preferred: Set(routing.selected.map(\.id)), health: health ?? [:], explicit: explicitSources,
+        fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
+      let endpoints = selection.selected.compactMap { id in candidates.first { $0.provider == id } }
+      guard !endpoints.isEmpty else {
+        return failure("search_sources_cooling_down", "Selected search sources are cooling down; no request was started.",
+          retryable: true, details: ["circuits_skipped": .array(selection.skipped.map { .object($0.publicValue(now: nowMillis())) })])
+      }
       let accumulator = AgentIOSWebSearchAccumulator()
       defer { accumulator.cancel() }
       let group = DispatchGroup()
@@ -436,6 +448,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .timeout))
             return
           }
+          let attemptStarted = nowMillis()
           do {
             let started = nowMillis()
             let requestDeadline = min(deadline, started + min(4_000, remaining))
@@ -464,17 +477,22 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
                 index: index,
                 provider: endpoint.provider,
                 resource: resource,
-                results: results
+                results: results, didStart: true,
+                durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())
               )
             )
           } catch let error as AgentIOSURLSessionWebError {
-            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: error))
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider,
+              error: invocation.isCancellationRequested || accumulator.isCancelled ? .cancelled : error,
+              didStart: true, durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())))
           } catch {
             accumulator.append(
               AgentIOSWebSearchAttempt(
                 index: index,
                 provider: endpoint.provider,
-                error: .transportFailed(error.localizedDescription)
+                error: invocation.isCancellationRequested || accumulator.isCancelled || (error as? URLError)?.code == .cancelled
+                  ? .cancelled : .transportFailed(error.localizedDescription), didStart: true,
+                durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())
               )
             )
           }
@@ -510,27 +528,36 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         let slice = max(1, min(100, remaining))
         completed = group.wait(timeout: .now() + .milliseconds(Int(slice))) == .success
       }
-      if invocation.isCancellationRequested {
-        throw AgentIOSURLSessionWebError.cancelled
-      }
+      accumulator.cancel()
       let attempts = accumulator.snapshot().sorted { left, right in
         let leftDisjoint = disjoint(left)
         let rightDisjoint = disjoint(right)
         return leftDisjoint == rightDisjoint ? left.index < right.index : !leftDisjoint
       }
+      let healthReceipts = attempts.compactMap(\.healthReceipt)
+      let healthCommitted = healthReceipts.isEmpty ? nil : healthStore?.recordSourceReceipts(healthReceipts)
+      func withHealth(_ value: AgentNativeToolExecutionResult) -> AgentNativeToolExecutionResult {
+        var result = value
+        result.metadata["circuits_skipped"] = .array(selection.skipped.map { .object($0.publicValue(now: nowMillis())) })
+        result.metadata["source_health_receipts"] = .array(healthReceipts.map { .object($0.publicValue()) })
+        if healthStore != nil { result.metadata["source_health_available"] = .bool(health != nil) }
+        if let healthCommitted { result.metadata["source_health_write_committed"] = .bool(healthCommitted) }
+        return result
+      }
+      if invocation.isCancellationRequested { return withHealth(failure(.cancelled)) }
       guard let first = attempts.first(where: { !$0.results.isEmpty }),
             let resource = first.resource else {
         if !completed {
-          return failure(.timeout)
+          return withHealth(failure(.timeout))
         }
         if let lastError = attempts.compactMap(\.error).last {
-          return failure(lastError)
+          return withHealth(failure(lastError))
         }
-        return failure(
+        return withHealth(failure(
           "search_no_results",
           "Public search providers returned no readable results",
           retryable: true
-        )
+        ))
       }
 
       var merged: [AgentIOSWebSearchResult] = []
@@ -594,11 +621,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         return .object(["provider": .string(attempt.provider),
           "error_code": .string(failure(error).error?.code ?? "search_source_unavailable")])
       })
-      return AgentNativeToolExecutionResult.success(
+      return withHealth(AgentNativeToolExecutionResult.success(
         output: output,
         message: message(.webSearch, method: .get),
         metadata: resultMetadata
-      )
+      ))
     } catch let error as AgentIOSURLSessionWebError {
       return failure(error)
     } catch {
@@ -1979,19 +2006,35 @@ private struct AgentIOSWebSearchAttempt {
   var resource: AgentIOSURLSessionWebResource?
   var results: [AgentIOSWebSearchResult]
   var error: AgentIOSURLSessionWebError?
+  var didStart: Bool
+  var durationMillis: Int64
 
   init(
     index: Int,
     provider: String,
     resource: AgentIOSURLSessionWebResource? = nil,
     results: [AgentIOSWebSearchResult] = [],
-    error: AgentIOSURLSessionWebError? = nil
+    error: AgentIOSURLSessionWebError? = nil,
+    didStart: Bool = false,
+    durationMillis: Int64 = 0
   ) {
     self.index = index
     self.provider = provider
     self.resource = resource
     self.results = results
     self.error = error
+    self.didStart = didStart
+    self.durationMillis = durationMillis
+  }
+
+  var healthReceipt: AgentIOSWebSourceReceipt? {
+    guard didStart else { return nil }
+    let status: String
+    if let error {
+      if case .cancelled = error { status = "cancelled" } else { status = "failed" }
+    } else { status = results.isEmpty ? "empty" : "completed" }
+    return AgentIOSWebSourceReceipt(sourceID: provider, status: status,
+      durationMillis: durationMillis, resultCount: results.count)
   }
 }
 

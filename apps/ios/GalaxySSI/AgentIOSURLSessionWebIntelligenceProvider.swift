@@ -150,6 +150,21 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         return failure("cache_unavailable", "The learned sources could not be read.", retryable: true)
       }
       actionMetadata["learned_sources"] = .array(sources.filter { status.isEmpty || $0.status == status }.map { .object($0.publicValue()) })
+    case "source_health":
+      let ids = Set(stringArray(input["engines"], maximum: 32))
+      guard AgentIOSWebSearchEnginePolicy.accepts(Array(ids)) else {
+        return failure("unsupported_search_engine", "The requested health source is unavailable on iOS")
+      }
+      guard let health = cacheStore.sourceHealth(ids: ids) else {
+        return failure("cache_unavailable", "The source health records could not be read.", retryable: true)
+      }
+      actionMetadata["source_health"] = .array(health.values.sorted { $0.sourceID < $1.sourceID }.map { .object($0.publicValue(now: nowMillis())) })
+    case "reset_source_health":
+      let reset = cacheStore.resetSourceHealth()
+      guard reset["committed"] == .bool(true) else {
+        return failure("cache_persistence_failed", "The source health reset could not be saved.", retryable: true)
+      }
+      cacheMetadata = cacheStore.stats().merging(reset) { _, next in next }
     default:
       return failure("invalid_cache_action", "Unsupported iOS web cache action")
     }
@@ -377,7 +392,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     ["engine_fanout", "engines", "verticals", "categories"].forEach { key in
       if let value = input[key] { webSearchInput[key] = value }
     }
-    let webResult = webMediaProvider.invoke(
+    var searchProvider = webMediaProvider
+    if var native = webMediaProvider as? AgentIOSURLSessionWebMediaToolProvider {
+      native.sourceHealthStore = cacheStore
+      searchProvider = native
+    }
+    let webResult = searchProvider.invoke(
       operation: .webSearch,
       input: webSearchInput,
       invocation: invocation
@@ -1394,6 +1414,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       }
       if let unavailable = webResult.metadata["unavailable_sources"] {
         result["unavailable_sources"] = unavailable
+      }
+      for key in ["circuits_skipped", "source_health_receipts", "source_health_available", "source_health_write_committed"] {
+        if let value = webResult.metadata[key] { result[key] = value }
       }
     }
     return result
