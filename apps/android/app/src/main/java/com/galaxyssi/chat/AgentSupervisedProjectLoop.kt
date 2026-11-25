@@ -1706,10 +1706,14 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
     plan: AgentPlan,
     continuation: Boolean
 ): AgentRequest {
-    val connectorSnapshot = connectorRegistry.planningSnapshot()
+    val healthScope = if (activeConversationContext.privateMode)
+        HealthCareDiscussion.planningScope(appContext, activeConversationContext.conversationId, activeConversationTurnId)
+    else null
+    val connectorSnapshot = connectorRegistry.planningSnapshot().let { healthScope?.connectors(it) ?: it }
     val targets = connectorSnapshot.targets
+    val screen = if (healthScope == null) currentScreen else ScreenContext(foregroundApp = "", pageTitle = "")
     val runtimeContext = activeRunRuntimeContext
-        ?.takeIf { context -> context.goal == currentGoal }
+        ?.takeIf { context -> healthScope == null && context.goal == currentGoal }
         ?.let { context ->
             AgentSupervisedProjectRuntimeContextPolicy.reuse(
                 base = context,
@@ -1721,15 +1725,16 @@ internal fun MobileNativeAgent.supervisedProjectRequest(
         }
         ?: buildRuntimeContext(
             goal = currentGoal,
-            screen = currentScreen,
+            screen = screen,
             targets = targets,
             memories = emptyList(),
             knowledgeItems = emptyList(),
-            knowledgeStats = AgentKnowledgeStats()
+            knowledgeStats = AgentKnowledgeStats(),
+            planningRuntime = planningRuntimeSnapshot().let { healthScope?.runtime(it) ?: it }
         ).also { context -> activeRunRuntimeContext = context }
     return AgentSupervisedProjectLoop.request(
         goal = currentGoal,
-        screen = currentScreen,
+        screen = screen,
         targets = targets,
         registrations = connectorSnapshot.registrations,
         runtimeContext = runtimeContext,

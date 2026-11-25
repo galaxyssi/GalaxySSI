@@ -13,6 +13,7 @@
     <string name="health_care_discussion_no_model">当前选择的模型不可用，请在此会话中选择可用模型后再发送。</string>
     <string name="health_care_discussion_inactive">此事项已暂停、已关闭或来源不可用，请先在个人健康中核对。</string>
     <string name="health_care_discussion_expired">健康资料、权限、接收方或本次授权已变化，请重新核对并确认问题；未授权切换到其他模型。</string>
+    <string name="health_care_discussion_reply_interrupted">模型已回复，但旧版任务无法在手机上继续处理。原问题已保留，未自动重发。</string>
     <string name="health_care_discussion_scope">本次健康讨论仅授权查证公开资料。发消息、修改记录、安排提醒或调用其他模型，都需要另行确认。</string>
     <string name="health_care_discussion_import">请先在个人健康中导入并确认新的健康文件。此讨论只使用已核对的指标和背景资料。</string>
 </resources>

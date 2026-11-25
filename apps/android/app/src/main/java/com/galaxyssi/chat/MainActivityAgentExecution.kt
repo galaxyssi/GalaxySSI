@@ -428,12 +428,15 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     turnId: String,
     deterministicAction: AgentAction? = null,
     executionMode: AgentTaskExecutionMode? = null,
-    isSubmissionCancelled: () -> Boolean = { false }
+    isSubmissionCancelled: () -> Boolean = { false },
+    approvedHealthDiscussion: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
+    require(!approvedHealthDiscussion || deterministicAction?.isSupervisedProjectConnector() == true)
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val phoneControl = PhoneAssistantTaskControl.isAutomation(turnId)
-    val groupSeed = CollaborationRoutingPolicy.seed(turnId, AgentTurnMentionRegistry.peek(turnId))
+    val groupSeed = if (approvedHealthDiscussion) null
+        else CollaborationRoutingPolicy.seed(turnId, AgentTurnMentionRegistry.peek(turnId))
     val supervisedProject = phoneControl || groupSeed == null && AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
         conversationContext = conversationContext,
@@ -517,6 +520,8 @@ internal fun MainActivity.executeConcurrentAgentGoal(
         runtime = MobileNativeAgent(
             this@executeConcurrentAgentGoal,
             planner = when {
+                // The health approval binds both the destination and the already scoped prompt.
+                approvedHealthDiscussion -> AgentSelectedNativeActionPlanner(requireNotNull(deterministicAction))
                 groupSeed != null && !phoneControl -> AgentSelectedNativeActionPlanner(groupSeed)
                 selectedReasoningProvider != null && !phoneControl ->
                     AgentPhoneReasoningProviderPlanner(selectedReasoningProvider)
@@ -534,7 +539,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             actionExecutor = phoneExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
-            screenObservationOverride = deterministicAction?.let { selectedAction ->
+            screenObservationOverride = if (approvedHealthDiscussion) false else deterministicAction?.let { selectedAction ->
                 AgentScreenObservationPolicy.requiresObservation(goal, selectedAction)
             },
             nativeToolRegistryProvider = { sharedNativeToolRegistry }
@@ -551,7 +556,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     conversationContext,
                     turnId,
                     executionMode,
-                    requestedMembers = AgentTurnMentionRegistry.take(turnId)
+                    requestedMembers = AgentTurnMentionRegistry.take(turnId).takeUnless { approvedHealthDiscussion }.orEmpty()
                 )
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE
@@ -650,7 +655,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             payloadJson = JSONObject()
                 .put("session_id", state.sessionId)
                 .put("phase", state.phase.name)
-                .put("goal", goal.take(2_000))
+                .apply { if (!approvedHealthDiscussion) put("goal", goal.take(2_000)) }
                 .toString()
         )
         runOnUiThread {

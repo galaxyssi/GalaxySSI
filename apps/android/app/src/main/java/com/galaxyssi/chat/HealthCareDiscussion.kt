@@ -9,8 +9,29 @@ internal data class HealthCareDiscussionPreview(val concern: HealthCareConcern, 
     val selection: AgentModelSelection, val configuration: AgentTargetConfiguration?,
     val relatedOptions: List<HealthCareRelatedOption> = emptyList())
 
+internal class HealthCareDiscussionPlanningScope(private val grant: HealthCareDiscussionGrant?) {
+    fun connectors(snapshot: AgentConnectorPlanningSnapshot) = AgentConnectorPlanningSnapshot(
+        targets = snapshot.targets.filter { it.id == grant?.targetId },
+        registrations = emptyList()
+    )
+
+    fun runtime(snapshot: AgentPlanningRuntimeSnapshot): AgentPlanningRuntimeSnapshot {
+        val tools = grant?.let(HealthCareDiscussionPolicy::tools).orEmpty()
+        return snapshot.copy(memoryCapture = false, systemTools = emptyList(),
+            nativeTools = snapshot.nativeTools.filter { it.id in tools })
+    }
+}
+
 /** A discussion grants one provider one turn, not access to the user's complete health archive. */
 internal object HealthCareDiscussion {
+    fun planningScope(context: Context, conversationId: String, turnId: String): HealthCareDiscussionPlanningScope? {
+        if (!bound(context, conversationId)) return null
+        val grant = HealthCareStore(context).use {
+            it.discussionGrant(turnId)?.takeIf { grant -> grant.conversationId == conversationId }
+        }
+        return HealthCareDiscussionPlanningScope(grant)
+    }
+
     fun open(context: Context, concernId: String, names: HealthOverviewDatabases = HealthOverviewDatabases()): String = synchronized(this) {
         HealthCareStore(context, names.care).use { care ->
             val concern = care.concern(concernId) ?: throw HealthCareConflict()
