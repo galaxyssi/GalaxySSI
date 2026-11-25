@@ -80,6 +80,21 @@ for (const [flag,dataset,paths,gradients] of [
     frames:pack.plates.filter(p=>p.drawable.endsWith(".xml")).map(p=>[
       path.basename(p.drawable,".xml").replace("health_atlas_",""),p.asset,"cell.pdf"])};
 }
+if (process.argv.includes("--detail-4389")) {
+  const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
+  const root = path.resolve(__dirname, "../../.."), sha = "9508d49277cf33ab7f85e65722e7c470930fff7e";
+  const pack = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json")));
+  if (pack.source.androidPR !== 4389 || pack.source.mergeCommit !== sha || pack.plates.length !== 26) throw Error("Detail source mismatch");
+  let paths = 0, gradients = 0;
+  const frames = pack.plates.map(plate => {
+    const raw = cp.execFileSync("git", ["show", sha + ":" + plate.drawable], {cwd: root, encoding: "utf8"});
+    const items = require("./body-atlas-ordered-vector.cjs")(raw, {affine: true, clips: true});
+    paths += items.length; gradients += items.filter(p => p["aapt:attr"]).length;
+    return [path.basename(plate.drawable, ".xml").replace(/^health_atlas_/, ""), plate.asset, "art.pdf", 0];
+  });
+  batches["--detail-4389"] = {name: "dedicated anatomy cutaways", androidPR: 4389, sha, paths, gradients,
+    groups: true, affineGroups: true, clips: true, normalizeQuadratics: true, preserveFillRules: true, frames};
+}
 const selected = Object.keys(batches).filter(flag=>process.argv.includes(flag));
 if(selected.length>1)throw Error("Select one Function artwork batch at a time");
 module.exports = selected.length ? batches[selected[0]] : null;

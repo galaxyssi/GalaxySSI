@@ -150,7 +150,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let atlas = try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self))
     XCTAssertEqual(atlas.views(for: "skeletal").compactMap(\.viewKey), ["skeletal-anterior", "skeletal-posterior"])
     XCTAssertEqual(atlas.views(for: "muscle").compactMap(\.viewKey), ["muscle-anterior", "muscle-posterior"])
-    XCTAssertEqual(atlas.views(for: "scapula").compactMap(\.viewKey), ["skeletal-posterior"])
+    XCTAssertEqual(atlas.views(for: "scapula").map(\.owner), ["scapula", "skeletal"])
+    XCTAssertEqual(atlas.views(for: "scapula").last?.viewKey, "skeletal-posterior")
     XCTAssertEqual(atlas.views(for: "femur").compactMap(\.viewKey), ["skeletal-anterior"])
     XCTAssertEqual(atlas.views(for: "triceps-brachii").compactMap(\.viewKey), ["muscle-posterior"])
     XCTAssertEqual(atlas.plate(for: "femur", viewKey: "skeletal-posterior")?.viewKey, "skeletal-anterior")
@@ -264,13 +265,15 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let categories = atlas.entries.filter { $0.kind == .system }
     XCTAssertEqual(categories.count, 14)
     for category in categories { XCTAssertNotNil(atlas.plate(for: category.id), category.id) }
-    for id in ["spinal-cord", "spinal-nerves", "ganglia", "peripheral-nerves"] {
+    for id in ["spinal-nerves", "ganglia", "peripheral-nerves"] {
       XCTAssertEqual(atlas.plate(for: id)?.owner, "nervous")
     }
+    XCTAssertEqual(atlas.views(for: "spinal-cord").map(\.owner), ["spinal-cord", "nervous"])
     for id in ["veins", "capillaries"] { XCTAssertEqual(atlas.plate(for: id)?.owner, "cardio") }
     XCTAssertEqual(atlas.plate(for: "brain")?.id, "brain")
     XCTAssertEqual(atlas.plate(for: "heart", viewKey: "heart-section")?.viewKey, "heart-section")
-    XCTAssertEqual(atlas.plate(for: "aorta")?.id, "heart-section")
+    XCTAssertEqual(atlas.plate(for: "aorta")?.owner, "aorta")
+    XCTAssertEqual(atlas.views(for: "aorta").last?.id, "heart-section")
     XCTAssertEqual(atlas.plate(for: "mitral-valve")?.id, "heart-valves")
     let cardio = try XCTUnwrap(atlas.entry("cardio"))
     for id in ["aorta", "pulmonary-trunk", "lungs"] { XCTAssertTrue(atlas.children(cardio).contains { $0.id == id }) }
@@ -368,7 +371,9 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let entry = try XCTUnwrap(atlas.entry(id)), model = atlas.model(entry)
       XCTAssertEqual(entry.mechanism, id)
       XCTAssertEqual(model.id, id); XCTAssertEqual(model.kind, "organ"); XCTAssertEqual(model.stages.count, 4)
-      XCTAssertEqual(atlas.plate(for: id)?.id, "ear")
+      XCTAssertTrue(atlas.views(for: id).contains { $0.id == "ear" })
+      XCTAssertEqual(atlas.plate(for: id)?.owner,
+        ["middle-ear", "cochlea", "vestibular-apparatus"].contains(id) ? id : "ear")
     }
     let plate = GalaxySSIHealthAtlasMiddleEar.plate
     XCTAssertEqual(plate.markers.count, 5); XCTAssertEqual(plate.entryIDs.count, 6)
@@ -541,7 +546,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testDedicatedEyePlateOverridesOverviewAndUsesExactTrustedSource() throws {
     let atlas = try catalogue()
     for id in ["eye", "cornea", "lens", "retina"] {
-      let plate = try XCTUnwrap(atlas.plate(for: id))
+      let plate = try XCTUnwrap(atlas.views(for: id).first { $0.asset == "HealthAtlasEyeSection" })
       XCTAssertEqual(plate.id, "eye")
       XCTAssertEqual(plate.owner, "eye")
       XCTAssertEqual(plate.asset, "HealthAtlasEyeSection")
@@ -974,6 +979,59 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       "HealthAtlasRegionalTenocyteTendonMatrixLongitudinal")
     XCTAssertNotEqual(atlas.plate(for: "radius")?.asset, atlas.plate(for: "ulna")?.asset)
     XCTAssertNotEqual(atlas.plate(for: "appendix")?.asset, GalaxySSIHealthAtlasSectionLesson.forEntry("appendix")?.plate.asset)
+  }
+
+  func testDetailCutawaysDefaultToOwnedArtworkAndRetainRestorableLocators() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.DetailStructurePack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 26)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 139)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 3)
+    let state = GalaxySSIHealthAtlasState()
+    for detail in pack.plates {
+      let owner = try XCTUnwrap(detail.owner), entry = try XCTUnwrap(atlas.entry(owner))
+      let views = atlas.views(for: owner)
+      XCTAssertEqual(views.first?.asset, detail.asset)
+      XCTAssertEqual(atlas.plate(for: owner)?.viewKey, detail.viewKey)
+      XCTAssertGreaterThanOrEqual(views.count, 2)
+      XCTAssertEqual(Set(views.compactMap(\.viewKey)).count, views.count)
+      let locator = try XCTUnwrap(views.dropFirst().first)
+      XCTAssertNotEqual(locator.asset, detail.asset)
+      let key = try XCTUnwrap(locator.viewKey)
+      XCTAssertFalse(key.isEmpty)
+      XCTAssertEqual(atlas.plate(for: owner, viewKey: key)?.asset, locator.asset)
+      for feature in detail.annotations {
+        XCTAssertNil(atlas.entry(feature.id))
+        guard case .feature(let selected) = detail.labelTarget(feature.id, in: atlas) else {
+          return XCTFail("Detail feature must explain locally")
+        }
+        XCTAssertEqual(selected.id, feature.id)
+      }
+      for marker in detail.markers {
+        guard case .anatomy(let id) = detail.labelTarget(marker.id, in: atlas) else {
+          return XCTFail("Detail marker must navigate to canonical anatomy")
+        }
+        XCTAssertEqual(id, marker.id)
+      }
+      state.binding(entry).wrappedValue.artworkView = key
+      state.binding(entry).wrappedValue.zoom = 2.5
+      state.binding(entry).wrappedValue.layers = false
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for detail in pack.plates {
+      let owner = try XCTUnwrap(detail.owner), value = try XCTUnwrap(restored.entries[owner])
+      XCTAssertEqual(value.artworkView, state.entries[owner]?.artworkView)
+      XCTAssertEqual(value.zoom, 2.5); XCTAssertFalse(value.layers)
+      XCTAssertNotEqual(atlas.plate(for: owner, viewKey: value.artworkView)?.asset, detail.asset)
+      let entry = try XCTUnwrap(atlas.entry(owner))
+      restored.binding(entry).wrappedValue.artworkView = detail.viewKey
+    }
+    let next = GalaxySSIHealthAtlasState(); next.restore(restored.serialized, atlas: atlas)
+    for detail in pack.plates {
+      let owner = try XCTUnwrap(detail.owner)
+      XCTAssertEqual(atlas.plate(for: owner, viewKey: next.entries[owner]?.artworkView)?.asset, detail.asset)
+    }
   }
 
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {

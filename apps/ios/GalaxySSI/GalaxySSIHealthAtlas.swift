@@ -65,6 +65,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try GutPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try FunctionStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     if let pack = try RegionalStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
+    if let pack = try DetailStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     return result
   }
 
@@ -251,6 +252,16 @@ struct GalaxySSIHealthAtlas: Decodable {
       }) else { throw Invalid.catalogue }
   }
   func views(for id: String?) -> [Plate] {
+    let context = contextViews(for: id)
+    guard let detail = DetailStructurePack.plate(for: id) else { return context }
+    return [detail] + context.map { locator in
+      var value = locator
+      if value.viewKey == nil { value.viewKey = "anatomy-locator-" + (value.owner ?? "body") }
+      if value.selectorLabel == nil { value.selectorLabel = "health_atlas_locator_view" }
+      return value
+    }
+  }
+  private func contextViews(for id: String?) -> [Plate] {
     if id == GalaxySSIHealthAtlasRetinaPath.owner, let pack = try? SensoryPack.bundled.get(),
        let layers = pack.plates.first(where: { $0.owner == id }) {
       return [layers, GalaxySSIHealthAtlasRetinaPath.eyeContext]
@@ -277,7 +288,7 @@ struct GalaxySSIHealthAtlas: Decodable {
       (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
         source == GalaxySSIHealthAtlasMiddleEar.anatomySource || DigestivePack.paperSources.contains(source) ||
         SensoryPack.externalSources.contains(source) || TissueContextPack.paperSources.contains(source) ||
-        RegionalStructurePack.sources.contains(source))
+        RegionalStructurePack.sources.contains(source) || DetailStructurePack.sources.contains(source))
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
@@ -350,7 +361,9 @@ enum GalaxySSIHealthAtlasText {
     let english = localized(key, locale: "en", fallback: fallback, table: "AtlasRegional")
     let prior = localized(key, locale: locale, fallback: english, table: "AtlasRegional")
     let completeEnglish = localized(key, locale: "en", fallback: prior, table: "AtlasComplete")
-    return localized(key, locale: locale, fallback: completeEnglish, table: "AtlasComplete")
+    let complete = localized(key, locale: locale, fallback: completeEnglish, table: "AtlasComplete")
+    let detailEnglish = localized(key, locale: "en", fallback: complete, table: "AtlasDetail")
+    return localized(key, locale: locale, fallback: detailEnglish, table: "AtlasDetail")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }

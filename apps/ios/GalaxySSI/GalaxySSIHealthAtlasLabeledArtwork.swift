@@ -85,6 +85,9 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   final class Scroll: UIScrollView {
     var onLayout: ((UIScrollView) -> Void)?
     override func layoutSubviews() { super.layoutSubviews(); onLayout?(self) }
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+      view is UIButton || super.touchesShouldCancel(in: view)
+    }
   }
   final class Content: UIView {
     private let image = UIImageView()
