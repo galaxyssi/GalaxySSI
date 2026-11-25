@@ -1,0 +1,288 @@
+{
+  "androidPR": 3007,
+  "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
+  "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
+  "scope": "Public web/image evidence, renderer/research/cloud caps, atomic cache/workspace commits; actual raw/intelligence scoped learning with no duplicate observation, qualified domain-index routing, topic cache isolation and circuit-aware source health. Full catalog/ranker/exclusion and learned image adapters, indexed-storage performance, other media/relevance, timing spans and native acceptance incomplete.",
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "sha256": "86b20c19fd0743c7fe07fbeaf8d263d6e4beb91698cbdfbdbe9cdb48f166f51b",
+      "disposition": "Android platform/build change, not copied into iOS; no iOS version change"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentImageSearchDeviceTest.kt",
+      "sha256": "a7bafd1ac53fabaf0c9edd07217bb679fe9e442b0a1466cc96d4ef0ed899bf5b",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentSearchTailDeviceTest.kt",
+      "sha256": "d09a0d49e4a81d693d0fecf80130a8d8522c2d2e206b55b82f676630bd05776b",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentWebLatencyDeviceTest.kt",
+      "sha256": "cc47fae367cfa203c5213f802d7a9c07c565c2ff7a579564484e416242b1dc3a",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentWebRendererDeviceTest.kt",
+      "sha256": "e0ccecd06625260075cce523c9be63d3133a31f3c998837d3387381025685491",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentWorkspaceCommitDeviceTest.kt",
+      "sha256": "f9634d8ff71427a65ad84e2e959c0bbe2397c1b8562ab899f135e870fd89e9e1",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AppStoreRoutingIdentityDeviceTest.kt",
+      "sha256": "30b022ea9e99690bf865bccfa4ef30340e7aa833a4bc316873a89c9aa285d8d7",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/CloudImageModelRouteDeviceTest.kt",
+      "sha256": "68ba2a3c1a777274afb74526e3de0f1681190982af7524fb7e15517f4085353a",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/main/AndroidManifest.xml",
+      "sha256": "40b8d04b64b960603160034642799e0b60095d4a84a3ccda4cb0869714af126d",
+      "disposition": "Android platform/build change, not copied into iOS; no iOS version change"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentDynamicWebArticleFetcher.kt",
+      "sha256": "39a4b3da5155ac992f27f8a1ec5c6aedc95b770adb1ed1f0ad45773f950cdbe3",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentIsolatedWebRenderService.kt",
+      "sha256": "0c58b01f02d9f744a11405b7d9d8277063aa09bd6cb8f64864a9ce84cc35c7cc",
+      "disposition": "Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentIsolatedWebViewRenderer.kt",
+      "sha256": "49abbce896e0416f62407b1db10c4493dddec49f5629dedd89a44bdb10f56675",
+      "disposition": "iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentMarkdownImageStore.kt",
+      "sha256": "2f688f4a0cc5c7c7eac47a98eab9f3ad66f3a12af0b450d736a057fc2661844a",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPublicImageSearchParser.kt",
+      "sha256": "72a8d02e05352982baaf6c1d66e3d5d03ac08faab7ca2208eda1e7c08a1f5c32",
+      "disposition": "Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPublicWebSearchParser.kt",
+      "sha256": "9ed27ec423918770cf34809b2fc3bcfb2fab040dd191029cd3347f7525fd07d3",
+      "disposition": "Adapted result-card DOM selection, excerpts, source verification detection, direct Baidu card URL and scoped redirect decoding using pinned SwiftSoup; native/network acceptance not run"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTranscriptStore.kt",
+      "sha256": "9be4931d766d91db0c5efdfed720b8084c563695200ead2fb7ef31e16b07b615",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidencePack.kt",
+      "sha256": "1ae6503b89c411c68b291d178b4f47aec559f734a22ec675c76f78a59aff85fd",
+      "disposition": "Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidenceVerification.kt",
+      "sha256": "5d5ba0f74a3d5c6878be0abf71279f7fa91aadbecdc71117e1d7a11076a0fcda",
+      "disposition": "Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebExecutionBudget.kt",
+      "sha256": "966c859abfbfea1be4b0f9104b8bb630d0515cb55e7874c3a0e3f1e6955759a5",
+      "disposition": "Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
+      "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
+      "disposition": "Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
+      "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
+      "disposition": "Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",
+      "sha256": "411b67da4945f5fc7e5ff06e52a0d13d75fb5f66c4646748da496b41e8847a50",
+      "disposition": "Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMediaNativeTools.kt",
+      "sha256": "dd486aba148ae275a65fee1d002c51bae3b596fca7f0286340e733a597894d0e",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebRendererHealth.kt",
+      "sha256": "315fe44cd8a3c8bb0b5f0ea5f64b00cecee41b5de7130defb3b947bb8e2cad03",
+      "disposition": "Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",
+      "sha256": "f3f178578b0f7a3f5497de82de0067e6502d77f06366ac9d531f5422a7313173",
+      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
+      "sha256": "106ba129ed70b93ed47005298dc863ff5caa91b32f1df3a408844c2a64bd64af",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudImageSearchEvidence.kt",
+      "sha256": "3acfe46b642e1a33b7b33a79c470146e78b15d8ade5c199422fc5ef5a1d4d314",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelClient.kt",
+      "sha256": "1bee5b04ac2e5b185175a9ed0a7a50193568fe0f141fd93cae709e77a6055438",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelStreaming.kt",
+      "sha256": "48336b28d74adeea19ccfae927048043d1f39cdb9c9bea10fb45a6fb671b094b",
+      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudToolBatchExecutor.kt",
+      "sha256": "3c3dd96fb68f0f566004de585be8685d7e800805867af32ac1ba6042bdcd5164",
+      "disposition": "Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebGrounding.kt",
+      "sha256": "6f6037256b06a703250ccab7b6af4dc7f01eae3b60a219b5b1a004cd5983f610",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebToolLoopProgress.kt",
+      "sha256": "e58511acccdb57d6b692a3a38e98d04ba86014694fcf6bf920b861f884900c50",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/GalaxySSIApplication.kt",
+      "sha256": "63a4da179d0dc3f885599f19b3452a8c090957c8de358046c3e30489a59a0f49",
+      "disposition": "Android platform/build change, not copied into iOS; no iOS version change"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivity.kt",
+      "sha256": "dc69378de7b9737df1e75200409c265c0d5878c91329df281106e7a9a4533473",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
+      "sha256": "70f2254073ce911997372e4b8771e0101982aa9850baa0e5ddd329578837343a",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
+      "sha256": "247dedf770e7160055d62f066200186e58d2ba669b5b01757e527c5bd97ed7f3",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt",
+      "sha256": "9096493e5524ea047482562a47b2116e089cd6a5dfdab4ff8c09eead71fc6bed",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityTaskEvents.kt",
+      "sha256": "9268e1e57bd53fddfa12f8503f771062f1140d60b881b71075399f3c39d609d2",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
+      "sha256": "49b4baed8be50562edc825d5c27bb76a772d2b06c56f2deab2435bb9acca5b5d",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntime.kt",
+      "sha256": "2d2802664db1748c669b39390ef226d90c5a8358cdfee2a2dd4a3309876a42ac",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+      "sha256": "02c646444ea8ad700a61020530d34d9cc7861a468dd8957be44b3bc0b5384573",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings.xml",
+      "sha256": "62a7ada853bacc0a02c6061b3d6e397d1fe1c658741dfe045826021e789e4201",
+      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentDynamicWebArticleFetcherTest.kt",
+      "sha256": "7fa4f2497a427da39df3c2a75ff2b8214028250a7d63901361223efad0587666",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentPublicImageSearchTest.kt",
+      "sha256": "2732d401f6aadfba5aec4c61979b3085ef1434eab12c4931f770696268f0d782",
+      "disposition": "Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentPublicWebSearchParserTest.kt",
+      "sha256": "634612b673a6d3aeed365dd7614dcb382a9028a6f3c71b674d918b95ef757f51",
+      "disposition": "Three native fixture sources added, NOT executed; not complete Android test coverage"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebIntelligenceTest.kt",
+      "sha256": "71064037864bb66432e1ae863ee9dc5ba17f6714a3df5c0e526931cfaa164852",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebLatencyRegressionTest.kt",
+      "sha256": "a1803982c3a98cdf890b6deaa72686a43928dd1f76b27e4575315eed3d15ed11",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebMediaNativeToolsTest.kt",
+      "sha256": "17027cfc63722eda79c2e562c8d01c9f3475a65713fee2ad5f442a843fbb29de",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebRendererHealthTest.kt",
+      "sha256": "8d1964571253028e22f3c2f25af4922e7794677a07565d68f09608c698c992c3",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/CloudToolBatchExecutorTest.kt",
+      "sha256": "46c0c8ec21265f92342064d2c62a841bafaffbdca1bd6b2c8c165e772ad0ada8",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/CloudWebGroundingTest.kt",
+      "sha256": "f37c06515da8f5186b159c60c762b2bbe24f95ab08ec8c50f623ea2e326e8de8",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/CloudWebToolLoopProgressTest.kt",
+      "sha256": "71443744c47389f60558646d6a5c188fee3b0e714588ce89da602c99dd1299b9",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "docs/testing/ANDROID_IMAGE_SEARCH_20260911.md",
+      "sha256": "ee6b18027f2c7d577f3f4df0823d77900330170ae8b4460932a915b8c8994a5f",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "docs/testing/ANDROID_MODEL_LOOP_LATENCY_20260911.md",
+      "sha256": "f75bd7a033d9a5d9416a206625eb5e08c220f6d05b70e93b4a1922d3f0518131",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "docs/testing/ANDROID_WEB_LATENCY_P0_20260911.md",
+      "sha256": "12d9f2fd56455d23354db472055d17a2780a84d90d7b28ce69efe24676f14c9a",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    },
+    {
+      "path": "docs/testing/S26U_WEBVIEW_RENDERER_RECOVERY_20260911.md",
+      "sha256": "fe0a30e62c769b2a90f634ca1285f3f720c6dfe59a4f7e53135b5721e21cc256",
+      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+    }
+  ]
+}

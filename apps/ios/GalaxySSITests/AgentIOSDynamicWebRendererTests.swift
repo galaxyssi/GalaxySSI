@@ -2,6 +2,51 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSDynamicWebRendererTests: XCTestCase {
+  func testRendererHealthUsesSharedCooldownWithoutExtendingRejectedChecks() throws {
+    var now: UInt64 = 100
+    let health = AgentIOSWebRendererHealth(cooldownNanoseconds: 30, now: { now })
+    try health.checkAvailable()
+    health.failed()
+    XCTAssertThrowsError(try health.checkAvailable())
+    now = 129
+    XCTAssertThrowsError(try health.checkAvailable())
+    now = 130
+    XCTAssertNoThrow(try health.checkAvailable())
+    health.failed()
+    health.succeeded()
+    XCTAssertNoThrow(try health.checkAvailable())
+  }
+
+  func testRendererHealthDoesNotPoisonAvailabilityForPageOrCallerFailures() {
+    for error in [AgentIOSDynamicWebRenderError.contentProcessTerminated, .startupTimeout, .unavailable] {
+      XCTAssertTrue(AgentIOSWebRendererHealth.isProcessFailure(error))
+    }
+    for error in [AgentIOSDynamicWebRenderError.cancelled, .timedOut, .capacityTimeout, .invalidURL,
+                  .privateAddress, .navigationBlocked, .navigationFailed("page error"), .emptyDocument,
+                  .temporarilyUnavailable, .responseTooLarge(10, 5)] {
+      XCTAssertFalse(AgentIOSWebRendererHealth.isProcessFailure(error))
+    }
+  }
+
+  func testRendererPreflightRejectsCancellationCheckpointAndDeadlineBeforeResolver() {
+    var resolved = false
+    XCTAssertThrowsError(try AgentIOSWebRenderPreflight.resolve(deadline: .now() + .seconds(1),
+      isCancellationRequested: { true }, checkpoint: {}, resolver: { resolved = true; return true }))
+    XCTAssertThrowsError(try AgentIOSWebRenderPreflight.resolve(deadline: .now() + .seconds(1),
+      isCancellationRequested: { false }, checkpoint: { throw AgentIOSDynamicWebRenderError.cancelled },
+      resolver: { resolved = true; return true }))
+    XCTAssertThrowsError(try AgentIOSWebRenderPreflight.resolve(deadline: .now(),
+      isCancellationRequested: { false }, checkpoint: {}, resolver: { resolved = true; return true }))
+    XCTAssertFalse(resolved)
+  }
+
+  func testRendererPreflightUsesCompletedResolutionWithoutNetwork() throws {
+    XCTAssertTrue(try AgentIOSWebRenderPreflight.resolve(deadline: .now() + .seconds(2),
+      isCancellationRequested: { false }, checkpoint: {}, resolver: { true }))
+    XCTAssertFalse(try AgentIOSWebRenderPreflight.resolve(deadline: .now() + .seconds(2),
+      isCancellationRequested: { false }, checkpoint: {}, resolver: { false }))
+  }
+
   func testFallbackPolicyDetectsJavaScriptShellsAndChallenges() {
     XCTAssertEqual(
       AgentIOSDynamicWebFallbackPolicy.reason(

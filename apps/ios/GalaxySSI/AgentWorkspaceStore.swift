@@ -399,6 +399,36 @@ enum AgentWorkspaceJsonCodec {
     })
   }
 
+  // Persistence cannot interpret an unreadable/partial snapshot as an empty store.
+  static func decodePersistedList(_ raw: String) throws -> [AgentWorkspace] {
+    struct Header: Decodable { var version: Int64? }
+    struct LegacyHeader: Decodable { var version: String }
+    guard let root = rootObject(raw), let data = raw.data(using: .utf8),
+      let values = root["workspaces"] as? [Any],
+      values.count <= AgentWorkspaceBoundsPolicy.maxWorkspaces else {
+      throw AgentRuntimeCapabilityError.invalid("Agent workspace snapshot is unreadable or unsupported")
+    }
+    let storedVersion: Int64
+    if let header = try? JSONDecoder().decode(Header.self, from: data) {
+      storedVersion = header.version ?? 1
+    } else if let header = try? JSONDecoder().decode(LegacyHeader.self, from: data), let parsed = Int64(header.version) {
+      storedVersion = parsed
+    } else {
+      throw AgentRuntimeCapabilityError.invalid("Agent workspace snapshot version is invalid")
+    }
+    guard (1...version).contains(storedVersion) else {
+      throw AgentRuntimeCapabilityError.invalid("Agent workspace snapshot version is unsupported")
+    }
+    let workspaces = values.compactMap { value -> AgentWorkspace? in
+      guard let object = value as? [String: Any] else { return nil }
+      return decodeWorkspace(object)
+    }
+    guard workspaces.count == values.count, Set(workspaces.map(\.workspaceId)).count == values.count else {
+      throw AgentRuntimeCapabilityError.invalid("Agent workspace snapshot contains invalid or duplicate records")
+    }
+    return workspaces
+  }
+
   fileprivate static func encodedListLength(_ workspaces: [AgentWorkspace]) -> Int {
     encodeList(workspaces).count
   }

@@ -5,12 +5,13 @@ struct GalaxySSIWebIntelligenceSourcesView: View {
   @State private var selectedCredential: AgentIOSWebIntelligenceCredentialKey?
   @State private var credentialNotice: GalaxySSIWebCredentialNotice?
   @State private var credentialRefresh = 0
+  @State private var learningStats = AgentIOSWebIntelligenceLearningStore().stats()
 
   private let credentials = AgentIOSWebIntelligenceCredentials()
   private let provider = AgentIOSURLSessionWebIntelligenceProvider()
 
   private var summary: AgentIOSWebIntelligenceSourceSummary {
-    AgentIOSWebIntelligenceSourceCatalog.summary()
+    AgentIOSWebIntelligenceSourceCatalog.summary(learningStats: learningStats)
   }
 
   private var definitions: [AgentPhoneNativeToolDefinition] {
@@ -47,6 +48,10 @@ struct GalaxySSIWebIntelligenceSourcesView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .id(credentialRefresh)
+    .onAppear { learningStats = AgentIOSWebIntelligenceLearningStore().stats() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWebLearningDidChange).receive(on: DispatchQueue.main)) { _ in
+      learningStats = AgentIOSWebIntelligenceLearningStore().stats()
+    }
     .sheet(item: $selectedCredential) { credential in
       GalaxySSIWebCredentialEditorView(
         credential: credential,
@@ -96,11 +101,11 @@ struct GalaxySSIWebIntelligenceSourcesView: View {
         ),
         systemImage: "arrow.triangle.branch",
         tint: .blue,
-        badge: String(
+        badge: summary.learningStats.available ? String(
           format: t("web_sources_learning_value", "%d verified / %d candidates"),
           summary.learningStats.verifiedLearnedSourceCount,
           summary.learningStats.candidateSourceCount
-        )
+        ) : t("galaxyssi.status.unavailable", "Unavailable")
       )
       GalaxySSISecurityStatusRow(
         title: t("web_sources_compatibility", "Wigolo source coverage"),

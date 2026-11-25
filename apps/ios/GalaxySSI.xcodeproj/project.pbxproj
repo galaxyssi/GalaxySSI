@@ -906,6 +906,11 @@
     E10000000000000000002403 /* GalaxySSIOpenWakeWordListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000002403 /* GalaxySSIOpenWakeWordListener.swift */; };
     E50000000000000000002401 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002401 /* onnxruntime */; };
     E50000000000000000002402 /* USearch in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002402 /* USearch */; };
+    E50000000000000000003007 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000003007 /* SwiftSoup */; };
+    C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */; };
+    C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */; };
+    C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */; };
+    C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
     A1000000000000000000F002 /* GalaxySSIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */; };
     D12900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */; };
@@ -4162,6 +4167,10 @@
     A20000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDeviceMemoryStatusProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000473 /* AgentIOSDeviceHealthStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDeviceHealthStatus.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
+    C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicSearchParser.swift; sourceTree = "<group>"; };
+    C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExecutionBudget.swift; sourceTree = "<group>"; };
+    C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceLearning.swift; sourceTree = "<group>"; };
+    C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealth.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
     D22625000000000000000001 /* AgentIOSGenericArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSGenericArticleParser.swift; sourceTree = "<group>"; };
     D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceReader.swift; sourceTree = "<group>"; };
@@ -4402,7 +4411,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */, E50000000000000000002402 /* USearch in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
+    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */, E50000000000000000002402 /* USearch in Frameworks */, E50000000000000000003007 /* SwiftSoup in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
     A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
@@ -5279,6 +5288,10 @@
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
+        C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */,
+        C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */,
+        C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
+        C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */,
         A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
         D22625000000000000000001 /* AgentIOSGenericArticleParser.swift */,
         D22627000000000000000001 /* AgentIOSWebEvidenceReader.swift */,
@@ -6682,6 +6695,7 @@
       packageProductDependencies = (
         E40000000000000000002401 /* onnxruntime */,
         E40000000000000000002402 /* USearch */,
+        E40000000000000000003007 /* SwiftSoup */,
       );
       productName = GalaxySSI;
       productReference = A20000000000000000000008 /* GalaxySSI.app */;
@@ -6736,6 +6750,7 @@
       packageReferences = (
         E30000000000000000002401 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
         E30000000000000000002402 /* XCRemoteSwiftPackageReference "USearch" */,
+        E30000000000000000003007 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
       );
       productRefGroup = A40000000000000000000004 /* Products */;
       projectDirPath = "";
@@ -7998,6 +8013,10 @@
         A10000000000000000000472 /* AgentIOSDeviceMemoryStatusProvider.swift in Sources */,
         A10000000000000000000473 /* AgentIOSDeviceHealthStatus.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
+        C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */,
+        C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */,
+        C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
+        C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
         D12625000000000000000001 /* AgentIOSGenericArticleParser.swift in Sources */,
         D12627000000000000000001 /* AgentIOSWebEvidenceReader.swift in Sources */,
@@ -8942,6 +8961,14 @@
         version = 2.25.2;
       };
     };
+    E30000000000000000003007 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/scinfu/SwiftSoup";
+      requirement = {
+        kind = exactVersion;
+        version = 2.6.0;
+      };
+    };
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -8954,6 +8981,11 @@
       isa = XCSwiftPackageProductDependency;
       package = E30000000000000000002402 /* XCRemoteSwiftPackageReference "USearch" */;
       productName = USearch;
+    };
+    E40000000000000000003007 /* SwiftSoup */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = E30000000000000000003007 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+      productName = SwiftSoup;
     };
 /* End XCSwiftPackageProductDependency section */
 

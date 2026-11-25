@@ -349,7 +349,8 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
       ])
     case .cache:
       return objectSchema([
-        "action": stringSchema(enumValues: ["status", "query", "get", "clear", "clear_expired", "source_health", "reset_source_health"]),
+        "action": stringSchema(enumValues: ["status", "query", "get", "clear", "clear_expired", "source_health", "reset_source_health", "learned_sources"]),
+        "status": stringSchema(enumValues: ["candidate", "verified", "disabled"]),
         "query": stringSchema(minLength: 0, maxLength: 4_096),
         "url": stringSchema(minLength: 0, maxLength: 4_096),
         "limit": integerSchema(minimum: 1, maximum: 100),

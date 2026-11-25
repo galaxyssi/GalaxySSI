@@ -14,6 +14,7 @@ enum AgentMarkdownArtifactReferences {
   struct CitationMarkup {
     var text = ""
     var destinations: [String] = []
+    var links: [(destination: String, isImage: Bool)] = []
   }
 
   static func citationMarkup(_ text: String, omitLinks: Bool = false,
@@ -62,6 +63,21 @@ enum AgentMarkdownArtifactReferences {
       }
       if let link = markdownLink(value, at: index) {
         result.destinations.append(link.destination)
+        let isImage = value[index] == "!"
+        result.links.append((link.destination, isImage))
+        if !isImage, let labelEnd = markdownLabelEnd(value, at: index) {
+          var nested = index + 1
+          while nested < labelEnd {
+            if value[nested] == "\\" { nested += 2; continue }
+            if value[nested] == "`", let end = inlineCodeEnd(value, at: nested), end <= labelEnd {
+              nested = end; continue
+            }
+            if value[nested] == "!", let image = markdownLink(value, at: nested), image.end <= labelEnd {
+              result.links.append((image.destination, true))
+              nested = image.end
+            } else { nested += 1 }
+          }
+        }
         if !omitLinks || !["http://", "https://"].contains(where: { link.destination.lowercased().hasPrefix($0) }) {
           result.text.append(contentsOf: value[index..<link.end])
         }

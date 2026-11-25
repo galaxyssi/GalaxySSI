@@ -2,6 +2,44 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSWebEvidenceVerificationTests: XCTestCase {
+  func testDiscoveredImageURLsAreAllowedOnlyAsImagesNotOrdinaryCitationLinks() throws {
+    let page = "https://source.test/article"
+    let image = "https://images.test/result.jpg"
+    let pack = AgentIOSWebEvidencePack.build(query: "picture", status: "completed", documents: [],
+      results: [["url": .string(page), "excerpt": .string("Public image search result"),
+        "images": .array([.object(["url": .string(image),
+          "thumbnail_url": .string("https://images.test/thumb.jpg"), "original_url": .string("https://images.test/original.jpg")])])]],
+      receipts: [], generatedAtMillis: 1)
+    let source = "[Source](\(page))"
+    for media in [image, "https://images.test/thumb.jpg", "https://images.test/original.jpg"] {
+      XCTAssertTrue(AgentIOSWebEvidenceVerification.validateAnswer("![Picture](\(media)) \(source)", packs: [pack]).valid)
+    }
+    let ordinary = AgentIOSWebEvidenceVerification.validateAnswer("![Picture](\(image)) [False source](\(image)) \(source)", packs: [pack])
+    XCTAssertEqual(ordinary.status, "foreign_citations")
+    XCTAssertTrue(ordinary.invalidCitationURLs.contains(image))
+    XCTAssertEqual(AgentIOSWebEvidenceVerification.validateAnswer("![Unknown](https://images.test/foreign.jpg) \(source)", packs: [pack]).status,
+      "foreign_citations")
+    let nested = "[![Picture](\(image))](\(page))"
+    XCTAssertTrue(AgentIOSWebEvidenceVerification.validateAnswer(nested, packs: [pack]).valid)
+    XCTAssertEqual(AgentIOSWebEvidenceVerification.validateAnswer("[![Foreign](https://images.test/foreign.jpg)](\(page))", packs: [pack]).status,
+      "foreign_citations")
+    XCTAssertEqual(AgentMarkdownArtifactReferences.citationMarkup(nested).text, nested)
+    XCTAssertEqual(AgentIOSWebEvidenceVerification.validateAnswer("\\![Not an image](\(image)) \(source)", packs: [pack]).status,
+      "foreign_citations")
+    XCTAssertTrue(AgentIOSWebEvidenceVerification.validateAnswer("`![Example](https://images.test/not-evidence.jpg)` \(source)", packs: [pack]).valid)
+  }
+
+  func testInvalidSourceIdentityCannotAuthorizeImageDestinations() {
+    let valid = makePack()
+    var foreign = valid
+    var item = foreign["items"]!.arrayValue!.first!.objectValue!
+    item["citation_id"] = .string(String(repeating: "0", count: 24))
+    item["images"] = .array([.object(["url": .string("https://images.test/forged.jpg")])])
+    foreign["items"] = .array([.object(item)])
+    let answer = "![Unknown](https://images.test/forged.jpg) [Source](https://example.test/report)"
+    XCTAssertEqual(AgentIOSWebEvidenceVerification.validateAnswer(answer, packs: [valid, foreign]).status, "foreign_citations")
+  }
+
   func testBuiltPackHasVerifiedManifestAndExpandedSynthesisContract() throws {
     let pack = makePack()
     let verification = try XCTUnwrap(pack["verification"]?.objectValue)

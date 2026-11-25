@@ -35,6 +35,10 @@ protocol AgentIOSURLSessionWebTransporting {
 enum AgentIOSURLSessionWebError: Error {
   case invalidURL
   case invalidSearchQuery
+  case sourceVerificationRequired
+  case invalidSearchResponse
+  case unsupportedImageEngine
+  case unsupportedSearchEngine
   case invalidMethod
   case invalidTimeout
   case invalidLimit
@@ -279,6 +283,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var ocrProcessor: AgentIOSWebMediaOCRProcessing
   var dynamicRenderer: AgentIOSDynamicWebRendering
   var nowMillis: () -> Int64
+  var sourceHealthStore: AgentIOSWebIntelligenceCacheStore?
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
@@ -287,6 +292,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     downloadWriter: AgentIOSWebMediaDownloadWriting = AgentIOSFileWebMediaDownloadWriter(),
     ocrProcessor: AgentIOSWebMediaOCRProcessing = AgentIOSWebMediaOCRPipeline(),
     dynamicRenderer: AgentIOSDynamicWebRendering = AgentIOSWKWebViewRenderer(),
+    sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared,
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
@@ -297,6 +303,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.downloadWriter = downloadWriter
     self.ocrProcessor = ocrProcessor
     self.dynamicRenderer = dynamicRenderer
+    self.sourceHealthStore = sourceHealthStore
     self.nowMillis = nowMillis
   }
 
@@ -384,6 +391,24 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(24))))
       let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
+      let requestedEngines = (input["engines"]?.arrayValue ?? []).compactMap(\.stringValue)
+      let engineIds = Set(requestedEngines)
+      let verticalIds = Set((input["verticals"]?.arrayValue ?? []).compactMap(\.stringValue))
+      let imageSearch = verticalIds.contains("image") || engineIds.contains(where: { $0.hasSuffix("_image") })
+      if imageSearch, (!engineIds.isEmpty && engineIds != ["sogou_image"]) ||
+         (!verticalIds.isEmpty && verticalIds != ["image"]) {
+        throw AgentIOSURLSessionWebError.unsupportedImageEngine
+      }
+      guard AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines) else {
+        throw AgentIOSURLSessionWebError.unsupportedSearchEngine
+      }
+      let healthStore = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) ? sourceHealthStore : nil
+      let sourceSnapshot = healthStore?.sourceRoutingSnapshot()
+      let learned = sourceSnapshot?.learnedSources ?? []
+      guard AgentIOSWebSearchEnginePolicy.accepts(requestedEngines, learnedSources: learned) else {
+        throw AgentIOSURLSessionWebError.unsupportedSearchEngine
+      }
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
       let routing = AgentIOSWebIntelligenceQueryRouting.select(
@@ -391,15 +416,28 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         requestedVerticals: Set((input["verticals"]?.arrayValue ?? []).compactMap {
           AgentIOSWebIntelligenceVertical(rawValue: $0.stringValue ?? "")
         }),
-        requestedEngineIds: Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
+        requestedEngineIds: engineIds,
+        requestedCategories: Set((input["categories"]?.arrayValue ?? []).compactMap(\.stringValue)),
+        learnedSources: imageSearch ? [] : learned
       )
-      let endpoints = try searchEndpoints(
+      let candidates = try searchEndpoints(
         query: query,
         maxResults: maxResults,
         routing: routing,
-        fanout: Int(input["engine_fanout"]?.intValue ?? 6)
+        imageSearch: imageSearch,
+        requestedEngineIds: requestedEngines
       )
+      let health = sourceSnapshot?.health
+      let selection = AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
+        preferred: Set(routing.selected.map(\.id)), health: health ?? [:], explicit: explicitSources,
+        fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
+      let endpoints = selection.selected.compactMap { id in candidates.first { $0.provider == id } }
+      guard !endpoints.isEmpty else {
+        return failure("search_sources_cooling_down", "Selected search sources are cooling down; no request was started.",
+          retryable: true, details: ["circuits_skipped": .array(selection.skipped.map { .object($0.publicValue(now: nowMillis())) })])
+      }
       let accumulator = AgentIOSWebSearchAccumulator()
+      defer { accumulator.cancel() }
       let group = DispatchGroup()
       let querySignals = AgentSearchResponseQuality.signals(query)
       func disjoint(_ attempt: AgentIOSWebSearchAttempt) -> Bool {
@@ -410,7 +448,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
           defer { group.leave() }
-          if invocation.isCancellationRequested {
+          if invocation.isCancellationRequested || accumulator.isCancelled {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .cancelled))
             return
           }
@@ -419,35 +457,51 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .timeout))
             return
           }
+          let attemptStarted = nowMillis()
           do {
+            let started = nowMillis()
+            let requestDeadline = min(deadline, started + min(4_000, remaining))
+            let searchInvocation = AgentNativeToolInvocation(descriptor: invocation.descriptor, input: invocation.input,
+              context: invocation.context, startedAtEpochMillis: started, deadlineEpochMillis: requestDeadline,
+              hardDeadlineEpochMillis: requestDeadline, nowMillis: nowMillis,
+              cancellationRequested: { invocation.isCancellationRequested || accumulator.isCancelled },
+              progressReporter: { _, _ in })
             let resource = try requestResource(
               requestedURL: endpoint.url,
               method: .get,
               maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
               timeoutMillis: min(4_000, remaining),
-              invocation: invocation
+              invocation: searchInvocation
             )
             let html = decodedText(resource).text
+            let results: [AgentIOSWebSearchResult]
+            if endpoint.imageSearch {
+              results = try AgentIOSPublicSearchParser.sogouImages(html, limit: maxResults)
+            } else {
+              results = try parseSearchResults(html, baseURL: resource.finalURL,
+                maxResults: maxResults, allowedHosts: endpoint.allowedHosts)
+            }
             accumulator.append(
               AgentIOSWebSearchAttempt(
                 index: index,
                 provider: endpoint.provider,
                 resource: resource,
-                results: parseSearchResults(
-                  html,
-                  maxResults: maxResults,
-                  allowedHosts: endpoint.allowedHosts
-                )
+                results: results, didStart: true,
+                durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())
               )
             )
           } catch let error as AgentIOSURLSessionWebError {
-            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: error))
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider,
+              error: invocation.isCancellationRequested || accumulator.isCancelled ? .cancelled : error,
+              didStart: true, durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())))
           } catch {
             accumulator.append(
               AgentIOSWebSearchAttempt(
                 index: index,
                 provider: endpoint.provider,
-                error: .transportFailed(error.localizedDescription)
+                error: invocation.isCancellationRequested || accumulator.isCancelled || (error as? URLError)?.code == .cancelled
+                  ? .cancelled : .transportFailed(error.localizedDescription), didStart: true,
+                durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis())
               )
             )
           }
@@ -457,15 +511,23 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var completed = false
       var earlyCompleted = false
       while !completed && !earlyCompleted {
-        let groups = accumulator.snapshot().filter { !disjoint($0) }.map { attempt in
+        let attempts = accumulator.snapshot().filter { !disjoint($0) }
+        let groups = attempts.map { attempt in
           attempt.results.map { $0.url }
+        }
+        let candidates = attempts.flatMap { attempt in
+          attempt.results.map { result in
+            AgentIOSWebSearchCompletionPolicy.Candidate(provider: attempt.provider, title: result.title,
+              url: result.url, excerpt: result.excerpt, imageURL: result.image?["url"]?.stringValue ?? "")
+          }
         }
         if AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(
           profile: profile,
           explicitSources: explicitSources,
           groups: groups,
           limit: maxResults,
-          providerCount: endpoints.count
+          providerCount: endpoints.count,
+          query: query, candidates: candidates, imageOnly: imageSearch
         ) {
           earlyCompleted = true
           break
@@ -475,34 +537,44 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         let slice = max(1, min(100, remaining))
         completed = group.wait(timeout: .now() + .milliseconds(Int(slice))) == .success
       }
-      if invocation.isCancellationRequested {
-        throw AgentIOSURLSessionWebError.cancelled
-      }
+      accumulator.cancel()
       let attempts = accumulator.snapshot().sorted { left, right in
         let leftDisjoint = disjoint(left)
         let rightDisjoint = disjoint(right)
         return leftDisjoint == rightDisjoint ? left.index < right.index : !leftDisjoint
       }
+      let healthReceipts = attempts.compactMap(\.healthReceipt)
+      let healthCommitted = healthReceipts.isEmpty ? nil : healthStore?.recordSourceReceipts(healthReceipts)
+      func withHealth(_ value: AgentNativeToolExecutionResult) -> AgentNativeToolExecutionResult {
+        var result = value
+        result.metadata["circuits_skipped"] = .array(selection.skipped.map { .object($0.publicValue(now: nowMillis())) })
+        result.metadata["source_health_receipts"] = .array(healthReceipts.map { .object($0.publicValue()) })
+        if healthStore != nil { result.metadata["source_health_available"] = .bool(health != nil) }
+        if let healthCommitted { result.metadata["source_health_write_committed"] = .bool(healthCommitted) }
+        return result
+      }
+      if invocation.isCancellationRequested { return withHealth(failure(.cancelled)) }
       guard let first = attempts.first(where: { !$0.results.isEmpty }),
             let resource = first.resource else {
         if !completed {
-          return failure(.timeout)
+          return withHealth(failure(.timeout))
         }
         if let lastError = attempts.compactMap(\.error).last {
-          return failure(lastError)
+          return withHealth(failure(lastError))
         }
-        return failure(
+        return withHealth(failure(
           "search_no_results",
           "Public search providers returned no readable results",
           retryable: true
-        )
+        ))
       }
 
       var merged: [AgentIOSWebSearchResult] = []
       var seenURLs: Set<String> = []
       for attempt in attempts where attempt.resource != nil {
         for result in attempt.results {
-          let key = URL(string: result.url).map(canonicalURL) ?? result.url.lowercased()
+          let identity = result.image?["url"]?.stringValue ?? result.url
+          let key = URL(string: identity).map(canonicalURL) ?? identity.lowercased()
           guard !key.isEmpty, seenURLs.insert(key).inserted else { continue }
           merged.append(result)
           if merged.count >= maxResults { break }
@@ -512,12 +584,30 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var output = commonOutput(resource)
       output["query"] = .string(query)
       output["results"] = .array(merged.map { result in
-        .object([
+        var value: AgentMcpJSONObject = [
           "title": .string(result.title),
-          "url": .string(result.url)
-        ])
+          "url": .string(result.url),
+          "excerpt": .string(result.excerpt),
+          "snippet": .string(result.excerpt)
+        ]
+        if let image = result.image {
+          value["vertical"] = .string("image")
+          value["images"] = .array([.object(image)])
+          value["lead_image_url"] = image["url"]
+        }
+        return .object(value)
       })
       output["result_count"] = .int(Int64(merged.count))
+      if let healthStore {
+        output["learning"] = .object(healthStore.learnSourceCandidates(query: query,
+          categories: ((input["categories"]?.arrayValue ?? []) + (input["verticals"]?.arrayValue ?? [])).compactMap(\.stringValue),
+          results: (output["results"]?.arrayValue ?? []).compactMap(\.objectValue),
+          isCancelled: { invocation.isCancellationRequested }))
+      } else {
+        let scoped = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+          invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+        output["learning"] = .object(["status": .string(scoped ? "skipped_store_unavailable" : "skipped_cache_scope_required")])
+      }
       var resultMetadata = metadata(operation: .webSearch, method: .get)
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
       let completedProviders = Set(attempts.map(\.provider))
@@ -533,8 +623,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         routing.inferredVerticals.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)
       )
       resultMetadata["official_sources"] = .array(
-        routing.selected.map(\.id).map(AgentMcpJSONValue.string)
+        routing.selected.filter { AgentIOSWebSearchEnginePolicy.supported.contains($0.id) }.map(\.id).map(AgentMcpJSONValue.string)
       )
+      resultMetadata["selected_learned_sources"] = .array(endpoints.filter {
+        !AgentIOSWebSearchEnginePolicy.supported.contains($0.provider)
+      }.map(\.provider).map(AgentMcpJSONValue.string))
       resultMetadata["parallel"] = .bool(true)
       let uncertainProviders = attempts.filter(disjoint).map(\.provider)
       resultMetadata["partial"] = .bool((!completed && !earlyCompleted) ||
@@ -545,11 +638,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         earlyCompleted ? "sufficient_diverse_evidence" : ""
       )
       resultMetadata["cancelled_providers"] = .array(cancelledProviders.map(AgentMcpJSONValue.string))
-      return AgentNativeToolExecutionResult.success(
+      resultMetadata["unavailable_sources"] = .array(attempts.compactMap { attempt in
+        guard let error = attempt.error else { return nil }
+        return .object(["provider": .string(attempt.provider),
+          "error_code": .string(failure(error).error?.code ?? "search_source_unavailable")])
+      })
+      return withHealth(AgentNativeToolExecutionResult.success(
         output: output,
         message: message(.webSearch, method: .get),
         metadata: resultMetadata
-      )
+      ))
     } catch let error as AgentIOSURLSessionWebError {
       return failure(error)
     } catch {
@@ -1123,8 +1221,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     query: String,
     maxResults: Int,
     routing: AgentIOSWebIntelligenceSourceSelection,
-    fanout: Int
+    imageSearch: Bool,
+    requestedEngineIds: [String]
   ) throws -> [AgentIOSWebSearchEndpoint] {
+    if imageSearch {
+      let components = searchComponents(scheme: "https", host: "pic.sogou.com", path: "/pics",
+        queryItems: [URLQueryItem(name: "query", value: query)])
+      guard let url = components.url else { throw AgentIOSURLSessionWebError.invalidURL }
+      return [AgentIOSWebSearchEndpoint(provider: "sogou_image",
+        url: try validatedPublicHTTPSURL(url.absoluteString), imageSearch: true)]
+    }
     let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
@@ -1134,12 +1240,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       let components = searchComponents(
         scheme: "https",
-        host: "www.bing.com",
-        path: "/search",
-        queryItems: [
-          URLQueryItem(name: "q", value: "site:\(host) \(query)"),
-          URLQueryItem(name: "count", value: String(maxResults))
-        ]
+        host: source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com",
+        path: source.indexEngine == "duckduckgo" ? "/html/" : "/search",
+        queryItems: [URLQueryItem(name: "q", value: "site:\(host) \(query)")] +
+          (source.indexEngine == "duckduckgo" ? [] : [URLQueryItem(name: "count", value: String(maxResults))])
       )
       guard let url = components.url else {
         throw AgentIOSURLSessionWebError.invalidURL
@@ -1189,7 +1293,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         url: try validatedPublicHTTPSURL(url.absoluteString)
       )
     }
-    return Array(endpoints.prefix(min(max(fanout, 1), 32)))
+    if !requestedEngineIds.isEmpty {
+      let byID = Dictionary(uniqueKeysWithValues: endpoints.map { ($0.provider, $0) })
+      var seen = Set<String>()
+      return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }
+    }
+    return endpoints
   }
 
   private func searchComponents(
@@ -1208,80 +1317,17 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
   private func parseSearchResults(
     _ html: String,
+    baseURL: String,
     maxResults: Int,
     allowedHosts: [String] = []
-  ) -> [AgentIOSWebSearchResult] {
-    let patterns = [
-      #"<div[^>]+class=["'][^"']*b_algoheader[^"']*["'][^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h2[^>]*>(.*?)</h2>"#,
-      #"<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>.*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<h3[^>]+class=["'][^"']*(?:c-title|\bt\b)[^"']*["'][^>]*>.*?<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h3[^>]*>(.*?)</h3>"#
-    ]
-    let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-    var seenURLs: Set<String> = []
-    var results: [AgentIOSWebSearchResult] = []
-    for pattern in patterns {
-      guard let regex = try? NSRegularExpression(
-        pattern: pattern,
-        options: [.caseInsensitive, .dotMatchesLineSeparators]
-      ) else {
-        continue
+  ) throws -> [AgentIOSWebSearchResult] {
+    Array(try AgentIOSPublicSearchParser.parse(html, baseURL: baseURL, limit: 100).filter { result in
+      allowedHosts.isEmpty || allowedHosts.contains { allowedHost in
+        guard let host = URL(string: result.url)?.host?.lowercased() else { return false }
+        let allowed = allowedHost.lowercased()
+        return host == allowed || host.hasSuffix(".\(allowed)")
       }
-      for match in regex.matches(in: html, options: [], range: nsRange) {
-        guard results.count < maxResults,
-              match.numberOfRanges >= 3,
-              let urlRange = Range(match.range(at: 1), in: html),
-              let titleRange = Range(match.range(at: 2), in: html),
-              let url = normalizedSearchResultURL(String(html[urlRange])),
-              allowedHosts.isEmpty || allowedHosts.contains(where: { allowedHost in
-                guard let host = URL(string: url)?.host?.lowercased() else { return false }
-                let allowed = allowedHost.lowercased()
-                return host == allowed || host.hasSuffix(".\(allowed)")
-              }) else {
-          continue
-        }
-        let title = String(readableText(String(html[titleRange])).prefix(4_096))
-        guard !title.isEmpty, !seenURLs.contains(url) else {
-          continue
-        }
-        seenURLs.insert(url)
-        results.append(AgentIOSWebSearchResult(title: title, url: url))
-      }
-      if results.count >= maxResults {
-        break
-      }
-    }
-    return results
-  }
-
-  private func normalizedSearchResultURL(_ value: String) -> String? {
-    let decoded = decodeHTMLEntities(value).trimmingCharacters(in: .whitespacesAndNewlines)
-    let candidate: String
-    if decoded.hasPrefix("//") {
-      candidate = "https:\(decoded)"
-    } else if decoded.hasPrefix("/") {
-      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
-    } else {
-      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
-    }
-    let lower = candidate.lowercased()
-    guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else {
-      return nil
-    }
-    return String(candidate.prefix(Int(AgentIOSWebMediaNativeToolCatalog.maxUrlCharacters)))
-  }
-
-  private func duckDuckGoRedirectTarget(_ value: String) -> String? {
-    let urlString = value.hasPrefix("/")
-      ? "https://duckduckgo.com\(value)"
-      : value
-    guard let components = URLComponents(string: urlString),
-          let target = components.queryItems?.first(where: { $0.name == "uddg" })?.value,
-          !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return nil
-    }
-    return decodeHTMLEntities(target).trimmingCharacters(in: .whitespacesAndNewlines)
+    }.prefix(maxResults))
   }
 
   private func requestResource(
@@ -1708,6 +1754,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("invalid_url", "WebMedia tools only accept public HTTPS URLs")
     case .invalidSearchQuery:
       return failure("invalid_query", "Search query must not be blank")
+    case .sourceVerificationRequired:
+      return failure("source_verification_required", "Search source requires verification")
+    case .invalidSearchResponse:
+      return failure("invalid_engine_response", "Image search did not return readable public result data")
+    case .unsupportedImageEngine:
+      return failure("unsupported_image_engine", "The requested image engine is not available on iOS; no alternative engine was substituted")
+    case .unsupportedSearchEngine:
+      return failure("unsupported_search_engine", "The requested search engine is not available on iOS; no alternative engine was substituted")
     case .invalidMethod:
       return failure("invalid_method", "HTTP method must be GET or HEAD")
     case .invalidTimeout:
@@ -1958,15 +2012,13 @@ private struct AgentIOSURLSessionWebRedirect {
   var toURL: String
 }
 
-private struct AgentIOSWebSearchResult {
-  var title: String
-  var url: String
-}
+private typealias AgentIOSWebSearchResult = AgentIOSPublicSearchParser.Hit
 
 private struct AgentIOSWebSearchEndpoint {
   var provider: String
   var url: URL
   var allowedHosts: [String] = []
+  var imageSearch = false
 }
 
 private struct AgentIOSWebSearchAttempt {
@@ -1975,25 +2027,54 @@ private struct AgentIOSWebSearchAttempt {
   var resource: AgentIOSURLSessionWebResource?
   var results: [AgentIOSWebSearchResult]
   var error: AgentIOSURLSessionWebError?
+  var didStart: Bool
+  var durationMillis: Int64
 
   init(
     index: Int,
     provider: String,
     resource: AgentIOSURLSessionWebResource? = nil,
     results: [AgentIOSWebSearchResult] = [],
-    error: AgentIOSURLSessionWebError? = nil
+    error: AgentIOSURLSessionWebError? = nil,
+    didStart: Bool = false,
+    durationMillis: Int64 = 0
   ) {
     self.index = index
     self.provider = provider
     self.resource = resource
     self.results = results
     self.error = error
+    self.didStart = didStart
+    self.durationMillis = durationMillis
+  }
+
+  var healthReceipt: AgentIOSWebSourceReceipt? {
+    guard didStart else { return nil }
+    let status: String
+    if let error {
+      if case .cancelled = error { status = "cancelled" } else { status = "failed" }
+    } else { status = results.isEmpty ? "empty" : "completed" }
+    return AgentIOSWebSourceReceipt(sourceID: provider, status: status,
+      durationMillis: durationMillis, resultCount: results.count)
   }
 }
 
 private final class AgentIOSWebSearchAccumulator {
   private let lock = NSLock()
   private var attempts: [AgentIOSWebSearchAttempt] = []
+  private var cancelled = false
+
+  var isCancelled: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return cancelled
+  }
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    lock.unlock()
+  }
 
   func append(_ attempt: AgentIOSWebSearchAttempt) {
     lock.lock()

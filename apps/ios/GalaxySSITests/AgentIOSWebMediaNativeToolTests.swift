@@ -2,6 +2,156 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSearchEarlyCompletionRequiresSubstantialQueryRelatedExcerpts() {
+    var candidates = (0..<3).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: "alpha",
+        url: "https://site\(index).test/article", excerpt: "A sufficiently long readable search result summary.")
+    }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta gamma"))
+    for index in candidates.indices { candidates[index].title = "alpha beta" }
+    XCTAssertTrue(searchCanFinish(candidates, query: "alpha beta gamma"))
+    for index in candidates.indices { candidates[index].excerpt = "Short" }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta gamma"))
+  }
+
+  func testBalancedSearchCompletionNeedsDistinctCanonicalSourcesAndEngines() {
+    var candidates = (0..<6).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: "alpha beta",
+        url: "https://site\(index % 3).test/article/\(index)", excerpt: "A sufficiently long readable search result summary.")
+    }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+    candidates[5].provider = "duckduckgo"
+    XCTAssertTrue(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+    candidates[5].url = candidates[0].url + "?utm_source=duplicate"
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+  }
+
+  func testImageEarlyCompletionCountsDistinctImagesAndKeepsExplicitAndDeepSources() {
+    var candidates = (0..<2).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "sogou_image", title: "Picture",
+        url: "https://source.test/article", excerpt: "", imageURL: "https://images.test/\(index).jpg")
+    }
+    XCTAssertTrue(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true, explicit: true))
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", profile: "deep", limit: 2, imageOnly: true))
+    candidates[1].imageURL = candidates[0].imageURL
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+    candidates[1].imageURL = "https://user:secret@images.test/other.jpg"
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+  }
+
+  func testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens() {
+    for (query, title) in [("\u{ff27}\u{ff30}\u{ff34}\u{ff0d}\u{ff14}", "GPT-4"),
+      ("\u{4e2d}\u{56fd}\u{822a}\u{5929}", "\u{4e2d}\u{56fd}\u{822a}\u{5929}"), ("\u{732b}", "\u{732b}")] {
+      let candidates = (0..<3).map { index in
+        AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: title,
+          url: "https://site\(index).test/article", excerpt: "A sufficiently long readable search result summary.")
+      }
+      XCTAssertTrue(searchCanFinish(candidates, query: query), query)
+    }
+  }
+
+  private func searchCanFinish(_ candidates: [AgentIOSWebSearchCompletionPolicy.Candidate], query: String,
+    profile: String = "fast", limit: Int = 3, imageOnly: Bool = false, explicit: Bool = false) -> Bool {
+    AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(profile: profile, explicitSources: explicit,
+      groups: [], limit: limit, providerCount: Set(candidates.map(\.provider)).count,
+      query: query, candidates: candidates, imageOnly: imageOnly)
+  }
+
+  func testSogouImageParserKeepsOriginalSourceDimensionsAndThumbnailFallback() throws {
+    let html = #"<script>window.__INITIAL_STATE__={"searchList":{"searchList":[{"title":"Galaxy <b>photo</b>","url":"https://source.example/page","oriPicUrl":"https://images.example/original.jpg","thumbUrl":"https://images.example/thumb.jpg","width":2048,"height":1024},{"title":"Duplicate","url":"https://source.example/another","oriPicUrl":"https://images.example/original.jpg"},{"title":"Fallback","url":"http://source.example/page","oriPicUrl":"http://images.example/not-https.jpg","thumbUrl":"https://images.example/fallback.jpg","thumbWidth":320,"thumbHeight":180},{"title":"Unsafe","url":"file:///private/data","oriPicUrl":"https://images.example/unsafe.jpg"}]}};</script>"#
+    let hits = try AgentIOSPublicSearchParser.sogouImages(html, limit: 5)
+    XCTAssertEqual(hits.count, 2)
+    XCTAssertEqual(hits[0].title, "Galaxy photo")
+    XCTAssertEqual(hits[0].image?["url"], .string("https://images.example/original.jpg"))
+    XCTAssertEqual(hits[0].image?["source_url"], .string(hits[0].url))
+    XCTAssertEqual(hits[0].image?["width"], .int(2048))
+    XCTAssertEqual(hits[1].image?["url"], .string("https://images.example/fallback.jpg"))
+    XCTAssertEqual(hits[1].image?["width"], .int(320))
+    XCTAssertThrowsError(try AgentIOSPublicSearchParser.sogouImages("<script>secret()</script>", limit: 2))
+  }
+
+  func testImageSearchReachesPublicEndpointAndKeepsImagesThroughEvidenceProjection() throws {
+    final class Images: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        let html = #"<script>window.__INITIAL_STATE__={"searchList":{"searchList":[{"title":"Galaxy first","url":"https://source.example/page","oriPicUrl":"https://images.example/first.jpg","width":640,"height":480},{"title":"Galaxy second","url":"https://source.example/page","oriPicUrl":"https://images.example/second.jpg","width":640,"height":480}]}};</script>"#
+        return AgentIOSURLSessionWebResponse(statusCode: 200, finalURL: request.url,
+          headers: ["content-type": "text/html; charset=utf-8"], body: Data(html.utf8), retrievedAtEpochMillis: 1100)
+      }
+    }
+    let transport = Images()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 })
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, nowMillis: { 1200 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(invocationId: "public-images",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    let output = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "limit": .int(2), "verticals": .array([.string("image")]), "use_cache": .bool(true)],
+      context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(output.isSuccess, output.error?.message ?? "")
+    XCTAssertEqual(transport.requests.count, 1)
+    XCTAssertEqual(transport.requests.first?.url.host, "pic.sogou.com")
+    XCTAssertEqual(output.output["results"]?.arrayValue?.count, 2)
+    XCTAssertEqual(output.output["results"]?.arrayValue?.first?.objectValue?["images"]?.arrayValue?.first?.objectValue?["width"], .int(640))
+    XCTAssertEqual(output.output["evidence"]?.arrayValue?.last?.objectValue?["lead_image_url"], .string("https://images.example/second.jpg"))
+    XCTAssertEqual(output.output["cache"]?.objectValue?["hit"], .bool(false))
+    let unsupported = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "engines": .array([.string("brave_image")])],
+      context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(unsupported.error?.code, "unsupported_image_engine")
+    XCTAssertEqual(transport.requests.count, 1)
+  }
+
+  func testPublicSearchParserKeepsCardsAndSnippetsButNotNavigationOrAds() throws {
+    let html = """
+    <nav><h2><a href='https://nav.example/'>Navigation</a></h2></nav>
+    <div class='ads'><h2><a href='https://ads.example/'>Ad</a></h2></div>
+    <li class='b_algo'><h2><a href='https://evidence.example/a#first'>Real <b>evidence</b></a></h2>
+    <div class='b_caption'><p>Readable result summary.</p></div></li>
+    <li class='b_algo'><h2><a href='https://evidence.example/a#again'>Duplicate</a></h2></li>
+    <script>"<h2><a href='https://script.example/'>Not evidence</a></h2>"</script>
+    """
+    let hits = try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.bing.com/search?q=test", limit: 8)
+    XCTAssertEqual(hits, [.init(title: "Real evidence", url: "https://evidence.example/a", excerpt: "Readable result summary.")])
+    XCTAssertTrue(try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.bing.com", limit: 0).isEmpty)
+  }
+
+  func testPublicSearchParserUnwrapsOwnedRedirectsAndRejectsUnsafeDestinations() throws {
+    let target = "https://evidence.example/article?x=1&y=2"
+    let encoded = Data(target.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("/ck/a?u=a1" + encoded, baseURL: "https://cn.bing.com/search"), target)
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("//duckduckgo.com/l/?uddg=https%3A%2F%2Fevidence.example%2Farticle",
+      baseURL: "https://html.duckduckgo.com/html/"), "https://evidence.example/article")
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("https://other.example/?url=https%3A%2F%2Fevidence.example",
+      baseURL: "https://www.bing.com"), "https://other.example/?url=https%3A%2F%2Fevidence.example")
+    for raw in ["javascript:alert(1)", "file:///private/data", "https://user:pass@evidence.example/", "/ck/a?u=a1!"] {
+      XCTAssertNil(AgentIOSPublicSearchParser.destination(raw, baseURL: "https://www.bing.com/search"), raw)
+    }
+  }
+
+  func testPublicSearchParserUsesBaiduCardDestinationAndReportsVerification() throws {
+    let html = """
+    <div class='c-container' mu='https://evidence.example/article'><h3>
+    <a href='https://www.baidu.com/link?url=opaque'>Evidence title</a></h3>
+    <div class='c-abstract'>Evidence summary</div></div>
+    """
+    XCTAssertEqual(try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.baidu.com/s?wd=test", limit: 3),
+      [.init(title: "Evidence title", url: "https://evidence.example/article", excerpt: "Evidence summary")])
+    for page in ["https://wappass.baidu.com/static/captcha/test", "https://www.baidu.com/s?wd=test"] {
+      XCTAssertThrowsError(try AgentIOSPublicSearchParser.parse(
+        "<title>\u{767e}\u{5ea6}\u{5b89}\u{5168}\u{9a8c}\u{8bc1}</title>", baseURL: page, limit: 3)) { error in
+        guard case AgentIOSURLSessionWebError.sourceVerificationRequired = error else {
+          return XCTFail("Expected a non-retryable source verification diagnostic")
+        }
+      }
+    }
+  }
+
   func testWebTextDecoderHonorsTransportMetaAndByteOrderMark() {
     let chineseBytes: [UInt8] = [0xD6, 0xD0, 0xCE, 0xC4]
     let expected = "\u{4E2D}\u{6587}"

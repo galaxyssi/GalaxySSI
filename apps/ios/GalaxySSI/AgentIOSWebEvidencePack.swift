@@ -84,8 +84,16 @@ enum AgentIOSWebEvidencePack {
     let excerptLimit = selected.isEmpty
       ? minimumExcerptCharacters
       : min(max(maximumTotalExcerptCharacters / selected.count, minimumExcerptCharacters), maximumExcerptCharacters)
+    let mediaBySource = Dictionary(grouping: documents + results) { canonicalURL($0.string("url")) }
     let items = selected.enumerated().map { index, entry in
-      item(rank: index + 1, kind: entry.kind, value: entry.value, excerptLimit: excerptLimit)
+      var evidence = item(rank: index + 1, kind: entry.kind, value: entry.value, excerptLimit: excerptLimit)
+      var seenImages = Set<String>()
+      let images = (mediaBySource[canonicalURL(entry.value.string("url"))] ?? []).flatMap(mediaImages)
+        .filter { seenImages.insert($0.string("url")).inserted }.prefix(4)
+      evidence["images"] = .array(images.map(AgentMcpJSONValue.object))
+      evidence["lead_image_url"] = images.first?["url"] ?? .string("")
+      evidence["media_evidence_level"] = .string("discovered_url_not_visually_verified")
+      return evidence
     }
     let domains = Set(items.compactMap { item in
       URL(string: item["url"]?.stringValue ?? "")?.host?.lowercased()
@@ -244,7 +252,6 @@ enum AgentIOSWebEvidencePack {
     } else {
       sourceIds = fetchTier.isBlank ? [] : [fetchTier]
     }
-    let firstImage = metadata["images"]?.arrayValue?.first?.objectValue?["url"]?.stringValue ?? ""
     return [
       "citation_id": .string(String(sha256("\(url)\n\(contentHash)").prefix(24))),
       "source_kind": .string(kind),
@@ -260,9 +267,47 @@ enum AgentIOSWebEvidencePack {
       "language": .string((value["language"]?.stringValue ?? "").ifBlank(language(excerpt))),
       "rank": .int(Int64(rank)),
       "source_ids": .array(sourceIds.map(AgentMcpJSONValue.string)),
-      "fetch_tier": .string(String(fetchTier.prefix(64))),
-      "lead_image_url": .string(String((metadata["lead_image_url"]?.stringValue ?? firstImage).prefix(4_096)))
+      "fetch_tier": .string(String(fetchTier.prefix(64)))
     ]
+  }
+
+  private static func mediaImages(_ value: AgentMcpJSONObject) -> [AgentMcpJSONObject] {
+    let metadata = value["metadata"]?.objectValue ?? [:]
+    var candidates = Array(objectList(value["images"]).prefix(100)) + Array(objectList(metadata["images"]).prefix(100))
+    let primary = mediaURL(value["image_url"]?.stringValue ?? "") ??
+      mediaURL(value["lead_image_url"]?.stringValue ?? "") ?? mediaURL(metadata["lead_image_url"]?.stringValue ?? "")
+    if let primary {
+      var image = candidates.first { mediaURL($0.string("url")) == primary } ?? [:]
+      image["url"] = .string(primary)
+      image["title"] = image["title"] ?? value["title"]
+      image["thumbnail_url"] = image["thumbnail_url"] ?? value["thumbnail_url"]
+      image["width"] = image["width"] ?? value["image_width"]
+      image["height"] = image["height"] ?? value["image_height"]
+      candidates.insert(image, at: 0)
+    }
+    var seen = Set<String>()
+    return candidates.compactMap { image in
+      guard let url = mediaURL(image.string("url")), seen.insert(url).inserted else { return nil }
+      var result: AgentMcpJSONObject = ["url": .string(url),
+        "source_url": .string(canonicalURL(value.string("url"))),
+        "title": .string(compact(image.string("title"), limit: 256)),
+        "alt": .string(compact(image.string("alt"), limit: 256)),
+        "width": .int(min(100_000, max(0, image["width"]?.intValue ?? 0))),
+        "height": .int(min(100_000, max(0, image["height"]?.intValue ?? 0)))]
+      for key in ["thumbnail_url", "original_url"] {
+        if let safe = mediaURL(image.string(key)) { result[key] = .string(safe) }
+      }
+      return result
+    }
+  }
+
+  static func mediaURL(_ value: String) -> String? {
+    let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard clean.utf8.count <= 4_096, let url = URLComponents(string: clean),
+          ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+          !(url.host ?? "").isEmpty, url.user == nil, url.password == nil,
+          !clean.contains(where: { $0.isWhitespace || $0 == "<" || $0 == ">" }) else { return nil }
+    return clean
   }
 
   private static func compactReceipt(_ value: AgentMcpJSONObject) -> AgentMcpJSONObject {
