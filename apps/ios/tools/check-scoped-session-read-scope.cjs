@@ -44,7 +44,12 @@ assert.equal(source.replace(lookup, section(old, lookupStart, lookupEnd))
   'No other session/database, draft, list, merge, privacy, metric or persistence behavior changed');
 for (const name of ['GalaxySSIServices', 'GalaxySSIChatHistoryDatabase', 'AgentTranscriptEntryStore', 'AgentConversationModels']) {
   const file = `apps/ios/GalaxySSI/${name}.swift`;
-  assert.equal(read(file), previous(file), name + ' unchanged');
+  let retained = read(file);
+  const dispatchScope = path.join(__dirname, 'check-plan-node-dispatch-scope.cjs');
+  if (name === 'GalaxySSIServices' && fs.existsSync(dispatchScope)) {
+    retained = require(dispatchScope).retainedServices(retained);
+  }
+  assert.equal(retained, previous(file), name + ' retained outside separately checked dispatch hook');
 }
 const services = read('apps/ios/GalaxySSI/GalaxySSIServices.swift');
 assert(section(services, '  private func initialPlanningConversation(', '  private func initialPlannerConfigurationSha256(')
