@@ -22,6 +22,20 @@ This change does NOT activate native retrieval or complete that Android PR.
 - Existing semantic search hydrates only each page's sources and the at-most-256
   retrieved candidates. It no longer calls the whole-source `all()` API or uses
   OFFSET traversal. Candidate source revision/policy checks remain in place.
+- New vector writes also maintain an indexed ordinal directory in the same
+  transaction. Offset-free legacy writes remove any prior ordinal entry instead
+  of leaving stale native eligibility. Vector deletion cleans up the directory
+  through a SQLite trigger. Encrypted payloads retain the actual text ranges;
+  the directory contains only opaque identities, revision hashes and ordinals.
+- A published-event replay API resolves at most 64 vectors in ordinal order,
+  inside one read snapshot. It validates the exact durable event and latest
+  publication for that document, current source revision, complete ordinal count,
+  embedding specification, contiguous ordinal sequence and actual source ranges.
+  Old publications, deletion/re-addition, changed policy and missing legacy
+  metadata cannot yield replay rows. Callers must still fence the feed epoch/head
+  and source policy again before releasing query results after this snapshot.
+- Change-feed iteration now treats SQLite step failures and non-increasing or
+  out-of-head sequences as errors rather than returning a truncated success page.
 
 Pages are individually consistent reads, not a corpus snapshot. Concurrent edits
 require source revalidation; a cursor does not grant source access. The current
@@ -32,7 +46,7 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 
 | Android #3005 area | iOS disposition |
 | --- | --- |
-| KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance and bounded reads added; no native replay yet |
+| KnowledgeNativeIndex source offsets and bounded vector loading | Source provenance, bounded catalog and published-event replay-page API added; no native replay engine yet |
 | KnowledgeSemanticSearch source-policy re-resolution | Existing revalidation retained; whole-source hydration removed |
 | AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
 | KnowledgeNativeBridge, KnowledgeNativeWire, JNI owner/arrays/mod | Not ported; iOS requires checked C ABI, not JNI |
@@ -40,11 +54,11 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 | KnowledgeModelWork bounded durable successors | Not ported; requires iOS lifecycle/background scheduling |
 | memory-native Cargo files, lib.rs and replay format | Unchanged; native framework integration remains required |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android-specific build inputs untouched; iOS linking/signing still required |
-| Two Android device fixtures | Not executable on iOS; six Swift fixture methods authored, not run |
+| Two Android device fixtures | Not executable on iOS; nine Swift fixture methods authored, not run |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
-Still required before native activation: published-document bootstrap, model and
-epoch isolation, per-document chunk replay pages, transactional progress recovery,
+Still required before native activation: legacy published-document bootstrap,
+native model/epoch ownership, replay-page consumption, transactional progress recovery,
 checked ABI ownership/cancellation, framework packaging, key lifecycle, privacy
 invalidation, query freshness fencing and lexical fallback during replay.
 No native framework, build, device, latency or scale acceptance is claimed here.
@@ -54,5 +68,7 @@ No native framework, build, device, latency or scale acceptance is claimed here.
 `node apps/ios/tools/check-knowledge-native-source-scope.cjs` checks source wiring.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
-transaction rejection, restart/model cursor isolation and bounded source lookup.
+transaction rejection, restart/model cursor isolation, bounded source lookup,
+130-chunk replay with reopen, legacy eligibility, exact event identity, deletion/
+re-addition publication fencing and policy-change invalidation.
 Native builds, XCTest execution, CI monitoring and IPA generation were not run.

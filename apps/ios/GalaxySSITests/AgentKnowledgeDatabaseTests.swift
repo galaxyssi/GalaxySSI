@@ -4,6 +4,87 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeDatabaseTests: XCTestCase {
+  func testPublishedVectorReplayUsesBoundedOrdinalPagesAndResumesAfterReopen() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let item = nativeSourceItem("replay", content: String(repeating: "x", count: 130))
+    XCTAssertTrue(database.replaceAll([item]))
+    let spec = nativeSourceCheckpoint(item).provenance
+    for index in 0..<130 {
+      var checkpoint = nativeSourceCheckpoint(item)
+      checkpoint.chunkIndex = index
+      checkpoint.chunkCount = 130
+      checkpoint.sourceStartUTF16 = index
+      checkpoint.sourceEndUTF16 = index + 1
+      XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+      if index < 129 { XCTAssertTrue(try database.vectorChangePage(modelSHA256: spec.modelSHA256).events.isEmpty) }
+    }
+    let event = try XCTUnwrap(database.vectorChangePage(modelSHA256: spec.modelSHA256).events.last)
+    let first = try XCTUnwrap(database.vectorReplayPage(event: event, provenance: spec, limit: 10_000))
+    XCTAssertEqual(first.checkpoints.map(\.chunkIndex), Array(0..<64))
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let second = try XCTUnwrap(reopened.vectorReplayPage(event: event, provenance: spec,
+      afterChunkIndex: try XCTUnwrap(first.nextChunkIndex)))
+    XCTAssertEqual(second.checkpoints.map(\.chunkIndex), Array(64..<128))
+    let last = try XCTUnwrap(reopened.vectorReplayPage(event: event, provenance: spec,
+      afterChunkIndex: try XCTUnwrap(second.nextChunkIndex)))
+    XCTAssertEqual(last.checkpoints.map(\.chunkIndex), [128, 129])
+    XCTAssertNil(last.nextChunkIndex)
+    XCTAssertThrowsError(try reopened.vectorReplayPage(event: event, provenance: spec, afterChunkIndex: -1))
+    XCTAssertThrowsError(try reopened.vectorReplayPage(event: event, provenance: spec, afterChunkIndex: 130))
+  }
+
+  func testVectorReplayRejectsLegacyRangesAndForgedPublication() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let item = nativeSourceItem("legacy-replay", content: "body")
+    XCTAssertTrue(database.replaceAll([item]))
+    var checkpoint = nativeSourceCheckpoint(item)
+    checkpoint.sourceStartUTF16 = nil
+    checkpoint.sourceEndUTF16 = nil
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let event = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertNil(try database.vectorReplayPage(event: event, provenance: checkpoint.provenance))
+    checkpoint = nativeSourceCheckpoint(item)
+    checkpoint.updatedAtMillis += 1
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    XCTAssertNotNil(try database.vectorReplayPage(event: event, provenance: checkpoint.provenance))
+    var forged = event
+    forged.updatedAtMillis += 1
+    XCTAssertNil(try database.vectorReplayPage(event: forged, provenance: checkpoint.provenance))
+    forged = event
+    forged.epoch = UUID().uuidString
+    XCTAssertThrowsError(try database.vectorReplayPage(event: forged, provenance: checkpoint.provenance))
+    var wrongSpec = checkpoint.provenance
+    wrongSpec.chunkingContract = "other-contract"
+    XCTAssertNil(try database.vectorReplayPage(event: event, provenance: wrongSpec))
+  }
+
+  func testVectorReplayRejectsRemovedReaddedAndPolicyChangedSources() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    var item = nativeSourceItem("publication", content: "body")
+    XCTAssertTrue(database.replaceAll([item]))
+    let checkpoint = nativeSourceCheckpoint(item)
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let original = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertTrue(database.clearVectorCheckpoints(itemId: item.id, modelSHA256: checkpoint.provenance.modelSHA256))
+    XCTAssertNil(try database.vectorReplayPage(event: original, provenance: checkpoint.provenance))
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let readded = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertGreaterThan(readded.sequence, original.sequence)
+    XCTAssertNil(try database.vectorReplayPage(event: original, provenance: checkpoint.provenance))
+    XCTAssertNotNil(try database.vectorReplayPage(event: readded, provenance: checkpoint.provenance))
+    item.cloudAccess = .full
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertNil(try database.vectorReplayPage(event: readded, provenance: checkpoint.provenance))
+  }
+
   func testSourceRangesLocateRepeatedChunksWithoutSplittingSurrogates() throws {
     let content = "  \u{1f600} a \u{1f600} a  "
     let first = try XCTUnwrap(AgentKnowledgeVectorCheckpoint.locateSourceRange(

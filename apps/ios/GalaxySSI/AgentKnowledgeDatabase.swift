@@ -36,6 +36,12 @@ struct AgentKnowledgeVectorCatalogPage: Equatable {
   var nextVectorKey: String?
 }
 
+struct AgentKnowledgeVectorReplayPage: Equatable {
+  var event: AgentKnowledgeVectorChange
+  var checkpoints: [AgentKnowledgeVectorCheckpoint]
+  var nextChunkIndex: Int?
+}
+
 struct AgentKnowledgeVectorCountSnapshot: Equatable {
   var chunks: Int64
   var pending: Int64
@@ -218,7 +224,7 @@ final class AgentKnowledgeDatabase {
       }
       let stored = sqlite3_step(statement) == SQLITE_DONE
       sqlite3_finalize(statement)
-      guard stored else {
+      guard stored, storeVectorReplayOrdinal(checkpoint, vectorKey: vectorKey) else {
         _ = execute("ROLLBACK")
         return false
       }
@@ -353,7 +359,8 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int(statement, 3, Int32(min(max(limit, 1), 512)))
       var expectedPrevious = afterSequence
       var events: [AgentKnowledgeVectorChange] = []
-      while sqlite3_step(statement) == SQLITE_ROW {
+      var status = sqlite3_step(statement)
+      while status == SQLITE_ROW {
         guard let epochText = sqlite3_column_text(statement, 2),
               let operationText = sqlite3_column_text(statement, 3),
               let itemText = sqlite3_column_text(statement, 4),
@@ -371,13 +378,108 @@ final class AgentKnowledgeDatabase {
           chunkCount: Int(sqlite3_column_int64(statement, 6)),
           updatedAtMillis: sqlite3_column_int64(statement, 7)
         )
-        guard event.epoch == state.epoch, event.previousSequence == expectedPrevious else {
+        guard event.epoch == state.epoch, event.previousSequence == expectedPrevious,
+          event.sequence > expectedPrevious, event.sequence <= state.head else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         expectedPrevious = event.sequence
         events.append(event)
+        status = sqlite3_step(statement)
       }
+      guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       return AgentKnowledgeVectorChangePage(epoch: state.epoch, headSequence: state.head, events: events)
+    }
+  }
+
+  // All publication, source and ordinal checks share one SQLite read snapshot.
+  func vectorReplayPage(
+    event: AgentKnowledgeVectorChange,
+    provenance: AgentKnowledgeVectorProvenance,
+    afterChunkIndex: Int = 0,
+    limit: Int = 64
+  ) throws -> AgentKnowledgeVectorReplayPage? {
+    try locked {
+      guard event.operation == .ready, event.sequence > 0, event.chunkCount > 0,
+        afterChunkIndex >= 0, afterChunkIndex < event.chunkCount,
+        isOpaqueHash(event.itemHash), isOpaqueHash(event.sourceRevisionHash) else {
+        throw AgentKnowledgeDatabaseError.staleCursor
+      }
+      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { _ = execute("ROLLBACK") }
+      let page = try vectorChangePage(modelSHA256: provenance.modelSHA256,
+        epoch: event.epoch, afterSequence: event.previousSequence, limit: 1)
+      guard page.events.first == event else { return nil }
+      let modelHash = keyedHash(provenance.modelSHA256)
+      guard let latest = prepare("""
+        SELECT sequence FROM knowledge_vector_changes
+        WHERE model_hash = ? AND item_hash = ? ORDER BY sequence DESC LIMIT 1
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(modelHash, at: 1, to: latest)
+      bind(event.itemHash, at: 2, to: latest)
+      let latestStatus = sqlite3_step(latest)
+      let latestSequence = sqlite3_column_int64(latest, 0)
+      sqlite3_finalize(latest)
+      guard latestStatus == SQLITE_ROW || latestStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard latestStatus == SQLITE_ROW, latestSequence == event.sequence else { return nil }
+      guard let source = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(event.itemHash, at: 1, to: source)
+      let sourceStatus = sqlite3_step(source)
+      let item: AgentKnowledgeItem?
+      do { item = sourceStatus == SQLITE_ROW ? try decode(source, hashColumn: 0, payloadColumn: 1) : nil }
+      catch { sqlite3_finalize(source); throw error }
+      sqlite3_finalize(source)
+      guard sourceStatus == SQLITE_ROW || sourceStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard let item, keyedHash(item.id) == event.itemHash,
+        keyedHash(AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)) == event.sourceRevisionHash else { return nil }
+      guard let count = prepare("""
+        SELECT COUNT(*) FROM knowledge_vector_replay_rows
+        WHERE model_hash = ? AND item_hash = ? AND source_revision_hash = ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      bind(modelHash, at: 1, to: count)
+      bind(event.itemHash, at: 2, to: count)
+      bind(event.sourceRevisionHash, at: 3, to: count)
+      let countStatus = sqlite3_step(count)
+      let available = sqlite3_column_int64(count, 0)
+      sqlite3_finalize(count)
+      guard countStatus == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard available == Int64(event.chunkCount) else { return nil }
+      guard let statement = prepare("""
+        SELECT v.vector_key, v.encrypted_payload, r.chunk_index
+        FROM knowledge_vector_replay_rows r JOIN knowledge_vectors v ON v.vector_key = r.vector_key
+        WHERE r.model_hash = ? AND r.item_hash = ? AND r.source_revision_hash = ? AND r.chunk_index >= ?
+        ORDER BY r.chunk_index ASC LIMIT ?
+        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(statement) }
+      bind(modelHash, at: 1, to: statement)
+      bind(event.itemHash, at: 2, to: statement)
+      bind(event.sourceRevisionHash, at: 3, to: statement)
+      sqlite3_bind_int64(statement, 4, Int64(afterChunkIndex))
+      let expected = min(min(max(limit, 1), 64), event.chunkCount - afterChunkIndex)
+      sqlite3_bind_int(statement, 5, Int32(expected))
+      var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
+      var status = sqlite3_step(statement)
+      while status == SQLITE_ROW {
+        guard let keyText = sqlite3_column_text(statement, 0), let encrypted = blob(statement, column: 1) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let key = String(cString: keyText)
+        let plaintext = try vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key))
+        let checkpoint = try AgentKnowledgeVectorStorage.decode(plaintext)
+        let ordinal = afterChunkIndex + checkpoints.count
+        guard checkpoint.itemId == item.id, checkpoint.provenance == provenance,
+          checkpoint.chunkCount == event.chunkCount, checkpoint.chunkIndex == ordinal,
+          sqlite3_column_int64(statement, 2) == Int64(ordinal), keyedHash(checkpoint.id) == key,
+          checkpoint.validatedSourceRange(in: item) != nil else { return nil }
+        checkpoints.append(checkpoint)
+        status = sqlite3_step(statement)
+      }
+      guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard checkpoints.count == expected else { return nil }
+      let next = afterChunkIndex + checkpoints.count
+      return AgentKnowledgeVectorReplayPage(event: event, checkpoints: checkpoints,
+        nextChunkIndex: next < event.chunkCount ? next : nil)
     }
   }
 
@@ -1255,6 +1357,20 @@ final class AgentKnowledgeDatabase {
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_lookup ON knowledge_vectors(item_hash, model_hash)")
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_model_key ON knowledge_vectors(model_hash, vector_key)")
     _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_replay_rows (
+        vector_key TEXT PRIMARY KEY NOT NULL,
+        model_hash TEXT NOT NULL,
+        item_hash TEXT NOT NULL,
+        source_revision_hash TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+        UNIQUE(model_hash, item_hash, source_revision_hash, chunk_index)
+      )
+      """)
+    _ = execute("""
+      CREATE TRIGGER IF NOT EXISTS knowledge_vector_replay_delete AFTER DELETE ON knowledge_vectors
+      BEGIN DELETE FROM knowledge_vector_replay_rows WHERE vector_key = OLD.vector_key; END
+      """)
+    _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_vector_feed_models (
         model_hash TEXT PRIMARY KEY NOT NULL,
         epoch TEXT NOT NULL,
@@ -1275,6 +1391,7 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_replay ON knowledge_vector_changes(model_hash, sequence)")
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_document ON knowledge_vector_changes(model_hash, item_hash, sequence)")
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_vector_enrollment (
         model_hash TEXT PRIMARY KEY NOT NULL,
@@ -2006,6 +2123,26 @@ final class AgentKnowledgeDatabase {
     let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
     sqlite3_finalize(update)
     return updated
+  }
+
+  private func storeVectorReplayOrdinal(_ checkpoint: AgentKnowledgeVectorCheckpoint, vectorKey: String) -> Bool {
+    guard let delete = prepare("DELETE FROM knowledge_vector_replay_rows WHERE vector_key = ?") else { return false }
+    bind(vectorKey, at: 1, to: delete)
+    let deleted = sqlite3_step(delete) == SQLITE_DONE
+    sqlite3_finalize(delete)
+    guard deleted else { return false }
+    guard checkpoint.sourceStartUTF16 != nil else { return true }
+    guard let insert = prepare("""
+      INSERT INTO knowledge_vector_replay_rows(vector_key, model_hash, item_hash, source_revision_hash, chunk_index)
+      VALUES (?, ?, ?, ?, ?)
+      """) else { return false }
+    defer { sqlite3_finalize(insert) }
+    bind(vectorKey, at: 1, to: insert)
+    bind(keyedHash(checkpoint.provenance.modelSHA256), at: 2, to: insert)
+    bind(keyedHash(checkpoint.itemId), at: 3, to: insert)
+    bind(keyedHash(checkpoint.sourceRevision), at: 4, to: insert)
+    sqlite3_bind_int64(insert, 5, Int64(checkpoint.chunkIndex))
+    return sqlite3_step(insert) == SQLITE_DONE
   }
 
   private func vectorCheckpoint(vectorKey: String) -> AgentKnowledgeVectorCheckpoint? {
