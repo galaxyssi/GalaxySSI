@@ -260,6 +260,7 @@ struct AgentHomeView: View {
     NavigationView {
       VStack(spacing: 0) {
         header
+        GeometryReader { viewport in
         VStack(spacing: 0) {
           if screenAssistantConversationID == store.activeAgentConversationId && !screenAssistantConversationID.isEmpty && !screenAssistantCollapsed {
             screenAssistantControls
@@ -271,13 +272,14 @@ struct AgentHomeView: View {
             if let session = store.agentSession(id: store.activeAgentConversationId),
                GalaxySSIHealthCareAgentScope.concernID(session) != nil {
               GalaxySSIHealthCareEntry(records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets),
-                conversationID: session.id)
+                conversationID: session.id, availableHeight: viewport.size.height)
                 .id([store.profile.identityFingerprint, session.id])
             }
             agentOutput
           }
         }
         .frame(maxHeight: .infinity)
+        }
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         agentComposer

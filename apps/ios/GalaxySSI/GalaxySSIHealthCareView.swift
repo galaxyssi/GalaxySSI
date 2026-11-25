@@ -102,6 +102,7 @@ struct GalaxySSIHealthCareEntry: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   let records: GalaxySSIHealthRecords
   let conversationID: String
+  var availableHeight: CGFloat? = nil
   @State private var concerns: [GalaxySSIHealthCare.Concern] = []
   @State private var priority: GalaxySSIHealthCarePriority.Warning?
   @State private var priorityConcernID: UUID?
@@ -114,49 +115,40 @@ struct GalaxySSIHealthCareEntry: View {
   var body: some View {
     Group {
       if canRead, displayedConversationID == conversationID, let concern = concerns.first {
-        VStack(alignment: .leading, spacing: 6) {
-          if let priority, let priorityConcernID {
-            NavigationLink {
-              GalaxySSIHealthCareDetail(records: records, id: priorityConcernID, metric: .bloodPressure)
-            } label: {
-              GalaxySSIHealthCarePriorityNotice(warning: priority, compact: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        GalaxySSIHealthCareAgentPanel(availableHeight: availableHeight,
+          title: concern.metric.title(language: language) + " \u{00b7} " + GalaxySSIHealthCareText.stage(concern.stage, language: language),
+          summary: GalaxySSIHealthCareAgentPanelText.summary(concern, language: language),
+          priority: priority.map { _ in GalaxySSIHealthCareAgentPanelText.get("health_care_bp_title", language: language) }, expanded: $expanded) {
+          VStack(alignment: .leading, spacing: 8) {
+            if let priority, let priorityConcernID {
+              NavigationLink {
+                GalaxySSIHealthCareDetail(records: records, id: priorityConcernID, metric: .bloodPressure)
+              } label: {
+                GalaxySSIHealthCarePriorityNotice(warning: priority, compact: true)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+              }
             }
-          }
-          HStack(spacing: 8) {
-            concernLink(concern, primary: true)
-            Button { expanded.toggle() } label: {
-              Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                .frame(width: 44, height: 44)
+            let reason = concern.assessment.signals.map { GalaxySSIHealthCareText.signal($0, language: language) }
+              .joined(separator: " ").ifBlank(t("agent.local_follow_up", "Local health follow-up"))
+            summaryLine(t("agent.reason", "Reason"), reason)
+              .accessibilityIdentifier("agent-health-care-reason")
+            summaryLine(t("agent.next", "Next step"), nextStep(concern.stage))
+              .accessibilityIdentifier("agent-health-care-next")
+            if concern.assessment.record != nil {
+              Button { openDiscussion(concern) } label: {
+                Label(t("agent.discuss", "Private discussion"), systemImage: "bubble.left")
+                  .font(.footnote)
+                  .frame(minHeight: 44)
+              }
+              .accessibilityIdentifier("agent-health-care-discussion")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(expanded ? t("agent.collapse", "Hide Health details") : t("agent.expand", "Show Health details"))
-            .accessibilityIdentifier("agent-health-care-details")
-          }
-          let reason = concern.assessment.signals.first.map { GalaxySSIHealthCareText.signal($0, language: language) }
-            ?? t("agent.local_follow_up", "Local health follow-up")
-          summaryLine(t("agent.reason", "Reason"), reason)
-            .accessibilityIdentifier("agent-health-care-reason")
-          summaryLine(t("agent.next", "Next step"), nextStep(concern.stage))
-            .accessibilityIdentifier("agent-health-care-next")
-          if concern.assessment.record != nil {
-            Button { openDiscussion(concern) } label: {
-              Label(t("agent.discuss", "Private discussion"), systemImage: "bubble.left")
-                .font(.footnote)
-                .frame(minHeight: 44)
-            }
-            .accessibilityIdentifier("agent-health-care-discussion")
-          }
-          if expanded {
             if let review = concern.maintenanceReview, concern.stage == .maintenance {
               GalaxySSIHealthMaintenanceEvidenceView(review: review).font(.footnote)
             }
-            details
+            details(concern)
           }
         }
-        .padding(.bottom, 8)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
       }
     }
     .onChange(of: scene) { phase in
@@ -247,20 +239,17 @@ struct GalaxySSIHealthCareEntry: View {
     concerns = []; expanded = false; priority = nil; priorityConcernID = nil; discussion = nil; displayedPermission = nil; displayedConversationID = nil
   }
 
-  private var details: some View {
-    ScrollView {
+  private func details(_ concern: GalaxySSIHealthCare.Concern) -> some View {
       VStack(alignment: .leading, spacing: 0) {
-        ForEach(concerns.dropFirst()) { concern in concernLink(concern, primary: false) }
         NavigationLink {
-          GalaxySSIHealthCareView(records: records)
+          GalaxySSIHealthCareDetail(records: records, id: concern.id, metric: concern.metric)
         } label: {
-          Label(t("title", "Health Care"), systemImage: "heart.text.square")
+          Label(GalaxySSIHealthCareAgentPanelText.get("health_agent_open_record", language: language), systemImage: "heart.text.square")
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
+        .accessibilityIdentifier("agent-health-care-record")
       }
       .font(.footnote)
-    }
-    .frame(height: CGFloat(concerns.count) * 44)
   }
 
   private func concernLink(_ concern: GalaxySSIHealthCare.Concern, primary: Bool) -> some View {
@@ -277,7 +266,7 @@ struct GalaxySSIHealthCareEntry: View {
     (Text(label + ": ").fontWeight(.semibold) + Text(value))
       .font(.caption)
       .foregroundColor(.secondary)
-      .lineLimit(2)
+      .fixedSize(horizontal: false, vertical: true)
   }
 
   private func nextStep(_ stage: GalaxySSIHealthCare.Stage) -> String {

@@ -5,6 +5,21 @@ import XCTest
 final class GalaxySSIHealthOverviewCareTests: XCTestCase {
   typealias Care = GalaxySSIHealthOverviewCare
 
+  func testHealthAssessmentPanelReservesTranscriptSpaceAndSubtractsFixedHeader() {
+    typealias Layout = GalaxySSIHealthCareAgentPanelLayout
+    for height: CGFloat in [320, 600, 1_000] {
+      let limit = Layout.limit(available: height)
+      XCTAssertEqual(limit, min(300, height * 0.4))
+      XCTAssertEqual(Layout.bodyHeight(available: height, header: 80, content: 2_000), max(0, limit - 80))
+      XCTAssertEqual(Layout.bodyHeight(available: height, header: 80, content: 20), min(20, max(0, limit - 80)))
+      XCTAssertLessThanOrEqual(80 + Layout.bodyHeight(available: height, header: 80, content: 2_000), limit)
+    }
+    XCTAssertEqual(Layout.limit(available: nil), 300)
+    XCTAssertEqual(Layout.limit(available: -1), 0)
+    XCTAssertEqual(Layout.limit(available: .nan), 0)
+    XCTAssertEqual(Layout.bodyHeight(available: 320, header: 200, content: 1_000), 0)
+  }
+
   func testIndependentAgentScopeRequiresExactPrivateActiveTopic() {
     let concern = UUID()
     let session = AgentConversation(id: "ios-agent-fixture", title: "Fixture", createdAt: 1, updatedAt: 1,

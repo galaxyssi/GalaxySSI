@@ -17,7 +17,11 @@ check(records,['func bindLocalCareAgentDiscussion','thread.id == threadID','thre
 const binding=records.split('  func bindLocalCareAgentDiscussion(')[1].split('  func overviewDiscussionConcern(')[0];
 assert.equal(records.replace('  func bindLocalCareAgentDiscussion('+binding,''),prior('GalaxySSIHealthRecords'),'Encrypted archive and existing permissions/network/approval kernels otherwise unchanged');
 check(home,['GalaxySSIHealthCareAgentScope.concernID(session) != nil']);
-assert.equal(home.replace('GalaxySSIHealthCareAgentScope.concernID(session) != nil','!session.privateMode, !session.trackingPaused, session.collaborationRoster == nil'),prior('GalaxySSIAndroidParityUI'),'Header/composer/output/shortcuts unchanged outside surface gate');
+let originalHome=home;
+if(fs.existsSync(path.join(root,'apps/ios/ANDROID_4278_PORT_COVERAGE.json'))){
+ originalHome=originalHome.replace('        GeometryReader { viewport in\n','').replace('conversationID: session.id, availableHeight: viewport.size.height)','conversationID: session.id)').replace('        .frame(maxHeight: .infinity)\n        }\n      }\n      .safeAreaInset','        .frame(maxHeight: .infinity)\n      }\n      .safeAreaInset');
+}
+assert.equal(originalHome.replace('GalaxySSIHealthCareAgentScope.concernID(session) != nil','!session.privateMode, !session.trackingPaused, session.collaborationRoster == nil'),prior('GalaxySSIAndroidParityUI'),'Header/composer/output/shortcuts unchanged outside surface gate and the explicitly isolated #4278 viewport forwarding');
 check(view,['displayedConversationID == conversationID','let capturedConversation = conversationID','let capturedRevision = revision','revision == capturedRevision','conversationID == capturedConversation','let current = [concern]','GalaxySSIHealthCareAgentScope.concern(session, in: archive)','return GalaxySSIHealthCareAgentScope.concernID(session) != nil','current.concern.id == concerns.first?.id','displayedConversationID = nil','GalaxySSIHealthCareAgentOpenButton(records: records, concern: concern.id, metric: metric)']);
 assert(!view.includes('GalaxySSIHealthCare.agentConcerns(in: archive)'));
 assert(view.indexOf('GalaxySSIHealthCareAgentOpenButton(records: records')<view.indexOf('if let bloodPressureWarning {'),'Prominent command before detail sections');
