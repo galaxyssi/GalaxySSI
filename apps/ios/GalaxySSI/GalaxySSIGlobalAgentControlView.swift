@@ -126,9 +126,11 @@ struct GalaxySSIGlobalAgentControlView: View {
 
   private var proactiveHub: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Toggle(t("my_agent_cognition", "Background cognition"), isOn: globalBinding(\.enabled))
-      Toggle(t("cc_global_proactive_title", "Proactive insights"), isOn: globalBinding(\.proactiveInsightsEnabled))
-        .disabled(!store.globalAgentSettings.enabled)
+      Group {
+        Toggle(t("my_agent_cognition", "Background cognition"), isOn: globalBinding(\.enabled))
+        Toggle(t("cc_global_proactive_title", "Proactive insights"), isOn: globalBinding(\.proactiveInsightsEnabled))
+          .disabled(!store.globalAgentSettings.enabled)
+      }
       GalaxySSISecuritySectionTitle(title: t("my_agent_goals", "Goals"))
       compactDestination(.longHorizon, "cc_global_goals_title", "Long-term goals", "scope")
       compactDestination(.research, "cc_global_research_queue_title", "Research and monitoring", "magnifyingglass")
