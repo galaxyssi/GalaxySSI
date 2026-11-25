@@ -26,6 +26,11 @@ final class AgentIOSImageSearchAdapterTests: XCTestCase {
     XCTAssertEqual(brave.first?.image?["url"], .string("https://image.test/brave.jpg"))
     XCTAssertEqual(brave.first?.image?["height"], .int(480))
     XCTAssertThrowsError(try AgentIOSPublicSearchParser.imageRows(Data("{}".utf8), brave: false, limit: 20))
+    XCTAssertThrowsError(try AgentIOSPublicSearchParser.imageRows(Data("not json".utf8), brave: true, limit: 20)) { error in
+      guard case AgentIOSURLSessionWebError.invalidSearchResponse = error else {
+        return XCTFail("Malformed JSON must be an invalid source response, not a transport failure")
+      }
+    }
     let privateImage = Data(#"{"results":[{"title":"Private","url":"https://source.test/page","image":"https://127.0.0.1/private.jpg"}]}"#.utf8)
     XCTAssertTrue(try AgentIOSPublicSearchParser.imageRows(privateImage, brave: false, limit: 20).isEmpty)
   }

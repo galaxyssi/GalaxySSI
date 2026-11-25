@@ -60,7 +60,7 @@ enum AgentIOSPublicSearchParser {
 
   static func imageRows(_ data: Data, brave: Bool, limit: Int) throws -> [Hit] {
     guard limit > 0 else { return [] }
-    guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+    guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let rows = root["results"] as? [Any] else { throw AgentIOSURLSessionWebError.invalidSearchResponse }
     var hits: [Hit] = [], seen = Set<String>()
     for value in rows.prefix(100) {
