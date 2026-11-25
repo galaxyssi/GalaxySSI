@@ -69,7 +69,7 @@ struct GalaxySSIHealthAtlasResearch: View {
           if let mode = GalaxySSIHealthAtlasDrugState.Mode(rawValue: value) { drugState.wrappedValue.mode = mode }
         }), identifier: "atlas-drug-model")
       if drugState.wrappedValue.mode == .comparison {
-        GalaxySSIHealthAtlasComparisonPanel(model: drugState.comparison, language: language)
+        GalaxySSIHealthAtlasComparisonPanel(model: drugState.comparison, showTotals: drugState.showComparisonTotals, language: language)
       } else if drugState.wrappedValue.mode == .two {
         GalaxySSIHealthAtlasDistributionPanel(model: drugState.distribution, language: language)
       } else {

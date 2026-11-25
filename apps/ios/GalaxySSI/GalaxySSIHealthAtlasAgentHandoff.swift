@@ -158,7 +158,7 @@ enum GalaxySSIHealthAtlasQuestion {
         } else if !hasAssociatedPhysiology { prompt += "\n" + t("qualitative_note") }
       case .drugs:
         if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .comparison {
-          prompt += "\n" + GalaxySSIHealthAtlasComparisonText.context(drugs.comparison,
+          prompt += "\n" + GalaxySSIHealthAtlasComparisonText.context(drugs.comparison, includeTotals: drugs.showComparisonTotals,
             locale: GalaxySSILocalization.interfaceLocale(language: language), text: t)
         } else if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .two {
           prompt += "\n" + t("drug_models") + "\n" +

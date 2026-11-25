@@ -69,19 +69,22 @@ struct GalaxySSIHealthAtlasDrugState: Equatable, Sendable {
   var mode = Mode.single
   var distribution = GalaxySSIHealthAtlasDistribution.standard
   var comparison = GalaxySSIHealthAtlasModelComparison.standard
+  var showComparisonTotals = false
   var encoded: [Int] { [mode.rawValue, distribution.outward, distribution.returning, distribution.elimination,
-    distribution.quarterHours, comparison.scenario.rawValue, comparison.quarterHours] }
+    distribution.quarterHours, comparison.scenario.rawValue, comparison.quarterHours, showComparisonTotals ? 1 : 0] }
   static func restore(_ values: [Int]?) -> Self? {
-    guard let values, values.count == 5 || values.count == 7, let mode = Mode(rawValue: values[0]),
-      values.count == 7 || mode != .comparison,
+    guard let values, values.count == 5 || (7...8).contains(values.count), let mode = Mode(rawValue: values[0]),
+      values.count >= 7 || mode != .comparison,
       let distribution = GalaxySSIHealthAtlasDistribution(outward: values[1], returning: values[2],
         elimination: values[3], quarterHours: values[4]) else { return nil }
     let comparison: GalaxySSIHealthAtlasModelComparison
-    if values.count == 7 {
+    if values.count >= 7 {
       guard let scenario = GalaxySSIHealthAtlasModelComparison.Scenario(rawValue: values[5]),
         let restored = GalaxySSIHealthAtlasModelComparison(scenario: scenario, quarterHours: values[6]) else { return nil }
       comparison = restored
     } else { comparison = .standard }
-    return Self(mode: mode, distribution: distribution, comparison: comparison)
+    let totals = values.count == 8 ? values[7] : 0
+    guard (0...1).contains(totals) else { return nil }
+    return Self(mode: mode, distribution: distribution, comparison: comparison, showComparisonTotals: totals == 1)
   }
 }

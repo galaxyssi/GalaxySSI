@@ -125,7 +125,7 @@ enum GalaxySSIHealthAtlasAgentContext {
     case .drugs:
       lines.append(t("drugs"))
       if let drugs, drugs.mode == .comparison {
-        lines.append(GalaxySSIHealthAtlasComparisonText.context(drugs.comparison, locale: locale, text: t))
+        lines.append(GalaxySSIHealthAtlasComparisonText.context(drugs.comparison, includeTotals: drugs.showComparisonTotals, locale: locale, text: t))
       } else if let drugs, drugs.mode == .two {
         lines += [t("drug_models"), drugs.distribution.context(locale: locale, text: t)]
       } else {

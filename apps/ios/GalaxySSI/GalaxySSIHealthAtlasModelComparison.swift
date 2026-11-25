@@ -28,6 +28,12 @@ struct GalaxySSIHealthAtlasModelComparison: Equatable, Sendable {
     let high: Double
     var centralGap: Double { two.central - one }
   }
+  /// Integral of normalized central amount; not concentration or clinical exposure.
+  struct CentralAmountHours: Equatable, Sendable {
+    let one: Double
+    let two: Double
+    var gap: Double { two - one }
+  }
   let scenario: Scenario
   let quarterHours: Int
   static let standard = Self()!
@@ -37,6 +43,13 @@ struct GalaxySSIHealthAtlasModelComparison: Equatable, Sendable {
   }
   var hours: Double { Double(quarterHours) / 4 }
   var point: Point { at(hours)! }
+  func centralAmountHours() -> CentralAmountHours {
+    let model = scenario.distribution
+    let one = -100 * expm1(-model.k10 * hours) / model.k10
+    // Eliminated amount is the exact integral of k10 times central amount.
+    let two = model.outward == 0 ? one : model.at(hours)!.eliminated / model.k10
+    return CentralAmountHours(one: one, two: two)
+  }
   func at(_ hours: Double) -> Point? {
     guard hours.isFinite, (0...48).contains(hours) else { return nil }
     let values = Scenario.allCases.map { $0.distribution.at(hours)! }
@@ -71,10 +84,17 @@ enum GalaxySSIHealthAtlasComparisonText {
   static func range(_ point: GalaxySSIHealthAtlasModelComparison.Point, locale: Locale, text t: (String) -> String) -> String {
     String(format: t("compare_range"), number(point.low, locale), number(point.high, locale))
   }
-  static func context(_ model: GalaxySSIHealthAtlasModelComparison, locale: Locale, text t: (String) -> String) -> String {
-    [t("compare_title"), t("compare_scope"), t(model.scenario.label), rates(model, locale: locale, text: t),
+  static func totals(_ model: GalaxySSIHealthAtlasModelComparison, locale: Locale, text t: (String) -> String) -> String {
+    let total = model.centralAmountHours()
+    return String(format: t("compare_total_result"), number(model.hours, locale), number(total.one, locale),
+      number(total.two, locale), number(total.gap, locale))
+  }
+  static func context(_ model: GalaxySSIHealthAtlasModelComparison, includeTotals: Bool = false, locale: Locale, text t: (String) -> String) -> String {
+    var lines = [t("compare_title"), t("compare_scope"), t(model.scenario.label), rates(model, locale: locale, text: t),
       time(model, locale: locale, text: t), summary(model.point, locale: locale, text: t),
-      range(model.point, locale: locale, text: t), t("compare_limit"),
-      GalaxySSIHealthAtlasDistribution.source.absoluteString, validationSource.absoluteString].joined(separator: "\n")
+      range(model.point, locale: locale, text: t)]
+    if includeTotals { lines += [totals(model, locale: locale, text: t), t("compare_total_basis")] }
+    lines += [t("compare_limit"), GalaxySSIHealthAtlasDistribution.source.absoluteString, validationSource.absoluteString]
+    return lines.joined(separator: "\n")
   }
 }
