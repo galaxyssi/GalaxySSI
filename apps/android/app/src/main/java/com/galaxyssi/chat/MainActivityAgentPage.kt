@@ -1509,9 +1509,16 @@ internal fun MainActivity.submitAgentGoal(
                     refreshAgentTranscriptWindow(conversation.id)
                     return@runOnUiThread
                 }
-                executeDirectSystemAction(healthCareSubmission.action, conversation.id, turnId,
-                    healthHistory,
-                    HealthCareDiscussionPolicy.prompt(goal, healthCareSubmission.snapshot))
+                executeConcurrentAgentGoal(
+                    goal = HealthCareDiscussionPolicy.prompt(goal, healthCareSubmission.snapshot),
+                    conversationContext = healthHistory,
+                    conversationId = conversation.id,
+                    turnId = turnId,
+                    deterministicAction = healthCareSubmission.action,
+                    executionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
+                    isSubmissionCancelled = isSubmissionCancelled,
+                    approvedHealthDiscussion = true
+                )
                 refreshAgentConversationHeader()
                 refreshAgentTranscriptWindow(conversation.id)
                 return@runOnUiThread

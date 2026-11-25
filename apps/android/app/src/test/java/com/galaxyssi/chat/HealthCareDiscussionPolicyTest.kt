@@ -27,6 +27,29 @@ class HealthCareDiscussionPolicyTest {
     @Test fun aDifferentProviderEndpointOrModelCannotReuseApproval() {
         assertFalse(allowed(destination = "b".repeat(64)))
     }
+
+    @Test fun durablePlanningRetainsOnlyTheApprovedProviderAndTools() {
+        val approved = AgentCallableTarget(grant.targetId, "Approved", AgentConnectorKind.MODEL,
+            AgentConnectorStatus.AVAILABLE, listOf(AgentCapability.REASONING))
+        val other = approved.copy(id = "other-provider", title = "Other")
+        val snapshot = AgentConnectorPlanningSnapshot(listOf(other, approved), emptyList())
+        val schema = AgentNativeJsonSchema.objectSchema()
+        val search = AgentNativeToolDescriptor("web.search", "1.0.0", "Search", "Public sources",
+            AgentNativeToolLocation.PHONE, schema, schema, AgentNativeToolRisk.LOW)
+        val unrelated = search.copy(id = "fixture.unrelated")
+        val runtime = AgentPlanningRuntimeSnapshot(PermissionMode.FULL_ACCESS, true, true,
+            AgentSystemToolPlanner.availableTools(), listOf(search, unrelated))
+
+        val scoped = HealthCareDiscussionPlanningScope(grant)
+        assertEquals(listOf(approved), scoped.connectors(snapshot).targets)
+        assertEquals(listOf(search), scoped.runtime(runtime).nativeTools)
+        assertTrue(scoped.runtime(runtime).systemTools.isEmpty())
+        assertFalse(scoped.runtime(runtime).memoryCapture)
+
+        val missingGrant = HealthCareDiscussionPlanningScope(null)
+        assertTrue(missingGrant.connectors(snapshot).targets.isEmpty())
+        assertTrue(missingGrant.runtime(runtime).nativeTools.isEmpty())
+    }
     @Test fun actualCloudDestinationIncludesModelEndpointAndApiStyle() {
         val base = org.json.JSONObject().put("id", "fixture-cloud").put("cloud_model", "fixture-model")
             .put("cloud_endpoint", "https://model.example.test/v1").put("cloud_api_style", "openai")

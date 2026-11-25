@@ -5,14 +5,17 @@ import android.util.Log
 
 internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlanner, planningStartedAt: Long = SystemClock.elapsedRealtime()): AgentUiState {
     var stageStartedAt = planningStartedAt
+    val healthScope = if (activeConversationContext.privateMode)
+        HealthCareDiscussion.planningScope(appContext, activeConversationContext.conversationId, activeConversationTurnId)
+    else null
     val planningInputs = AgentPlanningContextLoader.load(
-        connectorsProvider = connectorRegistry::planningSnapshot,
+        connectorsProvider = { connectorRegistry.planningSnapshot().let { healthScope?.connectors(it) ?: it } },
         memoriesProvider = {
             if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         },
-        knowledgeProvider = { knowledgeStore.querySnapshot(currentGoal) },
+        knowledgeProvider = { if (healthScope == null) knowledgeStore.querySnapshot(currentGoal) else AgentKnowledgeQuerySnapshot() },
         settingsProvider = ::modelPlannerSettings,
-        runtimeProvider = ::planningRuntimeSnapshot
+        runtimeProvider = { planningRuntimeSnapshot().let { healthScope?.runtime(it) ?: it } }
     )
     val targets = planningInputs.targets
     val memories = planningInputs.memories
@@ -73,7 +76,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
         .take(5)
         .joinToString("\n") { "- ${it.title}: ${it.summary.ifBlank { it.content }.take(1_200)}" }
     val screenPrompt = if (
-        planningInputs.settings.shareScreenText && currentScreen.sensitiveFlagCount == 0
+        healthScope == null && planningInputs.settings.shareScreenText && currentScreen.sensitiveFlagCount == 0
     ) {
         buildString {
             append("App: ").append(currentScreen.foregroundApp).append('\n')
@@ -120,7 +123,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
     val draftPlan = AgentTeamPlanCompiler.compile(
         plan = contextualPlan,
         targets = targets,
-        enabled = planningInputs.settings.multiAgentCoordination,
+        enabled = healthScope == null && planningInputs.settings.multiAgentCoordination,
         registrations = planningInputs.registrations,
         requestedMembers = activeRequestedMembers,
         reputation = reputationLedger
