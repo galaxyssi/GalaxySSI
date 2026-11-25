@@ -900,6 +900,55 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     XCTAssertEqual(answer, "synthesis")
   }
 
+  func testResearchProgressCountsChangedImagesAndEvidenceLevelWithoutCountingMetadata() {
+    let budget = CloudResearchRuntimeBudget()
+    func output(_ image: AgentMcpJSONObject, level: String = "discovered_url", generated: Int64 = 1) -> String {
+      AgentMcpJSONCodec.stringify(["evidence_pack": .object([
+        "protocol": .string(AgentIOSWebEvidencePack.protocolId), "generated_at_epoch_ms": .int(generated),
+        "items": .array([.object(["url": .string("https://example.test/page"),
+          "content_sha256": .string(String(repeating: "a", count: 64)),
+          "evidence_level": .string(level), "images": .array([.object(image)])])])
+      ])])
+    }
+    let original: AgentMcpJSONObject = ["url": .string("https://example.test/a.png"),
+      "thumbnail_url": .string("https://example.test/preview-a.png")]
+    XCTAssertTrue(budget.observe(tool: "web_image_search", output: output(original)))
+    XCTAssertFalse(budget.observe(tool: "web_image_search", output: output(original, generated: 2)))
+    let reordered: AgentMcpJSONObject = ["thumbnail_url": .string("https://example.test/preview-a.png"),
+      "url": .string("https://example.test/a.png")]
+    XCTAssertFalse(budget.observe(tool: "web_image_search", output: output(reordered)))
+    for _ in 0..<2 { budget.finishRetrievalBatch(madeProgress: false) }
+    var replacement = original
+    replacement["thumbnail_url"] = .string("https://example.test/preview-b.png")
+    let changed = budget.observe(tool: "web_image_search", output: output(replacement))
+    XCTAssertTrue(changed)
+    budget.finishRetrievalBatch(madeProgress: changed)
+    XCTAssertEqual(budget.stalledBatches, 0)
+    XCTAssertTrue(budget.observe(tool: "web_fetch", output: output(replacement, level: "retrieved_body")))
+    XCTAssertFalse(budget.observe(tool: "web_fetch", output: output(replacement, level: "retrieved_body")))
+    for _ in 0..<3 { budget.finishRetrievalBatch(madeProgress: false) }
+    XCTAssertEqual(budget.stopReason, "no_new_evidence")
+  }
+
+  func testResearchProgressRetainsReadingWindowsAndExcludesNonRetrievalCalls() {
+    let budget = CloudResearchRuntimeBudget()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Evidence")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    func page(_ start: Int64, _ end: Int64) -> String {
+      AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack), "reading_window": .object([
+        "document_sha256": .string(String(repeating: "b", count: 64)), "offset": .int(start), "end_offset": .int(end)
+      ])])
+    }
+    XCTAssertFalse(budget.observe(tool: "collaboration_recall", output: page(0, 10)))
+    XCTAssertEqual(budget.evidenceCharacters, 0)
+    XCTAssertTrue(budget.observe(tool: "web_fetch", output: page(0, 10)))
+    XCTAssertFalse(budget.observe(tool: "web_fetch", output: page(0, 10)))
+    XCTAssertTrue(budget.observe(tool: "web_fetch", output: page(10, 20)))
+    XCTAssertFalse(budget.observe(tool: "web_fetch", output: "not JSON"))
+    XCTAssertFalse(budget.observe(tool: "web_fetch", output: #"{"evidence_pack":{"protocol":"other","items":[]}}"#))
+  }
+
   func testResearchContactConfigurationKeepsAndroidKeysAndBoundsValues() throws {
     var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(GalaxySSIContact.hermes())) as? [String: Any])
     object["cloud_research_limits"] = [

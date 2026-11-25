@@ -128,7 +128,11 @@ final class CloudResearchRuntimeBudget {
             let hash = item["content_sha256"]?.stringValue, hash.utf8.count == 64 else { continue }
       let canonical = AgentIOSWebEvidencePack.canonicalURL(url)
       sources.insert(canonical)
-      var identity = canonical + "\n" + hash
+      var identity = AgentMcpJSONCodec.sha256([
+        "url": .string(canonical), "content_sha256": .string(hash),
+        "evidence_level": .string(item["evidence_level"]?.stringValue ?? ""),
+        "images": .array(item["images"]?.arrayValue ?? [])
+      ])
       if let window = object["reading_window"]?.objectValue,
          let start = window["offset"]?.intValue, let end = window["end_offset"]?.intValue, end > start {
         identity += "\n\(window.string("document_sha256")):\(start):\(end)"
