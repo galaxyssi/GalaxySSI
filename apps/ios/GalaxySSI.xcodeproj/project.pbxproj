@@ -1816,6 +1816,7 @@
     A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */; };
     F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */; };
     F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */; };
+    F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */; };
     A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */; };
     A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */; };
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
@@ -4028,6 +4029,7 @@
     A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabaseTests.swift; sourceTree = "<group>"; };
     F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativePublicationTests.swift; sourceTree = "<group>"; };
     F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndexTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeAsyncRAGTests.swift; sourceTree = "<group>"; };
     A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
@@ -6426,6 +6428,7 @@
         A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
         F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */,
         F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */,
+        F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
         E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
@@ -8766,6 +8769,7 @@
         A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
         F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */,
         F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */,
+        F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,
         E29320000000000000000003 /* AgentKnowledgeSemanticModelTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,

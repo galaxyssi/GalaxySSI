@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct GalaxySSIAgentKnowledgeView: View {
+  @Environment(\.scenePhase) private var scenePhase
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var searchText = ""
@@ -296,7 +297,13 @@ struct GalaxySSIAgentKnowledgeView: View {
     .onChange(of: store.agentKnowledgeItems) { _ in
       sourceCursor = nil
       sourceBackStack = []
+      clearSearchResults()
     }
+    .onChange(of: scenePhase) { phase in
+      if phase != .active { clearSearchResults() }
+      else if !activeQuery.isEmpty { runSearch(activeQuery) }
+    }
+    .onDisappear { clearSearchResults() }
   }
 
   private func importFiles(_ result: Result<[URL], Error>) {
@@ -525,6 +532,12 @@ struct GalaxySSIAgentKnowledgeView: View {
   private static let maximumExtractedWebCharacters = AgentKnowledgeImportPolicy.maxExtractedCharacters
   private static let supportedWebMimeTypes: Set<String> = ["text/html", "application/xhtml+xml", "text/plain"]
 
+  private func clearSearchResults() {
+    searchTask?.cancel()
+    searchTask = nil
+    searchHits = []
+  }
+
   private func runSearch(_ query: String) {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     searchText = cleanQuery
@@ -533,11 +546,15 @@ struct GalaxySSIAgentKnowledgeView: View {
     searchHits = lexicalHits
     searchTask?.cancel()
     searchTask = Task {
-      let controller = AgentKnowledgeSemanticController.shared(database: store.agentKnowledgeDatabase)
-      let hits = await controller.hybridSearch(query: cleanQuery, lexicalHits: lexicalHits, limit: 24)
-      guard !Task.isCancelled, activeQuery == cleanQuery else { return }
-      searchHits = hits
-      store.recordAgentKnowledgeSearch(query: cleanQuery, hits: hits)
+      do {
+        let hits = try await store.searchAgentKnowledgeHybrid(cleanQuery, limit: 24)
+        guard !Task.isCancelled, activeQuery == cleanQuery else { return }
+        searchHits = hits
+        store.recordAgentKnowledgeSearch(query: cleanQuery, hits: hits)
+      } catch {
+        guard !Task.isCancelled, activeQuery == cleanQuery else { return }
+        searchHits = []
+      }
     }
   }
 

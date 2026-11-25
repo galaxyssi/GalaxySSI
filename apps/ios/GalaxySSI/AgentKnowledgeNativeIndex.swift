@@ -17,6 +17,9 @@ final class AgentKnowledgeNativeIndex {
   private let provenance: AgentKnowledgeVectorProvenance
   private let factory: Factory
   private var session: AgentKnowledgeNativeSession?
+  private let cancellationLock = NSLock()
+  private weak var cancellableSession: AgentKnowledgeNativeSession?
+  var cancellationCheck: () -> Bool = { false }
   private var epoch = ""
   private var generation: UInt64?
   private(set) var readyStamp: AgentKnowledgeVectorFeedStamp?
@@ -56,6 +59,9 @@ final class AgentKnowledgeNativeIndex {
         session = try factory(initial, token, seed.vector)
       }
       guard let session else { throw AgentKnowledgeNativeError.nativeFailure }
+      cancellationLock.lock()
+      cancellableSession = session
+      cancellationLock.unlock()
       let expectedEpoch = try AgentKnowledgeNativeWire.epoch(initial.epoch).map { String(format: "%02x", $0) }.joined()
       for _ in 0..<maxPages {
         try active(token)
@@ -109,10 +115,22 @@ final class AgentKnowledgeNativeIndex {
     session?.cancel()
     session?.close()
     session = nil
+    cancellationLock.lock()
+    cancellableSession = nil
+    cancellationLock.unlock()
+  }
+
+  // May be called off the owner queue, but only for the currently active request.
+  func cancelCurrentSession() {
+    cancellationLock.lock()
+    let current = cancellableSession
+    cancellationLock.unlock()
+    current?.cancel()
+    current?.close()
   }
 
   private func active(_ token: UInt64) throws {
-    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    guard !cancellationCheck(), database.nativeFiles.activeToken() == token else { throw CancellationError() }
   }
 
   private func markReady(checkpoint: AgentKnowledgeNativeCheckpoint, token: UInt64) throws -> Bool {

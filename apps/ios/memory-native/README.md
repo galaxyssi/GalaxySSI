@@ -56,8 +56,7 @@ required for full parity and native acceptance:
   namespace, derives per-specification/epoch index keys with HKDF, and uses
   master-keyed directory names. Directories inherit complete file protection and
   are excluded from backups. Missing keys and symbolic links fail closed.
-- Complete ordinary Agent/RAG asynchronous routing and OS-managed durable
-  background successors. The existing controller pumps bounded replay while
+- Complete OS-managed durable background successors. The existing controller pumps bounded replay while
   active and resumes on process start/foreground; it is not a BGProcessingTask
   acceptance result.
 
@@ -81,6 +80,19 @@ feed/source-revision stamp is checked both inside the read snapshot and after
 resolution. The default semantic consumer uses this resolver and revalidates its
 lexical fallback too. Target-specific cloud/Agent grants
 remain enforced by the existing RAG evidence policy on the fresh source metadata.
+
+The existing Agent knowledge search and local-evidence answer commands now await
+the same `GalaxySSIStore` hybrid retrieval API as the knowledge view. It uses
+bounded encrypted lexical candidates, the configured native consumer, and a final
+current-source check before auditing/formatting. The RAG helper applies existing
+cloud summary/full/deny and selected-Agent policies to citations. This does not
+automatically disclose sources to arbitrary remote model calls. Destructive
+forget/delete commands retain their original lexical selection.
+
+Request cancellation closes only the matching in-flight native request, without
+rotating the database privacy generation or cancelling unrelated RAG queries.
+Background/lock/reset still revoke the global scope. Knowledge views clear stale
+result snapshots on data change, loss of active scene and disappearance.
 
 Generation and foreground/protected-data gates reject late opens, native hits
 and controller-level returns after cancellation/reset. Foreground resumes work;

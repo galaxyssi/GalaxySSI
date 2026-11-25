@@ -1,5 +1,7 @@
 import Foundation
 
+typealias AgentKnowledgeSemanticQuery = @MainActor (String, [AgentKnowledgeHit], Int) async throws -> [AgentKnowledgeHit]
+
 extension GalaxySSIStore {
   var agentKnowledgeStats: AgentKnowledgeStats {
     if let indexed = try? agentKnowledgeDatabase.knowledgeStats() {
@@ -208,9 +210,58 @@ extension GalaxySSIStore {
   func searchAgentKnowledge(_ query: String, limit: Int = 24) -> [AgentKnowledgeHit] {
     let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanQuery.isEmpty else { return [] }
+    let candidates = (try? agentKnowledgeDatabase.searchCandidates(query: cleanQuery)) ?? agentKnowledgeItems
+    return rankKnowledgeCandidates(candidates, query: cleanQuery, limit: limit)
+  }
+
+  // Read commands use the native consumer, not the destructive lexical matcher.
+  // A typed semantic boundary permits isolated fixtures without loading a model.
+  func searchAgentKnowledgeHybrid(_ query: String, limit: Int = 24,
+    semanticQuery: AgentKnowledgeSemanticQuery? = nil) async throws -> [AgentKnowledgeHit] {
+    try Task.checkCancellation()
+    let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let size = min(max(limit, 0), 256)
+    guard !cleanQuery.isEmpty, size > 0 else { return [] }
+    let database = agentKnowledgeDatabase
+    guard let token = database.nativeFiles.activeToken() else { throw CancellationError() }
+    let candidates = try database.searchCandidates(query: cleanQuery, limit: 256)
+    let lexical = rankKnowledgeCandidates(candidates, query: cleanQuery, limit: 256)
+    let ranked: [AgentKnowledgeHit]
+    if let semanticQuery {
+      ranked = try await semanticQuery(cleanQuery, lexical, size)
+    } else {
+      ranked = await AgentKnowledgeSemanticController.shared(database: database)
+        .hybridSearch(query: cleanQuery, lexicalHits: lexical, limit: size)
+    }
+    try Task.checkCancellation()
+    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    let bounded = Array(ranked.prefix(256))
+    let model = AgentKnowledgeEmbeddingModel.sha256
+    let fresh = try await Task.detached(priority: .utility) {
+      let stamp = try database.vectorFeedStamp(modelSHA256: model)
+      let hits = try database.validatedLexicalHits(bounded, stamp: stamp, modelSHA256: model)
+      guard try database.vectorFeedStamp(modelSHA256: model) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+      return Array(hits.prefix(size))
+    }.value
+    try Task.checkCancellation()
+    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    return fresh
+  }
+
+  func retrieveAgentKnowledge(_ query: String, targetId: String, limit: Int = 6,
+    semanticQuery: AgentKnowledgeSemanticQuery? = nil) async throws -> AgentKnowledgeRAGContext {
+    let database = agentKnowledgeDatabase
+    guard let token = database.nativeFiles.activeToken() else { throw CancellationError() }
+    let count = min(max(limit, 1), 10)
+    let hits = try await searchAgentKnowledgeHybrid(query, limit: max(count * 4, 24), semanticQuery: semanticQuery)
+    try Task.checkCancellation()
+    guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    return AgentKnowledgeRetriever.retrieve(hits: hits, query: query, targetId: targetId, limit: count)
+  }
+
+  private func rankKnowledgeCandidates(_ candidates: [AgentKnowledgeItem], query cleanQuery: String, limit: Int) -> [AgentKnowledgeHit] {
     let tokens = knowledgeTokens(cleanQuery)
     let queryTrigrams = knowledgeTrigrams(cleanQuery)
-    let candidates = (try? agentKnowledgeDatabase.searchCandidates(query: cleanQuery)) ?? agentKnowledgeItems
     return candidates
       .compactMap { item -> AgentKnowledgeHit? in
         let score = knowledgeScore(

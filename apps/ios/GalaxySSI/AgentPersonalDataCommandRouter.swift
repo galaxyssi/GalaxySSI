@@ -7,7 +7,9 @@ enum AgentPersonalDataCommandRouter {
     let actionId: String
   }
 
-  static func handle(_ input: String, store: GalaxySSIStore) -> Result? {
+  static func handle(_ input: String, store: GalaxySSIStore,
+    semanticQuery: AgentKnowledgeSemanticQuery? = nil) async throws -> Result? {
+    try Task.checkCancellation()
     let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
     let normalized = command.lowercased()
     guard !command.isEmpty else { return nil }
@@ -30,7 +32,7 @@ enum AgentPersonalDataCommandRouter {
       return knowledgeOverview(store: store)
     }
     if let query = prefixedValue(command, prefixes: knowledgeAnswerPrefixes) {
-      return answerKnowledge(query, store: store)
+      return try await answerKnowledge(query, store: store, semanticQuery: semanticQuery)
     }
     if let value = AgentMemoryCommandParser.memoryValue(fromGoal: command) {
       return saveMemory(value, store: store)
@@ -47,12 +49,8 @@ enum AgentPersonalDataCommandRouter {
     ]) {
       return forgetKnowledge(query, store: store)
     }
-    if let query = prefixedValue(command, prefixes: [
-      "search knowledge ", "find knowledge ", "search memory ", "find memory ",
-      "\u{641c}\u{7d22}\u{77e5}\u{8bc6} ", "\u{67e5}\u{627e}\u{77e5}\u{8bc6} ",
-      "\u{641c}\u{7d22}\u{8bb0}\u{5fc6} ", "\u{67e5}\u{627e}\u{8bb0}\u{5fc6} "
-    ]) {
-      return searchKnowledge(query, store: store)
+    if let query = prefixedValue(command, prefixes: knowledgeSearchPrefixes) {
+      return try await searchKnowledge(query, store: store, semanticQuery: semanticQuery)
     }
     if isManagementCommand(normalized) {
       return Result(
@@ -66,6 +64,18 @@ enum AgentPersonalDataCommandRouter {
     }
     return nil
   }
+
+  static func isKnowledgeRead(_ input: String) -> Bool {
+    let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    return prefixedValue(command, prefixes: knowledgeAnswerPrefixes) != nil ||
+      prefixedValue(command, prefixes: knowledgeSearchPrefixes) != nil
+  }
+
+  private static let knowledgeSearchPrefixes = [
+    "search knowledge ", "find knowledge ", "search memory ", "find memory ",
+    "\u{641c}\u{7d22}\u{77e5}\u{8bc6} ", "\u{67e5}\u{627e}\u{77e5}\u{8bc6} ",
+    "\u{641c}\u{7d22}\u{8bb0}\u{5fc6} ", "\u{67e5}\u{627e}\u{8bb0}\u{5fc6} "
+  ]
 
   private static let memoryOverviewCommands: Set<String> = [
     "memory status",
@@ -183,8 +193,10 @@ enum AgentPersonalDataCommandRouter {
     return Result(text: text, actionId: "knowledge_forget")
   }
 
-  private static func searchKnowledge(_ query: String, store: GalaxySSIStore) -> Result {
-    let hits = store.searchAgentKnowledge(query, limit: 8)
+  private static func searchKnowledge(_ query: String, store: GalaxySSIStore,
+    semanticQuery: AgentKnowledgeSemanticQuery?) async throws -> Result {
+    let hits = try await store.searchAgentKnowledgeHybrid(query, limit: 8, semanticQuery: semanticQuery)
+    try Task.checkCancellation()
     store.recordAgentKnowledgeSearch(query: query, hits: hits)
     guard !hits.isEmpty else {
       return Result(
@@ -211,14 +223,10 @@ enum AgentPersonalDataCommandRouter {
     )
   }
 
-  private static func answerKnowledge(_ query: String, store: GalaxySSIStore) -> Result {
-    let rankedHits = store.searchAgentKnowledge(query, limit: 24)
-    let rag = AgentKnowledgeRetriever.retrieve(
-      hits: rankedHits,
-      query: query,
-      targetId: "agent-knowledge-local",
-      limit: 6
-    )
+  private static func answerKnowledge(_ query: String, store: GalaxySSIStore,
+    semanticQuery: AgentKnowledgeSemanticQuery?) async throws -> Result {
+    let rag = try await store.retrieveAgentKnowledge(query, targetId: "agent-knowledge-local", limit: 6, semanticQuery: semanticQuery)
+    try Task.checkCancellation()
     var modes: [AgentKnowledgeEvidenceMode] = []
     rag.citations.forEach { citation in
       if !modes.contains(citation.evidenceMode) { modes.append(citation.evidenceMode) }

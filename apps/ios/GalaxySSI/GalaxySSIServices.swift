@@ -5990,27 +5990,41 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     if !readOnlyAnalysis, taskExecutionMode != .planOnly,
-       contact.deliveryMode == .local,
-       effectiveAttachments.isEmpty,
-       let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
-      store.appendDeliveryTrace(
-        outgoing.id,
-        contactId: contact.id,
-        stage: commandResult.actionId,
-        detail: "Local personal data command",
-        status: .delivered
-      )
-      let response = store.appendIncoming(
-        commandResult.text,
-        from: contact.id,
-        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
-        status: .delivered,
-        traceStage: commandResult.actionId,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
-      )
-      onIncomingMessage?(response)
-      return true
+       contact.deliveryMode == .local, effectiveAttachments.isEmpty {
+      let dataScope = store.agentKnowledgeDatabase.nativeFiles.token()
+      let knowledgeRead = AgentPersonalDataCommandRouter.isKnowledgeRead(displayText)
+      if knowledgeRead { beginPendingAgentReply(for: outgoing) }
+      defer { if knowledgeRead { finishPendingAgentReply(for: outgoing) } }
+      let commandResult: AgentPersonalDataCommandRouter.Result?
+      do { commandResult = try await AgentPersonalDataCommandRouter.handle(displayText, store: store) }
+      catch is CancellationError { return false }
+      catch {
+        lastError = error.localizedDescription
+        store.appendDeliveryTrace(outgoing.id, contactId: contact.id,
+          stage: "knowledge_retrieval_failed", detail: error.localizedDescription, status: .failed)
+        return false
+      }
+      guard !Task.isCancelled, store.agentKnowledgeDatabase.nativeFiles.token() == dataScope else { return false }
+      if let commandResult {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: commandResult.actionId,
+          detail: "Local personal data command",
+          status: .delivered
+        )
+        let response = store.appendIncoming(
+          commandResult.text,
+          from: contact.id,
+          remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+          status: .delivered,
+          traceStage: commandResult.actionId,
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId
+        )
+        onIncomingMessage?(response)
+        return true
+      }
     }
     if contact.id == "hermes",
        taskExecutionMode != .planOnly,

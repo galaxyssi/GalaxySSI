@@ -62,6 +62,9 @@ final class AgentKnowledgeSemanticSearch {
   private let admission: AgentKnowledgeRetrievalAdmission
   private let index: AgentKnowledgeNativeIndex
   private var lastAccessMillis: Int64 = 0
+  private let requestLock = NSLock()
+  private var activeRequest: UUID?
+  private var cancelledRequests = Set<UUID>()
 
   init(database: AgentKnowledgeDatabase, runtime: GalaxySSIEmbeddingRuntime,
     provenance: AgentKnowledgeVectorProvenance, ttlMillis: Int64 = 30_000,
@@ -83,12 +86,22 @@ final class AgentKnowledgeSemanticSearch {
       return try await freshLexical(lexicalHits, limit: limit, token: token)
     }
     defer { lease.release() }
+    let requestId = UUID()
+    defer { finishRequest(requestId) }
     return try await withTaskCancellationHandler(operation: {
       try Task.checkCancellation()
       let queryVector = try await runtime.embed(query)
       try Task.checkCancellation()
       return try await withCheckedThrowingContinuation { continuation in
         queue.async { [self] in
+          if isCancelled(requestId) {
+            finishRequest(requestId)
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+          beginRequest(requestId)
+          defer { index.cancellationCheck = { false } }
+          index.cancellationCheck = { [weak self] in self?.isCancelled(requestId) ?? true }
           do {
             try active(token)
             expireIfIdle(nowMillis: nowMillis)
@@ -113,11 +126,19 @@ final class AgentKnowledgeSemanticSearch {
               throw AgentKnowledgeDatabaseError.staleCursor
             }
             try active(token)
-            continuation.resume(returning: results)
-          } catch { continuation.resume(throwing: error) }
+            if finishRequest(requestId) {
+              index.close()
+              continuation.resume(throwing: CancellationError())
+            } else { continuation.resume(returning: results) }
+          } catch {
+            if finishRequest(requestId) {
+              index.close()
+              continuation.resume(throwing: CancellationError())
+            } else { continuation.resume(throwing: error) }
+          }
         }
       }
-    }, onCancel: { self.clearTransientIndex() })
+    }, onCancel: { self.cancelRequest(requestId) })
   }
 
   // True means another bounded replay slice is required, not that replay failed.
@@ -164,5 +185,32 @@ final class AgentKnowledgeSemanticSearch {
   private func expireIfIdle(nowMillis: Int64) {
     if lastAccessMillis > 0, nowMillis >= lastAccessMillis, nowMillis - lastAccessMillis > ttlMillis { index.close() }
     lastAccessMillis = max(nowMillis, 0)
+  }
+
+  private func beginRequest(_ id: UUID) {
+    requestLock.lock()
+    activeRequest = id
+    requestLock.unlock()
+  }
+
+  private func isCancelled(_ id: UUID) -> Bool {
+    requestLock.lock()
+    defer { requestLock.unlock() }
+    return cancelledRequests.contains(id)
+  }
+
+  private func cancelRequest(_ id: UUID) {
+    requestLock.lock()
+    cancelledRequests.insert(id)
+    if activeRequest == id { index.cancelCurrentSession() }
+    requestLock.unlock()
+  }
+
+  @discardableResult
+  private func finishRequest(_ id: UUID) -> Bool {
+    requestLock.lock()
+    defer { requestLock.unlock() }
+    if activeRequest == id { activeRequest = nil }
+    return cancelledRequests.remove(id) != nil
   }
 }

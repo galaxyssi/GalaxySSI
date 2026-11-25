@@ -49,7 +49,7 @@ transactions, whose iOS execution has not been verified here.
 | Android #3005 area | iOS disposition |
 | --- | --- |
 | KnowledgeNativeIndex source offsets and bounded vector loading | Serial native owner advances four pages per slice, resumes pending chunk progress, skips obsolete events and fences epoch/head before queries; source-wired, not native-tested |
-| KnowledgeSemanticSearch source-policy re-resolution | Default semantic consumer uses native search plus authenticated current-source resolution; lexical fallback and late controller returns are revalidated/fenced |
+| KnowledgeSemanticSearch source-policy re-resolution | UI and existing Agent search/RAG read commands await the shared native consumer, authenticate current sources and apply target citation policy; destructive matching remains lexical |
 | AgentKnowledgeDatabase native index directory | Protected per-database/specification/epoch ownership and persistent bounded real-vector seed seek added |
 | KnowledgeNativeBridge, JNI owner/arrays/mod | C ABI and synchronous Swift bridge added; Xcode framework build/link/embed configured but uncompiled |
 | KnowledgeNativeWire | Swift decoder preserves Rust binary records, pending progress and match provenance with strict lengths/flags/bounds |
@@ -57,14 +57,16 @@ transactions, whose iOS execution has not been verified here.
 | KnowledgeModelWork bounded durable successors | Embedding worker pumps source/replay slices, resumes on launch/foreground, and releases runtime/handles at 30-second idle; OS-managed background successors still required |
 | memory-native Cargo files, lib.rs and replay format | Android engine unchanged; iOS crate uses exact 0.6.0 path dependency and derived lockfile; native framework configuration is connected but unbuilt |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android inputs untouched; iOS-only locked framework build/export isolation/CodeSignOnCopy configured, not executed |
-| Two Android device fixtures | Not executable on iOS; thirty-one Swift fixture methods authored, not run; replay-driver fixtures simulate the ABI boundary |
+| Two Android device fixtures | Not executable on iOS; thirty-nine Swift fixture methods authored, not run; replay-driver/RAG fixtures simulate semantic boundaries |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
-Still required for full parity/acceptance: ordinary Agent/RAG asynchronous
-integration, OS-managed durable background successors, Cargo dependency resolution,
+Still required for full parity/acceptance: OS-managed durable background
+successors, Cargo dependency resolution,
 compiled ABI/lifecycle acceptance, framework packaging/signing/installation
 validation and real graph/recovery/latency/scale acceptance. Default semantic UI
-queries and the existing embedding worker now consume the native driver in source.
+queries, existing Agent knowledge read/RAG commands and the embedding worker now
+consume the native driver in source. Automatic injection into unrelated remote
+model calls is not introduced or claimed.
 No native framework, build, device, latency or scale acceptance is claimed here.
 
 ## Verification Scope
@@ -97,6 +99,16 @@ generation/foreground gates, resume and idle-close wiring. Six fixture methods
 cover a 130-chunk simulated session recreation, obsolete/removal publications,
 late append/search invalidation, persistent seed seek and stale lexical policy.
 The simulated session is explicitly not a Rust or native disk acceptance result.
+`node apps/ios/tools/check-knowledge-native-rag-scope.cjs` checks the shared async
+store API, awaited read-command routing, post-await source validation, citation
+policy handoff, pending-reply cleanup and per-request cancellation isolation.
+Seven RAG fixture methods and one additional driver fixture cover semantic-only
+hits, cloud/Agent policies, mutation/deletion, reset/cancellation without audits,
+read-command audits, destructive-command isolation, empty reads and unchanged
+privacy generation for unrelated owners. These are source-only fixtures, not
+successful runtime results. The modified Services block parses independently
+with zero errors; the complete legacy file retains its 96 parser ERROR nodes,
+unchanged from the pre-edit baseline. These are not Swift compiler results.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,

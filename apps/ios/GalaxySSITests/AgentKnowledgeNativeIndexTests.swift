@@ -3,6 +3,26 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeNativeIndexTests: XCTestCase {
+  func testRequestCancellationDoesNotRotateDatabaseScopeOrCancelAnotherOwner() throws {
+    try fixture(chunks: 130) { database, _, spec in
+      let state = try sessionState(database, spec)
+      let token = try XCTUnwrap(database.nativeFiles.activeToken())
+      let first = AgentKnowledgeNativeIndex(database: database, provenance: spec, factory: factory(state))
+      var cancelled = false
+      first.cancellationCheck = { cancelled }
+      state.onAppend = { cancelled = true; first.cancelCurrentSession() }
+      defer { state.onAppend = nil }
+      XCTAssertThrowsError(try first.advance(maxPages: 1, token: token))
+      XCTAssertEqual(database.nativeFiles.activeToken(), token)
+      XCTAssertEqual(state.checkpoint.pending?.next, 64)
+      let other = AgentKnowledgeNativeIndex(database: database, provenance: spec, factory: factory(state))
+      XCTAssertTrue(try other.advance(token: token))
+      XCTAssertNotNil(other.readyStamp)
+      XCTAssertEqual(state.ordinals, Array(0..<130))
+      XCTAssertEqual(database.nativeFiles.activeToken(), token)
+    }
+  }
+
   func testReplayResumesPartialChunksAcrossOwnerRecreation() throws {
     try fixture(chunks: 130) { database, item, spec in
       let state = try sessionState(database, spec)
