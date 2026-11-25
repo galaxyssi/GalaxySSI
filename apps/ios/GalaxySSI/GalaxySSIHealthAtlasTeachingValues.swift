@@ -49,6 +49,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .plateletFragmentCount: result = values[0].rounded() * values[1].rounded()
     case .boneRemodelingBalance: result = values[1] - values[0]
     case .cutaneousSebum: result = values[0] / values[1]
+    case .ureterDelivery: result = values[0].rounded() * values[1]
+    case .cornealRefraction: result = asin(sin(values[0] * .pi / 180) / values[1]) * 180 / .pi
+    case .externalEarResonance: result = values[1] / (4 * (values[0] / 100))
+    case .neuralRelayDelays: result = values[0] * values[1]
+    case .biliaryFlowTally: result = values[0] * values[1]
+    case .parathyroidSignalOccupancy: result = 100 * (values[0] / (values[0] + values[1]))
+    case .follicleSurface: result = 4 * .pi * pow(values[0] / 2 + values[1], 2)
+    case .jointArticularArc: result = values[1] * (values[0] * .pi / 180)
+    case .sweatDuctBalance: result = values[0] - values[0] * (values[1] / 100)
     }
     return result.isFinite ? result : nil
   }
@@ -92,6 +101,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .plateletFragmentCount: result = values[1].rounded()
     case .boneRemodelingBalance: result = 100 + values[1] - values[0]
     case .cutaneousSebum: result = values[0]
+    case .ureterDelivery: result = (6 - values[0].rounded()) * values[1]
+    case .cornealRefraction: result = values[0] - asin(sin(values[0] * .pi / 180) / values[1]) * 180 / .pi
+    case .externalEarResonance: result = 4 * values[0]
+    case .neuralRelayDelays: result = (values[0] - 1) * values[1]
+    case .biliaryFlowTally: result = values[0] * values[1] * 4
+    case .parathyroidSignalOccupancy: result = 100 - 100 * (values[0] / (values[0] + values[1]))
+    case .follicleSurface: result = (4 * .pi / 3) * (pow(values[0] / 2 + values[1], 3) - pow(values[0] / 2, 3))
+    case .jointArticularArc: result = values[0] * .pi / 180
+    case .sweatDuctBalance: result = values[0] * (values[1] / 100)
     }
     return result.isFinite ? result : nil
   }

@@ -253,13 +253,21 @@ struct GalaxySSIHealthAtlas: Decodable {
   }
   func views(for id: String?) -> [Plate] {
     let context = contextViews(for: id)
-    guard let detail = DetailStructurePack.plate(for: id) else { return context }
-    return [detail] + context.map { locator in
-      var value = locator
-      if value.viewKey == nil { value.viewKey = "anatomy-locator-" + (value.owner ?? "body") }
-      if value.selectorLabel == nil { value.selectorLabel = "health_atlas_locator_view" }
-      return value
+    var views = context
+    if let detail = DetailStructurePack.plate(for: id) {
+      views = [detail] + context.map { locator in
+        var value = locator
+        if value.viewKey == nil { value.viewKey = "anatomy-locator-" + (value.owner ?? "body") }
+        if value.selectorLabel == nil { value.selectorLabel = "health_atlas_locator_view" }
+        return value
+      }
     }
+    guard let id, let pack = try? GutPack.bundled.get(),
+      var section = pack.plates.first(where: { $0.owner == id }),
+      !views.contains(where: { $0.asset == section.asset }) else { return views }
+    section.viewKey = "gut-section-" + id
+    section.selectorLabel = section.viewLabel
+    return views + [section]
   }
   private func contextViews(for id: String?) -> [Plate] {
     if id == GalaxySSIHealthAtlasRetinaPath.owner, let pack = try? SensoryPack.bundled.get(),
@@ -375,7 +383,9 @@ enum GalaxySSIHealthAtlasText {
     let organEnglish = localized(key, locale: "en", fallback: system, table: "AtlasOrganTeaching")
     let organ = localized(key, locale: locale, fallback: organEnglish, table: "AtlasOrganTeaching")
     let regionalEnglish = localized(key, locale: "en", fallback: organ, table: "AtlasRegionalTeaching")
-    return localized(key, locale: locale, fallback: regionalEnglish, table: "AtlasRegionalTeaching")
+    let regional = localized(key, locale: locale, fallback: regionalEnglish, table: "AtlasRegionalTeaching")
+    let transportEnglish = localized(key, locale: "en", fallback: regional, table: "AtlasTransportTeaching")
+    return localized(key, locale: locale, fallback: transportEnglish, table: "AtlasTransportTeaching")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }

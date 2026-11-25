@@ -10,6 +10,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case boneSection, retinalConvergence, muscleShortening, keratinGrowth
   case bladderExpansion, vestibularTilt, airwayCiliaryClearance, gastricLiquidEmptying, bileStorage
   case thoracicCrossSection, plateletFragmentCount, boneRemodelingBalance, cutaneousSebum
+  case ureterDelivery, cornealRefraction, externalEarResonance, neuralRelayDelays, biliaryFlowTally
+  case parathyroidSignalOccupancy, follicleSurface, jointArticularArc, sweatDuctBalance
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -23,7 +25,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
          .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
          .immuneComposition, .oviductCiliaryCycles, .colonicWaterBalance,
          .endocrineDilution, .retinalConvergence, .muscleShortening,
-         .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum: return 1
+         .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum,
+         .neuralRelayDelays, .sweatDuctBalance: return 1
     default: return 0
     }
   }
@@ -62,6 +65,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .plateletFragmentCount: return ""
     case .boneRemodelingBalance: return "a.u."
     case .cutaneousSebum: return "\u{00b5}g/cm\u{00b2}"
+    case .ureterDelivery: return "mL"
+    case .cornealRefraction: return "\u{00b0}"
+    case .externalEarResonance: return "Hz"
+    case .neuralRelayDelays: return "ms"
+    case .biliaryFlowTally: return "VU/min"
+    case .parathyroidSignalOccupancy: return "%"
+    case .follicleSurface: return "mm\u{00b2}"
+    case .jointArticularArc: return "mm"
+    case .sweatDuctBalance: return "nmol"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -99,11 +111,20 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .plateletFragmentCount: return 0...48
     case .boneRemodelingBalance: return -20...20
     case .cutaneousSebum: return 0...20
+    case .ureterDelivery: return 0...18
+    case .cornealRefraction: return 0...50
+    case .externalEarResonance: return 150...950
+    case .neuralRelayDelays: return 0...20
+    case .biliaryFlowTally: return 0...48
+    case .parathyroidSignalOccupancy: return 0...100
+    case .follicleSurface: return 0...850
+    case .jointArticularArc: return 0...65
+    case .sweatDuctBalance: return 0...160
     }
   }
   var digits: Int {
     switch self {
-    case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance: return 1
+    case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance, .neuralRelayDelays: return 1
     case .tendonElongation, .muscleShortening: return 3
     case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance: return 0
     default: return 2
@@ -147,6 +168,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .plateletFragmentCount: return "health_atlas_platelet_fragment_count"
     case .boneRemodelingBalance: return "health_atlas_bone_remodeling_balance"
     case .cutaneousSebum: return "health_atlas_cutaneous_sebum"
+    case .ureterDelivery: return "health_atlas_ureter_delivery"
+    case .cornealRefraction: return "health_atlas_model_corneal_refraction"
+    case .externalEarResonance: return "health_atlas_model_external_ear_resonance"
+    case .neuralRelayDelays: return "health_atlas_neural_relay_delays"
+    case .biliaryFlowTally: return "health_atlas_biliary_flow_tally"
+    case .parathyroidSignalOccupancy: return "health_atlas_parathyroid_occupancy"
+    case .follicleSurface: return "health_atlas_follicle_surface"
+    case .jointArticularArc: return "health_atlas_joint_articular_arc"
+    case .sweatDuctBalance: return "health_atlas_sweat_duct_balance"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -170,6 +200,10 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .muscleShortening: suffix = "remaining_length"
     case .vestibularTilt: suffix = "magnitude"
     case .airwayCiliaryClearance: suffix = "progress"
+    case .ureterDelivery: suffix = "remaining"
+    case .externalEarResonance: suffix = "wavelength"
+    case .parathyroidSignalOccupancy: suffix = "unoccupied"
+    case .follicleSurface: suffix = "shell_volume"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -212,6 +246,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .plateletFragmentCount: return ["fragment-platelet", "cell-megakaryocyte"]
     case .boneRemodelingBalance: return ["cell-osteoblast", "cell-osteoclast", "cell-osteocyte"]
     case .cutaneousSebum: return ["sebaceous-glands", "cell-sebocyte"]
+    case .ureterDelivery: return ["renal-pelvis", "ureters"]
+    case .cornealRefraction: return ["cornea", "cell-corneal-epithelial-cell"]
+    case .externalEarResonance: return ["external-ear"]
+    case .neuralRelayDelays: return ["cerebrum", "cerebellum", "brainstem", "ganglia", "autonomic-nerves", "tissue-central-nervous"]
+    case .biliaryFlowTally: return ["liver", "biliary-tract", "cell-hepatocyte", "cell-cholangiocyte"]
+    case .parathyroidSignalOccupancy: return ["parathyroid-glands", "cell-parathyroid-chief-cell"]
+    case .follicleSurface: return ["ovaries", "cell-granulosa-cell", "cell-theca-cell"]
+    case .jointArticularArc: return ["joints", "scapula"]
+    case .sweatDuctBalance: return ["cell-sweat-gland-secretory-cell", "dermis"]
     }
   }
   var sources: [URL] {
@@ -258,6 +301,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .plateletFragmentCount: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets", "https://training.seer.cancer.gov/hematopoietic1/intro-to-blood.html"]
     case .boneRemodelingBalance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure", "https://www.ncbi.nlm.nih.gov/sites/books/NBK279149/"]
     case .cutaneousSebum: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin", "https://histologyguide.com/EM-view/EM-373-sebaceous-gland/12-photo-1.html"]
+    case .ureterDelivery: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport"]
+    case .cornealRefraction: values = ["https://openstax.org/books/college-physics-2e/pages/25-3-the-law-of-refraction", "https://pubmed.ncbi.nlm.nih.gov/22488267/"]
+    case .externalEarResonance: values = ["https://openstax.org/books/university-physics-volume-1/pages/17-4-normal-modes-of-a-standing-sound-wave", "https://pubmed.ncbi.nlm.nih.gov/2745873/"]
+    case .neuralRelayDelays: values = ["https://openstax.org/books/biology-2e/pages/35-2-how-neurons-communicate", "https://openstax.org/books/anatomy-and-physiology-2e/pages/15-1-divisions-of-the-autonomic-nervous-system"]
+    case .biliaryFlowTally: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder", "https://pubmed.ncbi.nlm.nih.gov/9096607/"]
+    case .parathyroidSignalOccupancy: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/17-5-the-parathyroid-glands", "https://pmc.ncbi.nlm.nih.gov/articles/PMC6580154/"]
+    case .follicleSurface: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system", "https://openstax.org/books/prealgebra-2e/pages/c-geometric-formulas"]
+    case .jointArticularArc: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints", "https://openstax.org/books/precalculus-2e/pages/5-1-angles"]
+    case .sweatDuctBalance: values = ["https://pubmed.ncbi.nlm.nih.gov/18653750/", "https://pubmed.ncbi.nlm.nih.gov/7943277/"]
     }
     return values.map { URL(string: $0)! }
   }

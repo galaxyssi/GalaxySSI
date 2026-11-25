@@ -6,6 +6,36 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func refraction(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let x = 170.0, y = 76.0, incidentDegrees = model.input(0), refractedDegrees = model.result
+    let incident = incidentDegrees * .pi / 180, refracted = refractedDegrees * .pi / 180
+    rectangle(16, y, 324, 151, 0xD5E9ED, radius: 5)
+    line(16, y, 324, y, Self.blue, 2)
+    var normal = Path()
+    normal.move(to: CGPoint(x: x, y: 11)); normal.addLine(to: CGPoint(x: x, y: 144))
+    context.stroke(normal, with: .color(color(0x668895)), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [4, 4]))
+    func ray(_ fromX: Double, _ fromY: Double, _ dx: Double, _ dy: Double, _ tint: UInt32) {
+      let toX = fromX + dx * 62, toY = fromY + dy * 62
+      line(fromX, fromY, toX, toY, tint, 3)
+      let baseX = toX - 8 * dx, baseY = toY - 8 * dy
+      var tip = Path()
+      tip.move(to: CGPoint(x: toX, y: toY))
+      tip.addLine(to: CGPoint(x: baseX - 3.5 * dy, y: baseY + 3.5 * dx))
+      tip.addLine(to: CGPoint(x: baseX + 3.5 * dy, y: baseY - 3.5 * dx)); tip.closeSubpath()
+      context.fill(tip, with: .color(color(tint)))
+    }
+    ray(x - sin(incident) * 62, y - cos(incident) * 62, sin(incident), cos(incident), 0xA16629)
+    ray(x, y, sin(refracted), cos(refracted), Self.teal)
+    for (start, sweep, tint) in [(-90 - incidentDegrees, incidentDegrees, UInt32(0xA16629)),
+      (90 - refractedDegrees, refractedDegrees, Self.teal)] {
+      var arc = Path()
+      arc.addArc(center: CGPoint(x: x, y: y), radius: 25, startAngle: .degrees(start), endAngle: .degrees(start + sweep), clockwise: false)
+      context.stroke(arc, with: .color(color(tint)), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
+    }
+    label("model_corneal_refraction_incident_ray", 65, 25, 110)
+    label("model_corneal_refraction_refracted_ray", 258, 139, 106)
+    label("model_corneal_refraction_surface", 253, 65, 128)
+  }
   func ciliaTrack(_ model: GalaxySSIHealthAtlasPhysiology) {
     let left = 26.0, right = 314.0, step = (314.0 - 26) / 9
     let marker = left + (right - left) * (model.companionValue / 100)

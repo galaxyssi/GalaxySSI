@@ -1114,7 +1114,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id).map { (entry.id, $0) }
     }
     let oxygenEnabled = GalaxySSIHealthAtlasPhysiology.Kind.allCases.contains { $0.rawValue == "oxygen" }
-    XCTAssertEqual(mapped.count, oxygenEnabled ? 197 : 195)
+    XCTAssertEqual(mapped.count, oxygenEnabled ? 221 : 219)
     XCTAssertEqual(Set(mapped.map(\.1)), Set(GalaxySSIHealthAtlasPhysiology.Kind.allCases))
     for teaching in GalaxySSIHealthAtlasTeachingModel.allCases {
       XCTAssertEqual(Set(mapped.filter { $0.1.teaching == teaching }.map(\.0)), teaching.entryIDs)
@@ -1195,6 +1195,60 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let bladder = try XCTUnwrap(atlas.entry("bladder"))
     restored.binding(bladder).wrappedValue.physiologyInputs = Model(kind: .bladderExpansion).inputs
     XCTAssertEqual(restored.entries["cell-urothelial-cell"]?.physiologyInputs, expected["cell-urothelial-cell"])
+  }
+
+  func testTransportOwnersRestoreIndependentlyWithoutChangingFunctionOrArtwork() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    typealias Model = GalaxySSIHealthAtlasPhysiology
+    let kinds: [Model.Kind] = [.ureterDelivery, .cornealRefraction, .externalEarResonance, .neuralRelayDelays,
+      .biliaryFlowTally, .parathyroidSignalOccupancy, .follicleSurface, .jointArticularArc, .sweatDuctBalance]
+    var expected: [String: [Int]] = [:]
+    for kind in kinds {
+      for (index, id) in try XCTUnwrap(kind.teaching).entryIDs.sorted().enumerated() {
+        let entry = try XCTUnwrap(atlas.entry(id)), binding = state.binding(entry)
+        let artwork = binding.wrappedValue.artworkView, function = binding.wrappedValue.functionSelection
+        let target = index.isMultiple(of: 2) ? kind.inputs[kind.axis].range.lowerBound : kind.inputs[kind.axis].range.upperBound
+        binding.wrappedValue.physiologyInputs = Model(kind: kind).changing(kind.axis, to: target)?.inputs
+        expected[id] = binding.wrappedValue.physiologyInputs
+        XCTAssertEqual(binding.wrappedValue.artworkView, artwork)
+        XCTAssertEqual(binding.wrappedValue.functionSelection, function)
+      }
+    }
+    XCTAssertEqual(expected.count, 24)
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for (id, inputs) in expected { XCTAssertEqual(restored.entries[id]?.physiologyInputs, inputs) }
+  }
+
+  func testGutSectionsRemainSelectableBesideNewAnatomyWithoutDuplicateAssets() throws {
+    let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.GutPack.read(bundle: bundle))
+    let courses = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle))
+    let state = GalaxySSIHealthAtlasState()
+    for section in pack.plates {
+      let owner = try XCTUnwrap(section.owner), entry = try XCTUnwrap(atlas.entry(owner))
+      let views = atlas.views(for: owner), selected = try XCTUnwrap(views.first { $0.asset == section.asset })
+      XCTAssertEqual(views.filter { $0.asset == section.asset }.count, 1)
+      if selected.viewKey == "gut-section-" + owner { XCTAssertEqual(selected.selectorLabel, section.viewLabel) }
+      if let detail = GalaxySSIHealthAtlas.DetailStructurePack.plate(for: owner) {
+        XCTAssertEqual(views.first?.asset, detail.asset)
+      }
+      if let story = courses.choices(for: owner).first {
+        var function = GalaxySSIHealthAtlasFunctionSelection()
+        function.choose(story.id, entryID: owner, catalogue: courses)
+        function.save(0.4, storyID: story.id, entryID: owner, catalogue: courses)
+        state.binding(entry).wrappedValue.functionSelection = function
+      }
+      let function = state.binding(entry).wrappedValue.functionSelection
+      state.binding(entry).wrappedValue.artworkView = selected.viewKey
+      XCTAssertEqual(state.binding(entry).wrappedValue.functionSelection, function)
+      XCTAssertEqual(atlas.plate(for: owner, viewKey: selected.viewKey)?.asset, section.asset)
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for section in pack.plates {
+      let owner = try XCTUnwrap(section.owner)
+      XCTAssertEqual(atlas.plate(for: owner, viewKey: restored.entries[owner]?.artworkView)?.asset, section.asset)
+      XCTAssertEqual(restored.entries[owner]?.functionSelection, state.entries[owner]?.functionSelection)
+    }
   }
 
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
