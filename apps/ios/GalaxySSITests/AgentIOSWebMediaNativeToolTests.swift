@@ -2,6 +2,52 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testPublicSearchParserKeepsCardsAndSnippetsButNotNavigationOrAds() throws {
+    let html = """
+    <nav><h2><a href='https://nav.example/'>Navigation</a></h2></nav>
+    <div class='ads'><h2><a href='https://ads.example/'>Ad</a></h2></div>
+    <li class='b_algo'><h2><a href='https://evidence.example/a#first'>Real <b>evidence</b></a></h2>
+    <div class='b_caption'><p>Readable result summary.</p></div></li>
+    <li class='b_algo'><h2><a href='https://evidence.example/a#again'>Duplicate</a></h2></li>
+    <script>"<h2><a href='https://script.example/'>Not evidence</a></h2>"</script>
+    """
+    let hits = try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.bing.com/search?q=test", limit: 8)
+    XCTAssertEqual(hits, [.init(title: "Real evidence", url: "https://evidence.example/a", excerpt: "Readable result summary.")])
+    XCTAssertTrue(try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.bing.com", limit: 0).isEmpty)
+  }
+
+  func testPublicSearchParserUnwrapsOwnedRedirectsAndRejectsUnsafeDestinations() throws {
+    let target = "https://evidence.example/article?x=1&y=2"
+    let encoded = Data(target.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("/ck/a?u=a1" + encoded, baseURL: "https://cn.bing.com/search"), target)
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("//duckduckgo.com/l/?uddg=https%3A%2F%2Fevidence.example%2Farticle",
+      baseURL: "https://html.duckduckgo.com/html/"), "https://evidence.example/article")
+    XCTAssertEqual(AgentIOSPublicSearchParser.destination("https://other.example/?url=https%3A%2F%2Fevidence.example",
+      baseURL: "https://www.bing.com"), "https://other.example/?url=https%3A%2F%2Fevidence.example")
+    for raw in ["javascript:alert(1)", "file:///private/data", "https://user:pass@evidence.example/", "/ck/a?u=a1!"] {
+      XCTAssertNil(AgentIOSPublicSearchParser.destination(raw, baseURL: "https://www.bing.com/search"), raw)
+    }
+  }
+
+  func testPublicSearchParserUsesBaiduCardDestinationAndReportsVerification() throws {
+    let html = """
+    <div class='c-container' mu='https://evidence.example/article'><h3>
+    <a href='https://www.baidu.com/link?url=opaque'>Evidence title</a></h3>
+    <div class='c-abstract'>Evidence summary</div></div>
+    """
+    XCTAssertEqual(try AgentIOSPublicSearchParser.parse(html, baseURL: "https://www.baidu.com/s?wd=test", limit: 3),
+      [.init(title: "Evidence title", url: "https://evidence.example/article", excerpt: "Evidence summary")])
+    for page in ["https://wappass.baidu.com/static/captcha/test", "https://www.baidu.com/s?wd=test"] {
+      XCTAssertThrowsError(try AgentIOSPublicSearchParser.parse(
+        "<title>\u{767e}\u{5ea6}\u{5b89}\u{5168}\u{9a8c}\u{8bc1}</title>", baseURL: page, limit: 3)) { error in
+        guard case AgentIOSURLSessionWebError.sourceVerificationRequired = error else {
+          return XCTFail("Expected a non-retryable source verification diagnostic")
+        }
+      }
+    }
+  }
+
   func testWebTextDecoderHonorsTransportMetaAndByteOrderMark() {
     let chineseBytes: [UInt8] = [0xD6, 0xD0, 0xCE, 0xC4]
     let expected = "\u{4E2D}\u{6587}"

@@ -35,6 +35,7 @@ protocol AgentIOSURLSessionWebTransporting {
 enum AgentIOSURLSessionWebError: Error {
   case invalidURL
   case invalidSearchQuery
+  case sourceVerificationRequired
   case invalidMethod
   case invalidTimeout
   case invalidLimit
@@ -433,8 +434,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
                 index: index,
                 provider: endpoint.provider,
                 resource: resource,
-                results: parseSearchResults(
+                results: try parseSearchResults(
                   html,
+                  baseURL: resource.finalURL,
                   maxResults: maxResults,
                   allowedHosts: endpoint.allowedHosts
                 )
@@ -514,7 +516,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       output["results"] = .array(merged.map { result in
         .object([
           "title": .string(result.title),
-          "url": .string(result.url)
+          "url": .string(result.url),
+          "excerpt": .string(result.excerpt),
+          "snippet": .string(result.excerpt)
         ])
       })
       output["result_count"] = .int(Int64(merged.count))
@@ -545,6 +549,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         earlyCompleted ? "sufficient_diverse_evidence" : ""
       )
       resultMetadata["cancelled_providers"] = .array(cancelledProviders.map(AgentMcpJSONValue.string))
+      resultMetadata["unavailable_sources"] = .array(attempts.compactMap { attempt in
+        guard let error = attempt.error else { return nil }
+        return .object(["provider": .string(attempt.provider),
+          "error_code": .string(failure(error).error?.code ?? "search_source_unavailable")])
+      })
       return AgentNativeToolExecutionResult.success(
         output: output,
         message: message(.webSearch, method: .get),
@@ -1208,80 +1217,17 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
   private func parseSearchResults(
     _ html: String,
+    baseURL: String,
     maxResults: Int,
     allowedHosts: [String] = []
-  ) -> [AgentIOSWebSearchResult] {
-    let patterns = [
-      #"<div[^>]+class=["'][^"']*b_algoheader[^"']*["'][^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h2[^>]*>(.*?)</h2>"#,
-      #"<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>.*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<h3[^>]+class=["'][^"']*(?:c-title|\bt\b)[^"']*["'][^>]*>.*?<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
-      #"<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h3[^>]*>(.*?)</h3>"#
-    ]
-    let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-    var seenURLs: Set<String> = []
-    var results: [AgentIOSWebSearchResult] = []
-    for pattern in patterns {
-      guard let regex = try? NSRegularExpression(
-        pattern: pattern,
-        options: [.caseInsensitive, .dotMatchesLineSeparators]
-      ) else {
-        continue
+  ) throws -> [AgentIOSWebSearchResult] {
+    Array(try AgentIOSPublicSearchParser.parse(html, baseURL: baseURL, limit: 100).filter { result in
+      allowedHosts.isEmpty || allowedHosts.contains { allowedHost in
+        guard let host = URL(string: result.url)?.host?.lowercased() else { return false }
+        let allowed = allowedHost.lowercased()
+        return host == allowed || host.hasSuffix(".\(allowed)")
       }
-      for match in regex.matches(in: html, options: [], range: nsRange) {
-        guard results.count < maxResults,
-              match.numberOfRanges >= 3,
-              let urlRange = Range(match.range(at: 1), in: html),
-              let titleRange = Range(match.range(at: 2), in: html),
-              let url = normalizedSearchResultURL(String(html[urlRange])),
-              allowedHosts.isEmpty || allowedHosts.contains(where: { allowedHost in
-                guard let host = URL(string: url)?.host?.lowercased() else { return false }
-                let allowed = allowedHost.lowercased()
-                return host == allowed || host.hasSuffix(".\(allowed)")
-              }) else {
-          continue
-        }
-        let title = String(readableText(String(html[titleRange])).prefix(4_096))
-        guard !title.isEmpty, !seenURLs.contains(url) else {
-          continue
-        }
-        seenURLs.insert(url)
-        results.append(AgentIOSWebSearchResult(title: title, url: url))
-      }
-      if results.count >= maxResults {
-        break
-      }
-    }
-    return results
-  }
-
-  private func normalizedSearchResultURL(_ value: String) -> String? {
-    let decoded = decodeHTMLEntities(value).trimmingCharacters(in: .whitespacesAndNewlines)
-    let candidate: String
-    if decoded.hasPrefix("//") {
-      candidate = "https:\(decoded)"
-    } else if decoded.hasPrefix("/") {
-      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
-    } else {
-      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
-    }
-    let lower = candidate.lowercased()
-    guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else {
-      return nil
-    }
-    return String(candidate.prefix(Int(AgentIOSWebMediaNativeToolCatalog.maxUrlCharacters)))
-  }
-
-  private func duckDuckGoRedirectTarget(_ value: String) -> String? {
-    let urlString = value.hasPrefix("/")
-      ? "https://duckduckgo.com\(value)"
-      : value
-    guard let components = URLComponents(string: urlString),
-          let target = components.queryItems?.first(where: { $0.name == "uddg" })?.value,
-          !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return nil
-    }
-    return decodeHTMLEntities(target).trimmingCharacters(in: .whitespacesAndNewlines)
+    }.prefix(maxResults))
   }
 
   private func requestResource(
@@ -1708,6 +1654,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("invalid_url", "WebMedia tools only accept public HTTPS URLs")
     case .invalidSearchQuery:
       return failure("invalid_query", "Search query must not be blank")
+    case .sourceVerificationRequired:
+      return failure("source_verification_required", "Search source requires verification")
     case .invalidMethod:
       return failure("invalid_method", "HTTP method must be GET or HEAD")
     case .invalidTimeout:
@@ -1958,10 +1906,7 @@ private struct AgentIOSURLSessionWebRedirect {
   var toURL: String
 }
 
-private struct AgentIOSWebSearchResult {
-  var title: String
-  var url: String
-}
+private typealias AgentIOSWebSearchResult = AgentIOSPublicSearchParser.Hit
 
 private struct AgentIOSWebSearchEndpoint {
   var provider: String
