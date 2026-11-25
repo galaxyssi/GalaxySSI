@@ -2,6 +2,82 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testImageFusionUsesReferenceLogisticWeightsAndTitleSpecificity() {
+    XCTAssertEqual(AgentIOSImageSearchFusion.rankerScore(Array(repeating: 0, count: 9)), 0.24048908305088898, accuracy: 1e-12)
+    XCTAssertEqual(AgentIOSImageSearchFusion.rankerScore(Array(repeating: 1, count: 9)), 0.9986414800495711, accuracy: 1e-12)
+    let unrelated = imageFusionHit("Unrelated picture", page: "a", image: "a",
+      excerpt: String(repeating: "alpha beta ", count: 100))
+    let subject = imageFusionHit("alpha beta", page: "b", image: "b")
+    let result = AgentIOSImageSearchFusion.fuse(query: "alpha beta",
+      groups: [.init(sourceID: "sogou_image", results: [unrelated, subject], weight: 1.2, authority: 0.75)], limit: 2)
+    XCTAssertEqual(result.first?.title, "alpha beta")
+  }
+
+  func testImageFusionDiversifiesCanonicalSourcePagesBeforeLimitWithoutRewritingMediaURLs() {
+    var first = imageFusionHit("alpha", page: "page", image: "one")
+    let signed = "https://images.test/one.jpg?sig=x%2By&utm_source=first"
+    first.image?["url"] = .string(signed)
+    let second = imageFusionHit("alpha", page: "page?utm_source=duplicate", image: "two")
+    let third = imageFusionHit("alpha", page: "other", image: "three")
+    let result = AgentIOSImageSearchFusion.fuse(query: "alpha",
+      groups: [.init(sourceID: "sogou_image", results: [first, second, third], weight: 1.2, authority: 0.75)], limit: 2)
+    XCTAssertEqual(result.map(\.url), [first.url, third.url])
+    XCTAssertEqual(result.first?.image?["url"], .string(signed))
+    XCTAssertEqual(AgentIOSImageSearchFusion.fuse(query: "alpha",
+      groups: [.init(sourceID: "same", results: [first, second])], limit: 0), [])
+  }
+
+  func testImageFusionMergesImageIdentityAcrossSourcesAndRetainsFirstSourceAndMissingDimensions() {
+    let first = imageFusionHit("alpha", page: "first", image: "same")
+    var next = imageFusionHit("alpha beta", page: "second", image: "same")
+    next.image?["width"] = .int(640)
+    next.image?["height"] = .int(480)
+    next.image?["thumbnail_url"] = .string("https://images.test/preview.jpg")
+    next.image?["url"] = .string("https://images.test/same.jpg?utm_source=duplicate")
+    let result = AgentIOSImageSearchFusion.fuse(query: "alpha beta",
+      groups: [.init(sourceID: "first-engine", results: [first]), .init(sourceID: "second-engine", results: [next])], limit: 8)
+    XCTAssertEqual(result.count, 1)
+    XCTAssertEqual(result.first?.title, "alpha beta")
+    XCTAssertEqual(result.first?.url, first.url)
+    XCTAssertEqual(result.first?.image?["width"], .int(640))
+    XCTAssertEqual(result.first?.image?["height"], .int(480))
+    XCTAssertEqual(result.first?.image?["thumbnail_url"], .string("https://images.test/preview.jpg"))
+  }
+
+  func testImageSearchRanksCandidatesBeyondRequestedPrefixThroughActualRegistry() throws {
+    final class Images: AgentIOSURLSessionWebTransporting {
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        let rows: [[String: Any]] = (0..<5).map { index in
+          ["title": index == 4 ? "alpha beta" : "Other picture \(index)",
+           "url": "https://sources.test/page-\(index)", "oriPicUrl": "https://images.test/\(index).jpg"]
+        }
+        let body = try JSONSerialization.data(withJSONObject: ["searchList": ["searchList": rows]], options: [.sortedKeys])
+        let html = "<script>window.__INITIAL_STATE__=" + String(decoding: body, as: UTF8.self) + ";</script>"
+        return AgentIOSURLSessionWebResponse(statusCode: 200, finalURL: request.url,
+          headers: ["content-type": "text/html; charset=utf-8"], body: Data(html.utf8), retrievedAtEpochMillis: 1100)
+      }
+    }
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: Images(), sourceHealthStore: nil, nowMillis: { 1000 })
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, nowMillis: { 1200 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("alpha beta"), "limit": .int(2), "verticals": .array([.string("image")])],
+      context: AgentNativeToolInvocationContext(invocationId: "image-fusion",
+        grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+        grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess, result.error?.message ?? "")
+    XCTAssertEqual(result.output["results"]?.arrayValue?.count, 2)
+    XCTAssertEqual(result.output["results"]?.arrayValue?.first?.objectValue?["title"], .string("alpha beta"))
+    XCTAssertEqual(result.output["evidence"]?.arrayValue?.first?.objectValue?["lead_image_url"], .string("https://images.test/4.jpg"))
+  }
+
+  private func imageFusionHit(_ title: String, page: String, image: String, excerpt: String = "") -> AgentIOSPublicSearchParser.Hit {
+    .init(title: title, url: "https://sources.test/" + page, excerpt: excerpt,
+      image: ["url": .string("https://images.test/" + image + ".jpg")])
+  }
+
   func testSearchEarlyCompletionRequiresSubstantialQueryRelatedExcerpts() {
     var candidates = (0..<3).map { index in
       AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: "alpha",

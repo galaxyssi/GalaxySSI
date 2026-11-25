@@ -479,7 +479,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
             if endpoint.imageSearch {
-              results = try AgentIOSPublicSearchParser.sogouImages(html, limit: maxResults)
+              results = try AgentIOSPublicSearchParser.sogouImages(html, limit: 20)
             } else {
               results = try parseSearchResults(html, baseURL: resource.finalURL,
                 maxResults: maxResults, allowedHosts: endpoint.allowedHosts)
@@ -574,7 +574,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
       var merged: [AgentIOSWebSearchResult] = []
       var seenURLs: Set<String> = []
-      for attempt in attempts where attempt.resource != nil {
+      if imageSearch {
+        merged = AgentIOSImageSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil }.map {
+          .init(sourceID: $0.provider, results: $0.results, weight: 1.2, authority: 0.75)
+        }, limit: maxResults)
+      }
+      for attempt in attempts where !imageSearch && attempt.resource != nil {
         for result in attempt.results {
           let identity = result.image?["url"]?.stringValue ?? result.url
           let key = URL(string: identity).map(canonicalURL) ?? identity.lowercased()
@@ -612,6 +617,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         output["learning"] = .object(["status": .string(scoped ? "skipped_store_unavailable" : "skipped_cache_scope_required")])
       }
       var resultMetadata = metadata(operation: .webSearch, method: .get)
+      if imageSearch { resultMetadata["image_ranker"] = .string(AgentIOSImageSearchFusion.modelID) }
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
       let completedProviders = Set(attempts.map(\.provider))
       let cancelledProviders = earlyCompleted

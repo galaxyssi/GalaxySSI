@@ -912,6 +912,7 @@
     C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */; };
     C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */; };
     C30070000000000000000009 /* CloudImageSearchEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000A /* CloudImageSearchEvidence.swift */; };
+    C30070000000000000000011 /* AgentIOSImageSearchFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */; };
     C3007000000000000000000B /* AgentMarkdownImageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000C /* AgentMarkdownImageStore.swift */; };
     C3007000000000000000000D /* AgentRemoteImageTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000E /* AgentRemoteImageTransfer.swift */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
@@ -4176,6 +4177,7 @@
     C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceLearning.swift; sourceTree = "<group>"; };
     C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealth.swift; sourceTree = "<group>"; };
     C3007000000000000000000A /* CloudImageSearchEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudImageSearchEvidence.swift; sourceTree = "<group>"; };
+    C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSImageSearchFusion.swift; sourceTree = "<group>"; };
     C3007000000000000000000C /* AgentMarkdownImageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMarkdownImageStore.swift; sourceTree = "<group>"; };
     C3007000000000000000000E /* AgentRemoteImageTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteImageTransfer.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
@@ -5301,6 +5303,7 @@
         C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
         C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */,
         C3007000000000000000000A /* CloudImageSearchEvidence.swift */,
+        C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */,
         C3007000000000000000000C /* AgentMarkdownImageStore.swift */,
         C3007000000000000000000E /* AgentRemoteImageTransfer.swift */,
         A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
@@ -8030,6 +8033,7 @@
         C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
         C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */,
         C30070000000000000000009 /* CloudImageSearchEvidence.swift in Sources */,
+        C30070000000000000000011 /* AgentIOSImageSearchFusion.swift in Sources */,
         C3007000000000000000000B /* AgentMarkdownImageStore.swift in Sources */,
         C3007000000000000000000D /* AgentRemoteImageTransfer.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
