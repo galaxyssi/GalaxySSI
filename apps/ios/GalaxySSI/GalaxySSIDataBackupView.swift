@@ -429,20 +429,23 @@ struct GalaxySSIDataBackupView: View {
   }
 
   private func clearRebuildableCache() {
-    URLCache.shared.removeAllCachedResponses()
     let removedBytes = cacheBytes
-    let fileManager = FileManager.default
-    if let cachesURL = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first,
-       let children = try? fileManager.contentsOfDirectory(at: cachesURL, includingPropertiesForKeys: nil) {
-      children.forEach { child in
-        try? fileManager.removeItem(at: child)
+    Task { @MainActor in
+      await AgentMarkdownImageStore.shared.clear()
+      URLCache.shared.removeAllCachedResponses()
+      let fileManager = FileManager.default
+      if let cachesURL = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first,
+         let children = try? fileManager.contentsOfDirectory(at: cachesURL, includingPropertiesForKeys: nil) {
+        children.forEach { child in
+          try? fileManager.removeItem(at: child)
+        }
       }
+      refreshStorageMetrics()
+      setBackupStatus(
+        String(format: t("galaxyssi.data_backup.cache_cleared", "Cleared %@ of rebuildable cache"), formatBytes(removedBytes)),
+        isError: false
+      )
     }
-    refreshStorageMetrics()
-    setBackupStatus(
-      String(format: t("galaxyssi.data_backup.cache_cleared", "Cleared %@ of rebuildable cache"), formatBytes(removedBytes)),
-      isError: false
-    )
   }
 
   private func refreshStorageMetrics() {

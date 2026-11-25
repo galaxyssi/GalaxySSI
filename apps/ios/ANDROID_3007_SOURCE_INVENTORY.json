@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence with shared secure-preview presentation, real cloud image alias and bounded whole-URL candidate delivery; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image cache/streamed-body/cancellation lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Image DNS preflight is not connection pinning. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -67,7 +67,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentMarkdownImageStore.kt",
       "sha256": "2f688f4a0cc5c7c7eac47a98eab9f3ad66f3a12af0b450d736a057fc2661844a",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial iOS adaptation: encrypted 64-MiB/128-entry URL cache, 12-MiB streamed-body bound, eight shared producers with cancellation leases, manual bounded HTTPS redirects and isolated cookie/credential-free URLSession. DNS preflight is NOT connection pinning; complete address policy, native transport/decoder/cache fault and performance acceptance remain incomplete. Existing Files export retained, not Android MediaStore"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPublicImageSearchParser.kt",

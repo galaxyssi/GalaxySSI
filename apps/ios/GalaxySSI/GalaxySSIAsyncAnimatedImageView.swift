@@ -6,18 +6,23 @@ struct GalaxySSIAsyncAnimatedImageView<Failure: View>: View {
   let url: URL
   private let onLoaded: ((Data) -> Void)?
   private let decodeOffMain: Bool
+  private let publicWebImage: Bool
   private let failure: () -> Failure
   @StateObject private var loader = GalaxySSIAsyncAnimatedImageLoader()
+  @Environment(\.scenePhase) private var scene
+  private struct LoadID: Hashable { var url: URL; var publicWebImage: Bool; var active: Bool }
 
   init(
     url: URL,
     onLoaded: ((Data) -> Void)? = nil,
     decodeOffMain: Bool = false,
+    publicWebImage: Bool = false,
     @ViewBuilder failure: @escaping () -> Failure
   ) {
     self.url = url
     self.onLoaded = onLoaded
     self.decodeOffMain = decodeOffMain
+    self.publicWebImage = publicWebImage
     self.failure = failure
   }
 
@@ -29,66 +34,85 @@ struct GalaxySSIAsyncAnimatedImageView<Failure: View>: View {
           .frame(maxWidth: .infinity, minHeight: 80)
       case .loaded(let data):
         Group {
-          if decodeOffMain { Color.clear }
+          if !loader.represents(url: url, publicWebImage: publicWebImage) { ProgressView() }
+          else if decodeOffMain { Color.clear }
           else { GalaxySSIRemoteAnimatedImageView(data: data) }
         }
-        .onAppear { onLoaded?(data) }
+        .onAppear {
+          if loader.represents(url: url, publicWebImage: publicWebImage) { onLoaded?(data) }
+        }
       case .failed:
         failure()
       }
     }
-    .task(id: url) {
-      await loader.load(url: url)
+    .task(id: LoadID(url: url, publicWebImage: publicWebImage, active: scene == .active)) {
+      guard scene == .active else { loader.cancel(); return }
+      await loader.load(url: url, publicWebImage: publicWebImage)
     }
+    .onDisappear { loader.cancel() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in loader.cancel() }
   }
 }
 
 @MainActor
-private final class GalaxySSIAsyncAnimatedImageLoader: ObservableObject {
-  enum State {
+final class GalaxySSIAsyncAnimatedImageLoader: ObservableObject {
+  enum State: Equatable {
     case loading
     case loaded(Data)
     case failed
   }
 
   @Published private(set) var state: State = .loading
+  private let fetch: @Sendable (URL, Bool) async throws -> Data
+  private var generation = UUID()
+  private var activeTask: Task<Data, Error>?
+  private var loadedURL: URL?
+  private var loadedPublicWebImage = false
 
-  func load(url: URL) async {
+  init(fetch: @escaping @Sendable (URL, Bool) async throws -> Data = GalaxySSIAsyncAnimatedImageLoader.download) {
+    self.fetch = fetch
+  }
+
+  func cancel() {
+    generation = UUID()
+    activeTask?.cancel()
+    activeTask = nil
+    loadedURL = nil
     state = .loading
-    var request = URLRequest(url: url)
-    request.timeoutInterval = 20
-    request.cachePolicy = .returnCacheDataElseLoad
+  }
 
+  func represents(url: URL, publicWebImage: Bool) -> Bool {
+    loadedURL == url && loadedPublicWebImage == publicWebImage
+  }
+
+  func load(url: URL, publicWebImage: Bool = false) async {
+    cancel()
+    let current = generation
+    let fetch = self.fetch
+    let task = Task.detached(priority: .userInitiated) { try await fetch(url, publicWebImage) }
+    activeTask = task
+    defer { if generation == current { activeTask = nil } }
     do {
-      let (bytes, response) = try await URLSession.shared.bytes(for: request)
-      guard let httpResponse = response as? HTTPURLResponse,
-            (200..<300).contains(httpResponse.statusCode),
-            httpResponse.expectedContentLength <= Int64(GalaxySSIImageResourceDecoder.maximumBytes) ||
-              httpResponse.expectedContentLength < 0 else {
-        state = .failed
-        return
-      }
-      var data = Data()
-      data.reserveCapacity(min(GalaxySSIImageResourceDecoder.maximumBytes, 256 * 1024))
-      for try await byte in bytes {
-        data.append(byte)
-        guard data.count <= GalaxySSIImageResourceDecoder.maximumBytes else {
-          state = .failed
-          return
-        }
-      }
-      guard GalaxySSIImageResourceDecoder.canDecode(data) else {
-        state = .failed
-        return
-      }
+      let data = try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
+      try Task.checkCancellation()
+      guard generation == current else { return }
+      loadedURL = url
+      loadedPublicWebImage = publicWebImage
       state = .loaded(data)
-    } catch is CancellationError {
-      return
     } catch {
+      guard generation == current, !Task.isCancelled, !(error is CancellationError),
+        (error as? URLError)?.code != .cancelled else { return }
       state = .failed
     }
   }
 
+  nonisolated private static func download(_ url: URL, publicWebImage: Bool) async throws -> Data {
+    if publicWebImage { return try await AgentMarkdownImageStore.shared.image(url) }
+    let response = try await AgentRemoteImageTransfer(url: url, timeout: 20, followsRedirects: true).run()
+    try Task.checkCancellation()
+    guard !response.data.isEmpty, GalaxySSIImageResourceDecoder.canDecode(response.data) else { throw AgentMarkdownImageFailure.unsupportedImage }
+    return response.data
+  }
 }
 
 private struct GalaxySSIRemoteAnimatedImageView: UIViewRepresentable {
