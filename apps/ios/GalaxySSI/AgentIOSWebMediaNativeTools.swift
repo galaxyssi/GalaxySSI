@@ -830,6 +830,14 @@ struct AgentIOSWebMediaNativeToolExecutor {
     if operation != .browserSessionOperationStatus {
       output["operation"] = output["operation"] ?? .string(operation.rawValue)
     }
+    if operation == .webSearch, CloudImageSearchEvidence.isImageOnly(output) {
+      var imageOutput = output
+      imageOutput["operation"] = .string("search")
+      imageOutput["status"] = imageOutput["status"] ?? .string("completed")
+      let prepared = AgentIOSWebEvidencePack.attach(to: imageOutput,
+        generatedAtMillis: output["retrieved_at_epoch_ms"]?.intValue ?? invocation.startedAtEpochMillis)
+      output["evidence_pack"] = prepared["evidence_pack"]
+    }
     var metadata = execution.metadata
     metadata["implementation"] = metadata["implementation"] ?? .string(provider.implementationId)
     metadata["platform"] = metadata["platform"] ?? .string("ios_phone")

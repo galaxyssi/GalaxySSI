@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence, renderer/research/cloud caps, atomic cache/workspace commits; actual raw/intelligence scoped learning with no duplicate observation, qualified domain-index routing, topic cache isolation and circuit-aware source health. Full catalog/ranker/exclusion and learned image adapters, indexed-storage performance, other media/relevance, timing spans and native acceptance incomplete.",
+  "scope": "Public web/image evidence with shared secure-preview presentation, real cloud image alias and bounded whole-URL candidate delivery; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -137,7 +137,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudImageSearchEvidence.kt",
       "sha256": "3acfe46b642e1a33b7b33a79c470146e78b15d8ade5c199422fc5ef5a1d4d314",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native image-only packs prefer safe HTTPS previews, retain originals without claiming download/visual verification, remove original dimensions and use exact-subject Markdown guidance. Image-aware bounded model formatting admits whole URLs and re-verifies remaining source identities, with explicit omissions/failure. Native/network/UI acceptance not run"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelClient.kt",
