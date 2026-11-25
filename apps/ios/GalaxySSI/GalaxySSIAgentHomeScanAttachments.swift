@@ -74,7 +74,7 @@ extension AgentHomeView {
       }
       return
     }
-    _ = store.createAgentSession(title: t("galaxyssi.agent.session.new", "New session"))
+    _ = store.createAgentSession(title: t("galaxyssi.agent.session.new", "New session"), useRememberedSelection: true)
   }
 
   func openCameraAttachmentPicker() {

@@ -1718,7 +1718,7 @@ struct ConversationView: View {
   }
 
   private func createAgentConversationFromChat() {
-    _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"))
+    _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"), useRememberedSelection: true)
     draft = ""
     attachments.wipeSensitive()
     attachmentError = ""

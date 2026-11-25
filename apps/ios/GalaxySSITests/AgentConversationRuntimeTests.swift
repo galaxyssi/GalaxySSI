@@ -2,6 +2,66 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testNewUserSessionSnapshotsModelEffortAndProgrammaticSessionsDoNotInherit() throws {
+    let store = makeStore()
+    let first = store.createAgentSession(title: "User fixture", useRememberedSelection: true)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: first.id, defaults: store.defaults), AgentModelSelection())
+    AgentModelSelectionSettings.selectManual(for: first.id, targetId: "desktop:codex", modelId: "fixture-model",
+      displayName: "Fixture Codex", reasoningEffort: .xhigh, defaults: store.defaults)
+    let remembered = AgentModelSelectionSettings.selection(for: first.id, defaults: store.defaults)
+    let user = store.createAgentSession(title: "Next user fixture", useRememberedSelection: true)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: user.id, defaults: store.defaults), remembered)
+    XCTAssertEqual(user.selectedModelOrAgent, "Fixture Codex")
+    XCTAssertNil(user.stableAutoRoute)
+    let programmatic = store.createAgentConversation(title: "Private route fixture", globalTopicKey: "health-care:fixture", privateMode: true)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: programmatic.id, defaults: store.defaults), AgentModelSelection())
+    XCTAssertEqual(programmatic.selectedModelOrAgent, "Automatic")
+    XCTAssertEqual(store.activeAgentConversationId, user.id)
+    let ordinaryProgrammatic = store.createAgentSession(title: "Explicitly routed draft fixture")
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: ordinaryProgrammatic.id, defaults: store.defaults), AgentModelSelection())
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: store.defaults), remembered)
+    XCTAssertEqual(AgentModelSelectionSettings.configurationForTarget(conversationId: user.id, targetId: "desktop:codex", defaults: store.defaults),
+      AgentTargetConfiguration(modelId: "fixture-model", reasoningEffort: .xhigh))
+  }
+
+  func testExplicitAutoIsRememberedButExistingManualSessionIsUnchanged() throws {
+    let store = makeStore()
+    let first = store.createAgentSession(title: "Manual fixture", useRememberedSelection: true)
+    AgentModelSelectionSettings.selectManual(for: first.id, targetId: "cloud:fixture", modelId: "fixture-model",
+      displayName: "Fixture Cloud", reasoningEffort: .high, defaults: store.defaults)
+    let original = AgentModelSelectionSettings.selection(for: first.id, defaults: store.defaults)
+    let second = store.createAgentSession(title: "Second fixture", useRememberedSelection: true)
+    AgentModelSelectionSettings.selectAutomaticForConversation(for: second.id, defaults: store.defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: store.defaults), original)
+    AgentModelSelectionSettings.selectAutomatic(for: second.id, defaults: store.defaults)
+    let next = store.createAgentSession(title: "Auto fixture", useRememberedSelection: true)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: next.id, defaults: store.defaults), AgentModelSelection())
+    XCTAssertEqual(next.selectedModelOrAgent, "Automatic")
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: first.id, defaults: store.defaults), original)
+    AgentModelSelectionSettings.initializeConversation(for: first.id, useRememberedSelection: true, defaults: store.defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: first.id, defaults: store.defaults), original)
+  }
+
+  func testMalformedRememberedSelectionFailsClosedWithoutChangingStoredConversation() throws {
+    let suite = "RememberedSelection.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for value in [Data("not-json".utf8), try JSONEncoder().encode(AgentModelSelection(mode: .manual, targetId: "  ")),
+      try JSONEncoder().encode(AgentModelSelection(mode: .automatic, targetId: "stale"))] {
+      defaults.set(value, forKey: "default.selection")
+      XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+    }
+    AgentModelSelectionSettings.selectManual(for: "first", targetId: "desktop:fixture", modelId: "fixture-model",
+      displayName: "Fixture", reasoningEffort: .high, defaults: defaults)
+    let first = AgentModelSelectionSettings.selection(for: "first", defaults: defaults)
+    AgentModelSelectionSettings.initializeConversation(for: "second", useRememberedSelection: true, defaults: defaults)
+    AgentModelSelectionSettings.selectManual(for: "other", targetId: "cloud:other", modelId: "other-model",
+      displayName: "Other", defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "second", defaults: defaults), first)
+    AgentModelSelectionSettings.initializeConversation(for: "second", useRememberedSelection: false, defaults: defaults)
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "second", defaults: defaults), first)
+  }
+
   func testMessageSubmissionScopeRejectsOtherConversationOwnerAndBlankIdentity() {
     let scope = AgentMessageSubmissionScope(owner: "owner-a", conversationId: "conversation-a")
     XCTAssertTrue(scope.matches(owner: "owner-a", conversationId: "conversation-a"))

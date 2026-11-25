@@ -6030,6 +6030,7 @@
 "galaxyssi.agent.model_selection.model" = "模型";
 "galaxyssi.agent.model_selection.reasoning_effort" = "推理强度";
 "galaxyssi.agent.model_selection.current_session" = "已为此 Agent 和后续会话保存";
+"galaxyssi.agent.model_selection.new_session_default" = "新会话默认设置";
 "galaxyssi.agent.model_selection.reasoning.auto" = "自动";
 "galaxyssi.agent.model_selection.reasoning.low" = "低";
 "galaxyssi.agent.model_selection.reasoning.medium" = "中";

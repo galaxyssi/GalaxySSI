@@ -177,7 +177,7 @@ struct GalaxySSIMainTabView: View {
     case .phone: voicePage = .phone
     case .newConversation:
       let session = store.createAgentSession(title: GalaxySSILocalization.string(
-        "galaxyssi.agent_session.new", fallback: "New session", language: language))
+        "galaxyssi.agent_session.new", fallback: "New session", language: language), useRememberedSelection: true)
       guard store.agentConversationDatabase.readDraft(session.id) != nil ||
               store.agentConversationDatabase.read(session.id) != nil else {
         return .failure(code: "conversation_not_saved", message: "The new conversation could not be saved.")

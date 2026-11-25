@@ -93,7 +93,11 @@ enum AgentModelSelectionSettings {
   }
 
   static func defaultSelection(defaults: UserDefaults = .standard) -> AgentModelSelection {
-    AgentModelSelection()
+    guard let selection = loadSelection(key: defaultSelectionKey, defaults: defaults),
+      selection.mode == .manual, !selection.targetId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return AgentModelSelection()
+    }
+    return selection
   }
 
   static func selectManual(
@@ -127,8 +131,16 @@ enum AgentModelSelectionSettings {
     for conversationId: String,
     defaults: UserDefaults = .standard
   ) {
+    initializeConversation(for: conversationId, useRememberedSelection: true, defaults: defaults)
+  }
+
+  static func initializeConversation(
+    for conversationId: String,
+    useRememberedSelection: Bool,
+    defaults: UserDefaults = .standard
+  ) {
     guard !hasStoredSelection(for: conversationId, defaults: defaults) else { return }
-    let inherited = defaultSelection(defaults: defaults)
+    let inherited = useRememberedSelection ? defaultSelection(defaults: defaults) : AgentModelSelection()
     save(inherited, for: conversationId, defaults: defaults)
   }
 
@@ -989,7 +1001,7 @@ struct GalaxySSIAgentModelSelectionView: View {
         }
       }
 
-      Text(t("galaxyssi.agent.model_selection.current_session", "Saved for this Agent and future sessions"))
+      Text(t("galaxyssi.agent.model_selection.new_session_default", "Default for new conversations"))
         .font(.system(size: 11))
         .foregroundColor(.galaxySSITextSecondary)
     }
