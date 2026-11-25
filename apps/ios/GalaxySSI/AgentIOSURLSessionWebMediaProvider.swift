@@ -416,6 +416,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         fanout: Int(input["engine_fanout"]?.intValue ?? 6)
       )
       let accumulator = AgentIOSWebSearchAccumulator()
+      defer { accumulator.cancel() }
       let group = DispatchGroup()
       let querySignals = AgentSearchResponseQuality.signals(query)
       func disjoint(_ attempt: AgentIOSWebSearchAttempt) -> Bool {
@@ -426,7 +427,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
           defer { group.leave() }
-          if invocation.isCancellationRequested {
+          if invocation.isCancellationRequested || accumulator.isCancelled {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .cancelled))
             return
           }
@@ -436,12 +437,19 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             return
           }
           do {
+            let started = nowMillis()
+            let requestDeadline = min(deadline, started + min(4_000, remaining))
+            let searchInvocation = AgentNativeToolInvocation(descriptor: invocation.descriptor, input: invocation.input,
+              context: invocation.context, startedAtEpochMillis: started, deadlineEpochMillis: requestDeadline,
+              hardDeadlineEpochMillis: requestDeadline, nowMillis: nowMillis,
+              cancellationRequested: { invocation.isCancellationRequested || accumulator.isCancelled },
+              progressReporter: { _, _ in })
             let resource = try requestResource(
               requestedURL: endpoint.url,
               method: .get,
               maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
               timeoutMillis: min(4_000, remaining),
-              invocation: invocation
+              invocation: searchInvocation
             )
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
@@ -476,15 +484,23 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var completed = false
       var earlyCompleted = false
       while !completed && !earlyCompleted {
-        let groups = accumulator.snapshot().filter { !disjoint($0) }.map { attempt in
+        let attempts = accumulator.snapshot().filter { !disjoint($0) }
+        let groups = attempts.map { attempt in
           attempt.results.map { $0.url }
+        }
+        let candidates = attempts.flatMap { attempt in
+          attempt.results.map { result in
+            AgentIOSWebSearchCompletionPolicy.Candidate(provider: attempt.provider, title: result.title,
+              url: result.url, excerpt: result.excerpt, imageURL: result.image?["url"]?.stringValue ?? "")
+          }
         }
         if AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(
           profile: profile,
           explicitSources: explicitSources,
           groups: groups,
           limit: maxResults,
-          providerCount: endpoints.count
+          providerCount: endpoints.count,
+          query: query, candidates: candidates, imageOnly: imageSearch
         ) {
           earlyCompleted = true
           break
@@ -1982,6 +1998,19 @@ private struct AgentIOSWebSearchAttempt {
 private final class AgentIOSWebSearchAccumulator {
   private let lock = NSLock()
   private var attempts: [AgentIOSWebSearchAttempt] = []
+  private var cancelled = false
+
+  var isCancelled: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return cancelled
+  }
+
+  func cancel() {
+    lock.lock()
+    cancelled = true
+    lock.unlock()
+  }
 
   func append(_ attempt: AgentIOSWebSearchAttempt) {
     lock.lock()

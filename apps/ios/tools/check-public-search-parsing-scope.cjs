@@ -50,6 +50,22 @@ for (const token of ['AgentIOSWebSearchEnginePolicy.accepts(globalEngines + rawP
 assert(research.indexOf('AgentIOSWebSearchEnginePolicy.accepts(') < research.indexOf('for (index, item) in queryPlan.enumerated()'));
 assert(provider.includes('endpoints = endpoints.filter { requestedEngineIds.contains($0.provider) }'));
 assert(provider.includes('throw AgentIOSURLSessionWebError.unsupportedSearchEngine'));
+const completion = read(swift('AgentIOSWebSearchCompletionPolicy'));
+for (const token of ['guard !explicitSources, normalizedProfile != "deep", limit > 0',
+  'candidate.excerpt.utf16.count >= 30', 'queryTokens.intersection(words).count * 2 >= queryTokens.count',
+  'AgentIOSWebEvidencePack.canonicalURL(candidate.url)', 'Set(evidence.map(\\.provider)).count >= 2',
+  'return images.count >= limit', 'precomposedStringWithCompatibilityMapping.lowercased()',
+  'zip(group, group.dropFirst())']) assert(completion.includes(token), token);
+const oldCompletion = git('show', base + ':' + swift('AgentIOSWebSearchCompletionPolicy'));
+assert.equal(completion.slice(completion.indexOf('    let successfulGroups ='), completion.indexOf('  private static func tokens(')),
+  oldCompletion.slice(oldCompletion.indexOf('    let successfulGroups ='), oldCompletion.indexOf('  private static func canonicalURL(')),
+  'Legacy URL-only caller thresholds unchanged');
+assert.equal(completion.slice(completion.indexOf('  private static func canonicalURL(')),
+  oldCompletion.slice(oldCompletion.indexOf('  private static func canonicalURL(')), 'Legacy URL-only completion path normalization unchanged');
+for (const token of ['defer { accumulator.cancel() }', 'invocation: searchInvocation',
+  'cancellationRequested: { invocation.isCancellationRequested || accumulator.isCancelled }',
+  'hardDeadlineEpochMillis: requestDeadline', 'query: query, candidates: candidates, imageOnly: imageSearch',
+  'excerpt: result.excerpt, imageURL: result.image?["url"]?.stringValue']) assert(provider.includes(token), token);
 const budgetTests = read('apps/ios/GalaxySSITests/AgentIOSWebIntelligenceNativeToolTests.swift');
 for (const name of ['testResearchBudgetKeepsEvidenceAndSkipsUnstartedQueriesAndPages',
   'testResearchValidatesLaterEngineBeforeAnyEarlierSearch', 'testSearchProfilesSupplyDefaultsButPreserveExplicitLimits',
@@ -172,7 +188,11 @@ for (const name of ['testPublicSearchParserKeepsCardsAndSnippetsButNotNavigation
   'testPublicSearchParserUnwrapsOwnedRedirectsAndRejectsUnsafeDestinations',
   'testPublicSearchParserUsesBaiduCardDestinationAndReportsVerification',
   'testSogouImageParserKeepsOriginalSourceDimensionsAndThumbnailFallback',
-  'testImageSearchReachesPublicEndpointAndKeepsImagesThroughEvidenceProjection']) assert(tests.includes('func ' + name + '('));
+  'testImageSearchReachesPublicEndpointAndKeepsImagesThroughEvidenceProjection',
+  'testSearchEarlyCompletionRequiresSubstantialQueryRelatedExcerpts',
+  'testBalancedSearchCompletionNeedsDistinctCanonicalSourcesAndEngines',
+  'testImageEarlyCompletionCountsDistinctImagesAndKeepsExplicitAndDeepSources',
+  'testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens']) assert(tests.includes('func ' + name + '('));
 const files = git('diff', '--name-only', android + '^1', android).trim().split('\n');
 const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParser.kt')) return 'Adapted result-card DOM selection, excerpts, source verification detection, direct Baidu card URL and scoped redirect decoding using pinned SwiftSoup; native/network acceptance not run';
@@ -182,7 +202,7 @@ const disposition = file => {
   if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
-  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete';
+  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: profile defaults, supported engine validation and actual early-completion policy use substantial query-overlap excerpts/canonical sources, balanced cross-engine evidence, distinct image URLs and NFKC/CJK tokens. Explicit/deep opt-out and existing disjoint guard retained. Full adapters/ranker/acceptance incomplete';
   if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
   if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
   if (file.endsWith('/CloudToolBatchExecutor.kt')) return 'Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified';
@@ -194,7 +214,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image search, source-owned media evidence and typed image citation checks; renderer lifecycle, research and configured cloud round/tool time caps. Other image engines/relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.',
+  scope: 'Public web/Sogou image search, source-owned media citations, query-aware web/image early completion and cooperative abandoned-search cancellation; renderer lifecycle and research/cloud time caps. Other image engines/semantic relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image search, source-owned media evidence and typed image citation checks; renderer lifecycle, research and configured cloud round/tool time caps. Other image engines/relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.",
+  "scope": "Public web/Sogou image search, source-owned media citations, query-aware web/image early completion and cooperative abandoned-search cancellation; renderer lifecycle and research/cloud time caps. Other image engines/semantic relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -102,7 +102,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete"
+      "disposition": "Partial: profile defaults, supported engine validation and actual early-completion policy use substantial query-overlap excerpts/canonical sources, balanced cross-engine evidence, distinct image URLs and NFKC/CJK tokens. Explicit/deep opt-out and existing disjoint guard retained. Full adapters/ranker/acceptance incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",

@@ -2,6 +2,62 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSearchEarlyCompletionRequiresSubstantialQueryRelatedExcerpts() {
+    var candidates = (0..<3).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: "alpha",
+        url: "https://site\(index).test/article", excerpt: "A sufficiently long readable search result summary.")
+    }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta gamma"))
+    for index in candidates.indices { candidates[index].title = "alpha beta" }
+    XCTAssertTrue(searchCanFinish(candidates, query: "alpha beta gamma"))
+    for index in candidates.indices { candidates[index].excerpt = "Short" }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta gamma"))
+  }
+
+  func testBalancedSearchCompletionNeedsDistinctCanonicalSourcesAndEngines() {
+    var candidates = (0..<6).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: "alpha beta",
+        url: "https://site\(index % 3).test/article/\(index)", excerpt: "A sufficiently long readable search result summary.")
+    }
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+    candidates[5].provider = "duckduckgo"
+    XCTAssertTrue(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+    candidates[5].url = candidates[0].url + "?utm_source=duplicate"
+    XCTAssertFalse(searchCanFinish(candidates, query: "alpha beta", profile: "balanced", limit: 6))
+  }
+
+  func testImageEarlyCompletionCountsDistinctImagesAndKeepsExplicitAndDeepSources() {
+    var candidates = (0..<2).map { index in
+      AgentIOSWebSearchCompletionPolicy.Candidate(provider: "sogou_image", title: "Picture",
+        url: "https://source.test/article", excerpt: "", imageURL: "https://images.test/\(index).jpg")
+    }
+    XCTAssertTrue(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true, explicit: true))
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", profile: "deep", limit: 2, imageOnly: true))
+    candidates[1].imageURL = candidates[0].imageURL
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+    candidates[1].imageURL = "https://user:secret@images.test/other.jpg"
+    XCTAssertFalse(searchCanFinish(candidates, query: "picture", limit: 2, imageOnly: true))
+  }
+
+  func testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens() {
+    for (query, title) in [("\u{ff27}\u{ff30}\u{ff34}\u{ff0d}\u{ff14}", "GPT-4"),
+      ("\u{4e2d}\u{56fd}\u{822a}\u{5929}", "\u{4e2d}\u{56fd}\u{822a}\u{5929}"), ("\u{732b}", "\u{732b}")] {
+      let candidates = (0..<3).map { index in
+        AgentIOSWebSearchCompletionPolicy.Candidate(provider: "bing", title: title,
+          url: "https://site\(index).test/article", excerpt: "A sufficiently long readable search result summary.")
+      }
+      XCTAssertTrue(searchCanFinish(candidates, query: query), query)
+    }
+  }
+
+  private func searchCanFinish(_ candidates: [AgentIOSWebSearchCompletionPolicy.Candidate], query: String,
+    profile: String = "fast", limit: Int = 3, imageOnly: Bool = false, explicit: Bool = false) -> Bool {
+    AgentIOSWebSearchCompletionPolicy.hasSufficientEvidence(profile: profile, explicitSources: explicit,
+      groups: [], limit: limit, providerCount: Set(candidates.map(\.provider)).count,
+      query: query, candidates: candidates, imageOnly: imageOnly)
+  }
+
   func testSogouImageParserKeepsOriginalSourceDimensionsAndThumbnailFallback() throws {
     let html = #"<script>window.__INITIAL_STATE__={"searchList":{"searchList":[{"title":"Galaxy <b>photo</b>","url":"https://source.example/page","oriPicUrl":"https://images.example/original.jpg","thumbUrl":"https://images.example/thumb.jpg","width":2048,"height":1024},{"title":"Duplicate","url":"https://source.example/another","oriPicUrl":"https://images.example/original.jpg"},{"title":"Fallback","url":"http://source.example/page","oriPicUrl":"http://images.example/not-https.jpg","thumbUrl":"https://images.example/fallback.jpg","thumbWidth":320,"thumbHeight":180},{"title":"Unsafe","url":"file:///private/data","oriPicUrl":"https://images.example/unsafe.jpg"}]}};</script>"#
     let hits = try AgentIOSPublicSearchParser.sogouImages(html, limit: 5)
