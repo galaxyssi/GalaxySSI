@@ -21,6 +21,9 @@ class AgentInvocationProfileTests(unittest.TestCase):
         self.assertEqual("gpt-5.6-sol", profile.default_model)
         self.assertEqual(
             (
+                "gpt-6.2-astra",
+                "gpt-6.2-sol",
+                "gpt-6.1-terra",
                 "gpt-6-astra",
                 "gpt-6-sol",
                 "gpt-6-luna",
@@ -34,7 +37,7 @@ class AgentInvocationProfileTests(unittest.TestCase):
         self.assertEqual(("low", "medium", "high", "xhigh"), profile.reasoning_efforts)
         self.assertEqual(
             "\u590d\u6742\u7f16\u7801\u4e0e\u957f\u671f\u4efb\u52a1",
-            profile.public()["models"][3]["description"],
+            profile.public()["models"][6]["description"],
         )
 
     def test_codex_additional_models_are_advertised_without_duplicates(self):
@@ -47,13 +50,13 @@ class AgentInvocationProfileTests(unittest.TestCase):
                 ["codex", "exec", "--model", "gpt-5.6-sol", "-"],
             )
 
-        self.assertEqual("gpt-5.6-sol", profile.models[3])
+        self.assertEqual(1, profile.models.count("gpt-5.6-sol"))
         self.assertEqual("gpt-5.6-sol-fast", profile.models[-1])
         self.assertEqual(len(profile.models), len(set(profile.models)))
 
     def test_gpt6_models_are_selectable_and_preserved_for_image_input(self):
         command = ["codex", "exec", "--model", "gpt-5.6-sol", "-"]
-        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
+        for model in ("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"):
             for effort in ("auto", "low", "medium", "high", "xhigh"):
                 with self.subTest(model=model, effort=effort):
                     selection = requested_agent_invocation(
@@ -76,12 +79,11 @@ class AgentInvocationProfileTests(unittest.TestCase):
                     "codex", model, has_image_input=False))
 
     def test_known_codex_default_does_not_change_catalog_order(self):
-        for model in ("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5"):
+        for model in ("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.5"):
             with self.subTest(model=model):
                 profile = invocation_profile_for("codex", ["codex", "--model", model])
                 self.assertEqual(model, profile.default_model)
-                self.assertEqual(("gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol"),
-                                 profile.models[:4])
+                self.assertEqual(("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra"), profile.models[:3])
 
     def test_astra_catalog_preserves_defaults_and_deduplicates_configuration(self):
         self.assertEqual("gpt-5.6-sol", invocation_profile_for("codex", []).default_model)
@@ -97,24 +99,23 @@ class AgentInvocationProfileTests(unittest.TestCase):
         profile = invocation_profile_for("claude", ["claude", "-p"])
 
         self.assertEqual("best", profile.default_model)
-        self.assertEqual(
-            (
-                "best",
-                "fableclaude-fable-5",
-                "opusclaude-opus-5",
-                "sonnetclaude-sonnet-5",
-                "haikuclaude-haiku-4-5-20251001",
-                "opusplan",
-                "opus[1m]",
-                "sonnet[1m]",
-            ),
-            profile.models,
-        )
+        self.assertEqual(("best", "claude-fable-5-2", "claude-opus-5-5",
+                          "claude-sonnet-5-5", "claude-haiku-5-5"), profile.models[:5])
+        self.assertIn("opusplan", profile.models)
         self.assertEqual((), profile.reasoning_efforts)
-        self.assertEqual(
-            "\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5",
-            profile.public()["models"][0]["description"],
-        )
+
+    def test_saved_claude_model_ids_keep_their_versions_without_duplicate_rows(self):
+        profile = invocation_profile_for("claude", ["claude", "-p"])
+        aliases = profile.public()["model_aliases"]
+        self.assertEqual(4, len(aliases))
+        for saved, canonical in aliases.items():
+            with self.subTest(saved=saved), patch.dict(os.environ, {"GALAXYSSI_CLAUDE_MODELS": saved}):
+                self.assertNotIn(saved, profile.models)
+                self.assertIn(canonical, profile.models)
+                self.assertEqual(canonical, requested_agent_invocation(
+                    "claude", {"model_id": saved}, ["claude", "-p"]).model_id)
+                self.assertEqual(canonical, requested_agent_invocation(
+                    "claude", None, ["claude", "--model", saved]).model_id)
 
     def test_claude_selected_model_is_validated_without_reasoning(self):
         selection = requested_agent_invocation(

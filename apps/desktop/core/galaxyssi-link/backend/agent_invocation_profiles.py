@@ -12,6 +12,9 @@ CODEX_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
 DEFAULT_CODEX_MODEL = "gpt-5.6-sol"
 RETIRED_CODEX_MODELS = frozenset({"gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"})
 CODEX_MODELS = (
+    ("gpt-6.2-astra", "GPT-6.2 Astra"),
+    ("gpt-6.2-sol", "GPT-6.2 Sol"),
+    ("gpt-6.1-terra", "GPT-6.1 Terra"),
     ("gpt-6-astra", "GPT-6 Astra\uff0c\u590d\u6742\u63a8\u7406\u3001\u7f16\u7801\u4e0e\u591a\u6b65\u9aa4\u4efb\u52a1"),
     ("gpt-6-sol", "GPT-6 Sol\uff0c\u7f16\u7801\u4e0e Agent \u5de5\u4f5c\u6d41"),
     ("gpt-6-luna", "GPT-6 Luna\uff0c\u5feb\u901f\u3001\u9ad8\u6548\u7684\u65e5\u5e38\u4efb\u52a1"),
@@ -21,15 +24,25 @@ CODEX_MODELS = (
     ("gpt-5.5", "\u590d\u6742\u7f16\u7801\u3001\u7814\u7a76\u548c\u901a\u7528\u4efb\u52a1"),
 )
 CLAUDE_MODELS = (
-    ("best", "\u6709\u6743\u9650\u65f6\u4f7f\u7528 Fable 5\uff0c\u5426\u5219 Opus 5"),
-    ("fableclaude-fable-5", "\u6700\u957f\u4efb\u52a1\u3001\u6700\u9ad8\u80fd\u529b"),
-    ("opusclaude-opus-5", "\u590d\u6742\u63a8\u7406\u548c Agent \u7f16\u7801"),
-    ("sonnetclaude-sonnet-5", "\u65e5\u5e38\u7f16\u7801\u9996\u9009"),
-    ("haikuclaude-haiku-4-5-20251001", "\u6700\u5feb\u3001\u6700\u4fbf\u5b9c"),
+    ("best", "Claude Code alias for Opus"),
+    ("claude-fable-5-2", "Claude Fable 5.2"),
+    ("claude-opus-5-5", "Claude Opus 5.5"),
+    ("claude-sonnet-5-5", "Claude Sonnet 5.5"),
+    ("claude-haiku-5-5", "Claude Haiku 5.5"),
     ("opusplan", "Opus \u89c4\u5212\uff0cSonnet \u6267\u884c"),
     ("opus[1m]", "Opus\uff0c100 \u4e07\u4e0a\u4e0b\u6587"),
     ("sonnet[1m]", "Sonnet\uff0c100 \u4e07\u4e0a\u4e0b\u6587"),
+    ("claude-fable-5", "Claude Fable 5"),
+    ("claude-opus-5", "Claude Opus 5"),
+    ("claude-sonnet-5", "Claude Sonnet 5"),
+    ("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
 )
+CLAUDE_MODEL_ALIASES = {
+    "fableclaude-fable-5": "claude-fable-5",
+    "opusclaude-opus-5": "claude-opus-5",
+    "sonnetclaude-sonnet-5": "claude-sonnet-5",
+    "haikuclaude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
+}
 
 
 @dataclass(frozen=True)
@@ -57,6 +70,7 @@ class AgentInvocationProfile:
                 for model in self.models
             ],
             "reasoning_efforts": list(self.reasoning_efforts),
+            **({"model_aliases": CLAUDE_MODEL_ALIASES.copy()} if self.agent_id == "claude" else {}),
         }
 
 
@@ -104,12 +118,12 @@ def invocation_profile_for(
     command: Sequence[str] | None,
 ) -> AgentInvocationProfile:
     clean_agent_id = str(agent_id or "").strip().casefold()
-    command_model = _command_model(command)
+    command_model = _canonical_model(clean_agent_id, _command_model(command))
     catalog = {
         "codex": CODEX_MODELS,
         "claude": CLAUDE_MODELS,
     }.get(clean_agent_id, ())
-    configured_models = _configured_models(clean_agent_id)
+    configured_models = tuple(_canonical_model(clean_agent_id, model) for model in _configured_models(clean_agent_id))
     catalog_ids = tuple(model_id for model_id, _ in catalog)
     models = _unique_valid_models((
         # A configured default must not move a known Codex model to the top.
@@ -142,12 +156,14 @@ def requested_agent_invocation(
     command: Sequence[str] | None,
 ) -> AgentInvocationSelection:
     if not isinstance(value, Mapping):
-        if (str(agent_id).strip().casefold() == "codex"
-                and _command_model(command).casefold() in RETIRED_CODEX_MODELS):
+        clean_agent_id = str(agent_id).strip().casefold()
+        configured_model = _command_model(command)
+        retired_codex = clean_agent_id == "codex" and configured_model.casefold() in RETIRED_CODEX_MODELS
+        if retired_codex or configured_model != _canonical_model(clean_agent_id, configured_model):
             return AgentInvocationSelection(model_id=invocation_profile_for(agent_id, command).default_model)
         return AgentInvocationSelection()
     profile = invocation_profile_for(agent_id, command)
-    requested_model = str(value.get("model_id") or "").strip()
+    requested_model = _canonical_model(profile.agent_id, str(value.get("model_id") or "").strip())
     if profile.agent_id == "codex" and requested_model.casefold() in RETIRED_CODEX_MODELS:
         requested_model = profile.default_model
     requested_effort = str(value.get("reasoning_effort") or "").strip().casefold()
@@ -168,6 +184,10 @@ def requested_agent_invocation(
         model_id=requested_model or profile.default_model,
         reasoning_effort=requested_effort,
     )
+
+
+def _canonical_model(agent_id: str, model_id: str) -> str:
+    return CLAUDE_MODEL_ALIASES.get(model_id, model_id) if agent_id == "claude" else model_id
 
 
 def _configured_models(agent_id: str) -> tuple[str, ...]:

@@ -203,8 +203,8 @@ async function main() {
     if (!result.ok) {
       fail(`Cloud model roundtrip failed: ${JSON.stringify(result)}. Dump saved at ${debugDump}`);
     }
-    if (result.selected_model !== "deepseek-v4-flash") {
-      fail(`Cloud model switch did not select DeepSeek V4 Flash: ${JSON.stringify(result)}`);
+    if (result.selected_model !== "deepseek-flash") {
+      fail(`Cloud model switch did not select DeepSeek Flash: ${JSON.stringify(result)}`);
     }
     if (result.deepseek_model_count < 2 || result.openai_model_count < 2) {
       fail(`Cloud model roundtrip did not preserve multiple models: ${JSON.stringify(result)}`);
@@ -223,7 +223,7 @@ async function main() {
     if (deepseek.name !== "DeepSeek" || openai.name !== "OpenAI") {
       fail(`Cloud contact list should display provider names only. Store dump: ${storeDump}`);
     }
-    if (deepseek.selected_cloud_model !== "deepseek-v4-flash" || deepseek.cloud_model !== "deepseek-v4-flash") {
+    if (deepseek.selected_cloud_model !== "deepseek-flash" || deepseek.cloud_model !== "deepseek-flash") {
       fail(`Selected DeepSeek model was not persisted. Store dump: ${storeDump}`);
     }
     if ((deepseek.cloud_models || []).length < 2 || (openai.cloud_models || []).length < 2) {
@@ -238,7 +238,7 @@ async function main() {
     }
 
     const chatXml = dumpWindowTo(chatDump, "galaxyssi-cloud-models-chat.xml");
-    if (!chatXml.includes("DeepSeek") || !chatXml.includes("DeepSeek V4 Flash")) {
+    if (!chatXml.includes("DeepSeek") || !chatXml.includes("deepseek-flash")) {
       fail(`Cloud chat header did not show provider and selected model. Dump saved at ${chatDump}`);
     }
 
@@ -259,8 +259,8 @@ async function main() {
         cloud_endpoint: fakeEndpoint,
         cloud_api_key: fakeApiKey,
         cloud_api_style: "openai",
-        cloud_model: "deepseek-v4-flash",
-        selected_cloud_model: "deepseek-v4-flash",
+        cloud_model: "deepseek-flash",
+        selected_cloud_model: "deepseek-flash",
         cloud_models: cloudModels
       }
     );
@@ -297,7 +297,7 @@ async function main() {
     if (request.method !== "POST" || request.authorization !== `Bearer ${fakeApiKey}`) {
       fail(`Android cloud model API request used unexpected method or auth: ${JSON.stringify(request)}`);
     }
-    if (request.body.model !== "deepseek-v4-flash") {
+    if (request.body.model !== "deepseek-flash") {
       fail(`Android cloud model API request used wrong model: ${JSON.stringify(request.body)}`);
     }
     if (!JSON.stringify(request.body.messages || []).includes(promptToken)) {

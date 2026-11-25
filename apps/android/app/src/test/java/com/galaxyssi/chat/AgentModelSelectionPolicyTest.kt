@@ -10,6 +10,21 @@ import org.json.JSONObject
 
 class AgentModelSelectionPolicyTest {
     @Test
+    fun advertisedAliasesKeepPinnedOlderModelsWithoutCreatingPickerRows() {
+        val profile = AgentInvocationProfileJsonCodec.decode(JSONObject()
+            .put("default_model", "claude-opus-5-5")
+            .put("models", JSONArray().put("claude-opus-5-5").put("claude-opus-5"))
+            .put("model_aliases", JSONObject()
+                .put("opusclaude-opus-5", "claude-opus-5")
+                .put("bad-alias", "not-advertised")
+                .put("claude-opus-5-5", "claude-opus-5")))
+        assertEquals(listOf("claude-opus-5-5", "claude-opus-5"), profile.models.map { it.id })
+        assertEquals(mapOf("opusclaude-opus-5" to "claude-opus-5"), profile.modelAliases)
+        assertEquals("claude-opus-5", profile.normalizedModelId("opusclaude-opus-5"))
+        assertEquals("claude-opus-5-5", profile.normalizedModelId("claude-opus-5-5"))
+    }
+
+    @Test
     fun conversationSelectionKeysAreIsolated() {
         val first = AgentModelSelectionSettings.conversationPreferenceKey("conversation-a", "mode")
         val second = AgentModelSelectionSettings.conversationPreferenceKey("conversation-b", "mode")

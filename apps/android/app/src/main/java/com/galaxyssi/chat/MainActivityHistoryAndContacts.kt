@@ -1034,7 +1034,8 @@ internal fun MainActivity.showCloudModelConfigPage(
 internal fun MainActivity.showCloudModelSwitchPage(contact: Contact) {
     val raw = AppStore.contactById(this, contact.id) ?: return
     val provider = raw.optString("cloud_provider", contact.name)
-    val selected = AppStore.selectedCloudModelId(this, contact.id)
+    val aliases = CloudModelRequestRoutingPolicy.invocationProfile(raw).modelAliases
+    val selected = AppStore.selectedCloudModelId(this, contact.id).let { aliases[it] ?: it }
     showFeaturePage(getString(R.string.cloud_switch_model_title))
     setFeatureBackAction { showChatPage(contact) }
     addSectionTitle(getString(R.string.cloud_section_model))
@@ -1051,7 +1052,7 @@ internal fun MainActivity.showCloudModelSwitchPage(contact: Contact) {
     for (i in 0 until models.length()) {
         val model = models.optJSONObject(i) ?: continue
         val modelId = model.optString("model_id")
-        if (modelId.isNotBlank()) modelRows[modelId] = model
+        if (modelId.isNotBlank() && modelId !in aliases) modelRows[modelId] = model
     }
     if (modelRows.isEmpty()) {
         featureContent.addView(featureRow(getString(R.string.cloud_no_models), getString(R.string.cloud_no_models_subtitle), R.drawable.ic_protocol_link, getString(R.string.add_contact_title)).apply {
@@ -1148,6 +1149,7 @@ internal fun MainActivity.providerTitleWithModelTag(provider: String): Spannable
 
 internal fun MainActivity.modelDisplayLabel(modelId: String): String {
     if (modelId.isBlank()) return getString(R.string.cloud_select_model)
+    CLOUD_MODEL_PRESETS.firstOrNull { it.modelId == modelId }?.let { return it.name }
     val lower = modelId.lowercase(Locale.getDefault())
     if (lower.startsWith("gpt-")) return "GPT-" + modelId.substringAfter("-").replace("-", " ")
     if (lower.startsWith("deepseek-")) return modelId
