@@ -47,7 +47,7 @@ struct GalaxySSIHealthAtlasVisionMotion {
   var emphasis: Int { min(2, Int(fraction * 3)) }
   var opticsDrawn: Double { stage == .focus ? 1 : 0.43 + fraction * 0.37 }
   var incident: Double { min(1, max(0, (fraction - 0.10) / 0.38)) }
-  var captureCount: Int { fraction < 0.46 ? 6 : 2 }
+  var captureCount: Int { max(1, Int(6 * GalaxySSIHealthAtlasRodResponse.release(fraction))) }
   static func blend(_ a: UInt32, _ b: UInt32, fraction: Double) -> UInt32 {
     let t = fraction.isFinite ? min(1, max(0, fraction)) : 0
     func channel(_ shift: UInt32) -> UInt32 {

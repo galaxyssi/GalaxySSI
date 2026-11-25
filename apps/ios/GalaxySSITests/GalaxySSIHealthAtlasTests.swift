@@ -5,6 +5,62 @@ import SwiftUI
 
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
+  func testRodResponseOrdersLightMessengerGateAndReleaseAndClamps() {
+    typealias Rod = GalaxySSIHealthAtlasRodResponse
+    XCTAssertEqual(Rod.light(0), 0)
+    XCTAssertEqual(Rod.opening(0), 1)
+    XCTAssertEqual(Rod.release(0), 1)
+    XCTAssertGreaterThan(Rod.light(0.29), 0)
+    XCTAssertEqual(Rod.messenger(0.29), 1)
+    XCTAssertLessThan(Rod.messenger(0.37), 1)
+    XCTAssertEqual(Rod.opening(0.37), 1)
+    XCTAssertLessThan(Rod.opening(0.55), 1)
+    XCTAssertEqual(Rod.release(0.55), 1)
+    XCTAssertEqual(Rod.opening(1), 0)
+    XCTAssertEqual(Rod.messenger(1), 0.14, accuracy: 1e-9)
+    XCTAssertEqual(Rod.release(1), 0.23, accuracy: 1e-9)
+    XCTAssertEqual(Rod.light(.nan), Rod.light(0))
+    XCTAssertEqual(Rod.release(-1), 1)
+    XCTAssertEqual(Rod.opening(2), 0)
+    for index in 1...100 {
+      let t = Double(index) / 100, prior = Double(index - 1) / 100
+      XCTAssertGreaterThanOrEqual(Rod.light(t), Rod.light(prior))
+      XCTAssertLessThanOrEqual(Rod.messenger(t), Rod.messenger(prior))
+      XCTAssertLessThanOrEqual(Rod.opening(t), Rod.opening(prior))
+      XCTAssertLessThanOrEqual(Rod.release(t), Rod.release(prior))
+    }
+  }
+
+  func testFilmPaletteUsesExactLightAndDarkAndroidCaptionBands() {
+    typealias Palette = GalaxySSIHealthAtlasFilmPalette
+    let light = Palette.values(dark: false), dark = Palette.values(dark: true)
+    XCTAssertEqual(light.ground, 0xE7EFED); XCTAssertEqual(light.caption, 0x223A3D)
+    XCTAssertEqual(dark.ground, 0x263537); XCTAssertEqual(dark.caption, 0x192C30)
+    XCTAssertEqual(light.chapter, 0xAFE2D0); XCTAssertEqual(light.text, 0xFFFFFF)
+    XCTAssertEqual(dark.chapter, light.chapter); XCTAssertEqual(dark.text, light.text)
+  }
+
+  func testRodEvidenceOverlayIsOrderedIdempotentAndPreservesEveryOtherLesson() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let before = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle, revision: 4440))
+    let after = before.rodPhototransduction()
+    try after.validate()
+    XCTAssertEqual(after.source.androidPR, 4443)
+    XCTAssertEqual(after.stories.reduce(0) { $0 + $1.references.count }, 324)
+    XCTAssertEqual(after.routes, before.routes); XCTAssertEqual(after.entryPhases, before.entryPhases)
+    XCTAssertEqual(after.rodPhototransduction().stories, after.stories)
+    for original in before.stories {
+      let updated = try XCTUnwrap(after.story(original.id))
+      if original.id != "VISION" { XCTAssertEqual(updated, original); continue }
+      XCTAssertEqual(Array(updated.references.dropLast()), original.references)
+      XCTAssertEqual(updated.references.last?.url.absoluteString, "https://pubmed.ncbi.nlm.nih.gov/2578616/")
+      XCTAssertEqual(updated.title, original.title); XCTAssertEqual(updated.choiceTitle, original.choiceTitle)
+      XCTAssertEqual(updated.scope, original.scope); XCTAssertEqual(updated.owners, original.owners)
+      XCTAssertEqual(updated.chapters, original.chapters); XCTAssertEqual(updated.related, original.related)
+      XCTAssertEqual(updated.durationMs, original.durationMs); XCTAssertEqual(updated.showStructurePreview, original.showStructurePreview)
+    }
+  }
+
   func testEveryBundledEntryResolvesToAnimatedLessonsWithLocalizedCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let lessons = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle))
@@ -1541,7 +1597,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
-    XCTAssertEqual(catalogue.source.androidPR, 4440)
+    XCTAssertEqual(catalogue.source.androidPR, 4443)
     XCTAssertEqual(catalogue.stories.count, 138); XCTAssertEqual(catalogue.routes.count, 313)
     XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 643)
     XCTAssertEqual(GalaxySSIHealthAtlasFunctionRendering.implemented, Set(catalogue.stories.map(\.id)))
@@ -1810,7 +1866,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Motion(courseID: "VISION", chapter: 0, fraction: 1).opticsDrawn, 0.8, accuracy: 1e-12)
     XCTAssertEqual(Motion(courseID: "VISION", chapter: 1, fraction: 0).opticsDrawn, 1)
     XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.459).captureCount, 6)
-    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.46).captureCount, 2)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.46).captureCount, 6)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.86).captureCount, 1)
     XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.1).incident, 0)
     XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.48).incident, 1, accuracy: 1e-12)
     XCTAssertEqual(Motion(courseID: "LIGHT_ADAPTATION", chapter: 4, fraction: 1).emphasis, 2)

@@ -28,7 +28,13 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
   let routes: [String: [String]]
   let entryPhases: [String: [String: Double]]
   static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
-  static func read(bundle: Bundle, revision: Int = 4440) throws -> Self? {
+  static func read(bundle: Bundle, revision: Int = 4443) throws -> Self? {
+    if revision == 4443 {
+      guard let original = try read(bundle: bundle, revision: 4440) else { return nil }
+      let updated = original.rodPhototransduction()
+      try updated.validate()
+      return updated
+    }
     if revision == 4440 {
       guard let original = try read(bundle: bundle, revision: 4439) else { return nil }
       let updated = original.mechanismCloseups()
@@ -72,7 +78,10 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
     let closeups = source.androidPR == 4440 && source.mergeCommit == "5fecc676dac71a5ef7128f6ec5893e69660b5746" &&
       stories.count == 138 && stories.reduce(0, { $0 + $1.chapters.count }) == 643 && routes.count == 313 &&
       stories.reduce(0, { $0 + $1.references.count }) == 323
-    guard schema == 1, baseline || regional || complete || synchronized || closeups, ids.count == stories.count,
+    let rod = source.androidPR == 4443 && source.mergeCommit == "c63bffe14e00a4c60e52aec68b6753f7547be308" &&
+      stories.count == 138 && stories.reduce(0, { $0 + $1.chapters.count }) == 643 && routes.count == 313 &&
+      stories.reduce(0, { $0 + $1.references.count }) == 324
+    guard schema == 1, baseline || regional || complete || synchronized || closeups || rod, ids.count == stories.count,
       Set(routes.keys) == owners, Set(entryPhases.keys) == owners,
       stories.allSatisfy({ story in
         !story.id.isEmpty && story.id.count <= 80 && story.id.allSatisfy({ $0.isUppercase || $0 == "_" || $0.isNumber }) &&

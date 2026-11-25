@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4443,
+    "mergeCommit": "c63bffe14e00a4c60e52aec68b6753f7547be308"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "21b0dac9ac33de0bbe51c2f176cfcc0c4656f85fdc00a0737c5566e8b244aa59"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "status": "M",
+      "sha256": "4341063c1ab3d6e11f07191ac3e8d4eb5ee1fb054f8cd58c410e49ace5284ed0"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "status": "M",
+      "sha256": "270602ad969a6bc1207336086b12e3021186e4f633e35036c2c4f7e137017466"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionStory.kt",
+      "status": "M",
+      "sha256": "eb870d927c30ad85c46e7b4e9ed6802739bbd6e2b4404c844c21dc7e6e49bc6c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSceneFrame.kt",
+      "status": "M",
+      "sha256": "504eef54ed22d84715427804133c46a8536f174e33cd41e801a911f622d71cee"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVisionStoryView.kt",
+      "status": "M",
+      "sha256": "2392a08b0c0dee4ca6984e28b4c7b85a939983aa5b94e32b69aed951213d725f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-night/health_atlas_scene_colors.xml",
+      "status": "A",
+      "sha256": "e7b453c618813bb539788dbfac05a885d5e57374ef6b6f1d4d9f31669afc256c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_vision_story.xml",
+      "status": "M",
+      "sha256": "fe3141bda3c54cabbfd0a5193fc7fdcfeb0fd84fe8a1d377d4e9da0cdb5892f9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_scene_colors.xml",
+      "status": "A",
+      "sha256": "1c28e77f438026a88b7cebcda72f3b776fd2a5e51ec3ff5f777a018b7c3dfdc7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_vision_story.xml",
+      "status": "M",
+      "sha256": "88c146b707dc6e695d65b169e2de85e9532a1ec4051c46e3d507f25bcdb9f1e9"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMechanismCloseUpTest.kt",
+      "status": "M",
+      "sha256": "eb7d8f431d4f6da9b156630436d75e0042ed8bff808d26a35c41cc5888b85707"
+    }
+  ]
+}
