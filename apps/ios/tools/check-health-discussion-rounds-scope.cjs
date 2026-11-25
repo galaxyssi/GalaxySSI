@@ -15,7 +15,7 @@ function once(source, before, after = '') {
 }
 
 function retainedScopedReadTransport(input) {
-  let source = clean(input);
+  let source = require('./check-health-discussion-native-loop-scope.cjs').retainedNativeRouting(input);
   const resume = source.indexOf('\n  static func resume(');
   assert.ok(resume > 0, 'Explicit scoped-round recovery entry exists');
   source = source.slice(0, resume) + '}\n';
@@ -88,7 +88,8 @@ if (require.main === module) {
   assert.doesNotMatch(rounds, /allHTTPHeaderFields|Authorization|x-api-key|x-goog-api-key/);
   assert.match(transport, /saved\.canResume/);
   assert.match(transport, /currentDestination\(\) == contact/);
-  assert.match(transport, /saved\.index == 0 \{ try records\.dispatchLocalCareDiscussionTurn\(review\) \}/);
+  const model = read(prefix + 'GalaxySSIHealthCareModelToolLoop.swift');
+  assert.match(model, /state\.index == 0 \{ try session\.records\.dispatchLocalCareDiscussionTurn\(session\.approval\) \}/);
   assert.match(transport, /dispatchCareDiscussionRound[\s\S]*?bytes = try await send\(request\)/);
   assert.match(transport, /received \? \.sent : \.failed/);
   const runtime = read(prefix + 'GalaxySSIHealthCareTaskRuntime.swift');

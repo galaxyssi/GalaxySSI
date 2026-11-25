@@ -26,8 +26,8 @@ This is a partial port, not completion of Android #4543.
 
 ## Still required
 
-- Full model-driven Health Agent submission, with the persisted exact grant and
-  provider/model snapshot driving initial planning and the native action loop.
+- General Agent planning/transcript integration beyond the explicitly approved
+  cloud Health discussion native-tool loop described below.
 - Grant-scoped initial and continuation planning, no global memory/screen or
   collaboration disclosure, and original conversation/turn reply restoration.
 - Full model-driven Agent task recovery and native end-to-end acceptance.
@@ -174,7 +174,66 @@ They have not been executed on Windows. Source checks are
 `node apps/ios/tools/check-health-discussion-rounds-scope.cjs` and the cumulative
 recovery checker, project structure, Swift grammar and whitespace checks.
 
-The full model-driven Agent planning/action loop, its generic model/tool journal
-integration, streaming checkpoints and original Agent transcript projection are
-still outstanding. This work implements the scoped-read recovery prerequisite,
-not a claim of completed Android #4543 parity or native/device acceptance.
+The round-checkpoint layer alone does not implement the full model-driven Agent
+planning/action loop. Generic model/tool journal integration, streaming and
+original Agent transcript projection remain separate requirements. This layer
+is not a claim of completed Android #4543 parity or native/device acceptance.
+
+## Shared model/native-tool loop follow-up
+
+The explicit cloud discussion path now uses the existing `AgentModelToolLoop`
+and `AgentNativeToolRegistry`. Initial and continuation HTTP requests execute from
+a scoped `AgentModelAdapter`, including definitely unsent request restoration.
+The wire body remains the approved Health request/continuation envelope with its
+existing clinical-boundary instructions, rather than a global planner prompt.
+No unrelated conversation, screen, installed-app, global-memory or public web
+research context is added.
+
+The private registry is constructed only from tool schemas advertised in the
+approved request, intersected with the grant's exact allowed Health tool IDs.
+History, selected-history, question and feedback reads use the existing scoped
+record methods and commit their next request/cursor state before returning a
+native success receipt. Plan drafts, question proposals and clarification answer
+drafts are native calls with exact input validation and the original local/online
+consent epochs. Every call checks the original session, conversation, turn,
+workspace, caller and pending provider-call arguments. No default phone registry
+or connector fallback is installed.
+
+Terminal local drafts/questions commit through the existing review-only record
+methods. Their actual provider response is retained first; after the local
+`applied` commit, the loop closes locally without another provider request or
+turning its acknowledgement into medical advice. The view does not apply the
+same terminal response again. Ordinary replies keep the existing final-receipt
+and control-quarantine path; unexecuted tool markup is rejected rather than
+treated as a native action.
+
+Registry replay/audit stores are explicitly in-memory and scoped to the call.
+The loop has no global model journal, observer or event projection; domain
+recovery remains the owner-encrypted wire-round checkpoint. Observation-history
+tools and collaboration are explicitly disabled. Budgets retain the remaining
+read counts, at most one tool depth, no automatic tool retries and the remaining
+original approval lifetime. The cumulative request-byte and round limits still
+apply across recovery, not a newly issued disclosure grant.
+
+Disclosure tickets are now created at the actual prepared-round HTTP boundary
+inside the adapter. A queued/cancelled operation that never reaches that boundary
+creates no fake cloud request entry, and the initial request is not double-counted
+by the view and the adapter. Received disclosure still remains `sent` when local
+receipt retention fails. Navigation cancellation propagates through the shared
+loop cancellation source while retaining known prepared/received checkpoints.
+
+Seven further native fixture source methods cover catalog scope, native question
+retention across OpenAI-compatible/Anthropic/Gemini wire formats, foreign-turn
+rejection and bound history execution, unknown tools, control-looking prose,
+navigation cancellation and tampered catalogs. The existing round recovery
+fixture sources now enter the shared loop as well. These sources have not been
+executed. Source checks include
+`node apps/ios/tools/check-health-discussion-native-loop-scope.cjs`; the unchanged
+shared loop/registry/protocol core and legacy research path are explicitly
+protected outside declared routing and callback-lifetime edits.
+
+Remaining: original Agent transcript task projection, the broader general Agent
+planning/action path outside explicit cloud Health approval, generic private
+model-journal integration/streaming, automated-research migration and native
+build/device acceptance. No claim that all of Android #4543 or the broader
+Android-to-iOS PR backlog is complete.

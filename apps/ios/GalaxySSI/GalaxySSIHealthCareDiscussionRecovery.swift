@@ -26,6 +26,15 @@ enum GalaxySSIHealthCareDiscussionRecovery {
 }
 
 extension GalaxySSIHealthRecords {
+  func careDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> GalaxySSIHealthCareDiscussionRecovery.Execution {
+    let archive = try load()
+    guard owner == approval.owner, let thread = archive.localCareDiscussions?[approval.concernID.uuidString],
+          thread.id == approval.threadID, let turn = thread.turns.last, turn.id == approval.id,
+          let execution = turn.execution, execution.approval == approval,
+          execution.agentConversationID == thread.agentConversationID else { throw Failure.stale }
+    return execution
+  }
+
   func dispatchLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
     try validateLocalCareDiscussionTurn(approval, now: now)
     try updateCareDiscussionExecution(approval) { execution in

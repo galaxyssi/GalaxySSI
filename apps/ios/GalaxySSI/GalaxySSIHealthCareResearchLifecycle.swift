@@ -216,7 +216,7 @@ struct GalaxySSIHealthCareResearchLifecycle: ViewModifier {
       if approval.requiresStructuredReview || approval.questionCursor != nil || approval.feedbackCursor != nil {
         bytes = try await GalaxySSIHealthScopedReadTransport.finish(approval, records: records, initial: bytes,
           request: request, style: model.apiStyle, ledger: ledger, currentDestination: {
-            route(authorization, owner: records.owner)?.0
+            self.route(authorization, owner: records.owner)?.0
           })
       }
       try Task.checkCancellation()

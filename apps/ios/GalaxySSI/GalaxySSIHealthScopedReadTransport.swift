@@ -4,9 +4,13 @@ import Foundation
 enum GalaxySSIHealthScopedReadTransport {
   static func finish(_ review: GalaxySSIHealthCareDiscussion.Approval, records: GalaxySSIHealthRecords,
       initial: Data, request: URLRequest, style: GalaxySSICloudAPIStyle, ledger: AgentDataDisclosureStore,
-      currentDestination: () -> GalaxySSIContact?, send: (URLRequest) async throws -> Data = {
+      currentDestination: @escaping () -> GalaxySSIContact?, send: @escaping (URLRequest) async throws -> Data = {
         try await GalaxySSIHealthSummaryTransport.responseBytes($0, limit: 65_536)
       }) async throws -> Data {
+    if review.research == nil, try records.savedCareDiscussionRound(review) != nil {
+      return try await GalaxySSIHealthCareModelToolLoop.finish(review, records: records, request: request,
+        style: style, ledger: ledger, currentDestination: currentDestination, send: send)
+    }
     typealias Tool = GalaxySSIHealthCareHistoryTool
     typealias Questions = GalaxySSIHealthCareQuestions
     typealias Feedback = GalaxySSIHealthCareFeedbackTool
@@ -179,41 +183,14 @@ enum GalaxySSIHealthScopedReadTransport {
 
   static func resume(_ review: GalaxySSIHealthCareDiscussion.Approval, records: GalaxySSIHealthRecords,
       request template: URLRequest, style: GalaxySSICloudAPIStyle, ledger: AgentDataDisclosureStore,
-      currentDestination: () -> GalaxySSIContact?, send: (URLRequest) async throws -> Data = {
+      currentDestination: @escaping () -> GalaxySSIContact?, send: @escaping (URLRequest) async throws -> Data = {
         try await GalaxySSIHealthSummaryTransport.responseBytes($0, limit: 65_536)
       }) async throws -> Data {
     guard let saved = try records.savedCareDiscussionRound(review), saved.canResume,
           review.model?.apiStyle == style else { throw GalaxySSIHealthRecords.Failure.stale }
     try Task.checkCancellation()
-    guard let contact = currentDestination() else { throw CancellationError() }
-    let request = try saved.request(using: template, approval: review)
-    let bytes: Data
-    if saved.phase == .prepared {
-      let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
-        text: "", purpose: "Approved Health scoped continuation recovery",
-        textSummary: .init(characters: saved.requestBody.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
-      guard ticket.allowed else { throw GalaxySSIHealthRecords.Failure.permission }
-      var received = false
-      do {
-        try Task.checkCancellation()
-        guard currentDestination() == contact else { throw CancellationError() }
-        if saved.index == 0 { try records.dispatchLocalCareDiscussionTurn(review) }
-        else { try records.dispatchCareDiscussionRound(review, expected: saved, request: request) }
-        bytes = try await send(request)
-        received = true
-        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .sent)
-        try records.retainCareDiscussionRound(review, index: saved.index, request: request, response: bytes)
-      } catch {
-        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: received ? .sent : .failed,
-          failureReason: received ? "" : "health_scoped_round_recovery_not_completed")
-        throw error
-      }
-    } else {
-      guard let retained = saved.response else { throw GalaxySSIHealthRecords.Failure.stale }
-      bytes = retained
-    }
-    if review.allowsAnswerDraft { return bytes }
-    return try await finish(review, records: records, initial: bytes, request: request, style: style,
+    guard currentDestination() != nil else { throw CancellationError() }
+    return try await GalaxySSIHealthCareModelToolLoop.finish(review, records: records, request: template, style: style,
       ledger: ledger, currentDestination: currentDestination, send: send)
   }
 }

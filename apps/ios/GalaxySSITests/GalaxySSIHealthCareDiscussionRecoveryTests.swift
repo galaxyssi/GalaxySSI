@@ -130,7 +130,7 @@ final class HealthDiscussionRecoveryFixture {
   let concern: GalaxySSIHealthCare.Concern
   let approval: GalaxySSIHealthCareDiscussion.Approval
 
-  init(history: Bool = false) throws {
+  init(history: Bool = false, asksQuestions: Bool = false, style: GalaxySSICloudAPIStyle = .openAICompatible) throws {
     let records = GalaxySSIHealthRecords(owner: "discussion-recovery-fixture", secrets: secrets, isolatedFile: file)
     self.records = records
     for index in 0..<(history ? 36 : 1) {
@@ -142,10 +142,13 @@ final class HealthDiscussionRecoveryFixture {
     try records.reconcileLocalCare(now: now)
     concern = try XCTUnwrap(records.load().localCare?.current["glucose"])
     _ = try records.openLocalCareDiscussion(id: concern.id, metric: .glucose)
+    let endpoint = style == .gemini ? "https://example.test/v1beta/models/model:generateContent" :
+      (style == .anthropic ? "https://example.test/v1/messages" : "https://example.test/v1/chat/completions")
     let model = CloudModelConfig(id: "fixture", displayName: "Fixture", provider: "Custom", modelId: "model",
-      endpoint: "https://example.test/v1/chat/completions", apiStyle: .openAICompatible, keychainAccount: "", updatedAt: now)
+      endpoint: endpoint, apiStyle: style, keychainAccount: "", updatedAt: now)
     approval = try records.prepareLocalCareDiscussion(id: concern.id, metric: .glucose, question: "Synthetic recovery question",
-      destinationID: "provider", model: model, credential: "fixture-api-key", allowsHistory: history, now: now)
+      destinationID: "provider", model: model, credential: "fixture-api-key", allowsHistory: history,
+      asksQuestions: asksQuestions, now: now)
     try records.beginLocalCareDiscussionTurn(approval, persistExecution: true, now: now)
   }
 

@@ -302,42 +302,30 @@ struct GalaxySSIHealthCareDiscussionView: View {
         (try? records.validateLocalCareDiscussionApproval(approval)) == nil {
       self.approval = nil; failed = true
     }
-    if let active, currentRoute(active) == nil || (try? records.validateLocalCareDiscussionTurn(active)) == nil {
+    if let active, currentRoute(active) == nil ||
+        ((try? records.validateLocalCareDiscussionTurn(active)) == nil &&
+          (try? records.careDiscussionExecution(active).state) != .applied) {
       clearRequest(); failed = true
     }
   }
 
   private func send(_ review: GalaxySSIHealthCareDiscussion.Approval) {
     guard let style = review.model?.apiStyle else { return }
-    guard approval?.id == review.id, task == nil, let (contact, key) = currentRoute(review)
+    guard approval?.id == review.id, task == nil, let (_, key) = currentRoute(review)
     else { approval = nil; failed = true; return }
     approval = nil
     let ledger = coordinator.healthDisclosureStore
     do {
-      let sentPayload = try review.providerPayload()
       let request = try GalaxySSIHealthCareDiscussion.request(review, key: key)
       try records.validateLocalCareDiscussionApproval(review)
-      let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: ledger, destination: .init(contact: contact),
-        text: "", purpose: review.history == nil ? "Explicit health concern discussion" :
-          "Explicit health concern discussion with scoped measurement history",
-        textSummary: .init(characters: sentPayload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
-      guard ticket.allowed else { failed = true; return }
+      try records.beginLocalCareDiscussionTurn(review, persistExecution: true)
       var admitted = false
       defer {
         if !admitted {
-          AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
-            failureReason: "health_discussion_task_not_admitted")
           try? records.interruptLocalCareDiscussionExecution(review)
         }
       }
-      do {
-        try records.beginLocalCareDiscussionTurn(review, persistExecution: true)
-        try records.prepareCareDiscussionRounds(review, request: request)
-      } catch {
-        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
-          failureReason: "health_discussion_approval_changed")
-        throw error
-      }
+      try records.prepareCareDiscussionRounds(review, request: request)
       active = review
       question = ""
       allowsHistory = false
@@ -348,20 +336,19 @@ struct GalaxySSIHealthCareDiscussionView: View {
       failed = false
       let runtime = GalaxySSIHealthCareTaskRuntime.shared(records: records)
       taskRuntime = runtime
-      var status: AgentDisclosureStatus = .failed
       let handle = try runtime.submit(review) { context in
         do {
           try context.ensureActive()
           guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
-          try records.dispatchLocalCareDiscussionTurn(review)
-          var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
-          status = .sent
-          try records.retainCareDiscussionRound(review, index: 0, request: request, response: bytes)
-          if !review.allowsAnswerDraft && (review.history != nil || review.questions != nil || review.feedbackCursor != nil) {
-            bytes = try await GalaxySSIHealthScopedReadTransport.finish(review, records: records, initial: bytes,
-              request: request, style: style, ledger: ledger, currentDestination: {
-                active?.id == review.id ? currentRoute(review)?.0 : nil
-              })
+          let bytes = try await GalaxySSIHealthCareModelToolLoop.finish(review, records: records,
+            request: request, style: style, ledger: ledger, currentDestination: {
+              active?.id == review.id ? currentRoute(review)?.0 : nil
+            })
+          if try records.careDiscussionExecution(review).state == .applied {
+            try context.ensureActive()
+            guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
+            active = nil
+            return
           }
           try records.retainLocalCareDiscussionResponse(review, response: bytes)
           try context.ensureActive()
@@ -380,8 +367,6 @@ struct GalaxySSIHealthCareDiscussionView: View {
       taskHandle = handle
       task = Task {
         await handle.join()
-        AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: status,
-          failureReason: status == .failed ? "health_discussion_not_completed" : "")
         if taskHandle === handle { active = nil; taskHandle = nil; task = nil; refresh(open: false) }
       }
     } catch { active = nil; failed = true }
@@ -411,6 +396,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
             })
           try Task.checkCancellation()
           guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
+          if try records.careDiscussionExecution(review).state == .applied { return }
           try records.retainLocalCareDiscussionResponse(review, response: bytes)
           try records.applySavedLocalCareDiscussionReply(review)
         })
