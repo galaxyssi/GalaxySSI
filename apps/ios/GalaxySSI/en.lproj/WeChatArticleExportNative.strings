@@ -1,0 +1,5 @@
+"ios_wechat_saved" = "Saved %1$lld pages in Files: GalaxySSI / Downloads / GongZhongHao.\n%2$@";
+"ios_wechat_saved_partial" = "Saved %1$lld pages in Files: GalaxySSI / Downloads / GongZhongHao. Missing images: %3$lld, marked in the PDF.\n%2$@";
+"ios_wechat_already_saving" = "A WeChat article is already being saved. Finish or cancel that export before trying again.";
+"ios_wechat_archive_notice" = "GalaxySSI static web archive. Text and image order is preserved; scripts and interactions are disabled. Unsaved images: %1$lld. Fonts and decorations may be missing. Source: %2$@";
+"ios_wechat_load_failed" = "The article could not be loaded. No PDF was saved.";

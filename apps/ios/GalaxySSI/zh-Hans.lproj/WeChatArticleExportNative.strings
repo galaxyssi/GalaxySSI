@@ -1,0 +1,5 @@
+"ios_wechat_saved" = "已保存 %1$lld 页到“文件”：GalaxySSI / Downloads / GongZhongHao。\n%2$@";
+"ios_wechat_saved_partial" = "已保存 %1$lld 页到“文件”：GalaxySSI / Downloads / GongZhongHao，有 %3$lld 张图片未保存，已在 PDF 中标注。\n%2$@";
+"ios_wechat_already_saving" = "已有一篇公众号文章正在保存，请完成或取消该导出后重试。";
+"ios_wechat_archive_notice" = "GalaxySSI 静态网页存档。保留文字和图片顺序，禁用脚本与交互。未保存图片：%1$lld 张。字体和装饰可能缺失。来源：%2$@";
+"ios_wechat_load_failed" = "无法加载这篇文章，未保存 PDF。";

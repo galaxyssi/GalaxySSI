@@ -5,6 +5,8 @@ import WebKit
 final class PublicScienceDOM: NSObject, WKNavigationDelegate {
   private let webView: WKWebView
   private var readiness: CheckedContinuation<Void, Error>?
+  private var evaluation: CheckedContinuation<Any, Error>?
+  private var evaluationID: UUID?
 
   override init() {
     let configuration = WKWebViewConfiguration()
@@ -45,9 +47,10 @@ final class PublicScienceDOM: NSObject, WKNavigationDelegate {
     ])
   }
 
-  func decode<T: Decodable>(html: String, script: String, arguments: [String: Any] = [:]) async throws -> T {
+  func decode<T: Decodable>(html: String, script: String, arguments: [String: Any] = [:],
+                           maximumHTMLBytes: Int = 5_000_000, maximumJSONBytes: Int = 2_000_000) async throws -> T {
     try Task.checkCancellation()
-    guard html.utf8.count <= 5_000_000 else { throw PublicScienceError.tooLarge }
+    guard html.utf8.count <= maximumHTMLBytes else { throw PublicScienceError.tooLarge }
     let timeout = Task { @MainActor [weak self] in
       do { try await Task.sleep(nanoseconds: 8_000_000_000) } catch { return }
       self?.finish(.failure(PublicScienceError.unavailable))
@@ -66,15 +69,33 @@ final class PublicScienceDOM: NSObject, WKNavigationDelegate {
     try Task.checkCancellation()
     var inputs = arguments
     inputs["html"] = html
-    let value = try await webView.callAsyncJavaScript(script, arguments: inputs, in: nil, contentWorld: .defaultClient)
+    let value = try await withTaskCancellationHandler(operation: {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Any, Error>) in
+        let id = UUID()
+        evaluation = continuation; evaluationID = id
+        webView.callAsyncJavaScript(script, arguments: inputs, in: nil, contentWorld: .defaultClient) { [weak self] result in
+          Task { @MainActor in
+            guard let self, self.evaluationID == id else { return }
+            self.finishEvaluation(result)
+          }
+        }
+      }
+    }, onCancel: { [weak self] in Task { @MainActor in self?.finishEvaluation(.failure(CancellationError())) } })
     try Task.checkCancellation()
-    guard let json = value as? String, json.utf8.count <= 2_000_000 else { throw PublicScienceError.unreadable }
+    guard let json = value as? String else { throw PublicScienceError.unreadable }
+    guard json.utf8.count <= maximumJSONBytes else { throw PublicScienceError.tooLarge }
     return try JSONDecoder().decode(T.self, from: Data(json.utf8))
   }
 
   private func finish(_ result: Result<Void, Error>) {
     let current = readiness
     readiness = nil
+    current?.resume(with: result)
+    if case .failure(let error) = result { finishEvaluation(.failure(error)) }
+  }
+  private func finishEvaluation(_ result: Result<Any, Error>) {
+    let current = evaluation
+    evaluation = nil; evaluationID = nil
     current?.resume(with: result)
   }
 

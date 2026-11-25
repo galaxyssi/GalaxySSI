@@ -794,9 +794,21 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     return document
   }
 
-  func weChatPDFImage(_ address: String, invocation: AgentNativeToolInvocation) throws -> Data {
+  func weChatPDFSource(url: URL, invocation: AgentNativeToolInvocation) throws -> AgentIOSWeChatArticleSource {
+    guard AgentIOSWeChatArticlePDF.articleURL(url.absoluteString) != nil else { throw AgentIOSWeChatArticleFailure.bodyUnavailable }
+    let resource = try requestResource(requestedURL: validatedPublicHTTPSURL(url.absoluteString),
+      method: .get, maxBodyBytes: Int64(AgentIOSWeChatArticleLimits.htmlBytes), timeoutMillis: 45_000, invocation: invocation,
+      allowsBrowserObservation: true)
+    guard !resource.isPartial, let final = URL(string: resource.finalURL), final.host?.lowercased() == "mp.weixin.qq.com"
+      else { throw AgentIOSWeChatArticleFailure.loadFailed }
+    return .init(url: final, html: decodedText(resource).text, httpError: !(200...299).contains(resource.statusCode))
+  }
+
+  func weChatPDFImage(_ address: String, maxBytes: Int64 = 8 * 1_024 * 1_024, timeoutMillis: Int64 = 4_000,
+                     invocation: AgentNativeToolInvocation) throws -> Data {
     let resource = try requestResource(requestedURL: validatedPublicHTTPSURL(address),
-      method: .get, maxBodyBytes: 4 * 1_024 * 1_024, timeoutMillis: 45_000,
+      method: .get, maxBodyBytes: min(AgentIOSWeChatArticleLimits.imageBytes, maxBytes),
+      timeoutMillis: min(AgentIOSWeChatArticleLimits.imageTimeout, timeoutMillis),
       invocation: invocation, contentPolicy: .download)
     guard ["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"].contains(resource.contentType)
     else { throw AgentIOSWeChatArticlePDF.ExportError.articleUnavailable }

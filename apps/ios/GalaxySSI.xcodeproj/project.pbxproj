@@ -7,6 +7,15 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C44610000000000000000015 /* AgentIOSWeChatArticleExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000016 /* AgentIOSWeChatArticleExportTests.swift */; };
+    C44610000000000000000001 /* WeChatArticleExport.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000002 /* WeChatArticleExport.strings */; };
+    C44610000000000000000005 /* WeChatArticleExportNative.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000006 /* WeChatArticleExportNative.strings */; };
+    C44610000000000000000009 /* AgentIOSWeChatArticleExportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4461000000000000000000A /* AgentIOSWeChatArticleExportPolicy.swift */; };
+    C4461000000000000000000B /* AgentIOSWeChatArticleDOM.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4461000000000000000000C /* AgentIOSWeChatArticleDOM.swift */; };
+    C4461000000000000000000D /* AgentIOSWeChatArticlePDF.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4461000000000000000000E /* AgentIOSWeChatArticlePDF.swift */; };
+    C4461000000000000000000F /* AgentIOSWeChatArticleImages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000010 /* AgentIOSWeChatArticleImages.swift */; };
+    C44610000000000000000011 /* AgentIOSWeChatArticleRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000012 /* AgentIOSWeChatArticleRenderer.swift */; };
+    C44610000000000000000013 /* GalaxySSIWeChatBrowserSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44610000000000000000014 /* GalaxySSIWeChatBrowserSession.swift */; };
     C44470000000000000000001 /* AtlasGuidedSteps.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44470000000000000000002 /* AtlasGuidedSteps.strings */; };
     C44470000000000000000005 /* GalaxySSIHealthAtlasStructureSteps.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44470000000000000000006 /* GalaxySSIHealthAtlasStructureSteps.swift */; };
     C44470000000000000000007 /* GalaxySSIHealthAtlasStructureLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44470000000000000000008 /* GalaxySSIHealthAtlasStructureLegend.swift */; };
@@ -2167,6 +2176,17 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C44610000000000000000016 /* AgentIOSWeChatArticleExportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticleExportTests.swift; sourceTree = "<group>"; };
+    C44610000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/WeChatArticleExport.strings; sourceTree = "<group>"; };
+    C44610000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/WeChatArticleExport.strings"; sourceTree = "<group>"; };
+    C44610000000000000000007 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/WeChatArticleExportNative.strings; sourceTree = "<group>"; };
+    C44610000000000000000008 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/WeChatArticleExportNative.strings"; sourceTree = "<group>"; };
+    C4461000000000000000000A /* AgentIOSWeChatArticleExportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticleExportPolicy.swift; sourceTree = "<group>"; };
+    C4461000000000000000000C /* AgentIOSWeChatArticleDOM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticleDOM.swift; sourceTree = "<group>"; };
+    C4461000000000000000000E /* AgentIOSWeChatArticlePDF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticlePDF.swift; sourceTree = "<group>"; };
+    C44610000000000000000010 /* AgentIOSWeChatArticleImages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticleImages.swift; sourceTree = "<group>"; };
+    C44610000000000000000012 /* AgentIOSWeChatArticleRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWeChatArticleRenderer.swift; sourceTree = "<group>"; };
+    C44610000000000000000014 /* GalaxySSIWeChatBrowserSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWeChatBrowserSession.swift; sourceTree = "<group>"; };
     C44470000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AtlasGuidedSteps.strings; sourceTree = "<group>"; };
     C44470000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasGuidedSteps.strings"; sourceTree = "<group>"; };
     C44470000000000000000006 /* GalaxySSIHealthAtlasStructureSteps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasStructureSteps.swift; sourceTree = "<group>"; };
@@ -4937,6 +4957,12 @@
         C44470000000000000000006 /* GalaxySSIHealthAtlasStructureSteps.swift */,
         C44470000000000000000008 /* GalaxySSIHealthAtlasStructureLegend.swift */,
         C4447000000000000000000A /* GalaxySSIHealthAtlasFunctionEnlargement.swift */,
+        C4461000000000000000000A /* AgentIOSWeChatArticleExportPolicy.swift */,
+        C4461000000000000000000C /* AgentIOSWeChatArticleDOM.swift */,
+        C4461000000000000000000E /* AgentIOSWeChatArticlePDF.swift */,
+        C44610000000000000000010 /* AgentIOSWeChatArticleImages.swift */,
+        C44610000000000000000012 /* AgentIOSWeChatArticleRenderer.swift */,
+        C44610000000000000000014 /* GalaxySSIWeChatBrowserSession.swift */,
         C44440000000000000000008 /* GalaxySSIHealthAtlasRestoredDetailLink.swift */,
         C44430000000000000000008 /* GalaxySSIHealthAtlasRodResponse.swift */,
         C4443000000000000000000A /* GalaxySSIHealthAtlasRodMembraneDrawing.swift */,
@@ -5088,6 +5114,8 @@
         C44440000000000000000002 /* AtlasRelatedAnimations.strings */,
         C44450000000000000000002 /* AtlasIntegratedFigures.strings */,
         C44470000000000000000002 /* AtlasGuidedSteps.strings */,
+        C44610000000000000000002 /* WeChatArticleExport.strings */,
+        C44610000000000000000006 /* WeChatArticleExportNative.strings */,
         C44180000000000000000002 /* AtlasRelatedReadings.strings */,
         C44170000000000000000002 /* AtlasWholeActions.strings */,
         C44140000000000000000002 /* AtlasCompletionTeaching.strings */,
@@ -6191,6 +6219,7 @@
         A8967AB28E2E61CC057AEBD3 /* GalaxySSIHealthAtlasTests.swift */,
         C44350000000000000000008 /* GalaxySSIHealthAtlasChapterClockTests.swift */,
         C4444000000000000000000A /* GalaxySSIHealthAtlasLessonNavigationTests.swift */,
+        C44610000000000000000016 /* AgentIOSWeChatArticleExportTests.swift */,
         D22979000000000000000002 /* AgentActionEffectExecutorTests.swift */,
         D22980100000000000000001 /* AgentRuntimeTimingTests.swift */,
         D22981000000000000000002 /* AgentImagePipelineTests.swift */,
@@ -6553,6 +6582,8 @@
 /* End PBXGroup section */
 
 /* Begin PBXVariantGroup section */
+    C44610000000000000000002 /* WeChatArticleExport.strings */ = {isa = PBXVariantGroup; children = (C44610000000000000000003 /* en */, C44610000000000000000004 /* zh-Hans */,); name = WeChatArticleExport.strings; sourceTree = "<group>"; };
+    C44610000000000000000006 /* WeChatArticleExportNative.strings */ = {isa = PBXVariantGroup; children = (C44610000000000000000007 /* en */, C44610000000000000000008 /* zh-Hans */,); name = WeChatArticleExportNative.strings; sourceTree = "<group>"; };
     C44470000000000000000002 /* AtlasGuidedSteps.strings */ = {isa = PBXVariantGroup; children = (C44470000000000000000003 /* en */, C44470000000000000000004 /* zh-Hans */,); name = AtlasGuidedSteps.strings; sourceTree = "<group>"; };
     C44450000000000000000002 /* AtlasIntegratedFigures.strings */ = {isa = PBXVariantGroup; children = (C44450000000000000000003 /* en */, C44450000000000000000004 /* zh-Hans */,); name = AtlasIntegratedFigures.strings; sourceTree = "<group>"; };
     C44440000000000000000002 /* AtlasRelatedAnimations.strings */ = {isa = PBXVariantGroup; children = (C44440000000000000000003 /* en */, C44440000000000000000004 /* zh-Hans */, ); name = AtlasRelatedAnimations.strings; sourceTree = "<group>"; };
@@ -6677,7 +6708,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C44470000000000000000001 /* AtlasGuidedSteps.strings in Resources */, C44450000000000000000001 /* AtlasIntegratedFigures.strings in Resources */, C44440000000000000000001 /* AtlasRelatedAnimations.strings in Resources */, C44430000000000000000001 /* AtlasFilmCaptions.strings in Resources */, C44410000000000000000001 /* AtlasCellularCloseups.strings in Resources */, C44400000000000000000001 /* AtlasMechanismCloseups.strings in Resources */, C44390000000000000000001 /* AtlasSynchronizedLessons.strings in Resources */, C44380000000000000000001 /* AgentManualModelRecovery.strings in Resources */, C44370000000000000000001 /* AtlasResearchNavigation.strings in Resources */, C44360000000000000000001 /* AtlasCumulativeComparison.strings in Resources */, C44350000000000000000001 /* AtlasGuidedFunction.strings in Resources */, C44340000000000000000001 /* AtlasModelComparison.strings in Resources */, C44180000000000000000001 /* AtlasRelatedReadings.strings in Resources */, C44170000000000000000001 /* AtlasWholeActions.strings in Resources */, C44140000000000000000001 /* AtlasCompletionTeaching.strings in Resources */, C44120000000000000000001 /* AtlasPleuralTeaching.strings in Resources */, C44100000000000000000001 /* AtlasExchangeTeaching.strings in Resources */, C44070000000000000000001 /* AtlasPhaseTeaching.strings in Resources */, C44050000000000000000001 /* AtlasTransportTeaching.strings in Resources */, C44020000000000000000001 /* AtlasRegionalTeaching.strings in Resources */, C44010000000000000000001 /* AtlasOrganTeaching.strings in Resources */, C43990000000000000000001 /* AtlasSystemTeaching.strings in Resources */, C43970000000000000000007 /* AtlasTeaching.strings in Resources */, C43960000000000000000001 /* AtlasAnatomy.strings in Resources */, C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C44610000000000000000001 /* WeChatArticleExport.strings in Resources */, C44610000000000000000005 /* WeChatArticleExportNative.strings in Resources */, C44470000000000000000001 /* AtlasGuidedSteps.strings in Resources */, C44450000000000000000001 /* AtlasIntegratedFigures.strings in Resources */, C44440000000000000000001 /* AtlasRelatedAnimations.strings in Resources */, C44430000000000000000001 /* AtlasFilmCaptions.strings in Resources */, C44410000000000000000001 /* AtlasCellularCloseups.strings in Resources */, C44400000000000000000001 /* AtlasMechanismCloseups.strings in Resources */, C44390000000000000000001 /* AtlasSynchronizedLessons.strings in Resources */, C44380000000000000000001 /* AgentManualModelRecovery.strings in Resources */, C44370000000000000000001 /* AtlasResearchNavigation.strings in Resources */, C44360000000000000000001 /* AtlasCumulativeComparison.strings in Resources */, C44350000000000000000001 /* AtlasGuidedFunction.strings in Resources */, C44340000000000000000001 /* AtlasModelComparison.strings in Resources */, C44180000000000000000001 /* AtlasRelatedReadings.strings in Resources */, C44170000000000000000001 /* AtlasWholeActions.strings in Resources */, C44140000000000000000001 /* AtlasCompletionTeaching.strings in Resources */, C44120000000000000000001 /* AtlasPleuralTeaching.strings in Resources */, C44100000000000000000001 /* AtlasExchangeTeaching.strings in Resources */, C44070000000000000000001 /* AtlasPhaseTeaching.strings in Resources */, C44050000000000000000001 /* AtlasTransportTeaching.strings in Resources */, C44020000000000000000001 /* AtlasRegionalTeaching.strings in Resources */, C44010000000000000000001 /* AtlasOrganTeaching.strings in Resources */, C43990000000000000000001 /* AtlasSystemTeaching.strings in Resources */, C43970000000000000000007 /* AtlasTeaching.strings in Resources */, C43960000000000000000001 /* AtlasAnatomy.strings in Resources */, C43910000000000000000001 /* AtlasExpanded.strings in Resources */, C43890000000000000000001 /* AtlasDetail.strings in Resources */, C43880000000000000000001 /* AtlasComplete.strings in Resources */, C43850000000000000000001 /* AtlasRegional.strings in Resources */, C43840000000000000000010 /* AtlasFunction.strings in Resources */, 40A8F2E0933DD60C3E202D5C /* body-atlas in Resources */, 7E9C74C29FE3236437B57ACB /* BodyAtlas.strings in Resources */, E36400000000000000000003 /* vad in Resources */, A10000000000000000000000000737 /* voice in Resources */, C90000000000000000000001 /* local-models in Resources */, D10000000000000000000001 /* runtime-bootstrap in Resources */, F35620000000000000000001 /* browser-session-engine.cjs in Resources */, F35620000000000000000002 /* browser-runtime-readiness.cjs in Resources */, F12660000000000000000002 /* mermaid in Resources */, F12660000000000000000003 /* licenses in Resources */, A10000000000000000000889 /* Assets.xcassets in Resources */, A10000000000000000000890 /* Localizable.strings in Resources */, C43040000000000000000061 /* InfoPlist.strings in Resources */, A10000000000000000000467 /* trust-anchors.json in Resources */, E3699C000000000000000003 /* research-quality.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (E3699C000000000000000005 /* quality-cases.json in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
@@ -7274,6 +7305,12 @@
         C44470000000000000000005 /* GalaxySSIHealthAtlasStructureSteps.swift */,
         C44470000000000000000007 /* GalaxySSIHealthAtlasStructureLegend.swift */,
         C44470000000000000000009 /* GalaxySSIHealthAtlasFunctionEnlargement.swift */,
+        C44610000000000000000009 /* AgentIOSWeChatArticleExportPolicy.swift */,
+        C4461000000000000000000B /* AgentIOSWeChatArticleDOM.swift */,
+        C4461000000000000000000D /* AgentIOSWeChatArticlePDF.swift */,
+        C4461000000000000000000F /* AgentIOSWeChatArticleImages.swift */,
+        C44610000000000000000011 /* AgentIOSWeChatArticleRenderer.swift */,
+        C44610000000000000000013 /* GalaxySSIWeChatBrowserSession.swift */,
         C44440000000000000000007 /* GalaxySSIHealthAtlasRestoredDetailLink.swift */,
         C44430000000000000000007 /* GalaxySSIHealthAtlasRodResponse.swift in Sources */,
         C44430000000000000000009 /* GalaxySSIHealthAtlasRodMembraneDrawing.swift in Sources */,
@@ -8483,6 +8520,7 @@
         1AA5A2AD38BCAE4FA01FE49A /* GalaxySSIHealthAtlasTests.swift in Sources */,
         C44350000000000000000007 /* GalaxySSIHealthAtlasChapterClockTests.swift in Sources */,
         C44440000000000000000009 /* GalaxySSIHealthAtlasLessonNavigationTests.swift in Sources */,
+        C44610000000000000000015 /* AgentIOSWeChatArticleExportTests.swift in Sources */,
         D12979000000000000000002 /* AgentActionEffectExecutorTests.swift in Sources */,
         D12980100000000000000001 /* AgentRuntimeTimingTests.swift in Sources */,
         D12981000000000000000002 /* AgentImagePipelineTests.swift in Sources */,
