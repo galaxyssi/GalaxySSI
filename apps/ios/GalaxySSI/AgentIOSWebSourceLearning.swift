@@ -65,7 +65,9 @@ enum AgentIOSWebSourceLearningPolicy {
     ["bing.com", "baidu.com", "duckduckgo.com", "sogou.com", "search.brave.com",
      "marginalia-search.com", "wikipedia.org", "github.com", "gitlab.com", "stackexchange.com", "stackoverflow.com",
      "hn.algolia.com", "news.ycombinator.com", "lobste.rs", "reddit.com", "crossref.org", "semanticscholar.org",
-     "eutils.ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov", "crates.io", "npmjs.org", "npmjs.com", "developer.mozilla.org"] +
+     "eutils.ncbi.nlm.nih.gov", "pubmed.ncbi.nlm.nih.gov", "crates.io", "npmjs.org", "npmjs.com", "developer.mozilla.org",
+     "mojeek.com", "qwant.com", "yahoo.com", "yandex.com", "ecosia.org", "startpage.com", "naver.com", "google.com",
+     "x.com", "twitter.com", "mp.weixin.qq.com", "zhihu.com", "xiaohongshu.com", "arxiv.org", "devdocs.io", "pypi.org"] +
       AgentIOSWebIntelligenceSourceCatalog.indexedSources.flatMap(\.allowedHosts)
   )
 

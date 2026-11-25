@@ -10,8 +10,10 @@ enum AgentIOSJSONWebSearchAdapter {
     let template: String
     let authority: Double
     var languages: Set<String> = ["*"]
+    var enabledByDefault = true
     var spec: AgentIOSWebIntelligenceSourceSpec {
-      .init(id: id, title: title, vertical: vertical, allowedHosts: [], authority: authority, languages: languages)
+      .init(id: id, title: title, vertical: vertical, allowedHosts: [], authority: authority,
+        languages: languages, enabledByDefault: enabledByDefault)
     }
   }
 
@@ -54,13 +56,19 @@ enum AgentIOSJSONWebSearchAdapter {
   static func entry(_ id: String) -> Entry? { entries.first { $0.id == id } }
 
   static func requestURL(_ entry: Entry, query: String, limit: Int) throws -> URL {
-    guard var parts = URLComponents(string: entry.template.replacingOccurrences(of: "{query}", with: "GALAXYSSI_QUERY")
+    try requestURL(template: entry.template, query: query, limit: limit)
+  }
+
+  static func requestURL(template: String, query: String, limit: Int) throws -> URL {
+    guard var parts = URLComponents(string: template.replacingOccurrences(of: "+", with: "%20")
+      .replacingOccurrences(of: "{query}", with: "GALAXYSSI_QUERY")
       .replacingOccurrences(of: "{limit}", with: "GALAXYSSI_LIMIT")), parts.scheme == "https", parts.host != nil,
       parts.user == nil, parts.password == nil else { throw AgentIOSURLSessionWebError.invalidURL }
     parts.queryItems = parts.queryItems?.map {
       URLQueryItem(name: $0.name, value: $0.value?.replacingOccurrences(of: "GALAXYSSI_LIMIT", with: String(min(max(limit, 1), 100)))
         .replacingOccurrences(of: "GALAXYSSI_QUERY", with: query))
     }
+    parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
     guard let url = parts.url else { throw AgentIOSURLSessionWebError.invalidURL }
     return url
   }

@@ -7,13 +7,13 @@ final class AgentIOSIndexedWebSourceCatalogTests: XCTestCase {
     let sources = AgentIOSWebIntelligenceSourceCatalog.indexedSources
     XCTAssertEqual(sources.count, 247)
     XCTAssertEqual(Set(sources.map(\.id)).count, 247)
-    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineCount, 22)
-    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.sourceCount, 269)
+    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineCount, 41)
+    XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.sourceCount, 288)
     XCTAssertEqual(AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.count, 5)
     let agent = try XCTUnwrap(sources.first { $0.id == "openai_agents_sdk" })
     XCTAssertEqual(agent.scope, "openai.github.io/openai-agents-python")
     XCTAssertTrue(AgentIOSWebSearchEnginePolicy.supported.contains(agent.id))
-    XCTAssertFalse(AgentIOSWebSearchEnginePolicy.supported.contains("google"))
+    XCTAssertTrue(AgentIOSWebSearchEnginePolicy.supported.contains("google"))
   }
 
   func testCatalogDecodeRejectsWholeInvalidOrDuplicateSnapshots() throws {
@@ -92,7 +92,7 @@ final class AgentIOSIndexedWebSourceCatalogTests: XCTestCase {
 
   func testUnsupportedBaseAdapterDoesNotSilentlyFallBack() throws {
     let transport = IndexedCatalogTransport()
-    let result = try invoke("google", transport: transport)
+    let result = try invoke("unsupported_fixture_engine", transport: transport)
     XCTAssertFalse(result.isSuccess)
     XCTAssertTrue(transport.requests.isEmpty)
   }

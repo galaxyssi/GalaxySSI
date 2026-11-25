@@ -48,7 +48,8 @@ assert.equal(replaceOnce(read(engineFile),
 show(base, engineFile), 'Execution budget and validation unchanged except registered source set');
 for (const file of ['AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSPublicSearchParser.swift',
   'AgentIOSWebSourceHealth.swift', 'AgentIOSWebIntelligenceCache.swift']) {
-  assert.equal(read(app + file), show(base, app + file), file + ' unchanged');
+  const current = read(app + file).replace('    var retrievalStatus: String? = nil\n', '');
+  assert.equal(current, show(base, app + file), file + ' unchanged except optional local-reference hit metadata');
 }
 const loader = read(app + 'AgentIOSIndexedWebSourceCatalog.swift');
 for (const token of ['Bundle.main.url(forResource: "web-indexed-sources", withExtension: "json")',

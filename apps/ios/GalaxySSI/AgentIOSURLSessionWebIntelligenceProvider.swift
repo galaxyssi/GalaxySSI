@@ -419,6 +419,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       input: webSearchInput,
       invocation: invocation
     )
+    let networkAttempted = !(searchProvider is AgentIOSURLSessionWebMediaToolProvider && webResult.metadata["local_index_only"] == .bool(true))
     guard webResult.isSuccess else {
       guard !cachedResults.isEmpty else { return webResult }
       return searchSuccess(
@@ -428,7 +429,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         results: cachedResults,
         webResult: webResult,
         cacheHit: true,
-        networkAttempted: true
+        networkAttempted: networkAttempted
       )
     }
 
@@ -460,7 +461,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       results: resultObjects,
       webResult: webResult,
       cacheHit: !cachedResults.isEmpty,
-      networkAttempted: true
+      networkAttempted: networkAttempted
     )
     response.output["learning"] = .object(learning)
     if let cacheCommitted {
@@ -1385,6 +1386,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         "trust": .string("untrusted_public_web"),
         "source_receipt": .object(receipt)
       ]
+      if object["retrieval_status"] == .string("local_index_reference") {
+        result["retrieval_status"] = .string("local_index_reference")
+        evidence["retrieval_status"] = .string("local_index_reference")
+      }
       if object["vertical"] == .string("image"), let images = object["images"]?.arrayValue {
         result["vertical"] = .string("image")
         result["images"] = .array(images)

@@ -466,6 +466,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             return
           }
           let attemptStarted = nowMillis()
+          if endpoint.localIndex {
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider,
+              results: AgentIOSDevDocsSearchAdapter.search(query, limit: maxResults), didStart: true,
+              durationMillis: AgentIOSWebSourceHealth.elapsed(from: attemptStarted, to: nowMillis()), localIndex: true))
+            return
+          }
           do {
             let started = nowMillis()
             let requestDeadline = min(deadline, started + min(4_000, remaining))
@@ -491,6 +497,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query, invocation: searchInvocation)
             } else if let parser = endpoint.jsonParser {
               results = try AgentIOSJSONWebSearchAdapter.parse(resource.body, source: parser, limit: maxResults)
+            } else if endpoint.specialistParser == "arxiv" {
+              results = try AgentIOSArxivSearchAdapter.parse(resource.body, limit: maxResults,
+                isCancelled: { searchInvocation.isCancellationRequested })
+              if searchInvocation.isTimedOut { throw AgentIOSURLSessionWebError.timeout }
+            } else if let parser = endpoint.specialistParser {
+              results = try AgentIOSHTMLWebSearchAdapter.parse(html, id: parser, baseURL: resource.finalURL, limit: maxResults)
             } else {
               results = try parseSearchResults(html, baseURL: resource.finalURL,
                 maxResults: maxResults, allowedHosts: endpoint.allowedHosts, siteScope: endpoint.siteScope)
@@ -563,13 +575,13 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         var result = value
         result.metadata["circuits_skipped"] = .array(selection.skipped.map { .object($0.publicValue(now: nowMillis())) })
         result.metadata["source_health_receipts"] = .array(healthReceipts.map { .object($0.publicValue()) })
+        result.metadata["local_index_only"] = .bool(endpoints.allSatisfy(\.localIndex))
         if healthStore != nil { result.metadata["source_health_available"] = .bool(health != nil) }
         if let healthCommitted { result.metadata["source_health_write_committed"] = .bool(healthCommitted) }
         return result
       }
       if invocation.isCancellationRequested { return withHealth(failure(.cancelled)) }
-      guard let first = attempts.first(where: { !$0.results.isEmpty }),
-            let resource = first.resource else {
+      guard let first = attempts.first(where: { !$0.results.isEmpty }) else {
         if !completed {
           return withHealth(failure(.timeout))
         }
@@ -591,7 +603,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             weight: AgentIOSImageSearchRequestPolicy.weight($0.provider), authority: AgentIOSImageSearchRequestPolicy.authority($0.provider))
         }, limit: maxResults)
       }
-      for attempt in attempts where !imageSearch && attempt.resource != nil {
+      for attempt in attempts where !imageSearch && (attempt.resource != nil || attempt.localIndex) {
         for result in attempt.results {
           let identity = result.image?["url"]?.stringValue ?? result.url
           let key = URL(string: identity).map(canonicalURL) ?? identity.lowercased()
@@ -601,7 +613,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }
         if merged.count >= maxResults { break }
       }
-      var output = commonOutput(resource)
+      var output = first.resource.map(commonOutput) ?? ["retrieval_status": .string("local_index_reference")]
       output["query"] = .string(query)
       output["results"] = .array(merged.map { result in
         var value: AgentMcpJSONObject = [
@@ -615,6 +627,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           value["images"] = .array([.object(image)])
           value["lead_image_url"] = image["url"]
         }
+        if let status = result.retrievalStatus { value["retrieval_status"] = .string(status) }
         return .object(value)
       })
       output["result_count"] = .int(Int64(merged.count))
@@ -1281,6 +1294,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
     var endpoints = try routing.selected.map { source -> AgentIOSWebSearchEndpoint in
+      if source.id == AgentIOSDevDocsSearchAdapter.entry.id {
+        guard let url = URL(string: AgentIOSDevDocsSearchAdapter.entry.template) else { throw AgentIOSURLSessionWebError.invalidURL }
+        return AgentIOSWebSearchEndpoint(provider: source.id, url: url, localIndex: true)
+      }
+      if let adapter = AgentIOSHTMLWebSearchAdapter.entry(source.id) ??
+        (source.id == AgentIOSArxivSearchAdapter.entry.id ? AgentIOSArxivSearchAdapter.entry : nil) {
+        let url = try AgentIOSJSONWebSearchAdapter.requestURL(adapter, query: query, limit: maxResults)
+        return AgentIOSWebSearchEndpoint(provider: source.id,
+          url: try validatedPublicHTTPSURL(url.absoluteString), specialistParser: source.id)
+      }
       if let api = AgentIOSJSONWebSearchAdapter.entry(source.id) {
         let url = try AgentIOSJSONWebSearchAdapter.requestURL(api, query: query, limit: maxResults)
         return AgentIOSWebSearchEndpoint(provider: source.id,
@@ -2109,6 +2132,8 @@ private struct AgentIOSWebSearchEndpoint {
   var imageSearch = false
   var siteScope: String? = nil
   var jsonParser: String? = nil
+  var specialistParser: String? = nil
+  var localIndex = false
 }
 
 private struct AgentIOSWebSearchAttempt {
@@ -2119,6 +2144,7 @@ private struct AgentIOSWebSearchAttempt {
   var error: AgentIOSURLSessionWebError?
   var didStart: Bool
   var durationMillis: Int64
+  var localIndex: Bool
 
   init(
     index: Int,
@@ -2127,7 +2153,8 @@ private struct AgentIOSWebSearchAttempt {
     results: [AgentIOSWebSearchResult] = [],
     error: AgentIOSURLSessionWebError? = nil,
     didStart: Bool = false,
-    durationMillis: Int64 = 0
+    durationMillis: Int64 = 0,
+    localIndex: Bool = false
   ) {
     self.index = index
     self.provider = provider
@@ -2136,6 +2163,7 @@ private struct AgentIOSWebSearchAttempt {
     self.error = error
     self.didStart = didStart
     self.durationMillis = durationMillis
+    self.localIndex = localIndex
   }
 
   var healthReceipt: AgentIOSWebSourceReceipt? {

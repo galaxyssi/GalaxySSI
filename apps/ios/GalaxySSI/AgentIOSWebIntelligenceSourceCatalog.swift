@@ -80,6 +80,7 @@ struct AgentIOSWebIntelligenceSourceSpec: Equatable {
   var indexEngine = "bing"
   var scope: String? = nil
   var languages: Set<String> = ["*"]
+  var enabledByDefault = true
 }
 
 struct AgentIOSWebIntelligenceSourceSelection: Equatable {
@@ -98,15 +99,17 @@ enum AgentIOSWebIntelligenceQueryRouting {
   ) -> AgentIOSWebIntelligenceSourceSelection {
     let learned = learnedSources.filter(\.isSearchEligible).sorted { $0.sourceID < $1.sourceID }
       .enumerated().compactMap { $0.element.searchSpec(index: $0.offset + AgentIOSWebIntelligenceSourceCatalog.sourceCount) }
-    let catalog = AgentIOSJSONWebSearchAdapter.entries.map(\.spec) + AgentIOSWebIntelligenceSourceCatalog.indexedSources + learned
+    let catalog = AgentIOSJSONWebSearchAdapter.entries.map(\.spec) + AgentIOSHTMLWebSearchAdapter.entries.map(\.spec) +
+      [AgentIOSArxivSearchAdapter.entry.spec, AgentIOSDevDocsSearchAdapter.entry.spec] +
+      AgentIOSWebIntelligenceSourceCatalog.indexedSources + learned
     let categories = Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory))
     let explicit = catalog.filter {
       requestedEngineIds.contains($0.id)
     }
     let candidates = explicit.isEmpty
       ? catalog.filter {
-        requestedVerticals.contains($0.vertical) || categories.contains($0.vertical.rawValue) ||
-          !categories.isDisjoint(with: $0.categoryTags)
+        $0.enabledByDefault && (requestedVerticals.contains($0.vertical) || categories.contains($0.vertical.rawValue) ||
+          !categories.isDisjoint(with: $0.categoryTags))
       }
       : explicit
     let language = queryLanguage(query)
@@ -155,6 +158,8 @@ enum AgentIOSWebIntelligenceQueryRouting {
 enum AgentIOSWebIntelligenceSourceCatalog {
   static let baseSearchEngineIDs: Set<String> = Set(["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"])
     .union(AgentIOSJSONWebSearchAdapter.entries.map(\.id))
+    .union(AgentIOSHTMLWebSearchAdapter.entries.map(\.id))
+    .union([AgentIOSArxivSearchAdapter.entry.id, AgentIOSDevDocsSearchAdapter.entry.id])
   static let indexedSources = AgentIOSIndexedWebSourceCatalog.sources
   static var baseSearchEngineCount: Int { baseSearchEngineIDs.count }
   static var indexedSourceCount: Int { indexedSources.count }

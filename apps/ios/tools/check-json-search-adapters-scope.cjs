@@ -12,6 +12,9 @@ function replaceOnce(value, before, after) {
   return value.replace(before, after);
 }
 function retainedJSONProvider(source) {
+  if (source.includes('          if endpoint.localIndex {')) {
+    source = require('./check-additional-search-adapters-scope.cjs').retainedAdditionalProvider(source);
+  }
   for (const [before, after] of [
     ['            } else if let parser = endpoint.jsonParser {\n              results = try AgentIOSJSONWebSearchAdapter.parse(resource.body, source: parser, limit: maxResults)\n', ''],
     ['      if let api = AgentIOSJSONWebSearchAdapter.entry(source.id) {\n        let url = try AgentIOSJSONWebSearchAdapter.requestURL(api, query: query, limit: maxResults)\n        return AgentIOSWebSearchEndpoint(provider: source.id,\n          url: try validatedPublicHTTPSURL(url.absoluteString), jsonParser: source.id)\n      }\n', ''],
@@ -53,7 +56,8 @@ if (require.main === module) {
     'token.utf8.count <= 8192', '(33...126).contains($0.value)']) assert(adapter.includes(token), token);
   for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSPublicSearchParser.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) {
-    assert.equal(read(app + name), show(base, app + name), name + ' retained');
+    const current = read(app + name).replace('    var retrievalStatus: String? = nil\n', '');
+    assert.equal(current, show(base, app + name), name + ' retained (optional local-reference hit metadata only)');
   }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSJSONWebSearchAdapterTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 8);

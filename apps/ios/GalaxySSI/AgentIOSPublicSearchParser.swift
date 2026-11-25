@@ -7,6 +7,7 @@ enum AgentIOSPublicSearchParser {
     var url: String
     var excerpt: String
     var image: AgentMcpJSONObject? = nil
+    var retrievalStatus: String? = nil
   }
 
   static func sogouImages(_ source: String, limit: Int) throws -> [Hit] {
