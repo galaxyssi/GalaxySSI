@@ -13,12 +13,16 @@ struct GalaxySSIHealthAtlasLabeledArtwork: View {
   var minimumHeight: CGFloat = 300
   var subjectFocus = CGPoint(x: 0.54, y: 0.22)
   var onSubject: ((CGPoint) -> Void)? = nil
+  var numbered = false
+  var highlightedID: String? = nil
+  var language = "en"
   let onSelect: (String) -> Void
   @State private var height: CGFloat = 360
   var body: some View {
     GalaxySSIAtlasLabeledScroll(asset: asset, aspectRatio: aspectRatio, zoom: $zoom, height: $height,
       currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: splitCallouts,
-      minimumHeight: minimumHeight, subjectFocus: subjectFocus, onSubject: onSubject, onSelect: onSelect)
+      minimumHeight: minimumHeight, subjectFocus: subjectFocus, onSubject: onSubject,
+      numbered: numbered, highlightedID: highlightedID, language: language, onSelect: onSelect)
       .frame(height: height)
   }
 }
@@ -36,6 +40,9 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   let minimumHeight: CGFloat
   let subjectFocus: CGPoint
   let onSubject: ((CGPoint) -> Void)?
+  let numbered: Bool
+  let highlightedID: String?
+  let language: String
   let onSelect: (String) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -128,39 +135,59 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       let unchanged = previous.map { old in
         old.asset == input.asset && old.aspectRatio == input.aspectRatio && old.currentID == input.currentID &&
           old.splitCallouts == input.splitCallouts && old.minimumHeight == input.minimumHeight &&
+          old.numbered == input.numbered && old.language == input.language &&
           old.labels == input.labels && old.featureIDs == input.featureIDs && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
           old.spots.map({ $0.1 }) == input.spots.map({ $0.1 }) && old.spots.map({ $0.2 }) == input.spots.map({ $0.2 })
       } ?? false
-      if unchanged, fontCategory == traitCollection.preferredContentSizeCategory { return }
+      if unchanged, fontCategory == traitCollection.preferredContentSizeCategory { highlight(); return }
       fontCategory = traitCollection.preferredContentSizeCategory
       image.image = UIImage(named: input.asset)
       buttons.forEach { $0.removeFromSuperview() }; buttons = []
+      let numbers = NumberFormatter()
+      numbers.locale = Locale(identifier: input.language); numbers.numberStyle = .decimal; numbers.usesGroupingSeparator = false
       for (index, spot) in input.spots.enumerated() {
         let button = UIButton(type: .system)
-        button.setTitle(input.labels.indices.contains(index) ? input.labels[index] : spot.0, for: .normal)
-        button.titleLabel?.text = input.labels.indices.contains(index) ? input.labels[index] : spot.0
+        let feature = input.featureIDs.contains(spot.0)
+        let current = !feature && spot.0 == input.currentID
+        let name = input.labels.indices.contains(index) ? input.labels[index] : spot.0
+        let title = input.numbered ? (numbers.string(from: NSNumber(value: index + 1)) ?? String(index + 1)) : name
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.text = title
+        button.accessibilityLabel = name
         button.titleLabel?.numberOfLines = 0
         button.titleLabel?.lineBreakMode = .byWordWrapping
-        button.titleLabel?.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+        button.titleLabel?.font = input.numbered ?
+          UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 13, weight: current ? .semibold : .regular), compatibleWith: traitCollection) :
+          .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
-        let split = input.splitCallouts && input.spots.contains { $0.1 < 0.5 } && input.spots.contains { $0.1 >= 0.5 }
+        let split = !input.numbered && input.splitCallouts && input.spots.contains { $0.1 < 0.5 } && input.spots.contains { $0.1 >= 0.5 }
         let left = split && spot.1 < 0.5
-        button.contentHorizontalAlignment = left ? .right : .left
-        button.titleLabel?.textAlignment = left ? .right : .left
+        button.contentHorizontalAlignment = input.numbered ? .center : left ? .right : .left
+        button.titleLabel?.textAlignment = input.numbered ? .center : left ? .right : .left
         button.contentEdgeInsets = UIEdgeInsets(top: 8, left: left ? 0 : 6, bottom: 8, right: split && !left ? 0 : 6)
         button.setTitleColor(.label, for: .normal); button.setTitleColor(.label, for: .disabled)
         button.setTitleColor(GalaxySSIHealthTheme.accentUIColor, for: [.selected, .disabled])
-        let feature = input.featureIDs.contains(spot.0)
-        button.isSelected = !feature && spot.0 == input.currentID; button.isEnabled = !button.isSelected
+        button.isSelected = current; button.isEnabled = !button.isSelected
         if button.isSelected { button.accessibilityTraits.insert(.isSelected) }
         button.accessibilityIdentifier = (feature ? "atlas-feature-" : "atlas-structure-label-") + spot.0
         button.addAction(UIAction { [weak self] _ in self?.input?.onSelect(spot.0) }, for: .touchUpInside)
         addSubview(button); buttons.append(button)
       }
-      accessibilityElements = input.spots.indices.sorted {
+      accessibilityElements = input.numbered ? buttons : input.spots.indices.sorted {
         input.spots[$0].2 == input.spots[$1].2 ? input.spots[$0].1 < input.spots[$1].1 : input.spots[$0].2 < input.spots[$1].2
       }.map { buttons[$0] }
+      highlight()
       setNeedsLayout()
+    }
+    private func highlight() {
+      guard let input else { return }
+      for (index, button) in buttons.enumerated() where input.spots.indices.contains(index) {
+        let highlighted = input.spots[index].0 == input.highlightedID
+        button.alpha = !input.numbered || input.highlightedID == nil || highlighted ? 1 : 0.55
+        let color = highlighted || button.isSelected ? GalaxySSIHealthTheme.accentUIColor : UIColor.label
+        button.setTitleColor(color, for: .normal); button.setTitleColor(color, for: .disabled)
+      }
+      guides.setNeedsDisplay()
     }
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
       super.traitCollectionDidChange(previousTraitCollection)
@@ -185,7 +212,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       return GalaxySSIHealthAtlasCalloutLayout.make(width: width, aspectRatio: input.aspectRatio,
         anchors: input.spots.map { CGPoint(x: $0.1, y: $0.2) }, splitRequested: input.splitCallouts,
         accessibility: traitCollection.preferredContentSizeCategory.isAccessibilityCategory,
-        preferredWidths: preferred, minimumHeight: input.minimumHeight,
+        preferredWidths: preferred, minimumHeight: input.minimumHeight, numbered: input.numbered,
         measureHeight: { self.labelHeight(self.buttons[$0], width: $1) })
     }
     func requiredHeight(width: CGFloat) -> CGFloat { plan(width: width)?.height ?? 300 }
@@ -213,14 +240,16 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
     }
     private func drawGuides() {
       guard let input, let context = UIGraphicsGetCurrentContext() else { return }
-      context.setStrokeColor(UIColor.label.cgColor); context.setLineWidth(1)
+      context.setStrokeColor((input.numbered ? UIColor.secondaryLabel.withAlphaComponent(112.0 / 255) : UIColor.label).cgColor)
+      context.setLineWidth(1)
       for route in routes where route.count > 1 {
         context.addLines(between: route); context.strokePath()
       }
-      context.setFillColor(GalaxySSIHealthTheme.accentUIColor.cgColor)
       for spot in input.spots {
         let point = CGPoint(x: imageRect.minX + imageRect.width * CGFloat(spot.1), y: imageRect.minY + imageRect.height * CGFloat(spot.2))
-        let radius: CGFloat = spot.0 == input.currentID ? 5 : 3
+        let active = spot.0 == input.currentID || spot.0 == input.highlightedID
+        let radius: CGFloat = active ? 5 : 3
+        context.setFillColor(GalaxySSIHealthTheme.accentUIColor.withAlphaComponent(input.numbered && !active ? 128.0 / 255 : 1).cgColor)
         context.fillEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
       }
     }

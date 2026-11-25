@@ -1,0 +1,149 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4447,
+    "mergeCommit": "6794ac7c1af23526a6218421606a58aa77b7dc21"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "638565804717b0c973c9cc90f2162e695f7e30fcdc122225976058dbe1970316",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCalloutDeviceTest.kt",
+      "sourceSHA256": "2752663bf2f56894183fb0381827e072774e194ef7bccebde387c4af21cb6a28",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-guided-steps-scope.cjs"
+      ],
+      "note": "HealthAtlasCalloutDeviceTest.kt: source-reference review of 280/380/720 note/art separation and leader/label-clearance sweeps, all chapter height samples, native enlargement/current-chapter/playhead retention, generalized popup navigation and per-landmark recreation/progression screenshots. Added native fixture sources for geometry/ordered landmarks/bounded cache/frozen clock, NOT executed. No native iOS screenshot/device/gesture/pixel/recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "41ee1c8ce7fbd999e0767d0916fac845da58e6b601dd90878a5276bcde45408a",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-guided-steps-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: source-reference review of 280/380/720 note/art separation and leader/label-clearance sweeps, all chapter height samples, native enlargement/current-chapter/playhead retention, generalized popup navigation and per-landmark recreation/progression screenshots. Added native fixture sources for geometry/ordered landmarks/bounded cache/frozen clock, NOT executed. No native iOS screenshot/device/gesture/pixel/recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRelatedLessonTestNavigation.kt",
+      "sourceSHA256": "2bf5f4aa16c8e749af182d7a3eb88dbe78916a7c80e785c9221f185ad5a85fb3",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-guided-steps-scope.cjs"
+      ],
+      "note": "HealthAtlasRelatedLessonTestNavigation.kt: source-reference review of 280/380/720 note/art separation and leader/label-clearance sweeps, all chapter height samples, native enlargement/current-chapter/playhead retention, generalized popup navigation and per-landmark recreation/progression screenshots. Added native fixture sources for geometry/ordered landmarks/bounded cache/frozen clock, NOT executed. No native iOS screenshot/device/gesture/pixel/recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthBodyAtlasDeviceTest.kt",
+      "sourceSHA256": "e42314425802e131f7e070a7c3075395be9d3aec028992eca885d0c2f0990a0c",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-guided-steps-scope.cjs"
+      ],
+      "note": "HealthBodyAtlasDeviceTest.kt: source-reference review of 280/380/720 note/art separation and leader/label-clearance sweeps, all chapter height samples, native enlargement/current-chapter/playhead retention, generalized popup navigation and per-landmark recreation/progression screenshots. Added native fixture sources for geometry/ordered landmarks/bounded cache/frozen clock, NOT executed. No native iOS screenshot/device/gesture/pixel/recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndocrinePath.kt",
+      "sourceSHA256": "2ed67236dcf319c7797fcfba099520813a4128e06b717a64fc0fa9047db22226",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasEndocrinePathView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFigureFrame.kt",
+      "sourceSHA256": "ff6c28674e67c77936e44af21bfc5c8b451a9b6d99baea9b9e6c715f17e08ea9",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFigureFrame.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "sourceSHA256": "23ace4c5bdf2c16c539a33444b70222d5ef7682d8889eec649fc444c806634e6",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlayer.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionScene.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlaybackMenu.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionEnlargement.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLabeledImage.kt",
+      "sourceSHA256": "23022de7d9c50a877ab305a460e0ebda108a5c23a313143673ce60c454f5711a",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCalloutLayout.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "cb4d9bbec635a9a6449b0a11e900459fd4d81af11d5bf11fee35cba7dbc3a38c",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStructureSteps.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStructureLegend.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLabeledArtwork.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "8b6f58e2ac528b3ea240cd7bf0622c51853316b12ff83b1c1f7357675a9260f3",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStructureSteps.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasArtwork.swift"
+      ],
+      "note": "Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "b3f71051ddc08a77895725e0164e4bbee0d20636844c70de1163f1c5161edb0c",
+      "kind": "exact-resource-delta-with-neutral-ratio",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasGuidedSteps.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasGuidedSteps.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Two exact English/Chinese translated pairs plus explicitly pinned integer-placeholder/slash ratio %1$d/%2$d, shared as a language-neutral format, three entries per locale. The source ratio is not marked translatable=false and is not counted as a translated pair."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "7f41c4dffad18bcb93d0074e74f09d00b91d68691dd5f6983cbb551719bf81ce",
+      "kind": "exact-resource-delta-with-neutral-ratio",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasGuidedSteps.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasGuidedSteps.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Two exact English/Chinese translated pairs plus explicitly pinned integer-placeholder/slash ratio %1$d/%2$d, shared as a language-neutral format, three entries per locale. The source ratio is not marked translatable=false and is not counted as a translated pair."
+    }
+  ]
+}

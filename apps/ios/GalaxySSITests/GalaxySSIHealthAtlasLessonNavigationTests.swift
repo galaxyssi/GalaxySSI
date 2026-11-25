@@ -141,35 +141,91 @@ final class GalaxySSIHealthAtlasLessonNavigationTests: XCTestCase {
     XCTAssertEqual(replay.lessonNavigation.path.count, 1)
   }
   func testFigureNoteLayoutAndLegacyBottomInsetDefaults() throws {
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: 80, overlay: true, side: false), 40)
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: 120, overlay: true, side: false), 46)
-    XCTAssertEqual(GalaxySSIHealthAtlasFigureLayout.overlap(legend: .nan, overlay: true, side: false), 0)
     let layout = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 320, aspectRatio: 1,
       anchors: [CGPoint(x: 0.8, y: 1)], splitRequested: false, accessibility: false,
       preferredWidths: [80], legendInset: 28, minimumHeight: 266, measureHeight: { _, _ in 80 }))
     XCTAssertLessThanOrEqual(try XCTUnwrap(layout.labelFrames.first).maxY, layout.height - 36)
   }
-  func testAtlasAnnotationColumnsShortWindowAndMappedLeaderEndpoints() throws {
+  func testAtlasUniformSideColumnsAndMappedLeaderEndpoints() throws {
     typealias Layout = GalaxySSIHealthAtlasFigureLayout
-    XCTAssertFalse(Layout.columns(width: 579, preferSide: false, overlay: true).side)
-    XCTAssertTrue(Layout.columns(width: 580, preferSide: false, overlay: true).side)
-    XCTAssertFalse(Layout.columns(width: 279, preferSide: true, overlay: false).side)
-    XCTAssertTrue(Layout.columns(width: 280, preferSide: true, overlay: false).side)
-    XCTAssertEqual(Layout.columns(width: 1000, preferSide: false, overlay: true).noteWidth, 328)
-    let short = Layout.columns(width: 390, preferSide: false, overlay: false,
-      maximumHeight: 250, headerHeight: 40, legendHeight: 80)
-    XCTAssertTrue(short.side)
-    XCTAssertEqual(short.noteWidth, 171.6, accuracy: 0.001)
-    XCTAssertEqual(Layout.overlap(legend: 100, overlay: true, side: true), 0)
-    XCTAssertEqual(Layout.overlap(legend: 100, overlay: false, side: false), 0)
+    for width in [CGFloat(280), 319, 320, 380, 720, 1000] {
+      let columns = Layout.columns(width: width)
+      XCTAssertEqual(columns.noteWidth, min(width * 0.4, 328))
+      XCTAssertEqual(columns.edge, width < 320 ? 8 : 12)
+      XCTAssertEqual(columns.gutter, width < 320 ? 8 : 16)
+      XCTAssertEqual(columns.artWidth + columns.noteWidth + columns.edge * 2 + columns.gutter, width, accuracy: 0.001)
+    }
     let subject = try XCTUnwrap(Layout.subject(in: CGRect(x: 20, y: 30, width: 100, height: 200),
       aspectRatio: 2, focus: CGPoint(x: 0.8, y: 0.2)))
     XCTAssertEqual(subject.x, 100, accuracy: 0.001)
     XCTAssertEqual(subject.y, 115, accuracy: 0.001)
     let points = Layout.leader(note: CGRect(x: 12, y: 12, width: 100, height: 80),
-      art: CGRect(x: 128, y: 12, width: 200, height: 300), side: true, target: CGPoint(x: -10, y: 999))
+      art: CGRect(x: 128, y: 12, width: 200, height: 300), gutter: 16, function: false, target: CGPoint(x: -10, y: 999))
     XCTAssertEqual(points.last, CGPoint(x: 128, y: 312))
     XCTAssertEqual(points.first, CGPoint(x: 112, y: 52))
+    let center = Layout.leader(note: CGRect(x: 0, y: 0, width: 80, height: 80),
+      art: CGRect(x: 96, y: 0, width: 200, height: 200), gutter: 16, function: true, target: nil)
+    XCTAssertEqual(center.last, CGPoint(x: 196, y: 84))
+  }
+  func testEveryLandmarkViewRestoresItsStepAndOverviewRemovesTheCacheEntry() throws {
+    let (atlas, _, _) = try fixture()
+    var checked = 0
+    for owner in [""] + atlas.entries.map(\.id) {
+      for plate in atlas.views(for: owner.isEmpty ? nil : owner) where plate.hasLabels {
+        let landmarks = GalaxySSIHealthAtlasLandmarks.list(plate, atlas: atlas)
+        XCTAssertFalse(landmarks.isEmpty)
+        XCTAssertEqual(Set(landmarks.map(\.id)), Set(plate.markers.map(\.id) + plate.annotations.map(\.id)))
+        XCTAssertTrue(zip(landmarks, landmarks.dropFirst()).allSatisfy { pair in pair.0.point.y <= pair.1.point.y })
+        var steps = GalaxySSIHealthAtlasStructureSteps()
+        steps.select(1, owner: owner, view: plate.viewKey ?? "", count: landmarks.count)
+        let restored = GalaxySSIHealthAtlasStructureSteps.restore(steps.serialized, atlas: atlas)
+        XCTAssertEqual(restored.position(owner: owner, view: plate.viewKey ?? "", count: landmarks.count), 1)
+        steps.select(999, owner: owner, view: plate.viewKey ?? "", count: landmarks.count)
+        XCTAssertEqual(steps.position(owner: owner, view: plate.viewKey ?? "", count: landmarks.count), landmarks.count)
+        steps.select(0, owner: owner, view: plate.viewKey ?? "", count: landmarks.count)
+        XCTAssertTrue(steps.steps.isEmpty)
+        checked += 1
+      }
+    }
+    XCTAssertGreaterThan(checked, 1)
+  }
+  func testStepsHaveIndependentViewsAndBoundedValidatedStorage() throws {
+    let (atlas, _, _) = try fixture()
+    var steps = GalaxySSIHealthAtlasStructureSteps()
+    let exterior = try XCTUnwrap(atlas.views(for: "heart").first { $0.viewKey == "heart-exterior" })
+    let section = try XCTUnwrap(atlas.views(for: "heart").first { $0.viewKey == "heart-section" })
+    let exteriorCount = GalaxySSIHealthAtlasLandmarks.list(exterior, atlas: atlas).count
+    let sectionCount = GalaxySSIHealthAtlasLandmarks.list(section, atlas: atlas).count
+    steps.select(1, owner: "heart", view: "heart-exterior", count: exteriorCount)
+    steps.select(2, owner: "heart", view: "heart-section", count: sectionCount)
+    let restored = GalaxySSIHealthAtlasStructureSteps.restore(steps.serialized, atlas: atlas)
+    XCTAssertEqual(restored.position(owner: "heart", view: "heart-exterior", count: exteriorCount), 1)
+    XCTAssertEqual(restored.position(owner: "heart", view: "heart-section", count: sectionCount), min(2, sectionCount))
+    steps = .init()
+    steps.select(1, owner: "heart", view: "front", count: 3)
+    steps.select(2, owner: "heart", view: "back", count: 3)
+    XCTAssertEqual(steps.position(owner: "heart", view: "front", count: 3), 1)
+    XCTAssertEqual(steps.position(owner: "heart", view: "back", count: 3), 2)
+    XCTAssertTrue(GalaxySSIHealthAtlasStructureSteps.restore(steps.serialized, atlas: atlas).steps.isEmpty)
+    for index in 0...400 { steps.select(1, owner: "unknown-\(index)", view: "", count: 1) }
+    XCTAssertEqual(steps.steps.count, 400)
+    XCTAssertEqual(steps.steps.first?.owner, "unknown-1")
+    XCTAssertTrue(GalaxySSIHealthAtlasStructureSteps.restore(steps.serialized, atlas: atlas).steps.isEmpty)
+    XCTAssertTrue(GalaxySSIHealthAtlasStructureSteps.restore(String(repeating: "x", count: 128_001), atlas: atlas).steps.isEmpty)
+  }
+  func testNumberedRailsStayCompactAndEnlargedFrameDoesNotAdvanceTheClock() throws {
+    let numbered = try XCTUnwrap(GalaxySSIHealthAtlasCalloutLayout.make(width: 140, aspectRatio: 1,
+      anchors: [CGPoint(x: 0.2, y: 0.3), CGPoint(x: 0.8, y: 0.7)], splitRequested: true, accessibility: true,
+      preferredWidths: [100, 100], numbered: true, measureHeight: { _, _ in 48 }))
+    XCTAssertFalse(numbered.split)
+    XCTAssertEqual(numbered.rightWidth, 48)
+    var clock = GalaxySSIHealthAtlasChapterClock(chapters: 5, phase: 0.43)
+    clock.resume(1000); clock.pause(2000)
+    let before = clock.sample(2000)
+    let snapshot = GalaxySSIHealthAtlasEnlargedFrame(id: "HEARTBEAT", phase: before)
+    XCTAssertEqual(clock.sample(50_000), before)
+    XCTAssertEqual(snapshot.phase, before)
+    XCTAssertFalse(clock.playing)
   }
   func testSearchSurfaceIsolationAndMalformedArchiveRejection() throws {
     let (atlas, _, aorta) = try fixture()

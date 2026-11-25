@@ -16,6 +16,7 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var position: Double
   @State private var clock: GalaxySSIHealthAtlasChapterClock
+  @State private var enlargement: GalaxySSIHealthAtlasEnlargedFrame?
   private var playing: Bool { clock.playing }
   private let timer = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
   init(story: GalaxySSIHealthAtlasFunctionCatalogue.Story, language: String, phase: Binding<Double>,
@@ -46,8 +47,13 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
         control("forward.step", "next_step") { skip(1) }
         Spacer()
         GalaxySSIHealthAtlasFunctionPlaybackMenu(story: story, language: language, phase: position,
-          seek: { stop(); setPosition($0); commit() }, pause: pause, related: related)
+          seek: { stop(); setPosition($0); commit() }, pause: pause, related: related, enlarge: {
+            pause()
+            enlargement = .init(id: story.id, phase: reduceMotion ? story.startOf(story.chapter(position)) : position)
+          })
       }.disabled(previewPresented).accessibilityIdentifier("atlas-function-controls")
+    }.fullScreenCover(item: $enlargement) { snapshot in
+      GalaxySSIHealthAtlasFunctionEnlargement(title: text(story.title), language: language, artwork: artwork(snapshot.phase))
     }.accessibilityIdentifier("atlas-function-player")
       .onAppear { onPhase(position) }
       .onChange(of: phase) { value in

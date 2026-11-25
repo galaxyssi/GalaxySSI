@@ -16,9 +16,10 @@ const cellular = process.argv.includes("--cellular-closeups-4441");
 const film = process.argv.includes("--film-captions-4443");
 const related = process.argv.includes("--related-menu-4444");
 const integrated = process.argv.includes("--integrated-figures-4445");
-const sourceSHA = integrated ? "9ec28d754459358556c570134171c79b55951982" : related ? "556cd2c8e452fea8a299e80fc44e03471a7d14ca" : film ? "c63bffe14e00a4c60e52aec68b6753f7547be308" : cellular ? "94d3e3a33be621a5ae17c62c7082a6ea912bdfd2" : closeups ? "5fecc676dac71a5ef7128f6ec5893e69660b5746" : scenes ? "eef7fd41df84c075cbc0ba046cca6ab6a5b59bf7" : research ? "dbbd6554d7cd632c6eb99f705e5a4b38ff42a3cb" : cumulative ? "de63c7dd3c883b8724da0f4366d6e078c1882a75" : guided ? "83188e7ce30a174e766e68fcf4db6f751a046d7a" : comparison ? "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc" : readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
-const sourceRevision = integrated ? 4445 : related ? 4444 : film ? 4443 : cellular ? 4441 : closeups ? 4440 : scenes ? 4439 : research ? 4437 : cumulative ? 4436 : guided ? 4435 : comparison ? 4434 : readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
-const sourceTable = integrated ? "AtlasIntegratedFigures" : related ? "AtlasRelatedAnimations" : film ? "AtlasFilmCaptions" : cellular ? "AtlasCellularCloseups" : closeups ? "AtlasMechanismCloseups" : scenes ? "AtlasSynchronizedLessons" : research ? "AtlasResearchNavigation" : cumulative ? "AtlasCumulativeComparison" : guided ? "AtlasGuidedFunction" : comparison ? "AtlasModelComparison" : readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
+const stepGuide = process.argv.includes("--guided-steps-4447");
+const sourceSHA = stepGuide ? "6794ac7c1af23526a6218421606a58aa77b7dc21" : integrated ? "9ec28d754459358556c570134171c79b55951982" : related ? "556cd2c8e452fea8a299e80fc44e03471a7d14ca" : film ? "c63bffe14e00a4c60e52aec68b6753f7547be308" : cellular ? "94d3e3a33be621a5ae17c62c7082a6ea912bdfd2" : closeups ? "5fecc676dac71a5ef7128f6ec5893e69660b5746" : scenes ? "eef7fd41df84c075cbc0ba046cca6ab6a5b59bf7" : research ? "dbbd6554d7cd632c6eb99f705e5a4b38ff42a3cb" : cumulative ? "de63c7dd3c883b8724da0f4366d6e078c1882a75" : guided ? "83188e7ce30a174e766e68fcf4db6f751a046d7a" : comparison ? "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc" : readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
+const sourceRevision = stepGuide ? 4447 : integrated ? 4445 : related ? 4444 : film ? 4443 : cellular ? 4441 : closeups ? 4440 : scenes ? 4439 : research ? 4437 : cumulative ? 4436 : guided ? 4435 : comparison ? 4434 : readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
+const sourceTable = stepGuide ? "AtlasGuidedSteps" : integrated ? "AtlasIntegratedFigures" : related ? "AtlasRelatedAnimations" : film ? "AtlasFilmCaptions" : cellular ? "AtlasCellularCloseups" : closeups ? "AtlasMechanismCloseups" : scenes ? "AtlasSynchronizedLessons" : research ? "AtlasResearchNavigation" : cumulative ? "AtlasCumulativeComparison" : guided ? "AtlasGuidedFunction" : comparison ? "AtlasModelComparison" : readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sourceSHA + "^1", sourceSHA, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])
@@ -34,9 +35,12 @@ function format(value) {
 function read(revision, file) {
   const resource = xml.xml2js(git(["show", revision + ":" + file]), {compact: false}).elements.find(e => e.name === "resources");
   const strings = (resource?.elements || []).filter(e => e.name === "string");
-  if ((cellular || film || related) && revision === sourceSHA && file.includes("/values/")) {
+  if ((cellular || film || related || stepGuide) && revision === sourceSHA && file.includes("/values/")) {
     for (const element of strings) {
-      if (related && element.attributes.name === "health_atlas_related_lesson_label") {
+      if (stepGuide && element.attributes.name === "health_atlas_step_position") {
+        if (text(element) !== "%1$d/%2$d") throw Error("Step position is no longer a language-neutral integer format");
+        shared.set(element.attributes.name, format(text(element)));
+      } else if (related && element.attributes.name === "health_atlas_related_lesson_label") {
         if (text(element) !== "%1$s · %2$s") throw Error("Related label is no longer a language-neutral format");
         shared.set(element.attributes.name, format(text(element)));
       } else if (element.attributes.translatable === "false") shared.set(element.attributes.name, format(text(element)));
@@ -60,11 +64,11 @@ for (const [directory, language] of [["values", "en"], ["values-zh", "zh-Hans"]]
   tables.set(language, delta);
 }
 const keys = table => [...table.keys()].sort();
-if (cellular || film || related) {
+if (cellular || film || related || stepGuide) {
   // Android intentionally shares these names across locales; no translation fallback.
   const english = tables.get("en"), chinese = tables.get("zh-Hans");
   for (const [key, value] of english) if (!chinese.has(key) && shared.get(key) === value) chinese.set(key, value);
-  if (shared.size !== (related ? 1 : film ? 2 : 4)) throw Error("Unexpected source-declared shared resource set");
+  if (shared.size !== (related || stepGuide ? 1 : film ? 2 : 4)) throw Error("Unexpected source-declared shared resource set");
 }
 if (JSON.stringify(keys(tables.get("en"))) !== JSON.stringify(keys(tables.get("zh-Hans")))) throw Error("Regional bilingual key mismatch");
 for (const [language, table] of tables) {
@@ -74,5 +78,5 @@ for (const [language, table] of tables) {
     if (fs.readFileSync(destination, "utf8").replace(/\r\n/g, "\n") !== content) throw Error("Regional resource drift: " + language);
   } else fs.writeFileSync(destination, content);
   console.log(language + ": " + table.size + " Android #" + sourceRevision + " resource deltas, " +
-    (related ? "one translated pair plus one pinned language-neutral format." : film ? "eight translated pairs plus two source-declared non-translatable names." : cellular ? "eleven translated pairs plus four source-declared non-translatable names." : "no cross-language fallback."));
+    (stepGuide ? "two translated pairs plus one pinned language-neutral integer format." : related ? "one translated pair plus one pinned language-neutral format." : film ? "eight translated pairs plus two source-declared non-translatable names." : cellular ? "eleven translated pairs plus four source-declared non-translatable names." : "no cross-language fallback."));
 }

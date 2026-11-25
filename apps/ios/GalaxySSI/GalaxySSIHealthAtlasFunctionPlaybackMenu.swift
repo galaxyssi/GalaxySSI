@@ -8,6 +8,7 @@ struct GalaxySSIHealthAtlasFunctionPlaybackMenu: View {
   let seek: (Double) -> Void
   let pause: () -> Void
   var related: [GalaxySSIHealthAtlasRelatedAction] = []
+  var enlarge: (() -> Void)? = nil
   @Environment(\.openURL) private var openURL
   @State private var menu = false
   @State private var panel: Panel?
@@ -18,6 +19,10 @@ struct GalaxySSIHealthAtlasFunctionPlaybackMenu: View {
       .accessibilityLabel(t("health_atlas_scene_menu")).help(t("health_atlas_scene_menu"))
       .accessibilityIdentifier("atlas-function-menu")
       .confirmationDialog(t("health_atlas_scene_menu"), isPresented: $menu, titleVisibility: .visible) {
+        if let enlarge {
+          Button(action: enlarge) { Label(GalaxySSIHealthBodyText.string("zoom", language: language), systemImage: "arrow.up.left.and.arrow.down.right") }
+            .accessibilityIdentifier("atlas-function-enlarge")
+        }
         Button(t("health_atlas_function_outline")) { panel = .chapters }
         Button(t("health_atlas_reset")) { seek(0) }.accessibilityIdentifier("atlas-function-reset")
         if !related.isEmpty { Button(t("health_atlas_related_lessons")) { panel = .related } }

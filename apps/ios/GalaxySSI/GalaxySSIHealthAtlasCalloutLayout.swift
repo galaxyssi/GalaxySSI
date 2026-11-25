@@ -11,7 +11,7 @@ struct GalaxySSIHealthAtlasCalloutLayout {
   let labelFrames: [CGRect]
 
   static func make(width: CGFloat, aspectRatio: Double, anchors: [CGPoint], splitRequested: Bool,
-                   accessibility: Bool, preferredWidths: [CGFloat], legendInset: CGFloat = 0, minimumHeight: CGFloat = 300,
+                   accessibility: Bool, preferredWidths: [CGFloat], legendInset: CGFloat = 0, minimumHeight: CGFloat = 300, numbered: Bool = false,
                    measureHeight: (Int, CGFloat) -> CGFloat) -> Self? {
     guard width.isFinite, width > 0, aspectRatio.isFinite, aspectRatio > 0, !anchors.isEmpty,
       legendInset.isFinite, legendInset >= 0, minimumHeight.isFinite, minimumHeight >= 0,
@@ -19,7 +19,7 @@ struct GalaxySSIHealthAtlasCalloutLayout {
       preferredWidths.allSatisfy({ $0.isFinite && $0 >= 0 }),
       anchors.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) })
     else { return nil }
-    let split = splitRequested && anchors.contains { $0.x < 0.5 } && anchors.contains { $0.x >= 0.5 }
+    let split = !numbered && splitRequested && anchors.contains { $0.x < 0.5 } && anchors.contains { $0.x >= 0.5 }
     func sorted(_ indices: [Int]) -> [Int] {
       indices.sorted { anchors[$0].y == anchors[$1].y ? $0 < $1 : anchors[$0].y < anchors[$1].y }
     }
@@ -29,7 +29,8 @@ struct GalaxySSIHealthAtlasCalloutLayout {
       guard !indices.isEmpty else { return 0 }
       return min(floor(width * 0.24), max(48, ceil(indices.map { preferredWidths[$0] }.max() ?? 0)))
     }
-    let leftWidth = preferred(left), rightWidth = split ? preferred(right) : width * (accessibility ? 0.55 : 0.36)
+    let leftWidth = preferred(left)
+    let rightWidth = numbered ? min(48, width * 0.37) : split ? preferred(right) : width * (accessibility ? 0.55 : 0.36)
     let artWidth = width - leftWidth - rightWidth - (split ? 0 : 12)
     guard artWidth > 0, leftWidth >= 0, rightWidth > 0 else { return nil }
     var heights = Array(repeating: CGFloat(0), count: anchors.count)

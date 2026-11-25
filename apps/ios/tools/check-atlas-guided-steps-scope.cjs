@@ -1,0 +1,59 @@
+// Source/resource/packaging contracts only, not native layout, gestures or execution.
+const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'../../..'),sha='6794ac7c1af23526a6218421606a58aa77b7dc21',base='a740e845cf24cb58054ff0e245049ecb96f23f28';
+const git=args=>cp.execFileSync('git',args,{cwd:root,maxBuffer:16_000_000});
+const read=file=>fs.readFileSync(path.join(root,file),'utf8').replace(/\r\n/g,'\n');
+const swift=name=>'apps/ios/GalaxySSI/GalaxySSIHealthAtlas'+name+'.swift',source=name=>read(swift(name));
+const prior=name=>git(['show',base+':'+swift(name)]).toString().replace(/\r\n/g,'\n');
+const check=(text,tokens)=>{for(const token of tokens)assert(text.includes(token),token);};
+const android=name=>git(['show',sha+':apps/android/app/src/main/java/com/galaxyssi/chat/'+name+'.kt']).toString();
+const changed=git(['diff','--name-status','--no-renames',sha+'^1',sha]).toString().trim().split(/\r?\n/).map(line=>line.split('\t'));
+assert.equal(changed.length,13);
+const inventory={schema:1,source:{androidPR:4447,mergeCommit:sha},files:changed.map(([status,file])=>({path:file,status,sha256:crypto.createHash('sha256').update(git(['show',sha+':'+file])).digest('hex')}))};
+const frame=source('FigureFrame'),art=source('Artwork'),labels=source('LabeledArtwork'),steps=source('StructureSteps'),legend=source('StructureLegend'),state=source('State'),player=source('FunctionPlayer');
+check(android('HealthAtlasFigureFrame'),['width < ui.dp(320)','if (compact) 8 else 12','if (compact) 8 else 16','width * .40f','ui.dp(328)','mapPoint(node, 0f, node.height / 2f)','if (art is HealthAtlasFunctionArt) .50f else .20f']);
+check(frame,['static func columns(width: CGFloat)','width < 320','compact ? 8 : 12','compact ? 8 : 16','min(width * 0.40, 328)','width - noteWidth - edge * 2 - gutter','HStack(alignment: .center, spacing: columns.gutter)','note.frame(width: columns.noteWidth)','drawing.frame(width: columns.artWidth)','.padding(columns.edge)','CGPoint(x: $0.minX, y: $0.midY)','function ? 0.50 : 0.20','gutter / 2','CGPoint(x: 0.36, y: 0.48)']);
+assert(!frame.includes('overlayNote'));assert(!frame.includes('preferSideNote'));assert(!frame.includes('columns.side'));assert(!frame.includes('static func overlap'));
+check(steps,['struct Landmark','plate.markers.compactMap','plate.annotations.map','point.y == $1.element.point.y ? $0.offset < $1.offset','owner + "|" + view','steps.count > 400','steps.removeFirst(steps.count - 400)','text.utf8.count <= 128_000','decoded.steps.count <= 400','atlas.entry(step.owner) != nil','($0.viewKey ?? "") == step.view','plate.hasLabels','if position == 0','steps[index].position = position']);
+check(state,['@Published var structureSteps','artwork-steps.v1','state.structureSteps.serialized','savedSteps = $0','state.structureSteps = .restore(savedSteps, atlas: content)']);
+assert.equal(state.split('  func restore(_ text:')[1].split('  var serialized:')[0],prior('State').split('  func restore(_ text:')[1].split('  var serialized:')[0]);
+check(art,['GalaxySSIHealthAtlasLandmarks.list','state.structureSteps.position(owner: owner, view: view, count: count)','state.structureSteps.select($0, owner: owner, view: view, count: count)','if let highlighted { return highlighted.point }','GalaxySSIHealthAtlasStructureLegend','?? t("body_overview")','numbered: !full, highlightedID: full ? nil : highlighted?.id','first(where: { ($0.viewKey ?? "") == key })','artworkView = view.viewKey','subjectFocus: focus(full: full)','case .feature(let feature)','case .anatomy(let target)']);
+check(legend,['GalaxySSIHealthAtlasReservedCaption(values: titles','maximumLines: 5','atlas-structure-step','atlas-structure-previous','atlas-structure-next','step > 0','step < landmarks.count','position = next','UIAccessibility.post(notification: .announcement','alert(item: $fullCopy)','title: titles[step], body: descriptions[step]']);
+check(labels,['var numbered = false','var highlightedID: String?','NumberFormatter()','numbers.usesGroupingSeparator = false','button.accessibilityLabel = name','input.numbered ? .center','!input.numbered && input.splitCallouts','old.numbered == input.numbered','highlight(); return','input.highlightedID == nil || highlighted ? 1 : 0.55','numbered: input.numbered','112.0 / 255','128.0 / 255','active ? 5 : 3','self?.input?.onSelect(spot.0)','input.numbered ? buttons']);
+const expectedLayout=prior('CalloutLayout').replace('minimumHeight: CGFloat = 300,','minimumHeight: CGFloat = 300, numbered: Bool = false,').replace('let split = splitRequested &&','let split = !numbered && splitRequested &&').replace('    let leftWidth = preferred(left), rightWidth = split ? preferred(right) : width * (accessibility ? 0.55 : 0.36)','    let leftWidth = preferred(left)\n    let rightWidth = numbered ? min(48, width * 0.37) : split ? preferred(right) : width * (accessibility ? 0.55 : 0.36)');
+assert.equal(source('CalloutLayout'),expectedLayout,'Numbered branch is additive; all default geometry remains exact');
+check(source('FunctionScene'),['function: true, header: { EmptyView() }','maximumLines: 4','onExplain()','alert(item: $explanation)']);
+check(source('FunctionPlaybackMenu'),['var enlarge: (() -> Void)?','Button(action: enlarge)','atlas-function-enlarge']);
+assert.equal(source('FunctionPlaybackMenu').split('  private var chapters:')[1],prior('FunctionPlaybackMenu').split('  private var chapters:')[1]);
+check(player,['@State private var enlargement: GalaxySSIHealthAtlasEnlargedFrame?','enlarge: {','pause()\n            enlargement = .init','reduceMotion ? story.startOf(story.chapter(position)) : position','fullScreenCover(item: $enlargement)','artwork: artwork(snapshot.phase)']);
+assert.equal(player.split('}.accessibilityIdentifier("atlas-function-player")')[1],prior('FunctionPlayer').split('}.accessibilityIdentifier("atlas-function-player")')[1]);
+const zoom=source('FunctionEnlargement');
+check(zoom,['let phase: Double','atlas-function-enlarged-art','atlas-function-enlarged-viewport','UIHostingController<AnyView>','UIScrollViewDelegate','scroll.minimumZoomScale = 1; scroll.maximumZoomScale = 4','addChild(host); scroll.addSubview(host.view); host.didMove(toParent: self)','if size != next','func viewForZooming','controller.scroll.delegate = nil']);
+assert(!zoom.includes('@Binding'));assert(!zoom.includes('Timer'));assert(!zoom.includes('clock.'));assert(!zoom.includes('seek('));
+for(const name of ['ChapterClock','FunctionArtwork','FunctionCatalogue','FunctionViewport','SceneFrame','SimulationPanel','Physiology','PhysiologyPanel','PhysiologyText','AgentContext','AgentHandoff','Research','AgingPanel','RetinaPathView','EndocrinePath','LessonNavigation','SearchNavigation','NotePosition','Overviews','FilmPalette'])assert.equal(source(name),prior(name),name);
+assert.equal(source('EndocrinePathView'),prior('EndocrinePathView').replace('identifier: "atlas-endocrine-figure", preferSideNote: true,','identifier: "atlas-endocrine-figure",'));
+for(const locale of ['en','zh-Hans']){
+ const table=read('apps/ios/GalaxySSI/'+locale+'.lproj/AtlasGuidedSteps.strings');
+ assert.equal([...table.matchAll(/^"health_atlas_/gm)].length,3);assert(table.includes('"health_atlas_step_position" = "%1$lld/%2$lld";'));
+}
+const tests='apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift';
+check(read(tests),['testAtlasUniformSideColumnsAndMappedLeaderEndpoints','testEveryLandmarkViewRestoresItsStepAndOverviewRemovesTheCacheEntry','testStepsHaveIndependentViewsAndBoundedValidatedStorage','testNumberedRailsStayCompactAndEnlargedFrameDoesNotAdvanceTheClock','atlas.views(for: owner.isEmpty ? nil : owner)','steps.select(0','steps.steps.count, 400','clock.sample(50_000), before']);
+const mapping={HealthAtlasEndocrinePath:['EndocrinePathView','FigureFrame'],HealthAtlasFigureFrame:['FigureFrame'],HealthAtlasFunctionPlayer:['FunctionPlayer','FunctionScene','FunctionPlaybackMenu','FunctionEnlargement'],HealthAtlasLabeledImage:['LabeledArtwork','CalloutLayout'],HealthAtlasUi:['Artwork','StructureSteps','StructureLegend','LabeledArtwork'],HealthBodyAtlasActivity:['State','StructureSteps','Artwork']};
+const files=inventory.files.map(file=>{
+ const name=path.basename(file.path),key=name.replace(/\.kt$/,'');let kind,ios,note;
+ if(mapping[key]){kind='native-production-port';ios=mapping[key].map(swift);note='Uniform left-note/right-art with 40%/328-point note width and compact edge/gutter below 320; active-node left-midpoint leaders and function-center fallback. Ordered anatomical/feature landmark steps, reserved title/five-line description, complete-text alert, bounded overview/previous/next controls, numbered accessible label rail and synchronized highlight/focus. Per-owner/view bounded public step cache restores after recreation and default-view nil/empty picker normalization allows switching back. Animation options opens an independent frozen-phase hosted drawing with native pinch/pan, without seeking or resuming the original player. Existing raw anatomy fullscreen, labels/features/navigation, formulas and clocks remain available; no native layout or interaction acceptance.';}
+ else if(file.path.includes('/androidTest/')){kind='android-device-source-reference';ios=[tests,'apps/ios/tools/check-atlas-guided-steps-scope.cjs'];note=name+': source-reference review of 280/380/720 note/art separation and leader/label-clearance sweeps, all chapter height samples, native enlargement/current-chapter/playhead retention, generalized popup navigation and per-landmark recreation/progression screenshots. Added native fixture sources for geometry/ordered landmarks/bounded cache/frozen clock, NOT executed. No native iOS screenshot/device/gesture/pixel/recreation acceptance claimed.';}
+ else if(file.path.includes('/res/')){kind='exact-resource-delta-with-neutral-ratio';ios=['apps/ios/GalaxySSI/en.lproj/AtlasGuidedSteps.strings','apps/ios/GalaxySSI/zh-Hans.lproj/AtlasGuidedSteps.strings',swift(''),swift('FunctionText'),'apps/ios/tools/import-body-atlas-regional-text.cjs','apps/ios/GalaxySSI.xcodeproj/project.pbxproj'];note='Two exact English/Chinese translated pairs plus explicitly pinned integer-placeholder/slash ratio %1$d/%2$d, shared as a language-neutral format, three entries per locale. The source ratio is not marked translatable=false and is not counted as a translated pair.';}
+ else{assert.equal(name,'build.gradle.kts');kind='android-version-only';ios=[];note='No iOS version bump or IPA.';}
+ for(const target of ios)assert(fs.existsSync(path.join(root,target)),target);
+ return{source:file.path,sourceSHA256:file.sha256,kind,ios,note};
+});
+assert.equal(files.filter(f=>f.kind==='native-production-port').length,6);assert.equal(files.filter(f=>f.kind==='android-device-source-reference').length,4);
+for(const[suffix,value]of[['SOURCE_INVENTORY',inventory],['PORT_COVERAGE',{schema:1,source:inventory.source,verification:'source-contracts-only-not-native-execution',files}]]){
+ const file='apps/ios/ANDROID_4447_'+suffix+'.json',content=JSON.stringify(value,null,2)+'\n';
+ if(process.argv.includes('--write'))fs.writeFileSync(path.join(root,file),content);else assert.equal(read(file),content);
+}
+if(process.argv.includes('--checks'))for(const command of ['import-body-atlas-regional-text.cjs --guided-steps-4447 --check','check-atlas-in-image-notes-scope.cjs --checks']){
+ const[file,...args]=command.split(' ');cp.execFileSync(process.execPath,[path.join(__dirname,file),...args],{cwd:root,stdio:'inherit'});
+}
+console.log('Android #4447: 13 source hashes/dispositions; uniform side figures, ordered guided landmarks and bounded per-view restore, accessible numbered rails and independent frozen-phase enlargement source contracts. Not native Swift compilation, XCTest, UI layout, zoom, recreation or pixels.');

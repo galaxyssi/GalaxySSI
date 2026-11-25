@@ -48,7 +48,7 @@ assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunct
 // #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
 const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
 assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
-assert(source("FunctionScene").includes("maximumLines: 2")); // #4446 keeps matching probes but adds a compact expandable note.
+assert(source("FunctionScene").includes("maximumLines: 4")); // #4447 keeps matching probes with a four-line expandable side note.
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasFigureFrame")); // #4445 replaces the caption band, not the renderer.
 assert(source("FunctionScene").includes("GalaxySSIHealthAtlasReservedCaption"));
 assert.equal(source("Detail").split("struct GalaxySSIHealthAtlasValues:")[1], prior("Detail").split("struct GalaxySSIHealthAtlasValues:")[1]);
