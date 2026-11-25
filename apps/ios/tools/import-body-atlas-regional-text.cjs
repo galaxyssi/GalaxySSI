@@ -10,9 +10,10 @@ const comparison = process.argv.includes("--model-comparison-4434");
 const guided = process.argv.includes("--guided-function-4435");
 const cumulative = process.argv.includes("--cumulative-comparison-4436");
 const research = process.argv.includes("--research-navigation-4437");
-const sourceSHA = research ? "dbbd6554d7cd632c6eb99f705e5a4b38ff42a3cb" : cumulative ? "de63c7dd3c883b8724da0f4366d6e078c1882a75" : guided ? "83188e7ce30a174e766e68fcf4db6f751a046d7a" : comparison ? "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc" : readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
-const sourceRevision = research ? 4437 : cumulative ? 4436 : guided ? 4435 : comparison ? 4434 : readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
-const sourceTable = research ? "AtlasResearchNavigation" : cumulative ? "AtlasCumulativeComparison" : guided ? "AtlasGuidedFunction" : comparison ? "AtlasModelComparison" : readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
+const scenes = process.argv.includes("--synchronized-lessons-4439");
+const sourceSHA = scenes ? "eef7fd41df84c075cbc0ba046cca6ab6a5b59bf7" : research ? "dbbd6554d7cd632c6eb99f705e5a4b38ff42a3cb" : cumulative ? "de63c7dd3c883b8724da0f4366d6e078c1882a75" : guided ? "83188e7ce30a174e766e68fcf4db6f751a046d7a" : comparison ? "3327febe8406fb5ee5cf30dc0734ef6c4e2cbdcc" : readings ? "115d6adeb661fd4357fea57517ca92d02ffe1f51" : wholeActions ? "071062afe8059506c9958906f708780d80437f55" : completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
+const sourceRevision = scenes ? 4439 : research ? 4437 : cumulative ? 4436 : guided ? 4435 : comparison ? 4434 : readings ? 4418 : wholeActions ? 4417 : completion ? 4414 : revision;
+const sourceTable = scenes ? "AtlasSynchronizedLessons" : research ? "AtlasResearchNavigation" : cumulative ? "AtlasCumulativeComparison" : guided ? "AtlasGuidedFunction" : comparison ? "AtlasModelComparison" : readings ? "AtlasRelatedReadings" : wholeActions ? "AtlasWholeActions" : completion ? "AtlasCompletionTeaching" : tableName;
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sourceSHA + "^1", sourceSHA, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])

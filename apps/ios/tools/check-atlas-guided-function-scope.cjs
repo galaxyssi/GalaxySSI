@@ -20,9 +20,11 @@ for (const token of ["stepMilliseconds: Int64 = 5_000", "systemUptime", "subtrac
 assert(!clock.includes("Date(")); assert(!player.includes("story.durationMs")); assert(!player.includes("lastTick"));
 for (const token of ["chapters: story.chapters.count", "clock.resume(now)", "clock.pause(now); publish(clock.sample(now))", "playback.owner == playbackID",
   "pause(at: playback.changedAt)", "story.startOf(story.chapter(position))", ".onTapGesture", ".accessibilityAction(named:", "if !previewPresented { toggle() }",
-  '"atlas-function-outline-toggle"', '"atlas-function-outline-stage-"', '"atlas-function-outline"', "text(chapter.caption)",
-  "setPosition(story.startOf(index)); commit()", ".onDisappear { pause() }", "if showTitle", "playback.release(playbackID); commit()"])
+  ".onDisappear { pause() }", "playback.release(playbackID); commit()"])
   assert(player.includes(token), token);
+for (const token of ['"atlas-function-outline-stage-"', "seek(story.startOf(index))"]) assert(source("FunctionPlaybackMenu").includes(token));
+assert(source("FunctionScene").includes("if showTitle"));
+assert(source("FunctionScene").includes("story.chapters.map { t($0.caption) }"));
 assert(player.includes('onChange(of: scene) { _ in pause() }'));
 assert(player.includes('onChange(of: previewPresented) { if $0 { pause() } }'));
 const functionPanel = source("FunctionPanel");
@@ -30,7 +32,7 @@ for (const token of ["!(2...3).contains(choices.count)", "story.choiceTitle", 'p
 for (const token of ["var modelsExpanded: Bool?", "entry.kind == .system || entry.kind == .organ", "next.tab == .simulation",
   "next.tab = .function; next.modelsExpanded = true", "Self.migrated(saved, entry: entry)", "Self.migrated($0, entry: entry)", "var next = functionSnapshot(entry)"])
   assert(state.includes(token), token);
-for (const token of ["!usesInlineModels || $0 != .simulation", "DisclosureGroup(isExpanded:", "selection.wrappedValue.modelsExpanded = expanded",
+for (const token of ["GalaxySSIHealthAtlasState.detailTabs", "DisclosureGroup(isExpanded:", "selection.wrappedValue.modelsExpanded = expanded",
   'state.playback.claim("models-disclosure|" + entry.id)', '"atlas-inline-models"', '"atlas-function-principle-toggle"',
   '"atlas-function-principle"', 'Text(t("inline_models"))', "inline: usesInlineModels", ".environmentObject(state.playback)", "state.functionSnapshot(entry)"])
   assert(detail.includes(token), token);
@@ -42,10 +44,12 @@ for (const token of ["var inline = false", "chapters: model.stages.count", "if !
 assert(!panel.includes("playing = false; simulation.selectStage"));
 assert(!panel.includes("playing = false; structure ="));
 // Preserve all existing model/rendering bodies and original story catalogue/art assets.
-for (const name of ["FunctionCatalogue", "FunctionArtwork", "Physiology"]) {
+for (const name of ["FunctionArtwork", "Physiology"]) {
   assert.equal(source(name), git(["show", base + ":" + swift(name)]).toString(), name + " changed unexpectedly");
 }
 const previous = name => git(["show", base + ":" + swift(name)]).toString();
+// #4439 adds an immutable catalogue overlay; legacy selection/cache behavior stays frozen.
+assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], previous("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 assert.equal(source("Distribution").split("struct GalaxySSIHealthAtlasDrugState")[0], previous("Distribution").split("struct GalaxySSIHealthAtlasDrugState")[0]);
 const pointKernel = s => s.split("  func at(_ hours: Double)")[1].split("enum GalaxySSIHealthAtlasComparisonText")[0];
 assert.equal(pointKernel(source("ModelComparison")), pointKernel(previous("ModelComparison")));

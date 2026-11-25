@@ -107,8 +107,8 @@ const detail = source("Detail"), state = source("State");
 assert(detail.includes('Button(t("simulation"))') === false);
 assert(detail.indexOf("numericalModelButton") > detail.indexOf("GalaxySSIHealthAtlasFunctionPanel("));
 assert(detail.indexOf("numericalModelButton") < detail.indexOf("if let story = functionSelection"));
-assert(detail.includes("!hasFunctionPlayer { numericalModelButton }"));
-assert(detail.includes("}.id(selection.wrappedValue.tab)"), "New tabs open at the top without resetting selection state");
+assert(detail.includes("currentTab == .function && !hasFunctionPlayer"));
+assert(detail.includes("}.id(currentTab)"), "New tabs open at the top without resetting selection state");
 for (const token of ['Label(t("open_quantitative_model"), systemImage: "chart.bar")', '"atlas-open-simulation"', "state.openNumericalModel(entry)"])
   assert(detail.includes(token));
 for (const token of ["var next = functionSnapshot(entry)", "next.tab = .simulation", "entries[entry.id] = next", "function.save(phase, storyID: storyID", "Physiology.restore(id, inputs: entries[id]?.physiologyInputs)"])

@@ -5,6 +5,69 @@ import SwiftUI
 
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
+  func testSynchronizedLessonOverlayPreservesAllOtherCatalogueFields() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let original = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle, revision: 4388))
+    let updated = original.synchronizedLessons()
+    try updated.validate()
+    XCTAssertEqual(updated.source.androidPR, 4439)
+    XCTAssertEqual(updated.routes, original.routes)
+    XCTAssertEqual(updated.entryPhases, original.entryPhases)
+    XCTAssertEqual(updated.stories.count, 138)
+    XCTAssertEqual(updated.stories.reduce(0) { $0 + $1.references.count }, 321)
+    XCTAssertEqual(updated.synchronizedLessons().stories, updated.stories)
+    for before in original.stories {
+      let after = try XCTUnwrap(updated.story(before.id))
+      XCTAssertEqual(after.owners, before.owners)
+      XCTAssertEqual(after.title, before.title)
+      XCTAssertEqual(after.scope, before.scope)
+      XCTAssertEqual(after.chapters, before.chapters)
+      XCTAssertEqual(after.durationMs, before.durationMs)
+      XCTAssertEqual(after.showStructurePreview, before.showStructurePreview)
+      XCTAssertEqual(after.related, before.related)
+      let choice = before.id == "HEARTBEAT" ? "health_atlas_beat_choice" : before.id == "BREATHING" ? "health_atlas_breathe_choice" : before.choiceTitle
+      XCTAssertEqual(after.choiceTitle, choice)
+      if before.id == "SYNAPTIC_SIGNAL" {
+        XCTAssertEqual(Array(after.references.dropFirst()), before.references)
+        XCTAssertEqual(after.references.first?.url.absoluteString, "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-4-the-action-potential")
+      } else { XCTAssertEqual(after.references, before.references) }
+    }
+  }
+
+  func testSynapticGradedPotentialRetainsInhibitionAndThreshold() {
+    typealias Motion = GalaxySSIHealthAtlasSignalMotion
+    XCTAssertEqual(Motion.gradedInput(0), 0.192, accuracy: 1e-9)
+    XCTAssertEqual(Motion.gradedInput(0.24), 0.48, accuracy: 1e-9)
+    XCTAssertLessThan(Motion.gradedInput(0.47), 0)
+    XCTAssertEqual(Motion.gradedInput(0.81), 0.6644, accuracy: 1e-9)
+    XCTAssertEqual(Motion.gradedInput(.nan), Motion.gradedInput(0))
+    XCTAssertEqual(Motion.gradedInput(2), Motion.gradedInput(1))
+    XCTAssertEqual(Motion.potential.count, 65)
+    XCTAssertEqual(Motion.gateProgress(0.22, openAt: 0.22, duration: 0.43), 0)
+    XCTAssertEqual(Motion.gateProgress(0.65, openAt: 0.22, duration: 0.43), 1)
+    XCTAssertEqual(Motion.gateProgress(0.5, openAt: 0.22, duration: 0), 0)
+  }
+
+  func testStandaloneModelBackReturnsToFunctionAndPreservesInputs() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    XCTAssertEqual(GalaxySSIHealthAtlasState.detailTabs, [.structure, .function, .values])
+    for entry in atlas.entries where !GalaxySSIHealthAtlasState.usesInlineModels(entry) {
+      var before = state.binding(entry).wrappedValue
+      before.physiologyInputs = [1, 2, 3]
+      state.binding(entry).wrappedValue = before
+      state.openNumericalModel(entry)
+      XCTAssertEqual(state.binding(entry).wrappedValue.tab, .simulation)
+      state.closeStandaloneModel(entry)
+      let after = state.binding(entry).wrappedValue
+      XCTAssertEqual(after.tab, .function)
+      XCTAssertEqual(after.physiologyInputs, before.physiologyInputs)
+      XCTAssertEqual(after.simulation, before.simulation)
+      state.openNumericalModel(entry)
+      state.closeStandaloneModel(entry, destination: .structure)
+      XCTAssertEqual(state.binding(entry).wrappedValue.tab, .structure)
+    }
+  }
+
   private func catalogue() throws -> GalaxySSIHealthAtlas {
     try GalaxySSIHealthAtlas.load(bundle: Bundle(for: GalaxySSIStore.self), includeExtensions: false)
   }
@@ -931,10 +994,10 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testFunctionViewportUsesCurrentWindowAndPreservesCellHeightDelegation() {
     typealias Viewport = GalaxySSIHealthAtlasFunctionViewport
     XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: false), 144)
-    XCTAssertEqual(Viewport.limit(windowHeight: 568, cellCourse: false), 300)
-    XCTAssertEqual(Viewport.limit(windowHeight: 844, cellCourse: false), 390)
-    XCTAssertEqual(Viewport.limit(windowHeight: 0, cellCourse: false), 390)
-    XCTAssertEqual(Viewport.limit(windowHeight: .nan, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: 568, cellCourse: false), 158)
+    XCTAssertEqual(Viewport.limit(windowHeight: 844, cellCourse: false), 336)
+    XCTAssertEqual(Viewport.limit(windowHeight: 0, cellCourse: false), 336)
+    XCTAssertEqual(Viewport.limit(windowHeight: .nan, cellCourse: false), 336)
     XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: true), 390)
     XCTAssertEqual(Viewport.cellCourses.count, 9)
   }
@@ -1330,7 +1393,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
-    XCTAssertEqual(catalogue.source.androidPR, 4388)
+    XCTAssertEqual(catalogue.source.androidPR, 4439)
     XCTAssertEqual(catalogue.stories.count, 138); XCTAssertEqual(catalogue.routes.count, 313)
     XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 643)
     XCTAssertEqual(GalaxySSIHealthAtlasFunctionRendering.implemented, Set(catalogue.stories.map(\.id)))

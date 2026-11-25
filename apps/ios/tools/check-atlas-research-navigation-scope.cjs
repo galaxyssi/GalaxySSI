@@ -28,17 +28,17 @@ assert(openResearch.indexOf("functionSnapshot(entry)") < openResearch.indexOf("n
 assert(!openResearch.includes("physiologyInputs =")); assert(!openResearch.includes("simulation ="));
 const restore = s => s.split("  func restore(_ text:")[1];
 assert.equal(restore(state), restore(prior("State")), "Existing cache decoding bounds and all sanitizers are retained");
-for (const token of ["Binding(get: { selection.wrappedValue.researchPresented == true }", "state.closeResearch(entry)",
+for (const token of ["selection.wrappedValue.researchPresented == true", "state.closeResearch(entry)",
   "state.openResearch(entry, returnScroll: scrollMemory.offset)", "if tab == .function { scrollMemory.restore(0) }",
   "GalaxySSIHealthAtlasScrollAnchor(memory: scrollMemory, revision: scrollMemory.revision)",
   "selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }", "NavigationLink(isActive: research)",
   "mechanismFirst: usesInlineModels, inline: usesInlineModels", '"atlas-source-physiology"',
-  'if !usesInlineModels || selection.wrappedValue.tab != .function { mechanismSource }', 't(usesInlineModels ? "targeted_research" : "research")'])
+  't(usesInlineModels ? "targeted_research" : "research")'])
   assert(detail.includes(token), token);
 const inlineBody = detail.split("state.playback.claim(\"models-disclosure|\" + entry.id)")[1].split('Text(t("inline_models"))')[0];
 assert(inlineBody.indexOf("simulationPanel") < inlineBody.indexOf("mechanismSource"));
-for (const token of ["GalaxySSIHealthAtlasState.researchTopics(entry)", "ForEach(topics, id:", '"atlas-research-tab-" + $0.rawValue',
-  "Picker(title, selection: topic)", "switch topic.wrappedValue", "topics.contains(selection.wrappedValue.research)",
+for (const token of ["GalaxySSIHealthAtlasState.researchTopics(entry)", "GalaxySSIHealthAtlasCompactTabs(options: topics, selection: topic",
+  'key: { $0.rawValue }, identifier: "atlas-research-tab"', "switch topic.wrappedValue", "topics.contains(selection.wrappedValue.research)",
   "state.openNumericalModel(entry); state.closeResearch(entry); dismiss()", '.navigationTitle(title)', '"targeted_research"'])
   assert(research.includes(token), token);
 assert.equal(research.split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1], "Drug, comparison and aging modules are not rewritten");
@@ -50,7 +50,9 @@ for (const token of ["UIViewRepresentable", "private weak var scroll: UIScrollVi
   assert(scroll.includes(token), token);
 assert(!scroll.includes(".delegate =")); assert(!scroll.includes("@Published var offset"));
 assert(!scroll.includes("asyncAfter")); assert(!scroll.includes("URLSession"));
-for (const name of ["SimulationPanel", "FunctionPlayer", "ChapterClock", "Physiology", "ModelComparison", "Distribution", "ComparisonPanel", "AgentContext", "AgentHandoff", "Aging"]) assert.equal(source(name), prior(name), name + " must remain unchanged");
+// #4439 replaces the player layout, not its clock/lifecycle implementation.
+assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
+for (const name of ["SimulationPanel", "ChapterClock", "Physiology", "ModelComparison", "Distribution", "ComparisonPanel", "AgentContext", "AgentHandoff", "Aging"]) assert.equal(source(name), prior(name), name + " must remain unchanged");
 assert.equal(detail.split("struct GalaxySSIHealthAtlasValues:")[1], prior("Detail").split("struct GalaxySSIHealthAtlasValues:")[1]);
 for (const locale of ["en", "zh-Hans"]) {
   const table = read("apps/ios/GalaxySSI/" + locale + ".lproj/AtlasResearchNavigation.strings");

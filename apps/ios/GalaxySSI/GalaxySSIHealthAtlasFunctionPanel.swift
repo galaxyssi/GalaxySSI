@@ -17,7 +17,12 @@ struct GalaxySSIHealthAtlasFunctionPanel: View {
     if let story = current {
       VStack(alignment: .leading, spacing: 12) {
         if choices.count > 3 { picker.pickerStyle(.menu) }
-        else if choices.count > 1 { picker.pickerStyle(.segmented) }
+        else if choices.count > 1 {
+          GalaxySSIHealthAtlasCompactTabs(options: choices.map(\.id), selection: Binding(
+            get: { current?.id ?? "" }, set: { selection.choose($0, entryID: entryID, catalogue: catalogue) }),
+            title: { id in choices.first(where: { $0.id == id }).map { GalaxySSIHealthAtlasFunctionText.get($0.choiceTitle, language) } ?? "" },
+            key: { $0 }, identifier: "atlas-function-lesson")
+        }
         GalaxySSIHealthAtlasFunctionPlayer(story: story, language: language, phase: phase(story.id),
           previewPresented: previewPresented,
           showTitle: !(2...3).contains(choices.count) ||

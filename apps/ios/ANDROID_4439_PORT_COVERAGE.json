@@ -1,0 +1,242 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4439,
+    "mergeCommit": "eef7fd41df84c075cbc0ba046cca6ab6a5b59bf7"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "dac5d76424982c5609388c045435eef51b65f80408d9a46af58c6e4f87ab95a5",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS marketing-version change or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCellDeviceTest.kt",
+      "sourceSHA256": "96fa8353c32e37eea7298be0c371451b3737b8d7dec59112b75ce6ed24ff19f3",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-synchronized-lessons-scope.cjs"
+      ],
+      "note": "HealthAtlasCellDeviceTest.kt: source-reference audit only; native Swift fixtures added for overlay, mechanism phases and navigation state. No Android/device/XCTest execution, timing or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "sourceSHA256": "842a97ab073aa510e35ed043be17e6649659fd179fd9594fc411ce8938be204e",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-synchronized-lessons-scope.cjs"
+      ],
+      "note": "HealthAtlasFunctionStoryDeviceTest.kt: source-reference audit only; native Swift fixtures added for overlay, mechanism phases and navigation state. No Android/device/XCTest execution, timing or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "8c39ad40f1093259609326de56aa4f7562283e859e7f09903560cf5816b47ea3",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-synchronized-lessons-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: source-reference audit only; native Swift fixtures added for overlay, mechanism phases and navigation state. No Android/device/XCTest execution, timing or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasModelTestNavigation.kt",
+      "sourceSHA256": "dbbbddbb9043416accb4307506b8ced6c878c25e701475a6af828714b35d37b0",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift",
+        "apps/ios/tools/check-atlas-synchronized-lessons-scope.cjs"
+      ],
+      "note": "HealthAtlasModelTestNavigation.kt: source-reference audit only; native Swift fixtures added for overlay, mechanism phases and navigation state. No Android/device/XCTest execution, timing or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBreathingView.kt",
+      "sourceSHA256": "89ce7ad0fb3280ddf9eb5ae0b3c14cb1ea19e43902ba36dd1b5e6cbbd1b4d0cb",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasBreathingView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRespiratoryMembraneDrawing.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionArt.kt",
+      "sourceSHA256": "cba660f827bc19af34502aa0b853ed9eed03047ff7cd23dfd0cd2e814d945a42",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionViewport.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "sourceSHA256": "91ddc0e6eaaf8dd07be3ab2adf36c94141bcc398e24d000d464c40dd6b33b9c1",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlayer.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionScene.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlaybackMenu.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionStory.kt",
+      "sourceSHA256": "df94ed8630df97f24cbd0372cf11cf226f16654213ca17d74268da9c625df6a8",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSynchronizedCatalogue.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSignalStoryView.kt",
+      "sourceSHA256": "1f1f429dd681dcb91a020be777456328824f9a55aaa8394b7c76ab8e6286f0b5",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSignalMotion.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSynapseDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSynapticChannelsDrawing.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUi.kt",
+      "sourceSHA256": "385ec02f93feef5ac7c48472c8ea3f7ccc887cc60f38583a044885875fca622d",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCompactTabs.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "8b45170c640a0d702893bb7f786109691df8c1d01622dcf4cc6e21f419d8b616",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStandaloneModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPanel.swift"
+      ],
+      "note": "Pinned implementation comparison: synchronized fixed-height wrapped subtitles, paused scene menu, three compact semantic tabs and explicit standalone back behavior; richer synaptic channels/graded inhibition and respiratory membrane diffusion as applicable. Native layout, accessibility and navigation require Apple-platform verification."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_breathing.xml",
+      "sourceSHA256": "d47081310d7dbf76b722f882da040db1a93f4d41ef2abd57524eab032ef74266",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_heartbeat.xml",
+      "sourceSHA256": "778f89468eb14541cf3b510236c0c724384b8386e6aac7272d5fdd2c75391791",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_signal_story.xml",
+      "sourceSHA256": "d1075e10155c52c6e79cae05e6c05359ce3cd93f3964bd9803491d2501f78b0e",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "6737e18ab3f9d5ec86aa4516ad92ccd4964c2c9aa8600e078b58eeab0eeca3b0",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_breathing.xml",
+      "sourceSHA256": "239c362c0e8010433d74109c195c2428a609a9b36fbe4202bc6d0490aebd5170",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_heartbeat.xml",
+      "sourceSHA256": "b4caa4c50a5562634d0d45219a925068f3187ac10357bac18720b7af978b3a25",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_signal_story.xml",
+      "sourceSHA256": "03bc9747f63901e2aef389bbd877a09e0c51b174a76b9e0e45b1fbd4c87f0565",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "a79bf1b5f944afdf0cfe81d4689bda485ee56b4d6eebb05c9a390b46a5e0b235",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasSynchronizedLessons.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "Nineteen exact English/Chinese pairs imported from original XML and registered, including chapter captions, mechanism labels, menu labels and Metrics. No fallback translation."
+    }
+  ]
+}

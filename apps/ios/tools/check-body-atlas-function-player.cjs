@@ -26,7 +26,7 @@ const player=local("GalaxySSIHealthAtlasFunctionPlayer"),panel=local("GalaxySSIH
 // #4435 supersedes variable-duration/reduced-motion skip behavior with a shared chapter clock.
 for(const token of ["GalaxySSIHealthAtlasChapterClock.now","chapters: story.chapters.count","scene == .active","!reduceMotion","!previewPresented",
   ".onDisappear { pause() }","story.startOf(story.chapter(position))","clock.resume(now)","clock.pause(now)","phase = position","onPhase(position)"])assert(player.includes(token),token);
-for(const token of ["choices.count > 3","picker.pickerStyle(.menu)","picker.pickerStyle(.segmented)",'.id(entryID + "|" + story.id)',"selection.save"])assert(panel.includes(token),token);
+for(const token of ["choices.count > 3","picker.pickerStyle(.menu)","GalaxySSIHealthAtlasCompactTabs",'.id(entryID + "|" + story.id)',"selection.save"])assert(panel.includes(token),token);
 assert(state.includes("private var liveFunctionPhases"));assert(!state.includes("@Published var liveFunctionPhases"));
 assert(state.includes("functionSelection?.sanitize"));assert(state.includes("functionSnapshot"));
 const detail=local("GalaxySSIHealthAtlasDetail");

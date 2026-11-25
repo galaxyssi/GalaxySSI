@@ -1,0 +1,44 @@
+import SwiftUI
+
+struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
+  let story: GalaxySSIHealthAtlasFunctionCatalogue.Story
+  let language: String
+  let phase: Double
+  let showTitle: Bool
+  let artwork: Artwork
+  @ScaledMetric(relativeTo: .subheadline) private var captionSize: CGFloat = 15
+  @ScaledMetric(relativeTo: .footnote) private var chapterSize: CGFloat = 14
+  private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get(key, language) }
+  private var labels: [String] {
+    story.chapters.enumerated().map {
+      String(format: t("health_atlas_scene_chapter"), Int64($0.offset + 1), Int64(story.chapters.count), t($0.element.title))
+    }
+  }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      if showTitle {
+        Text(t(story.title)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+      }
+      artwork
+      VStack(alignment: .leading, spacing: 2) {
+        stableText(labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
+          .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthTheme.accent)
+        stableText(story.chapters.map { t($0.caption) }, selected: story.chapter(phase), identifier: "atlas-function-caption")
+          .font(.system(size: captionSize))
+      }.padding(.horizontal, 12).padding(.top, 9).padding(.bottom, 10)
+        .accessibilityIdentifier("atlas-function-subtitles")
+    }.background(Color(.secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 8))
+      .accessibilityIdentifier("atlas-function-frame")
+  }
+  private func stableText(_ values: [String], selected: Int, identifier: String) -> some View {
+    ZStack(alignment: .topLeading) {
+      // Every chapter participates in layout, including wrapping and Dynamic Type.
+      // Only the current chapter participates in accessibility and drawing.
+      ForEach(values.indices, id: \.self) { index in
+        Text(values[index]).fixedSize(horizontal: false, vertical: true).hidden().accessibilityHidden(true).allowsHitTesting(false)
+      }
+      Text(values[selected]).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(identifier)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
