@@ -134,24 +134,12 @@ class HealthCareUiDeviceTest {
                         surfaceWorker = HealthCareAgentSurface::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(it) as ExecutorService
                     }
                 }
-                await(scenario) { find(it, "health-care-priority-notice") != null }
+                await(scenario) { find(it, "agent-health-care-value") != null }
                 scenario.onActivity {
-                    assertTrue(find(it, "agent-health-care-priority")!!.isShown)
-                    assertFalse(find(it, "health-care-priority-notice")!!.isShown)
-                    find(it, "agent-health-care-expand")!!.performClick()
+                    assertEquals("185 / 90 mmHg", (find(it, "agent-health-care-value") as TextView).text.toString())
+                    assertNull(find(it, "agent-health-care-priority"))
+                    assertNull(find(it, "health-care-priority-notice"))
                 }
-                scenario.onActivity { activity ->
-                    val text = views(find(activity, "health-care-priority-notice")!!).filterIsInstance<TextView>().joinToString { it.text.toString() }
-                    assertTrue(text.contains(activity.getString(R.string.health_care_bp_emergency)))
-                    assertTrue(text.contains("185 / 90")); assertTrue(text.contains("mmHg"))
-                    val notice = find(activity, "health-care-priority-notice")!!
-                    val routine = find(activity, "agent-health-care-why")!!
-                    assertTrue(notice.top < routine.top)
-                    activity.healthCareSurface!!.showForAgent(false)
-                    assertNull(find(activity, "health-care-priority-notice"))
-                    activity.healthCareSurface!!.showForAgent(true)
-                }
-                await(scenario) { find(it, "health-care-priority-notice") != null }
                 capture("health-care-priority-agent-fixture.png")
             }
             surfaceWorker?.awaitTermination(10, TimeUnit.SECONDS)
@@ -247,9 +235,10 @@ class HealthCareUiDeviceTest {
                 }
                 await(scenario) { find(it, "agent-health-care-concern") != null }
                 scenario.onActivity { activity ->
-                    val label = views(find(activity, "agent-health-care-concern")!!).filterIsInstance<TextView>().joinToString { it.text.toString() }
-                    assertTrue(label.contains("6.3")); assertTrue(label.contains("5.4"))
-                    assertNotNull(find(activity, "agent-health-care-series"))
+                    val value = find(activity, "agent-health-care-value") as TextView
+                    assertEquals("5.4 mmol/L" + activity.getString(R.string.health_agent_report_reference, "4-6 mmol/L"),
+                        value.text.toString())
+                    assertNull(find(activity, "agent-health-care-series"))
                     activity.healthCareSurface!!.showForAgent(false)
                     assertNull(find(activity, "agent-health-care-concern"))
                     assertNull(find(activity, "agent-health-care-series"))

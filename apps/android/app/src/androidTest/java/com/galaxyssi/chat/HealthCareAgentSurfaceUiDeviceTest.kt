@@ -6,7 +6,6 @@ import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ScrollView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -41,7 +40,7 @@ class HealthCareAgentSurfaceUiDeviceTest {
         } finally { image.recycle() } }
     }
 
-    @Test fun summaryExplainsNextStepAndTracksCurrentResearchWithoutFillingChat() {
+    @Test fun summaryUsesOnlyTheCurrentRecordAndDoesNotChangeResearch() {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val names = HealthOverviewDatabases(UUID.randomUUID().toString())
         val transcripts = AgentTranscriptStore(context)
@@ -69,66 +68,36 @@ class HealthCareAgentSurfaceUiDeviceTest {
                         it.showForAgent(true); it.resume()
                     }
                 }
-                fun state(label: Int) = await(scenario) {
-                    (find(it, "agent-health-care-state") as? TextView)?.text?.toString() ==
-                        it.getString(R.string.health_agent_research_state, it.getString(label))
+                fun value(expected: String) = await(scenario) {
+                    (find(it, "agent-health-care-value") as? TextView)?.text?.toString() == expected
                 }
-                state(R.string.health_research_queued)
+                await(scenario) {
+                    (find(it, "agent-health-care-value") as? TextView)?.text?.toString() ==
+                        "6.3 mmol/L" + it.getString(R.string.health_agent_report_reference, "4-6 mmol/L")
+                }
                 assertTrue(HealthCareModelReviewVisibility.contains(names.care, temporaryId))
                 assertFalse(HealthCareModelReviewVisibility.contains(names.care, previous))
                 await(scenario) { !it.findViewById<View>(R.id.startupConnectingView).isShown }
                 scenario.onActivity {
-                    assertFalse(find(it, "agent-health-care-why")!!.isShown)
-                    assertTrue((find(it, "agent-health-care-next") as TextView).text.toString().contains(it.getString(R.string.health_agent_next_plan)))
-                    assertFalse(find(it, "agent-health-care-discuss")!!.isShown)
-                    assertFalse(find(it, "agent-health-care-plan")!!.isShown)
+                    listOf("expand", "why", "next", "discuss", "plan", "followup", "state", "record", "scroll").forEach { tag ->
+                        assertNull(find(it, "agent-health-care-$tag"))
+                    }
                     assertTrue(it.findViewById<View>(R.id.agentOutputViewport).height > 0)
                 }
                 capture("health-agent-summary-fixture.png")
-                scenario.onActivity { find(it, "agent-health-care-expand")!!.performClick() }
-                await(scenario) { find(it, "agent-health-care-plan")!!.isShown }
-                scenario.onActivity {
-                    assertTrue(find(it, "agent-health-care-why")!!.isShown)
-                    assertTrue(find(it, "agent-health-care-discuss")!!.isShown)
-                    val panel = find(it, "agent-health-care-scroll") as ScrollView
-                    val cap = (300 * it.resources.displayMetrics.density + .5f).toInt()
-                    assertTrue(panel.height in 1..cap)
-                    assertTrue(it.findViewById<View>(R.id.agentOutputViewport).height > 0)
-                    panel.smoothScrollTo(0, panel.getChildAt(0).height)
-                }
-                capture("health-agent-summary-expanded-fixture.png")
                 job = HealthCareStore(context, names.care).use { it.updateResearchJob(job, HealthCareResearchState.DISPATCHED) }
-                state(R.string.health_research_running)
-                scenario.onActivity { assertTrue(find(it, "agent-health-care-plan")!!.isShown) }
                 job = HealthCareStore(context, names.care).use { HealthCareModelReviewTestFixture.complete(it, job) }
-                state(R.string.health_research_completed)
-                HealthCareStore(context, names.care).use { care ->
-                    val issue = care.concern(plan.grant.concernId)!!
-                    val now = System.currentTimeMillis()
-                    care.update(issue.id, issue.revision, "synthetic_display_deadline") {
-                        it.copy(actions = listOf(HealthCareAction(UUID.randomUUID().toString(), HealthCareActionKind.RECHECK,
-                            "合成到期显示测试", "Synthetic UI timing only, not a clinical recommendation", "Synthetic fixture",
-                            HealthCareActionState.CONFIRMED, now + 5000, now + 10000, now,
-                            basis = HealthCareFollowUpPolicy.basis(it))))
-                    }
-                }
-                await(scenario) { find(it, "agent-health-care-followup") != null }
-                state(R.string.health_research_completed)
-                state(R.string.health_research_queued)
                 HealthCareStore(context, names.care).use { assertEquals(job, it.latestResearchJob(plan.grant.concernId)) }
                 HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE,
-                    mapOf("glucose" to "6.4"), "mmol/L", System.currentTimeMillis() - 1, reference = "4-6")) }
-                await(scenario) { find(it, "agent-health-care-concern")?.let(::views)?.filterIsInstance<TextView>()
-                    ?.any { text -> text.text.toString().contains("6.4") } == true }
-                state(R.string.health_research_queued)
-                scenario.onActivity { assertNull(find(it, "agent-health-care-plan")) }
+                    mapOf("glucose" to "6.4"), "mmol/L", System.currentTimeMillis())) }
+                value("6.4 mmol/L")
                 HealthPrivacyStore(context, names.privacy).use { it.change(HealthPrivacyOption.PROFILE_CONTEXT, false, it.policy().version) }
-                await(scenario) { find(it, "agent-health-care-state") == null && find(it, "agent-health-care-discuss") == null }
+                value("6.4 mmol/L")
                 scenario.onActivity {
                     it.healthCareSurface!!.pause()
                     assertFalse(HealthCareModelReviewVisibility.contains(names.care, temporaryId))
                     assertEquals(View.GONE, it.findViewById<View>(R.id.agentHealthCareSurface).visibility)
-                    assertNull(find(it, "agent-health-care-why"))
+                    assertNull(find(it, "agent-health-care-value"))
                 }
             }
         } finally {

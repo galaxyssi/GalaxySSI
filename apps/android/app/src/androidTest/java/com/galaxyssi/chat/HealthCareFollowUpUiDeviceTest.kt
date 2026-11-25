@@ -87,58 +87,22 @@ class HealthCareFollowUpUiDeviceTest {
             SystemClock.elapsedRealtime() < cancelledBy) SystemClock.sleep(30)
         HealthCareStore(context, names.care).use { assertEquals(HealthCareReminderState.CANCELLED, it.reminder(id)!!.state) }
     }
-    @Test fun agentMainOpensFollowUpAndClearsItInBackground() {
-        assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
-        val names = HealthOverviewDatabases(UUID.randomUUID().toString())
-        val transcripts = AgentTranscriptStore(context)
-        val previous = transcripts.activeConversation().id
-        var temporaryId = ""
-        val workers = mutableListOf<ExecutorService>()
-        try {
-            val issue = HealthCareFollowUpTestFixture.confirmed(context, names, conversation = { concernId ->
-                transcripts.createAgentConversation("健康跟进界面测试", globalTopicKey = HealthCareDiscussionPolicy.TOPIC_PREFIX + concernId,
-                    privateMode = true, trackingPaused = true).id.also { temporaryId = it }
-            })
-            transcripts.switchConversation(temporaryId)
-            ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporaryId)).use { scenario ->
-                await(scenario) { it.agentTranscriptStore.activeConversation().id == temporaryId && it.renderedAgentTranscriptSourceEntries.isEmpty() }
-                lateinit var review: HealthCareActionReview
-                scenario.onActivity { activity ->
-                    activity.healthCareSurface?.destroy()
-                    activity.healthCareSurface = HealthCareAgentSurface(activity, names).also { surface ->
-                        review = HealthCareAgentSurface::class.java.getDeclaredField("actionReview")
-                            .apply { isAccessible = true }.get(surface) as HealthCareActionReview
-                        listOf(surface, review).forEach { instance -> workers += instance.javaClass.getDeclaredField("worker")
-                            .apply { isAccessible = true }.get(instance) as ExecutorService }
-                        surface.showForAgent(true); surface.resume()
-                    }
-                }
-                await(scenario) { find(it, "agent-health-care-followup") != null }
-                scenario.onActivity {
-                    find(it, "agent-health-care-expand")!!.performClick()
-                    assertTrue(find(it, "agent-health-care-followup")!!.isShown)
-                    find(it, "agent-health-care-followup")!!.performClick()
-                }
-                await(scenario) { dialog(review)?.isShowing == true }
-                scenario.onActivity {
-                    assertTrue(views(dialog(review)!!.window!!.decorView).any { v -> v.tag == "health-care-followup-schedule" })
-                }
-                scenario.moveToState(Lifecycle.State.CREATED)
-                scenario.onActivity { assertNull(dialog(review)) }
-                scenario.moveToState(Lifecycle.State.RESUMED)
-                await(scenario) { find(it, "agent-health-care-followup") != null }
-                HealthCareStore(context, names.care).use { store ->
-                    assertEquals(issue, store.concern(issue.id))
-                    assertNull(store.reminder(issue.actions.first().id))
-                }
-            }
-        } finally {
-            workers.forEach { it.awaitTermination(10, TimeUnit.SECONDS) }
-            transcripts.switchConversation(previous); if (temporaryId.isNotEmpty()) transcripts.deleteConversation(temporaryId)
-            listOf(names.care, names.records, names.privacy, names.reminders).forEach(context::deleteDatabase)
+    @Test fun followUpFromHealthDetailsClearsInBackground(): Unit = fixture { names, issue, scenario ->
+        val id = issue.actions.first().id
+        open(scenario, id)
+        scenario.onActivity {
+            assertTrue(views(dialog(review(it))!!.window!!.decorView).any { v -> v.tag == "health-care-followup-schedule" })
+        }
+        scenario.moveToState(Lifecycle.State.CREATED)
+        scenario.onActivity { assertNull(dialog(review(it))) }
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        await(scenario) { find(it, "health-care-followup-$id") != null }
+        HealthCareStore(context, names.care).use { store ->
+            assertEquals(issue, store.concern(issue.id))
+            assertNull(store.reminder(id))
         }
     }
+
     @Test fun outcomeRequiredAndOnlySelectedActionCompletes(): Unit = fixture { names, issue, scenario ->
         val id = issue.actions.first().id
         open(scenario, id)

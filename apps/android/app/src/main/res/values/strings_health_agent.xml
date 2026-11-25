@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_agent_report_reference">" · Report reference %1$s"</string>
     <string name="health_agent_why">Why it needs review: %1$s</string>
     <string name="health_agent_next">Next step: %1$s</string>
     <string name="health_agent_research_state">Evidence review: %1$s</string>

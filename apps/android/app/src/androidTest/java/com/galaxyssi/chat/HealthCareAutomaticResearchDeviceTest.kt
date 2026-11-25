@@ -466,21 +466,19 @@ class HealthCareAutomaticResearchDeviceTest {
         val conversation = checkNotNull(markers.getString("conversation", null))
         val transcripts = AgentTranscriptStore(context)
         val previous = transcripts.activeConversation().id
-        val temporary = transcripts.createAgentConversation("主动健康讨论入口测试", privateMode = true, trackingPaused = true)
+        val temporary = transcripts.createAgentConversation("Health discussion route fixture", privateMode = true, trackingPaused = true)
+        transcripts.switchConversation(temporary.id)
         try {
-            androidx.test.core.app.ActivityScenario.launch<MainActivity>(android.content.Intent(context, MainActivity::class.java)
-                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", temporary.id)).use { scenario ->
-                await(20_000, "Production Agent surface opens without submitting research") {
+            androidx.test.core.app.ActivityScenario.launch<HealthCareActivity>(android.content.Intent(context, HealthCareActivity::class.java)
+                .putExtra("health_care_id", concern)).use { scenario ->
+                await(20_000, "Health details can open the bound discussion") {
                     var ready = false
-                    scenario.onActivity { ready = it.agentTranscriptStore.activeConversation().id == temporary.id &&
-                        it.window.decorView.findViewWithTag<android.view.View>("agent-health-care-discuss")?.isShown == true }
+                    scenario.onActivity { ready = it.window.decorView.findViewWithTag<android.view.View>("health-care-discuss")?.isShown == true }
                     ready
                 }
-                scenario.onActivity { it.window.decorView.findViewWithTag<android.view.View>("agent-health-care-discuss").performClick() }
-                await(20_000, "Direct discussion reuses the original private health conversation") {
-                    var ready = false
-                    scenario.onActivity { ready = it.agentTranscriptStore.activeConversation().id == conversation }
-                    ready
+                scenario.onActivity { it.window.decorView.findViewWithTag<android.view.View>("health-care-discuss").performClick() }
+                await(20_000, "Opening from Health reuses the original private discussion") {
+                    transcripts.activeConversation().id == conversation
                 }
                 val bound = transcripts.conversation(conversation)!!
                 assertTrue(bound.privateMode); assertTrue(bound.trackingPaused)
@@ -490,8 +488,9 @@ class HealthCareAutomaticResearchDeviceTest {
                 }
             }
         } finally { transcripts.switchConversation(previous); transcripts.deleteConversation(temporary.id) }
-        println("HEALTH_AUTOMATIC agent_surface=true same_private_conversation=true no_authorization_change=true")
+        println("HEALTH_AUTOMATIC health_details=true same_private_conversation=true no_authorization_change=true")
     }
+
 
     private fun start() {
         assertFalse("Use a fresh isolated run or resume the existing one", markers.contains("turn"))
