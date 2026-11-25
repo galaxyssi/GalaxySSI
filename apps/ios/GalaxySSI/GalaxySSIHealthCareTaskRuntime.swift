@@ -110,6 +110,15 @@ final class GalaxySSIHealthCareTaskRuntime {
     store.find(identity(approval))
   }
 
+  func isExecuting(_ approval: GalaxySSIHealthCareDiscussion.Approval) -> Bool {
+    guard let handle = handles[identity(approval)] else { return false }
+    return !handle.task.isCancelled
+  }
+
+  func persistedWorkspaces() -> [String: AgentWorkspace] {
+    Dictionary(store.list().map { ($0.workspaceId, $0) }, uniquingKeysWith: { first, _ in first })
+  }
+
   func cancel(_ approval: GalaxySSIHealthCareDiscussion.Approval) -> Bool {
     let id = identity(approval)
     do {

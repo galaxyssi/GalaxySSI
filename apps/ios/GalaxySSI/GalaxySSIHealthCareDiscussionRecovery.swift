@@ -10,6 +10,7 @@ enum GalaxySSIHealthCareDiscussionRecovery {
     var state = State.prepared
     var response: Data?
     var receivedAt: Date?
+    var stoppedAt: Date?
     var rounds: GalaxySSIHealthCareDiscussionRounds.State?
 
     init(approval: GalaxySSIHealthCareDiscussion.Approval, agentConversationID: String?, startedAt: Date) throws {
@@ -96,9 +97,11 @@ extension GalaxySSIHealthRecords {
   }
 
   // Cancellation is local and remains possible after consent expires or is revoked.
-  func interruptLocalCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
+  func interruptLocalCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
     try updateCareDiscussionExecution(approval) { execution in
       guard execution.state != .applied else { return }
+      guard now.timeIntervalSinceReferenceDate.isFinite, now >= execution.startedAt else { throw Failure.invalid }
+      if execution.stoppedAt == nil { execution.stoppedAt = now }
       execution.state = .interrupted
     }
   }

@@ -271,3 +271,50 @@ not native compilation or runtime acceptance.
 This increment does not yet project private Health replies and task clocks into
 the original main Agent transcript, nor make unreviewed main-composer input a
 fully supervised general Agent plan. Those remain explicit follow-up work.
+
+## Original Agent output projection follow-up
+
+The main output now renders the original encrypted Health thread directly in its
+bound Agent conversation, alongside any existing legacy ordinary transcript. It
+does not copy questions, answers, raw replies, checkpoints or grants into the
+ordinary chat database, model history, memory or a separate presentation journal.
+Rows preserve the original Health turn IDs and question bytes. Retained answers
+remain plain text; plan, question and clarification-draft results remain review-only
+notices. Raw control content is never shown as an assistant answer or executed.
+
+Projection validates the execution owner, original Agent binding, concern, thread,
+turn, question, destination and private workspace key before using its task clock.
+Only an actual tracked noncancelled handle plus a matching live workspace and
+unexpired original approval can show a running clock. A stale persisted `RUNNING`
+record alone cannot keep it spinning. The original final receipt time freezes a
+completed duration. Interruption now records an optional `stoppedAt` atomically in
+the encrypted Health execution, including control-reply quarantine; repeated
+interruption does not advance it. Older snapshots decode without inventing a stop
+time and use a conservative fixed fallback rather than a new running timer.
+
+The view clears its private row cache on background, lock, runtime plaintext clear,
+owner/session changes and scope invalidation. It reloads only the current bound
+thread and reads the separate private task workspace once per refresh rather than
+once per historical row. Reopening the existing Health review from the output uses
+the existing grant-checked supervisor recovery, not an implicit network replay in
+the transcript renderer. No route or disclosure authority is added by presentation.
+
+The shared scroll view observes an identity/revision/has-rows preference containing
+no private text. New Health rows can follow the tail even with no ordinary chat
+messages, but cannot steal position during dragging/older-message reading. Its
+existing epoch and current-conversation/foreground checks fence deferred movement;
+the latest button also works for a Health-only transcript. Ordinary scroll behavior
+is preserved outside the explicit extra-source hooks.
+
+Nine new native fixture source methods cover binding/isolation, stale workspace
+versus live handle, deadlines, original receipt duration after reopen, control
+quarantine and review-only results, mismatched execution, durable idempotent stop
+time, cancellation, legacy nonrunning turns and old-schema decoding. They have
+not been executed. Source checks are not native compilation, rendered UI inspection,
+XCTest, API/device acceptance or an IPA build.
+
+This direct bound-thread projection supersedes the earlier projection gap for new
+explicit cloud Health turns. Migration/recovery of older ordinary connector receipt
+records, full general Agent planning beyond reviewed cloud requests, generic
+private model journaling/streaming, automatic research migration and native/device
+acceptance remain outstanding. The full Android PR and backlog are not complete.

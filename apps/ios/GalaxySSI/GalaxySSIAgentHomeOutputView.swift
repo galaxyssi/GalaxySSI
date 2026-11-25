@@ -229,6 +229,12 @@ extension AgentHomeView {
                 .transition(.opacity)
             }
           }
+          if let session = activeAgentSession, GalaxySSIHealthCareAgentScope.concernID(session) != nil {
+            GalaxySSIHealthCareAgentTranscriptView(
+              records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets),
+              conversation: session.id, visible: homeVisible)
+              .id([store.profile.identityFingerprint, session.id])
+          }
         }
       }
     .environment(\.agentReplySpeechBlankTap, {

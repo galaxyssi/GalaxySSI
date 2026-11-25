@@ -1916,6 +1916,7 @@ struct GalaxySSIHealthRecords {
       }
       thread.turns[index].interruptedReply = answer
       thread.turns[index].execution?.state = .interrupted
+      thread.turns[index].execution?.stoppedAt = now
       archive.localCareDiscussions?[approval.concernID.uuidString] = thread
       try persist(archive)
       return
