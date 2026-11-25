@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Admission, encrypted Auto identity, primary/synchronous/parallel route preparation and outgoing attachment/UI scope; asynchronous observation/recovery/resume parity incomplete",
+  "scope": "Admission, encrypted Auto identity, primary/synchronous/parallel preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; generic connector/timeout and broader resume parity incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -57,7 +57,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
       "sha256": "6152841da29de9c420c56c509343fce30777142d47fd58c148ba62240224be85",
-      "disposition": "Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment"
+      "disposition": "Existing real Desktop recovery recomputes alternative rankings within paired/verified same-Desktop eligibility and retains original retry budget. Generic timeout observer/candidate callback remains unwired; journal transport does not gain Codex replay"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",

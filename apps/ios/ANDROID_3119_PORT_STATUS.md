@@ -38,9 +38,19 @@ Synchronous and parallel connector preparation refresh eligible automatic routes
 
 New native fixture sources cover exact owner/conversation/request scope and refreshed parameter/manual/team preservation. They are not executed. Pure scope tests do not simulate SwiftUI task scheduling, gestures, privacy transitions, real attachment bytes or concurrent provider dispatch.
 
+## Existing Desktop Asynchronous Recovery
+
+The real Desktop reply-recovery sweep already queries the original owned task independently of a stored fallback list. In that existing path, authenticated confirmed failures now recompute alternative rankings from current callable targets restricted to the existing paired/verified same-Desktop contacts. The original Codex retry budget, timeout recognition, attempt identity, invocation validation and disclosure gate remain unchanged. This does not add cross-Desktop/cloud replay or fabricate a timeout from silence.
+
+Queued/sent recovery attempts and locally committed accepted replies can update Auto only through a current owned source, exact conversation/turn and trusted paired route/Agent binding. Manual, team, managed child and goal-work records do not enter this metadata update. An old turn cannot replace a newer Auto binding. Recovery success/delivery is not inferred from that metadata write.
+
+Fixture sources cover eligible alternative containment, no duplicates and the original budget consuming current ordered alternatives. Existing manual-recovery/source contracts verify the budget and receipt/timeout/authentication kernels remain exact. No fixtures or live recovery are executed.
+
 ## Still Incomplete
 
-This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. Asynchronous failure recovery, active pre-timeout observation/deferred discovery, scheduled/resumed provider dispatch identity and asynchronous failover header updates still require dedicated current-code comparison and integration. The parallel preparation and attachment submission changes above lack native runtime acceptance. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn. Do not infer broader recovery completion from the source inventory or these fixtures.
+This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. The local runtime currently delegates general callConnector actions to AgentIOSNativeActionExecutor, whose default branch rejects them; it is not a completed generic transport implementation. Coordinator's direct model/Agent sending is separate. The general control-plane timeout helper also lacks a Coordinator caller/candidate-observation source. These missing connections require implementation, not just policy tests.
+
+The Desktop changes above are deliberately limited to the existing recovery implementation. Journal-backed publishLinkMessage explicitly rejects codexReplay records, so this patch does not claim that a new Codex replay works on journal transport. General asynchronous continuation, active pre-timeout observation/deferred discovery and broader scheduled/resumed provider identity still require integration. Parallel/attachment/native UI, network, process-restart and recovery acceptance are unverified. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn.
 
 All 17 Android changed files are pinned with explicit dispositions. Manual selection, planning factory and quality-ranking implementations remain exact; only the primary Auto path/header and encrypted session metadata are extended. No transport, credential, version, Android, Desktop or IPA changes.
 

@@ -22,9 +22,13 @@ const provider = source("AgentControlPlaneActionExecutorModels"), ledger = sourc
 const service = source("GalaxySSIServices"), policy = source("AgentManualModelRecoveryPolicy");
 const lockHelper = '  static func isTargetLocked(action: AgentAction?, metadata: [String: String]) -> Bool {\n    action?.parameters["manual_target_locked"] == "true" || metadata["manual_target_locked"] == "true"\n  }\n';
 assert(network.includes(lockHelper));
-assert.equal(network.replace(lockHelper, "").replace('    guard !isTargetLocked(action: action, metadata: [:]) else { return action }\n', ""), prior("AgentNetworkRoutingModels"));
+const checkedNetwork = network.includes("enum AgentAutomaticConnectorRoutePolicy {")
+  ? require("./check-stable-auto-admission-scope.cjs").normalizedNetwork : network;
+assert.equal(checkedNetwork.replace(lockHelper, "").replace('    guard !isTargetLocked(action: action, metadata: [:]) else { return action }\n', ""), prior("AgentNetworkRoutingModels"));
 const pin = '    if AgentConnectorFallbackAction.isTargetLocked(action: item.action, metadata: result.metadata) {\n      result.metadata["manual_target_locked"] = "true"\n    }\n    if let language = item.action.parameters["response_language"], !language.isBlank {\n      result.metadata["response_language"] = language\n    }\n';
-assert(provider.includes(pin)); assert.equal(provider.replace(pin, ""), prior("AgentControlPlaneActionExecutorModels"));
+const checkedProvider = provider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
+  '    var result = delegate.execute(action: item.action, screen: item.screen)');
+assert(provider.includes(pin)); assert.equal(checkedProvider.replace(pin, ""), prior("AgentControlPlaneActionExecutorModels"));
 assert(provider.indexOf(pin) < provider.indexOf('    let awaitingResponse = result.metadata["awaiting_response"]'));
 const expectedTimeout = prior("AgentConnectorTimeoutResolver")
   .replace('    let message = "\\(targetName) timed out"', '    let manuallyLocked = AgentConnectorFallbackAction.isTargetLocked(action: nil, metadata: pending.metadata)\n    let message = manuallyLocked\n      ? AgentManualModelRecoveryPolicy.timeoutMessage(language: pending.metadata["response_language"] ?? LanguagePolicySettings.auto)\n      : "\\(targetName) timed out"')
@@ -64,8 +68,15 @@ assert(service.includes("if let manualTimeout { richOutputJson = AgentRichConten
 // Presentation changes must not edit authenticated packet bytes or receipt identity.
 const added = git(["diff", "--unified=0", base, "--", swift("GalaxySSIServices")]).toString().split(/\r?\n/).filter(l => l.startsWith("+") && !l.startsWith("+++"));
 assert(!added.some(l => /appPayload\[|payload\[/.test(l)), "Do not rewrite wire payloads to localize a failure");
-for (const name of ["AgentRemoteTaskStatusPolicy", "AgentDesktopResultRecovery", "AgentConnectorTransportReceiptRecorder", "AgentConnectorTerminalStatusResolver"])
+for (const name of ["AgentDesktopResultRecovery", "AgentConnectorTransportReceiptRecorder", "AgentConnectorTerminalStatusResolver"])
   assert.equal(source(name), prior(name), "Auto budget, confirmed timeout recognition and receipt/authentication gates stay intact: " + name);
+let remotePolicy = source("AgentRemoteTaskStatusPolicy");
+if (remotePolicy.includes("  static func rankedAlternatives(")) {
+  const start = remotePolicy.indexOf("  static func rankedAlternatives("), end = remotePolicy.indexOf("  static func isCodex(", start);
+  assert(start >= 0 && end > start);
+  remotePolicy = remotePolicy.slice(0, start) + remotePolicy.slice(end);
+}
+assert.equal(remotePolicy, prior("AgentRemoteTaskStatusPolicy"), "Only #3119 current ranking helper; existing replay budget and timeout recognition unchanged");
 const tests = read("apps/ios/GalaxySSITests/AgentRoutingCapabilityTests.swift") + read("apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift") + read("apps/ios/GalaxySSITests/AgentRunPolicyTests.swift");
 for (const token of ["testManualModelLockCannotBeClearedByFallbackMetadataOrActionPreparation", "testManualTimeoutStopsWithoutGrantingUnavailableTargetFallback",
   "testActionExecutorPinsManualLockBeforeTransportTimeout", "testManualCodexRecoveryCannotBeQueuedEvenWhenTheCallerStripsItsSeedLock",
@@ -73,7 +84,14 @@ for (const token of ["testManualModelLockCannotBeClearedByFallbackMetadataOrActi
   "XCTAssertTrue(restoredLegacy.isManualTargetLocked)", "XCTAssertEqual(reopened.pending, [old])", 'for language in ["en", "zh-Hans"]',
   "options: .sortedKeys", "lockedToOrigin: false"]) assert(tests.includes(token), token);
 const autoTests = read("apps/ios/GalaxySSITests/AgentConnectorResponseTests.swift");
-assert.equal(autoTests, git(["show", base + ":apps/ios/GalaxySSITests/AgentConnectorResponseTests.swift"]).toString());
+let originalAutoTests = autoTests;
+if (originalAutoTests.includes("  func testCodexRecoveryRanksOnlyCurrentlyEligibleDesktopAgents(")) {
+  const start = originalAutoTests.indexOf("  func testCodexRecoveryRanksOnlyCurrentlyEligibleDesktopAgents("),
+    end = originalAutoTests.indexOf("  func testLargeResearchReplyKeepsOriginalBytesThroughBothResponseStores(", start);
+  assert(start >= 0 && end > start);
+  originalAutoTests = originalAutoTests.slice(0, start) + originalAutoTests.slice(end);
+}
+assert.equal(originalAutoTests, git(["show", base + ":apps/ios/GalaxySSITests/AgentConnectorResponseTests.swift"]).toString());
 assert(autoTests.includes("testCodexSilenceBudgetRetriesTwoInitialAttemptsThenAlternativesAndOneFinalAttempt"));
 const pbx = read("apps/ios/GalaxySSI.xcodeproj/project.pbxproj");
 for (const token of ["AgentManualModelRecoveryPolicy.swift in Sources", "AgentManualModelRecovery.strings in Resources"]) assert(pbx.includes(token));

@@ -4782,6 +4782,7 @@ final class MessageCoordinator: ObservableObject {
       guard AgentDesktopAcceptedReply.digest(message.content) == accepted.contentSHA256,
             store.commitAcceptedDesktopTask(binding, message: message, acceptedAt: accepted.acceptedAt, status: accepted.status)
       else { return .retryLocal }
+      recordRecoveredAutoTarget(record)
     }
     guard desktopResultRecovery.receipts.insert(accepted.receipt) else { return .retryLocal }
     finishPendingAgentReply(turnId: binding.identity.turnId)
@@ -5075,6 +5076,20 @@ final class MessageCoordinator: ObservableObject {
     }.sorted { $0.id < $1.id }
   }
 
+  private func recordRecoveredAutoTarget(_ record: AgentDesktopReplyRecoveryRecord) {
+    let binding = record.binding
+    guard binding.displayContactId == "hermes", binding.teamSource == nil, binding.managedSource == nil,
+          binding.goalWork != true, !record.isManualTargetLocked,
+          desktopReplyRecovery.record(for: binding) != nil,
+          let source = currentDesktopReplySource(binding), source.contactId == "hermes",
+          let target = store.contact(id: binding.contactId), !target.deleted, target.trustState == .verified,
+          target.desktopId == binding.desktopId, target.connectorAgentId == binding.agentId,
+          store.serverLinks.contains(where: { $0.paired && $0.desktopId == binding.desktopId &&
+            $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return }
+    _ = store.recordAgentAutoRouteDispatch(conversationId: binding.identity.conversationId,
+      turnId: binding.identity.turnId, targetId: target.id)
+  }
+
   private func scheduleCodexReplay(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord,
                                   source: ChatMessage) -> Bool {
     let binding = record.binding
@@ -5085,9 +5100,13 @@ final class MessageCoordinator: ObservableObject {
           !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil,
           store.agentTask(id: binding.identity.turnId)?.phase != .cancelled else { return false }
     let eligible = codexReplayTargets(desktopId: binding.desktopId)
-    let alternatives = eligible.filter {
+    let eligibleIds = Set(eligible.filter {
       !AgentCodexSilenceRecoveryPolicy.isCodex(adapter: $0.connectorAdapterName, agentId: $0.connectorAgentId)
-    }.map(\.id)
+    }.map(\.id))
+    let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(
+      targets: AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+        apiKey: { store.apiKey(for: $0) }, activeLocalProfiles: []),
+      eligibleIds: eligibleIds, goal: source.content)
     let timeout = AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: status,
       failureCode: payload.string("failure_code"), error: payload.string("error"))
     guard let nextId = replay.budget.next(failed: binding.contactId, attemptId: binding.sourceIdentity,
@@ -5164,6 +5183,7 @@ final class MessageCoordinator: ObservableObject {
                                                executionMode: .planOnly, codexReplay: record)
       _ = desktopReplyRecovery.markCodexReplayDispatched(binding)
       AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: status)
+      if status == .queued || status == .sent { recordRecoveredAutoTarget(record) }
       if desktopReplyRecovery.record(for: binding) != nil {
         store.appendDeliveryTrace(source.id, contactId: source.contactId, stage: "codex_recovery_dispatched",
           detail: localizedReply("galaxyssi.agent.codex_recovery_dispatched",

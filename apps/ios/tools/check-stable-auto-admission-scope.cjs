@@ -39,8 +39,10 @@ assert(refreshBlock.includes('!AgentConnectorFallbackAction.hasActiveTrail(actio
 assert(refreshBlock.includes('AgentPlanFactory.unavailableReasoningConnectorId'));
 const normalizedRecovery = (source.slice(0, recoveryStart) + source.slice(recoveryEnd))
   .replace(refreshBlock, '').replace(autoMetadata, '');
-assert.equal(normalizedRecovery.replace(insertion, '').replace(predicate, '').replace(shortCircuit, '')
-  .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""'), git('show', `${base}:${native}`));
+const normalizedNetwork = normalizedRecovery.replace(insertion, '').replace(predicate, '').replace(shortCircuit, '')
+  .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""');
+assert.equal(normalizedNetwork, git('show', `${base}:${native}`));
+module.exports = { normalizedNetwork };
 assert(source.includes('let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]'));
 assert(source.includes('let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first'));
 const tests = read('apps/ios/GalaxySSITests/AgentRoutingCapabilityTests.swift');
@@ -76,6 +78,25 @@ assert(services.includes('return AgentConnectorFallbackAction.freshFallback(acti
 assert(services.includes('recordAutomaticConnectorTarget(fallbackAction, outgoing: outgoing)'));
 assert(services.includes('recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)'));
 assert(services.includes('connectorId: executionAction.parameters["connector_id"] ?? ""'));
+assert(services.includes('let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives('));
+assert(services.includes('eligibleIds: eligibleIds, goal: source.content'));
+assert(services.includes('if status == .queued || status == .sent { recordRecoveredAutoTarget(record) }'));
+const recovered = services.slice(services.indexOf('  private func recordRecoveredAutoTarget('),
+  services.indexOf('  private func scheduleCodexReplay('));
+for (const token of ['binding.teamSource == nil', 'binding.managedSource == nil', '!record.isManualTargetLocked',
+  'currentDesktopReplySource(binding)', 'target.trustState == .verified', 'target.connectorAgentId == binding.agentId',
+  '$0.routes.clientRouteId == binding.identity.clientRouteId', 'turnId: binding.identity.turnId']) assert(recovered.includes(token));
+const accepted = services.slice(services.indexOf('  private func completeAcceptedDesktopReply('),
+  services.indexOf('  private func receiveJournalBackedDesktopRecovery('));
+assert(accepted.indexOf('store.commitAcceptedDesktopTask(') < accepted.indexOf('recordRecoveredAutoTarget(record)'));
+const remoteFile = 'apps/ios/GalaxySSI/AgentRemoteTaskStatusPolicy.swift';
+const remote = read(remoteFile);
+const rankStart = remote.indexOf('  static func rankedAlternatives('), rankEnd = remote.indexOf('  static func isCodex(', rankStart);
+assert(rankStart > 0 && rankEnd > rankStart);
+assert.equal(remote.slice(0, rankStart) + remote.slice(rankEnd), git('show', `${base}:${remoteFile}`));
+assert(remote.includes('eligibleIds.contains($0.id) && $0.kind == .agent'));
+assert(read('apps/ios/GalaxySSITests/AgentConnectorResponseTests.swift')
+  .includes('func testCodexRecoveryRanksOnlyCurrentlyEligibleDesktopAgents()'));
 assert(services.includes('let routed = refreshAutomaticConnectorAction(action, outgoing: outgoing, goal: task.goal)'));
 assert(services.includes('return preparedLocalNativeAction(routed, outgoing: outgoing, task: task)'));
 const prepared = services.slice(services.indexOf('  private func preparedLocalNativeAction('),
@@ -143,13 +164,14 @@ const disposition = file => {
   if (file.endsWith('MainActivityAgentPage.kt')) return 'Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance';
   if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto-reroute metadata propagated through actual native/control-plane executor results; manual/explicit false flags dominate; synchronous fallback uses current admitted ranking and owned attempt trail';
   if (file.endsWith('AgentConnectorHandoffRecovery.kt')) return 'Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete';
+  if (file.endsWith('MobileNativeAgent.kt')) return 'Existing real Desktop recovery recomputes alternative rankings within paired/verified same-Desktop eligibility and retains original retry budget. Generic timeout observer/candidate callback remains unwired; journal transport does not gain Codex replay';
   if (file.endsWith('MobileNativeAgentRuntimeTiming.kt')) return 'Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete';
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Admission, encrypted Auto identity, primary/synchronous/parallel route preparation and outgoing attachment/UI scope; asynchronous observation/recovery/resume parity incomplete',
+  scope: 'Admission, encrypted Auto identity, primary/synchronous/parallel preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; generic connector/timeout and broader resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(report, 'utf8')), inventory);
-console.log('Android #3119: admission plus encrypted scoped Auto identity and primary dispatch; remaining recovery/parallel parity incomplete. Source checks only.');
+console.log('Android #3119: scoped Auto dispatch and bounded Desktop recovery contracts; generic connector/timeout wiring remains incomplete. Source checks only.');
