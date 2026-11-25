@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped source learning/health, pinned catalogs/adapters, text fusion/adaptive routing, exact encrypted response cache and local feature-hash similarity. Image DNS preflight is not connection pinning. Learned-image/mixed-vertical coverage, indexed storage/workspace/large-corpus limits, media performance, other media/relevance, timing spans and native acceptance remain incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache and feature-hash similarity. Image DNS preflight is not connection pinning. Indexed storage/workspace/large-corpus limits, other media/relevance, timing spans and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -102,12 +102,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Partial: all 41 actual base IDs and 247 indexed sites, query-aware completion and unified weight/language/authority/health scoring with category/vertical coverage; explicit IDs preserve order. Fresh text/image fusion uses pinned logistic weights and untrusted provenance; local feature-hash vectors implement ordered UTF-16 token/trigram SHA-256 Float32 semantics. Image-only Sogou/Brave/DDG retain scoped credential and deadline policy. Learned-image/mixed-vertical coverage, other media and native numeric/relevance/UI/performance acceptance remain incomplete"
+      "disposition": "Partial: all 41 base IDs/247 sites, query-aware completion and unified weight/language/authority/health scoring with category/vertical coverage; explicit IDs preserve order. Direct image-only and mixed text/media requests share fusion, global consensus, reference image scoring and all-image page diversity. Qualified learned-image site indexes are ordinary page references, never fake image URLs. Pinned ranker and ordered UTF-16 SHA-256 Float32 feature-hash semantics are wired. Scoped Brave/GitHub headers and DDG shared deadline retained. Other media, storage limits and native numeric/relevance/UI/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: native scoped learning/health, pinned catalogs and adapters, text fusion/adaptive source selection, exact encrypted response caching and feature-hash document similarity for find_similar/cache query. Optional response/vector fields preserve legacy decode; exact hits retain original evidence and clear generations reject stale writes. Existing bounded iOS cache/evidence limits retained. Indexed database/workspace performance, large-corpus/result caps, other context/timing and native acceptance remain incomplete"
+      "disposition": "Partial: native scoped learning/health, all pinned catalogs/adapters, unified text/media fusion and adaptive source selection, exact encrypted response caching and feature-hash document similarity for find_similar/cache query. Qualified image-topic sites remain page references unless a direct parser discovers typed media. Optional response/vector fields preserve legacy decode; exact cache routing identities prevent stale result-shape reuse. Current bounded iOS storage/evidence limits retained. Indexed database/workspace performance, large-corpus/result caps, context/timing and native acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

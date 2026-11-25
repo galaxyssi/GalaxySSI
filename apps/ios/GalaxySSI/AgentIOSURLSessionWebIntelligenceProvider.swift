@@ -432,8 +432,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       "categories": .array(Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)).sorted().map(AgentMcpJSONValue.string)),
       "model": .string(AgentIOSWebSearchFusion.modelID),
       "url_normalization": .string("ios_canonical_evidence_v1"),
-      "image_routing": .string("direct_media_subject_v2"),
-      "web_routing": .string("language_scoped_result_cards_v5"),
+      "image_routing": .string("ios_mixed_media_subject_v3"),
+      "web_routing": .string("ios_mixed_typed_cards_v6"),
       "provider": .string(webMediaProvider.implementationId),
       "credential_scope": .string(credentialScope)
     ])
@@ -1358,9 +1358,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         "trust": .string("untrusted_public_web"),
         "source_receipt": .object(receipt)
       ]
-      if object["retrieval_status"] == .string("local_index_reference") {
-        result["retrieval_status"] = .string("local_index_reference")
-        evidence["retrieval_status"] = .string("local_index_reference")
+      if object["retrieval_status"] == .string("local_index_reference") ||
+        object["retrieval_status"] == .string("image_topic_page_reference") {
+        result["retrieval_status"] = object["retrieval_status"]
+        evidence["retrieval_status"] = object["retrieval_status"]
       }
       if let published = object["published_at"]?.stringValue, !published.isBlank {
         result["published_at"] = .string(String(published.prefix(64)))
@@ -1372,8 +1373,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         result["engines"] = object["engines"]
         evidence["engines"] = object["engines"]
       }
-      if object["vertical"] == .string("image"), let images = object["images"]?.arrayValue {
-        result["vertical"] = .string("image")
+      if let vertical = object["vertical"] { result["vertical"] = vertical; evidence["vertical"] = vertical }
+      if let images = object["images"]?.arrayValue, !images.isEmpty {
+        result["vertical"] = object["vertical"] ?? .string("image")
         result["images"] = .array(images)
         evidence["images"] = .array(images)
         if let lead = images.first?.objectValue?["url"] {
@@ -1423,7 +1425,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         result["unavailable_sources"] = unavailable
       }
       for key in ["circuits_skipped", "source_health_receipts", "source_health_available", "source_health_write_committed",
-                  "selected_learned_sources", "official_sources", "text_ranker"] {
+                  "selected_learned_sources", "official_sources", "text_ranker", "image_ranker", "mixed_ranker"] {
         if let value = webResult.metadata[key] { result[key] = value }
       }
     }

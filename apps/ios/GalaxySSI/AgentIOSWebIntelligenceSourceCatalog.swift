@@ -100,11 +100,12 @@ enum AgentIOSWebIntelligenceQueryRouting {
     requestedEngineOrder: [String] = [],
     health: [String: AgentIOSWebSourceHealth] = [:],
     fanout: Int = 32,
-    nowMillis: Int64 = 0
+    nowMillis: Int64 = 0,
+    braveImageKeyAvailable: Bool = false
   ) -> AgentIOSWebIntelligenceSourceSelection {
     let learned = learnedSources.filter(\.isSearchEligible).sorted { $0.sourceID < $1.sourceID }
       .enumerated().compactMap { $0.element.searchSpec(index: $0.offset + AgentIOSWebIntelligenceSourceCatalog.sourceCount) }
-    let catalog = orderedTextSources + learned
+    let catalog = orderedSources + learned
     let categories = Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory))
     let limit = min(32, max(1, fanout))
     if !requestedEngineIds.isEmpty {
@@ -118,16 +119,20 @@ enum AgentIOSWebIntelligenceQueryRouting {
     }
     let language = queryLanguage(query)
     let general: Set<AgentIOSWebIntelligenceVertical> = [.general, .regional]
+    let imageOnly = requestedVerticals == [.image]
     let eligible = catalog.filter {
-      $0.enabledByDefault && ((AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineIDs.contains($0.id) && general.contains($0.vertical)) ||
+      $0.enabledByDefault && (imageOnly ||
+        (AgentIOSWebIntelligenceSourceCatalog.baseSearchEngineIDs.contains($0.id) && general.contains($0.vertical)) ||
         requestedVerticals.contains($0.vertical) || !categories.isDisjoint(with: $0.categoryTags))
-    }
+    }.filter { !imageOnly || AgentIOSImageSearchRequestPolicy.supported.contains($0.id) }
+      .filter { $0.id != "brave_image" || braveImageKeyAvailable }
     let skipped = eligible.compactMap { health[$0.id] }.filter { $0.circuitState(now: nowMillis) == "open" }
       .sorted { $0.circuitOpenUntilMillis < $1.circuitOpenUntilMillis }
     let blocked = Set(skipped.map(\.sourceID))
     func score(_ source: AgentIOSWebIntelligenceSourceSpec) -> Double {
       let languageMatch = source.languages.contains(language) ? 2.0 : (source.languages.contains("*") ? 0.8 : -1.5)
-      let weight = ["bing", "baidu", "duckduckgo"].contains(source.id) ? 1.05 : (source.id == "bing_news" ? 1.1 : 1)
+      let weight = source.id == "sogou_image" ? 1.2 :
+        (["bing", "baidu", "duckduckgo"].contains(source.id) ? 1.05 : (source.id == "bing_news" ? 1.1 : 1))
       return weight + (requestedVerticals.contains(source.vertical) ? 2.5 : 0) +
         (!categories.isDisjoint(with: source.categoryTags) ? 2.0 : 0) +
         (general.contains(source.vertical) ? 1.0 : 0) + languageMatch + source.authority * 0.5 +
@@ -164,11 +169,14 @@ enum AgentIOSWebIntelligenceQueryRouting {
     "crossref", "semantic_scholar", "arxiv", "pubmed", "crates_io", "npm", "mdn", "devdocs", "pypi"
   ]
 
-  private static var orderedTextSources: [AgentIOSWebIntelligenceSourceSpec] {
+  private static var orderedSources: [AgentIOSWebIntelligenceSourceSpec] {
     let roots: [AgentIOSWebIntelligenceSourceSpec] = [
       .init(id: "bing", title: "Bing", vertical: .general, allowedHosts: [], authority: 0.5),
       .init(id: "duckduckgo", title: "DuckDuckGo", vertical: .general, allowedHosts: [], authority: 0.5),
-      .init(id: "baidu", title: "Baidu", vertical: .regional, allowedHosts: [], authority: 0.5, languages: ["zh"])
+      .init(id: "baidu", title: "Baidu", vertical: .regional, allowedHosts: [], authority: 0.5, languages: ["zh"]),
+      .init(id: "sogou_image", title: "Sogou Images", vertical: .image, allowedHosts: [], authority: 0.75),
+      .init(id: "brave_image", title: "Brave Image", vertical: .image, allowedHosts: [], authority: 0.8),
+      .init(id: "duckduckgo_image", title: "DuckDuckGo Image", vertical: .image, allowedHosts: [], authority: 0.75)
     ]
     let adapters = roots + AgentIOSJSONWebSearchAdapter.entries.map(\.spec) + AgentIOSHTMLWebSearchAdapter.entries.map(\.spec) +
       [AgentIOSArxivSearchAdapter.entry.spec, AgentIOSDevDocsSearchAdapter.entry.spec]

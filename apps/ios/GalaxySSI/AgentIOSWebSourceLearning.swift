@@ -18,7 +18,7 @@ struct AgentIOSLearnedWebSource: Codable, Equatable {
 
   var isSearchEligible: Bool {
     let broad = ["general", "knowledge"].contains(vertical)
-    return isValid && !AgentIOSWebSourceLearningPolicy.isBuiltInHost(host) && status == "verified" && vertical != "image" &&
+    return isValid && !AgentIOSWebSourceLearningPolicy.isBuiltInHost(host) && status == "verified" &&
       observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)
   }
 

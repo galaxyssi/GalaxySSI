@@ -36,6 +36,7 @@ const queryHook = [
   "    case \"query\":\n      let query = string(input, \"query\", limit: 4_096)\n      guard !query.isEmpty else { return failure(\"invalid_query\", \"Cache similarity query requires non-empty text\") }\n      results = similarityResults(cacheStore.similarDocuments(query: query,\n        limit: int(input, \"limit\", defaultValue: 10, minimum: 1, maximum: 100)))\n      actionMetadata[\"embedding_model\"] = .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)"
 ];
 function retainedEmbeddingProvider(source) {
+  source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   if (!source.includes('let local = cacheStore.similarDocuments(')) return source;
   const previous = show(base, app + 'AgentIOSURLSessionWebIntelligenceProvider.swift');
   assert.equal(source.split(queryHook[1]).length, 2, 'One cache query vector projection hook');
@@ -86,6 +87,7 @@ if (require.main === module) {
   }
   for (const file of ['AgentIOSURLSessionWebMediaProvider.swift', 'AgentIOSWebIntelligenceSourceCatalog.swift',
     'AgentIOSWebSourceHealth.swift', 'AgentIOSWebSearchFusion.swift', 'AgentIOSImageSearchRequestPolicy.swift',
-    'AgentIOSWebExecutionBudget.swift', 'AgentIOSPublicSearchParser.swift']) assert.equal(read(app + file), show(base, app + file), file);
+    'AgentIOSWebExecutionBudget.swift', 'AgentIOSPublicSearchParser.swift']) assert.equal(
+      require('./check-mixed-media-search-scope.cjs').retainedMixedSource(read(app + file)), show(base, app + file), file);
   console.log('Pinned hash arithmetic/tokens, 8 JDK reference datasets, optional vector storage, cosine wiring and retained transport/cache response source guards passed. No native execution or speed/relevance acceptance.');
 }

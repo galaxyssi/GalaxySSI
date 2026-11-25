@@ -36,6 +36,7 @@ const cacheHooks = [
   ]
 ];
 function retainedResponseCache(source) {
+  source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   source = require('./check-feature-hash-similarity-scope.cjs').retainedEmbeddingCache(source);
   if (!source.includes('    var searchResponses: [SearchResponse]? = nil')) return source;
   for (const [before, after] of cacheHooks) {
@@ -45,6 +46,7 @@ function retainedResponseCache(source) {
   return source;
 }
 function retainedResponseSearch(source) {
+  source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   source = require('./check-feature-hash-similarity-scope.cjs').retainedEmbeddingProvider(source);
   if (!source.includes('let cacheGeneration = cacheScope ?')) return source;
   const old = show(base, app + 'AgentIOSURLSessionWebIntelligenceProvider.swift');
@@ -91,6 +93,6 @@ if (require.main === module) {
   for (const file of ['AgentIOSURLSessionWebMediaProvider.swift', 'AgentIOSWebIntelligenceSourceCatalog.swift',
     'AgentIOSWebSourceHealth.swift', 'AgentIOSPublicSearchParser.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSWebSearchFusion.swift', 'AgentIOSWebExecutionBudget.swift'])
-    assert.equal(read(app + file), show(base, app + file), file);
+    assert.equal(require('./check-mixed-media-search-scope.cjs').retainedMixedSource(read(app + file)), show(base, app + file), file);
   console.log('Pinned exact-response cache identity, optional encrypted schema/bounds, clear generation, scope/provenance and unchanged raw search source guards passed. No native or fault acceptance.');
 }

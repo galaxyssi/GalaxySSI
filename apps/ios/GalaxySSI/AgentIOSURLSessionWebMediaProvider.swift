@@ -402,11 +402,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let requestedEngines = (input["engines"]?.arrayValue ?? []).compactMap(\.stringValue)
       let engineIds = Set(requestedEngines)
       let verticalIds = Set((input["verticals"]?.arrayValue ?? []).compactMap(\.stringValue))
-      let imageSearch = verticalIds.contains("image") || engineIds.contains(where: { $0.hasSuffix("_image") })
-      if imageSearch, (!engineIds.isEmpty && !engineIds.isSubset(of: AgentIOSImageSearchRequestPolicy.supported)) ||
-         (!verticalIds.isEmpty && verticalIds != ["image"]) {
-        throw AgentIOSURLSessionWebError.unsupportedImageEngine
-      }
+      let imageSearch = (engineIds.isEmpty && verticalIds == ["image"]) ||
+        (!engineIds.isEmpty && engineIds.isSubset(of: AgentIOSImageSearchRequestPolicy.supported))
       guard AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines) else {
         throw AgentIOSURLSessionWebError.unsupportedSearchEngine
       }
@@ -426,25 +423,23 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         }),
         requestedEngineIds: engineIds,
         requestedCategories: Set((input["categories"]?.arrayValue ?? []).compactMap(\.stringValue)),
-        learnedSources: imageSearch ? [] : learned,
+        learnedSources: learned,
         requestedEngineOrder: requestedEngines,
         health: sourceSnapshot?.health ?? [:],
         fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)),
-        nowMillis: nowMillis()
+        nowMillis: nowMillis(),
+        braveImageKeyAvailable: (verticalIds.contains("image") || engineIds.contains("brave_image")) &&
+          AgentIOSImageSearchRequestPolicy.validBraveKey(imageCredentials.credential(.braveAPIKey))
       )
       let candidates = try searchEndpoints(
         query: query,
         maxResults: maxResults,
         routing: routing,
         imageSearch: imageSearch,
-        requestedEngineIds: requestedEngines
+        requestedEngineIds: imageSearch ? routing.selected.map(\.id) : requestedEngines
       )
       let health = sourceSnapshot?.health
-      let selection = imageSearch
-        ? AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
-          preferred: [], health: health ?? [:], explicit: explicitSources,
-          fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
-        : AgentIOSWebSourceHealthRouting.Selection(selected: routing.selected.map(\.id), skipped: routing.skipped)
+      let selection = AgentIOSWebSourceHealthRouting.Selection(selected: routing.selected.map(\.id), skipped: routing.skipped)
       let endpoints = selection.selected.compactMap { id in candidates.first { $0.provider == id } }
       guard !endpoints.isEmpty else {
         return failure("search_sources_cooling_down", "Selected search sources are cooling down; no request was started.",
@@ -469,6 +464,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           let remaining = min(deadline - nowMillis(), invocation.remainingTimeMillis)
           guard remaining >= 250 else {
             accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .timeout))
+            return
+          }
+          if endpoint.provider == "brave_image",
+            !AgentIOSImageSearchRequestPolicy.validBraveKey(imageCredentials.credential(.braveAPIKey)) {
+            accumulator.append(AgentIOSWebSearchAttempt(index: index, provider: endpoint.provider, error: .sourceCredentialRequired))
             return
           }
           let attemptStarted = nowMillis()
@@ -601,18 +601,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         ))
       }
 
-      var merged: [AgentIOSWebSearchResult] = []
-      if imageSearch {
-        merged = AgentIOSImageSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil }.map {
-          .init(sourceID: $0.provider, results: $0.results,
-            weight: AgentIOSImageSearchRequestPolicy.weight($0.provider), authority: AgentIOSImageSearchRequestPolicy.authority($0.provider))
-        }, limit: maxResults)
-      }
-      if !imageSearch {
-        merged = AgentIOSWebSearchFusion.fuse(query: query, groups: attempts.filter { $0.resource != nil || $0.localIndex }.map {
-          AgentIOSWebSearchFusion.group(sourceID: $0.provider, results: $0.results)
-        }, limit: maxResults, nowMillis: nowMillis())
-      }
+      let merged = AgentIOSWebSearchFusion.fuse(query: query,
+        groups: attempts.filter { $0.resource != nil || $0.localIndex }.map { attempt in
+          AgentIOSWebSearchFusion.group(sourceID: attempt.provider, results: attempt.results,
+            verticalOverride: routing.selected.first { $0.id == attempt.provider }?.vertical)
+        }, limit: maxResults, nowMillis: nowMillis(), includeImages: true)
       var output = first.resource.map(commonOutput) ?? ["retrieval_status": .string("local_index_reference")]
       output["query"] = .string(query)
       output["results"] = .array(merged.map { result in
@@ -622,8 +615,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           "excerpt": .string(result.excerpt),
           "snippet": .string(result.excerpt)
         ]
+        if let vertical = result.vertical { value["vertical"] = .string(vertical) }
         if let image = result.image {
-          value["vertical"] = .string("image")
+          value["vertical"] = .string(result.vertical ?? "image")
           value["images"] = .array([.object(image)])
           value["lead_image_url"] = image["url"]
         }
@@ -647,8 +641,13 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         output["learning"] = .object(["status": .string(scoped ? "skipped_store_unavailable" : "skipped_cache_scope_required")])
       }
       var resultMetadata = metadata(operation: .webSearch, method: .get)
-      if imageSearch { resultMetadata["image_ranker"] = .string(AgentIOSImageSearchFusion.modelID) }
-      else { resultMetadata["text_ranker"] = .string(AgentIOSWebSearchFusion.modelID) }
+      let hasMediaResults = merged.contains { $0.image != nil }
+      let hasPageResults = merged.contains { $0.image == nil }
+      if hasMediaResults { resultMetadata["image_ranker"] = .string(AgentIOSImageSearchFusion.modelID) }
+      if hasPageResults { resultMetadata["text_ranker"] = .string(AgentIOSWebSearchFusion.modelID) }
+      if hasMediaResults && hasPageResults {
+        resultMetadata["mixed_ranker"] = .string(AgentIOSWebSearchFusion.modelID)
+      }
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
       let completedProviders = Set(attempts.map(\.provider))
       let cancelledProviders = earlyCompleted
@@ -1274,9 +1273,6 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let providers = requestedEngineIds.isEmpty
         ? ["sogou_image"] + (AgentIOSImageSearchRequestPolicy.validBraveKey(braveKey) ? ["brave_image"] : []) + ["duckduckgo_image"]
         : requestedEngineIds
-      if providers.contains("brave_image"), !AgentIOSImageSearchRequestPolicy.validBraveKey(braveKey) {
-        throw AgentIOSURLSessionWebError.sourceCredentialRequired
-      }
       return try providers.map { provider in
         let components: URLComponents
         switch provider {
@@ -1301,6 +1297,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       : ["bing", "baidu", "duckduckgo"]
     let selectedRootIDs = Set(routing.selected.map(\.id)).intersection(["bing", "baidu", "duckduckgo"])
     var endpoints = try routing.selected.filter { !selectedRootIDs.contains($0.id) }.map { source -> AgentIOSWebSearchEndpoint in
+      if AgentIOSImageSearchRequestPolicy.supported.contains(source.id) {
+        return try searchEndpoints(query: query, maxResults: maxResults, routing: routing,
+          imageSearch: true, requestedEngineIds: [source.id])[0]
+      }
       if source.id == AgentIOSDevDocsSearchAdapter.entry.id {
         guard let url = URL(string: AgentIOSDevDocsSearchAdapter.entry.template) else { throw AgentIOSURLSessionWebError.invalidURL }
         return AgentIOSWebSearchEndpoint(provider: source.id, url: url, localIndex: true)

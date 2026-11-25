@@ -7,6 +7,7 @@ enum AgentIOSPublicSearchParser {
     var url: String
     var excerpt: String
     var image: AgentMcpJSONObject? = nil
+    var vertical: String? = nil
     var retrievalStatus: String? = nil
     var publishedAt = ""
     var searchScore: AgentIOSWebSearchFusion.Score? = nil

@@ -31,6 +31,7 @@ const providerHooks = [
   ]
 ];
 function retainedAutoRoutingProvider(source) {
+  source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   if (!source.includes('let selectedRootIDs =')) return source;
   for (const [before, after] of providerHooks) {
     assert.equal(source.split(after).length, 2, 'One declared routing hook: ' + after);
@@ -39,6 +40,7 @@ function retainedAutoRoutingProvider(source) {
   return source;
 }
 function retainedAutoRoutingCatalog(source) {
+  source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   const before = show(base, app + 'AgentIOSWebIntelligenceSourceCatalog.swift');
   const section = value => value.slice(value.indexOf('  static func select('), value.indexOf('  static func queryLanguage('));
   source = source.replace(section(source), section(before));

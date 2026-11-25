@@ -17,9 +17,10 @@ extension GalaxySSIStoreTests {
     insufficient.observations = 1
     let image = try learnedRoutingModel(vertical: "image")
     XCTAssertTrue(image.isValid)
-    XCTAssertEqual(image.publicValue()["search_available"], .bool(false))
+    XCTAssertEqual(image.publicValue()["search_available"], .bool(true))
     XCTAssertEqual(image.status, "verified")
-    for unavailable in [candidate, disabled, insufficient, image] {
+    XCTAssertTrue(image.isSearchEligible)
+    for unavailable in [candidate, disabled, insufficient] {
       XCTAssertFalse(unavailable.isSearchEligible)
       XCTAssertFalse(AgentIOSWebSearchEnginePolicy.accepts([unavailable.sourceID], learnedSources: [unavailable]))
     }
@@ -28,9 +29,9 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(source.searchSpec(index: 0)?.allowedHosts, [source.host])
     let selected = AgentIOSWebIntelligenceQueryRouting.select(query: "Galaxy research", requestedVerticals: [],
       requestedEngineIds: [], requestedCategories: ["RESEARCH"], learnedSources: [source, disabled])
-    XCTAssertEqual(selected.selected.map(\.id), [source.sourceID])
-    XCTAssertTrue(AgentIOSWebIntelligenceQueryRouting.select(query: "research learned.example", requestedVerticals: [],
-      requestedEngineIds: [], learnedSources: [source]).selected.isEmpty)
+    XCTAssertEqual(selected.selected.first?.id, source.sourceID)
+    XCTAssertFalse(AgentIOSWebIntelligenceQueryRouting.select(query: "research learned.example", requestedVerticals: [],
+      requestedEngineIds: [], learnedSources: [source]).selected.contains { $0.id == source.sourceID })
   }
 
   func testActualLearnedSearchFiltersDestinationsAndLearnsOnlyOnceThenClearRevokesRouting() throws {

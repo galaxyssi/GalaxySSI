@@ -8,6 +8,7 @@ enum AgentIOSWebSearchFusion {
     var results: [Hit]
     var weight: Double = 1
     var authority: Double = 0.5
+    var vertical: AgentIOSWebIntelligenceVertical = .general
   }
   struct Score: Equatable {
     var final: Double
@@ -31,38 +32,60 @@ enum AgentIOSWebSearchFusion {
     var ordinal: Int
   }
 
-  static func group(sourceID: String, results: [Hit]) -> Group {
+  static func group(sourceID: String, results: [Hit], verticalOverride: AgentIOSWebIntelligenceVertical? = nil) -> Group {
     let spec = AgentIOSJSONWebSearchAdapter.entry(sourceID)?.spec ?? AgentIOSHTMLWebSearchAdapter.entry(sourceID)?.spec ??
       AgentIOSWebIntelligenceSourceCatalog.indexedSources.first { $0.id == sourceID } ??
       (sourceID == "arxiv" ? AgentIOSArxivSearchAdapter.entry.spec : nil) ??
       (sourceID == "devdocs" ? AgentIOSDevDocsSearchAdapter.entry.spec : nil)
-    let weight = ["bing", "baidu", "duckduckgo"].contains(sourceID) ? 1.05 : (sourceID == "bing_news" ? 1.1 : 1)
-    // Android fusion's immutable catalog uses the unknown-source prior for learned adapters.
-    return Group(sourceID: sourceID, results: results, weight: weight, authority: spec?.authority ?? 0.5)
+    let imageSource = AgentIOSImageSearchRequestPolicy.supported.contains(sourceID)
+    let weight = imageSource ? AgentIOSImageSearchRequestPolicy.weight(sourceID) :
+      (["bing", "baidu", "duckduckgo"].contains(sourceID) ? 1.05 : (sourceID == "bing_news" ? 1.1 : 1))
+    // Learned adapters retain the immutable catalog's unknown-source fusion authority prior.
+    return Group(sourceID: sourceID, results: results, weight: weight,
+      authority: imageSource ? AgentIOSImageSearchRequestPolicy.authority(sourceID) : spec?.authority ?? 0.5,
+      vertical: verticalOverride ?? (imageSource ? .image : spec?.vertical ?? .general))
   }
 
-  static func fuse(query: String, groups: [Group], limit: Int, nowMillis: Int64) -> [Hit] {
+  static func fuse(query: String, groups: [Group], limit: Int, nowMillis: Int64, includeImages: Bool = false) -> [Hit] {
     guard limit > 0 else { return [] }
     var candidates: [Candidate] = [], indices: [String: Int] = [:]
     for group in groups.prefix(32) {
       guard !group.sourceID.isEmpty, group.weight.isFinite, group.weight >= 0,
         group.authority.isFinite, (0.0...1.0).contains(group.authority) else { continue }
       for (offset, hit) in group.results.prefix(100).enumerated() {
-        guard hit.image == nil, !hit.title.isBlank, let parts = URLComponents(string: hit.url),
+        guard (includeImages || hit.image == nil), !hit.title.isBlank, let parts = URLComponents(string: hit.url),
           ["http", "https"].contains(parts.scheme?.lowercased() ?? ""), parts.host != nil,
           parts.user == nil, parts.password == nil else { continue }
-        let key = AgentIOSWebEvidencePack.canonicalURL(hit.url)
+        let page = AgentIOSWebEvidencePack.canonicalURL(hit.url)
+        let media = (hit.image?["url"]?.stringValue).flatMap(AgentIOSWebEvidencePack.mediaURL)
+        if hit.image != nil && media == nil { continue }
+        let key = media.map(AgentIOSWebEvidencePack.canonicalURL) ?? page
         let index: Int
         if let existing = indices[key] { index = existing }
         else {
           index = candidates.count; indices[key] = index
-          var canonical = hit; canonical.url = key
+          var canonical = hit; canonical.url = page
+          canonical.vertical = hit.vertical ?? group.vertical.rawValue
+          if canonical.vertical == "image", canonical.image == nil { canonical.retrievalStatus = "image_topic_page_reference" }
           candidates.append(Candidate(hit: canonical, authority: group.authority, ordinal: index))
         }
         var item = candidates[index]
         if hit.title.utf16.count > item.hit.title.utf16.count { item.hit.title = hit.title }
         if hit.excerpt.utf16.count > item.hit.excerpt.utf16.count { item.hit.excerpt = hit.excerpt }
         if item.hit.publishedAt.isBlank { item.hit.publishedAt = hit.publishedAt }
+        if item.hit.vertical == "general", group.vertical != .general { item.hit.vertical = group.vertical.rawValue }
+        if item.hit.image == nil { item.hit.image = hit.image }
+        else if let incoming = hit.image {
+          var merged = item.hit.image ?? [:]
+          if merged["thumbnail_url"]?.stringValue?.isEmpty ?? true, let thumbnail = incoming["thumbnail_url"] {
+            merged["thumbnail_url"] = thumbnail
+          }
+          for dimension in ["width", "height"] where (merged[dimension]?.intValue ?? 0) <= 0 {
+            if let value = incoming[dimension] { merged[dimension] = value }
+          }
+          item.hit.image = merged
+        }
+        if item.hit.image != nil, item.hit.retrievalStatus == "image_topic_page_reference" { item.hit.retrievalStatus = nil }
         if item.hit.retrievalStatus == "local_index_reference", hit.retrievalStatus != "local_index_reference" {
           item.hit.retrievalStatus = hit.retrievalStatus
         }
@@ -88,18 +111,28 @@ enum AgentIOSWebSearchFusion {
       let penalty = max(0, Double(item.ranks.count - 8) / 16)
       let local = AgentIOSImageSearchFusion.rankerScore([rrf, lexical, consensus, item.authority, recency,
         exactness, max(titleOverlap, bodyOverlap), urlQuality(item.hit.url), penalty])
-      let final = min(1, max(0, 0.28 * rrf + 0.21 * lexical + 0.14 * consensus + 0.10 * item.authority + 0.07 * recency + 0.20 * local))
+      let webScore = min(1, max(0, 0.28 * rrf + 0.21 * lexical + 0.14 * consensus + 0.10 * item.authority + 0.07 * recency + 0.20 * local))
+      let specificity = titles.isEmpty ? 0 : Double(queryTokens.intersection(titles).count) / Double(titles.count)
+      let final = item.hit.vertical == "image" ? 0.45 * webScore + 0.35 * titleOverlap + 0.20 * specificity : webScore
       candidates[index].hit.searchScore = Score(final: final, reciprocalRank: rrf, lexical: lexical,
         consensus: consensus, authority: item.authority, freshness: recency, localModel: local)
       candidates[index].hit.searchEngines = item.ranks.keys.sorted()
     }
-    return candidates.sorted {
+    let ranked = candidates.sorted {
       let left = $0.hit.searchScore?.final ?? 0, right = $1.hit.searchScore?.final ?? 0
       if left != right { return left > right }
       if $0.ranks.count != $1.ranks.count { return $0.ranks.count > $1.ranks.count }
       if $0.authority != $1.authority { return $0.authority > $1.authority }
       return $0.ordinal < $1.ordinal
-    }.prefix(min(limit, 100)).map(\.hit)
+    }
+    if !ranked.isEmpty && ranked.allSatisfy({ $0.hit.vertical == "image" }) {
+      var pages = Set<String>(), first: [Candidate] = [], remaining: [Candidate] = []
+      for item in ranked {
+        if pages.insert(item.hit.url).inserted { first.append(item) } else { remaining.append(item) }
+      }
+      return (first + remaining).prefix(min(limit, 100)).map(\.hit)
+    }
+    return ranked.prefix(min(limit, 100)).map(\.hit)
   }
 
   static func freshness(_ value: String, nowMillis: Int64) -> Double {

@@ -14,6 +14,7 @@ function section(text, start, end) {
   assert(first >= 0 && last > first, start); return text.slice(first, last);
 }
 function retainedFusionHit(text) {
+  text = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(text);
   return text.replace('    var publishedAt = ""\n    var searchScore: AgentIOSWebSearchFusion.Score? = nil\n    var searchEngines: [String] = []\n', '');
 }
 function retainedTextFusionProvider(text) {
@@ -63,7 +64,7 @@ if (require.main === module) {
   const asset = JSON.parse(show(android, 'apps/android/app/src/main/assets/web-intelligence/ranker-v1.json'));
   const image = read(app + 'AgentIOSImageSearchFusion.swift');
   assert.deepEqual(JSON.parse('[' + image.match(/static let weights = \[([^\]]+)\]/)[1] + ']'), asset.weights);
-  const fusion = read(app + 'AgentIOSWebSearchFusion.swift');
+  const fusion = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(read(app + 'AgentIOSWebSearchFusion.swift'));
   for (const token of ['AgentIOSImageSearchFusion.rankerScore([rrf, lexical, consensus, item.authority, recency,',
     'exactness, max(titleOverlap, bodyOverlap), urlQuality(item.hit.url), penalty]', '0.28 * rrf + 0.21 * lexical + 0.14 * consensus',
     '0.10 * item.authority + 0.07 * recency + 0.20 * local', 'item.ranks.keys.sorted().reduce', 'Double(item.ranks.count - 8) / 16',
