@@ -6,6 +6,43 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func circadianDial(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let cx = 97.0, cy = 75.0, r = 53.0
+    let light: UInt32 = 0xEFD19B, dark: UInt32 = 0x91B6BC
+    sector(cx, cy, r, -90, 180, light); sector(cx, cy, r, 90, 180, dark)
+    for tick in 0..<12 {
+      let direction = (Double(tick) * 30 - 90) * .pi / 180, dx = cos(direction), dy = sin(direction)
+      line(cx + dx * (r - 7), cy + dy * (r - 7), cx + dx * r, cy + dy * r, 0x3D656B, 1.45)
+    }
+    let angle = (model.companionValue - 90) * .pi / 180
+    let x = cx + cos(angle) * (r - 13), y = cy + sin(angle) * (r - 13)
+    line(cx, cy, x, y, 0x1D5558, 3.9)
+    oval(cx - 4, cy - 4, cx + 4, cy + 4, 0x1D5558)
+    oval(x - 3, y - 3, x + 3, y + 3, 0x1D5558)
+    rectangle(178, 45, 193, 55, light, radius: 3)
+    rectangle(178, 84, 193, 94, dark, radius: 3)
+    label("circadian_light_window_dial_light", 260, 55, 122)
+    label("circadian_light_window_dial_dark", 260, 94, 122)
+  }
+  func adiposeShare(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let x = 84.0, y = 70.0, r = 49.0, droplet = model.input(0) * (49 - 3)
+    let lipid: UInt32 = 0xE9B967
+    oval(x - r, y - r, x + r, y + r, 0x598481)
+    oval(x - r + 3, y - r + 3, x + r - 3, y + r - 3, 0xD1E4DC)
+    oval(x - droplet, y - droplet, x + droplet, y + droplet, lipid)
+    oval(x + 22, y + 23, x + 38, y + 29, 0x72868B)
+    let center = 250.0, radius = 48.0
+    oval(center - radius, y - radius, center + radius, y + radius, 0xB8D6D0)
+    sector(center, y, radius, -90, 360 * model.result / 100, lipid)
+    label("adipose_volume_share_cell_view", x, 145, 142)
+    label("adipose_volume_share_tissue_view", center, 145, 155)
+  }
+  private func sector(_ x: Double, _ y: Double, _ radius: Double, _ start: Double, _ sweep: Double, _ tint: UInt32) {
+    var path = Path(); path.move(to: CGPoint(x: x, y: y))
+    path.addArc(center: CGPoint(x: x, y: y), radius: radius, startAngle: .degrees(start), endAngle: .degrees(start + sweep), clockwise: false)
+    path.closeSubpath()
+    context.fill(path, with: .color(color(tint)))
+  }
   func refraction(_ model: GalaxySSIHealthAtlasPhysiology) {
     let x = 170.0, y = 76.0, incidentDegrees = model.input(0), refractedDegrees = model.result
     let incident = incidentDegrees * .pi / 180, refracted = refractedDegrees * .pi / 180

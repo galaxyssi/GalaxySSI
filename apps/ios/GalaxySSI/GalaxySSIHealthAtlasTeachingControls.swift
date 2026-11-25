@@ -149,6 +149,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .sweatDuctBalance:
       return [control("sweat-duct-coil-sodium", "coil_sodium", 120...160, 140, "nmol", digits: 0),
         control("sweat-duct-net-reabsorbed", "net_reabsorbed", 0...90, 75, "%", digits: 0)]
+    case .vocalCycles:
+      return [control("vocal-cycle-frequency", "frequency", 60...240, 140, "Hz", digits: 0),
+        control("vocal-cycle-duration", "duration", 5...30, 20, "ms", digits: 0)]
+    case .vertebralSeries:
+      return [control("vertebral-series-pad-count", "pad_count", 1...8, 4, "", digits: 0),
+        control("vertebral-series-shortening-per-pad", "shortening_per_pad", 0...100, 25, "mm", scale: 100)]
+    case .oralMarkerDilution:
+      return [control("oral-marker-dilution-marker-stream", "marker_stream", 2...8, 4, "VU", digits: 0),
+        control("oral-marker-dilution-added-water", "added_water", 0...12, 4, "VU", digits: 0)]
+    case .olfactorySurfaceRetention:
+      return [control("olfactory-marker-total", "total", 20...100, 80, "a.u.", digits: 0),
+        control("olfactory-mucus-side-share", "mucus_share", 0...100, 35, "%", digits: 0)]
+    case .circadianLightWindow:
+      return [control("circadian-light-window-period", "period", 12...30, 24, "h", digits: 0),
+        control("circadian-light-window-elapsed", "elapsed", 0...48, 30, "h", digits: 0)]
+    case .adiposeVolumeShare:
+      return [control("adipose-volume-share-radius-ratio", "radius_ratio", 40...98, 90, "", scale: 100),
+        control("adipose-volume-share-cell-percent", "cell_percent", 20...70, 60, "%", digits: 0)]
+    case .thymicBranching:
+      return [control("thymic-branching-starting-tally", "starting_tally", 1...10, 4, "tiles", scale: 0.05, digits: 0),
+        control("thymic-branching-selected-percent", "selected_percent", 0...20, 7, "%", scale: 0.2, digits: 0)]
+    case .gastricPrecursorBalance:
+      return [control("gastric-precursor-amount", "amount", 0...20, 12, "MU", digits: 0),
+        control("gastric-precursor-converted-percent", "converted_percent", 0...100, 35, "%", digits: 0)]
+    case .melaninDistribution:
+      return [control("melanin-distribution-packet-units", "packet_units", 0...24, 12, "PPU", digits: 0),
+        control("melanin-distribution-recipient-cells", "recipient_cells", 2...8, 4, "", digits: 0)]
     }
   }
 }

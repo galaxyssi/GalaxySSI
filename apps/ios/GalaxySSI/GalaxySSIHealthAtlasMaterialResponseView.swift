@@ -6,6 +6,10 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
   @Environment(\.displayScale) private var displayScale
   @State private var measuredWidth: CGFloat = 340
   static func description(_ kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
+    if kind == .circadianLightWindow || kind == .adiposeVolumeShare {
+      return GalaxySSIHealthAtlasText.get(kind == .circadianLightWindow ?
+        "health_atlas_circadian_light_window_diagram" : "health_atlas_adipose_volume_share_diagram", language)
+    }
     if kind == .cornealRefraction {
       return GalaxySSIHealthAtlasText.get("health_atlas_model_corneal_refraction_diagram", language)
     }
@@ -25,6 +29,8 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
     return GalaxySSIHealthAtlasText.get("health_atlas_" + prefix + "_diagram", language)
   }
   private var identifier: String {
+    if model.kind == .circadianLightWindow { return "atlas-circadian-dial" }
+    if model.kind == .adiposeVolumeShare { return "atlas-adipose-volume-share" }
     if model.kind == .cornealRefraction { return "atlas-corneal-rays" }
     if model.kind == .airwayCiliaryClearance { return "atlas-airway-cilia-track" }
     if model.kind == .arterialContinuity { return "atlas-arterial-continuity" }
@@ -44,6 +50,8 @@ struct GalaxySSIHealthAtlasMaterialResponseView: View {
         local.scaleBy(x: scale, y: scale)
         let art = GalaxySSIHealthAtlasMaterialResponseDrawing(context: local, language: language)
         switch model.kind {
+        case .circadianLightWindow: art.circadianDial(model)
+        case .adiposeVolumeShare: art.adiposeShare(model)
         case .cornealRefraction: art.refraction(model)
         case .airwayCiliaryClearance: art.ciliaTrack(model)
         case .arterialContinuity: art.arterialContinuity(model)

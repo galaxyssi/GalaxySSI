@@ -182,7 +182,7 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
             if [Model.Kind.renal, .eye, .cushionContactPressure, .airwaySplit, .visualAngle, .hormoneSignal,
                 .arterialContinuity, .glialCapacitance, .colonicWaterBalance, .endocrineDilution,
                 .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum,
-                .externalEarResonance, .sweatDuctBalance].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .externalEarResonance, .sweatDuctBalance, .oralMarkerDilution].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -253,11 +253,14 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.ureterDelivery, 6, 6), (.cornealRefraction, 28.665304049, 11.334695951),
       (.externalEarResonance, 428.75, 80), (.neuralRelayDelays, 4.5, 3), (.biliaryFlowTally, 10, 40),
       (.parathyroidSignalOccupancy, 50, 50), (.follicleSurface, 81 * .pi, 217 * .pi / 6),
-      (.jointArticularArc, 19.634954085, 0.785398163), (.sweatDuctBalance, 35, 105)
+      (.jointArticularArc, 19.634954085, 0.785398163), (.sweatDuctBalance, 35, 105),
+      (.vocalCycles, 2.8, 1000.0 / 140), (.vertebralSeries, 1, 19), (.oralMarkerDilution, 1, 8),
+      (.olfactorySurfaceRetention, 28, 52), (.circadianLightWindow, 450, 90), (.adiposeVolumeShare, 43.74, 72.9),
+      (.thymicBranching, 28, 52), (.gastricPrecursorBalance, 4.2, 7.8), (.melaninDistribution, 3, 12)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 45)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 96)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 154)
+    XCTAssertEqual(Teaching.allCases.count, 54)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 114)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 173)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -580,6 +583,75 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     }
     for phase in [-0.1, 1.1, Double.nan, .infinity] { XCTAssertNil(Frame(selected: 4, phase: phase)) }
     XCTAssertNil(Frame(selected: -1, phase: 0)); XCTAssertNil(Frame(selected: 7, phase: 1))
+  }
+
+  func testPhaseTeachingPairsPreserveCumulativePhaseAndVolumeBudgets() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    let kinds: [Teaching] = [.vocalCycles, .vertebralSeries, .oralMarkerDilution, .olfactorySurfaceRetention,
+      .circadianLightWindow, .adiposeVolumeShare, .thymicBranching, .gastricPrecursorBalance, .melaninDistribution]
+    for teaching in kinds {
+      let controls = teaching.inputs
+      for first in controls[0].range {
+        for second in controls[1].range {
+          let values = [Double(first) / controls[0].scale, Double(second) / controls[1].scale]
+          let output = try XCTUnwrap(teaching.evaluate(values)), other = try XCTUnwrap(teaching.companion(values))
+          XCTAssertTrue(teaching.bounds.contains(output))
+          switch teaching {
+          case .vocalCycles: XCTAssertEqual(output * other, values[1], accuracy: 1e-9)
+          case .vertebralSeries: XCTAssertEqual(output + other, 5 * values[0], accuracy: 1e-9)
+          case .oralMarkerDilution: XCTAssertEqual(output * other, 8, accuracy: 1e-9)
+          case .olfactorySurfaceRetention, .thymicBranching, .gastricPrecursorBalance:
+            XCTAssertEqual(output + other, values[0], accuracy: 1e-9)
+            if teaching == .thymicBranching { XCTAssertEqual(output, output.rounded(), accuracy: 1e-9) }
+          case .circadianLightWindow:
+            XCTAssertEqual(output, 360 * values[1] / values[0], accuracy: 1e-9)
+            XCTAssertEqual(other, output.truncatingRemainder(dividingBy: 360), accuracy: 1e-9)
+            XCTAssertTrue((0..<360).contains(other))
+          case .adiposeVolumeShare: XCTAssertEqual(output, values[1] * other / 100, accuracy: 1e-9)
+          case .melaninDistribution: XCTAssertEqual(output * values[1], other, accuracy: 1e-9)
+          default: XCTFail("Unexpected phase teaching model")
+          }
+        }
+      }
+    }
+    for elapsed in [0.0, 24, 48] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.circadianLightWindow.evaluate([24, elapsed])), elapsed * 15)
+      XCTAssertEqual(try XCTUnwrap(Teaching.circadianLightWindow.companion([24, elapsed])), 0)
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.circadianLightWindow.evaluate([24, 24.5])), 367.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.circadianLightWindow.companion([24, 24.5])), 7.5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.thymicBranching.evaluate([80, 42.75])), 34.2, accuracy: 1e-9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.adiposeVolumeShare.evaluate([0.98, 70])), 65.88344, accuracy: 1e-9)
+    XCTAssertEqual(Model.Kind.forEntry("cell-adipocyte"), .adiposeVolumeShare)
+    XCTAssertEqual(Model.Kind.forEntry("subcutaneous-tissue"), .cushionContactPressure)
+  }
+
+  func testVocalOpeningAndSeekShareOnePhaseWithoutChangingSelectedInputs() throws {
+    typealias Opening = GalaxySSIHealthAtlasVocalCycle
+    for cycles in [1.0, 2.8, 4.25, 7.2] {
+      XCTAssertEqual(try XCTUnwrap(Opening.relativeOpening(cycles: cycles, phase: 0)), 0, accuracy: 1e-9)
+      XCTAssertEqual(try XCTUnwrap(Opening.relativeOpening(cycles: cycles, phase: 0.5 / cycles)), 1, accuracy: 1e-9)
+      XCTAssertEqual(try XCTUnwrap(Opening.relativeOpening(cycles: cycles, phase: 1 / cycles)), 0, accuracy: 1e-9)
+      for step in 0...1000 {
+        XCTAssertTrue((0...1).contains(try XCTUnwrap(Opening.relativeOpening(cycles: cycles, phase: Double(step) / 1000))))
+      }
+    }
+    for invalid in [-0.1, 7.3, Double.nan, .infinity] { XCTAssertNil(Opening.relativeOpening(cycles: invalid, phase: 0.5)) }
+    for invalid in [-0.1, 1.1, Double.nan, .infinity] { XCTAssertNil(Opening.relativeOpening(cycles: 2.8, phase: invalid)) }
+    let date = Date(timeIntervalSince1970: 0), model = Model(kind: .vocalCycles), selected = model.inputs
+    var playback = GalaxySSIHealthAtlasTeachingPlaybackState()
+    playback.start(at: date, duration: 2.4, allowed: true)
+    playback.seek(0.179); XCTAssertFalse(playback.isPlaying)
+    XCTAssertEqual(playback.phase(at: date, duration: 2.4), 0.179)
+    let opening = try XCTUnwrap(Opening.relativeOpening(cycles: model.result, phase: playback.offset))
+    XCTAssertNotEqual(opening, try XCTUnwrap(Opening.relativeOpening(cycles: model.result, phase: 1)))
+    playback.start(at: date, duration: 2.4, allowed: true)
+    XCTAssertEqual(playback.phase(at: date.addingTimeInterval(0.24), duration: 2.4), 0.279, accuracy: 1e-9)
+    playback.seek(-1); XCTAssertEqual(playback.offset, 0); XCTAssertFalse(playback.isPlaying)
+    playback.seek(2); XCTAssertEqual(playback.offset, 1)
+    playback.seek(0.5); playback.seek(.nan); XCTAssertEqual(playback.offset, 0.5)
+    playback.showTarget(); XCTAssertEqual(playback.offset, 1)
+    XCTAssertEqual(model.inputs, selected)
   }
 
   func testElbowFixturesBalanceForcesAndMomentsWithStrictUnitConversion() throws {
