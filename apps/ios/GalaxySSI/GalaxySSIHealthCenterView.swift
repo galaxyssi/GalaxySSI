@@ -194,6 +194,23 @@ struct GalaxySSIHealthCenterView: View {
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
         }
+        if let uses = archive.atlasReadAudit, !uses.isEmpty {
+          Section(t("privacy.atlas_history", "Body Atlas access history")) {
+            ForEach(Array(uses.reversed().prefix(privacyLimit))) { entry in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(entry.purpose == .overview ? t("privacy.atlas_overview", "Related metrics") : t("privacy.atlas_trend", "Selected metric trend"))
+                Text(entry.metrics.map { $0.title(language: language) }.joined(separator: ", ")).foregroundColor(.secondary)
+                Text(entry.at, style: .date); Text(entry.at, style: .time)
+                if let from = entry.from { Text(from, style: .date).font(.caption) }
+                Text(entry.through, style: .date).font(.caption)
+                Text(entry.outcome == .blocked ? t("privacy.access_blocked", "Blocked") :
+                  entry.outcome == .complete ? t("privacy.access_complete", "Complete") : t("privacy.access_started", "Started"))
+                  .foregroundColor(.secondary)
+              }
+            }
+            if uses.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
+        }
         if let uses = archive.profileAnalysisAudit, !uses.isEmpty {
           Section(t("privacy.profile_analysis_history", "Local profile use")) {
             ForEach(uses.reversed().prefix(privacyLimit)) { entry in

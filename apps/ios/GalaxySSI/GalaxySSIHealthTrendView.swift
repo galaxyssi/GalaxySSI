@@ -214,6 +214,9 @@ struct GalaxySSIHealthTrendView: View {
   private let unverifiedComparison: Bool
   private let atlasWindow: Binding<GalaxySSIHealthAtlasWindow>?
   private let revealAtlasTrend: Binding<Bool>?
+  private let atlasEntryID: String?
+  private let atlasMetricSelection: Binding<GalaxySSIHealthMetric?>?
+  @State private var atlasLatestReadings: [GalaxySSIHealthMetric: GalaxySSIHealthReading]?
   @State private var metric: GalaxySSIHealthMetric
   @State private var component = GalaxySSIHealthTrend.Component.value
   @State private var selectedUnit: String?
@@ -247,7 +250,8 @@ struct GalaxySSIHealthTrendView: View {
   init(records: GalaxySSIHealthRecords, fixedMetric: GalaxySSIHealthMetric? = nil,
        recordMeasurement: ((GalaxySSIHealthMetric) -> Void)? = nil, comparisonAnchor: GalaxySSIHealthReading? = nil,
        unverifiedComparison: Bool = false, atlasWindow: Binding<GalaxySSIHealthAtlasWindow>? = nil,
-       revealAtlasTrend: Binding<Bool>? = nil) {
+       revealAtlasTrend: Binding<Bool>? = nil, atlasEntryID: String? = nil,
+       atlasMetricSelection: Binding<GalaxySSIHealthMetric?>? = nil) {
     self.records = records
     self.fixedMetric = fixedMetric
     self.recordMeasurement = recordMeasurement
@@ -255,6 +259,8 @@ struct GalaxySSIHealthTrendView: View {
     self.unverifiedComparison = unverifiedComparison
     self.atlasWindow = atlasWindow
     self.revealAtlasTrend = revealAtlasTrend
+    self.atlasEntryID = atlasEntryID
+    self.atlasMetricSelection = atlasMetricSelection
     _metric = State(initialValue: fixedMetric ?? .bloodPressure)
     if atlasWindow != nil { _aggregation = State(initialValue: .latest) }
     if let comparisonAnchor {
@@ -271,6 +277,12 @@ struct GalaxySSIHealthTrendView: View {
     ScrollViewReader { proxy in
     List {
       if scene == .active {
+        if let atlasEntryID {
+          GalaxySSIHealthAtlasRelatedReadings(entryID: atlasEntryID, selected: metric,
+            readings: atlasLatestReadings, language: language, zone: timeZone, select: selectAtlasMetric)
+          Text(String(format: GalaxySSIHealthAtlasText.get("health_atlas_metric_trend_title", language), metricTitle(metric)))
+            .font(.headline).accessibilityIdentifier("atlas-personal-trend-title")
+        }
         if error {
           Text(t("unavailable", "Trends unavailable"))
           Button(t("refresh", "Refresh"), action: reload)
@@ -282,7 +294,7 @@ struct GalaxySSIHealthTrendView: View {
             Picker(t("metric", "Measurement"), selection: $metric) {
               ForEach(GalaxySSIHealthMetric.allCases) { Text(metricTitle($0)).tag($0) }
             }
-          } else {
+          } else if atlasEntryID == nil {
             Text(metricTitle(metric))
           }
           if let comparisonAnchor {
@@ -405,18 +417,22 @@ struct GalaxySSIHealthTrendView: View {
     .onChange(of: timeZone) { _ in reload() }
     .onChange(of: scene) { if $0 == .background { device = nil; devices = [] } }
     .onChange(of: source) { _ in resetOrigins(); reload() }
-    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false; atlasAnalysisIdentity = nil }
+    .onDisappear { resetOrigins(); selected = nil; trend = nil; showsChartData = false; atlasAnalysisIdentity = nil; atlasLatestReadings = nil }
     .onChange(of: aggregation) { _ in
       selected = nil; focusedDay = nil; showsChartData = false
       if atlasPinnedAnalysis { reload() }
     }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else { trend = nil; selected = nil; focusedDay = nil; allowed = false; showsChartData = false; resetOrigins() }
+      else { trend = nil; selected = nil; focusedDay = nil; allowed = false; showsChartData = false; atlasLatestReadings = nil; resetOrigins() }
     }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.trendInputsChanged)) { event in
       guard event.object as? String == records.owner, scene == .active else { return }
       invalidate()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { event in
+      guard atlasEntryID != nil, event.object as? String == records.owner, scene == .active else { return }
+      reload()
     }
     .onChange(of: scene) { phase in
       if phase != .active {
@@ -426,6 +442,7 @@ struct GalaxySSIHealthTrendView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
       protectedDataBlocked = true
+      atlasLatestReadings = nil
       atlasAnalysisIdentity = nil; trend = nil; selected = nil; focusedDay = nil; allowed = false
       trendVersions = []; explanation = nil; showsChartData = false; resetOrigins()
       device = nil; devices = []; recordAfterExplanation = nil; fallbackEditor = nil
@@ -532,8 +549,19 @@ struct GalaxySSIHealthTrendView: View {
     }
   }
 
+  private func selectAtlasMetric(_ candidate: GalaxySSIHealthMetric) {
+    guard let atlasEntryID, GalaxySSIHealthAtlasMetrics.forEntry(atlasEntryID).contains(candidate),
+      let atlasMetricSelection else { return }
+    if candidate != metric {
+      atlasAnalysisIdentity = nil; explanation = nil; trend = nil; trendVersions = []
+      atlasMetricSelection.wrappedValue = candidate
+    }
+    if let revealAtlasTrend { revealAtlasTrend.wrappedValue = true }
+  }
+
   private func reload() {
     atlasAnalysisIdentity = nil
+    atlasLatestReadings = nil
     guard scene == .active, !protectedDataBlocked, UIApplication.shared.isProtectedDataAvailable else { return }
     selected = nil
     showsChartData = false
@@ -542,17 +570,25 @@ struct GalaxySSIHealthTrendView: View {
     trendVersions = []
     changed = false
     do {
-      let archive = try records.load()
-      allowed = archive.derivesOverview == true
-      error = false
-      guard allowed else { devices = []; resetOrigins(); return }
-      let current = archive.current
-      devices = source == .healthKit ? [] : GalaxySSIHealthTrendDevice.options(in: current, metric: metric)
-      snapshotTime = comparisonAnchor.map { min($0.measuredAt, Date()) } ?? Date()
+      let now = Date()
+      snapshotTime = comparisonAnchor.map { min($0.measuredAt, now) } ?? now
       var local = calendar
       local.timeZone = timeZone
       snapshotCalendar = local
       if let atlasWindow { days = atlasWindow.wrappedValue.days(through: snapshotTime, calendar: local) }
+      let current: [GalaxySSIHealthReading]
+      if let atlasEntryID {
+        let result = try records.atlasMeasurements(entryID: atlasEntryID, spec: trendSpec, now: now)
+        current = result.trend
+        atlasLatestReadings = result.latest
+        allowed = true; error = false
+      } else {
+        let archive = try records.load()
+        allowed = archive.derivesOverview == true; error = false
+        guard allowed else { devices = []; resetOrigins(); return }
+        current = archive.current
+      }
+      devices = source == .healthKit ? [] : GalaxySSIHealthTrendDevice.options(in: current, metric: metric)
       if atlasWindow != nil, selectedUnit == nil,
          let latest = trendSpec.cohort(current).filter({ metric.units.contains($0.unit) && component.value(in: $0) != nil })
           .max(by: { ($0.measuredAt, $0.id.uuidString) < ($1.measuredAt, $1.id.uuidString) }) {
@@ -569,7 +605,9 @@ struct GalaxySSIHealthTrendView: View {
       if trend?.unverifiedMethods == true { aggregation = .latest }
       trendVersions = spec.versions(current)
       if atlasPinnedAnalysis { atlasAnalysisIdentity = currentAtlasIdentity }
-    } catch { allowed = false; error = true; resetOrigins() }
+    } catch GalaxySSIHealthRecords.Failure.permission {
+      allowed = false; error = false; atlasLatestReadings = nil; devices = []; resetOrigins()
+    } catch { allowed = false; error = true; atlasLatestReadings = nil; devices = []; resetOrigins() }
   }
 
   private var trendSpec: GalaxySSIHealthTrendAnalysis.Spec {
@@ -653,6 +691,7 @@ struct GalaxySSIHealthTrendView: View {
 
   private func invalidate() {
     atlasAnalysisIdentity = nil
+    atlasLatestReadings = nil
     selected = nil
     showsChartData = false
     focusedDay = nil

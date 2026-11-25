@@ -39,9 +39,15 @@ for (const token of ['ScrollViewReader { proxy in', 'revealAtlasTrend: Binding<B
   'DispatchQueue.main.async', 'proxy.scrollTo("atlas-personal-chart", anchor: .center)',
   'if let revealAtlasTrend { revealAtlasTrend.wrappedValue = false }']) assert(trend.includes(token), token);
 const priorTrend = git(["show", "27cae906cbd1e9948d59e6191142b098178b927a:apps/ios/GalaxySSI/GalaxySSIHealthTrendView.swift"]).toString();
-// Navigation only: permission/read/filter/invalidation behavior must not change.
+// #4418 adds a scoped reader; the original chart/filter/analysis projection remains intact.
 const reload = s => s.split("  private func reload() {")[1].split("  private var trendSpec:")[0];
-assert.equal(reload(trend), reload(priorTrend));
+if (trend.includes("records.atlasMeasurements(entryID:")) {
+  assert(trend.includes('if let atlasEntryID {'));
+  assert(trend.includes('current = archive.current'));
+  assert(trend.includes('allowed = archive.derivesOverview == true; error = false'));
+  const filtering = s => s.split("      if atlasWindow != nil, selectedUnit == nil,")[1].split("    } catch")[0];
+  assert.equal(filtering(trend), filtering(priorTrend), "Existing scoped chart/unit/filter/analysis projection is retained");
+} else assert.equal(reload(trend), reload(priorTrend));
 for (const token of ['allowed = archive.derivesOverview == true', 'guard allowed else { devices = []; resetOrigins(); return }',
   'trend = spec.chart(current)', 'catch { allowed = false; error = true; resetOrigins() }',
   'if phase == .active { reload() }', 'else { trend = nil; selected = nil; focusedDay = nil; allowed = false;',
