@@ -2,6 +2,9 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    if let resource = GalaxySSIHealthAtlasTeachingModel.resource(key) {
+      return GalaxySSIHealthAtlasText.get(resource, language)
+    }
     let loadKey = ["model_pelvicSupport": "pelvis_model_title", "model_pelvicSupport_scope": "pelvis_model_scope",
       "model_pelvicSupport_formula": "pelvis_model_formula", "model_cushionContactPressure": "cushion_model_title",
       "model_cushionContactPressure_scope": "cushion_model_scope", "model_cushionContactPressure_formula": "cushion_model_formula"][key]
@@ -94,15 +97,20 @@ enum GalaxySSIHealthAtlasPhysiologyText {
       (spec.unit.isEmpty ? "" : " " + spec.unit)
   }
   static func inputNumber(_ value: Double, key: String, language: String) -> String {
-    number(value, digits: ["vessel_radius", "gut_section_area_radius"].contains(key) ? 3 : 2, language: language)
+    number(value, digits: ["vessel_radius", "gut_section_area_radius"].contains(key) ? 3 :
+      GalaxySSIHealthAtlasTeachingModel.control(key)?.digits ?? 2, language: language)
   }
   static func resultNumber(_ value: Double, kind: GalaxySSIHealthAtlasPhysiology.Kind, language: String) -> String {
-    number(kind == .eye && abs(value) < 0.005 ? 0 : value, digits: kind == .vessel ? 6 : 2, language: language)
+    number(kind == .eye && abs(value) < 0.005 ? 0 : value, digits: kind == .vessel ? 6 : kind.teaching?.digits ?? 2, language: language)
   }
   static func result(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if let teaching = model.kind.teaching {
+      return String(format: GalaxySSIHealthAtlasText.get(teaching.companionTitle, language),
+        number(model.companionValue, language: language))
+    }
     if model.kind == .pelvicSupport || model.kind == .cushionContactPressure {
       let key = model.kind == .pelvicSupport ? "pelvis_model_left_value" : "cushion_model_reference_value"
       return String(format: string(key, language: language), number(model.companionValue, language: language))

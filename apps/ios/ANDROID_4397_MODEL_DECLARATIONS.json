@@ -1,0 +1,460 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4397,
+    "mergeCommit": "40776e7a67ebfe48c76f98d392849edb9810ac82"
+  },
+  "models": [
+    {
+      "id": "capillaryExchange",
+      "inputs": [
+        {
+          "key": "capillary-exchange-ps",
+          "minimum": 0,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 1,
+          "label": "health_atlas_capillary_exchange_ps",
+          "unit": "mL/min",
+          "digits": 2
+        },
+        {
+          "key": "capillary-exchange-flow",
+          "minimum": 5,
+          "maximum": 80,
+          "initial": 20,
+          "scale": 1,
+          "label": "health_atlas_capillary_exchange_flow",
+          "unit": "mL/min",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/14078649/"
+      ],
+      "title": "health_atlas_capillary_exchange_title",
+      "scope": "health_atlas_capillary_exchange_scope",
+      "formula": "health_atlas_capillary_exchange_formula",
+      "companionTitle": "health_atlas_capillary_exchange_remaining",
+      "entryIDs": [
+        "capillaries",
+        "tissue-vascular-endothelium",
+        "cell-vascular-endothelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "valveFlux",
+      "inputs": [
+        {
+          "key": "valve-flux-area",
+          "minimum": 10,
+          "maximum": 50,
+          "initial": 25,
+          "scale": 10,
+          "label": "health_atlas_valve_flux_area",
+          "unit": "cm²",
+          "digits": 1
+        },
+        {
+          "key": "valve-flux-speed",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_valve_flux_speed",
+          "unit": "cm/s",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "mL/s",
+      "minimum": 0,
+      "maximum": 500,
+      "sources": [
+        "https://openstax.org/books/college-physics-ap-courses-2e/pages/12-1-flow-rate-and-its-relation-to-velocity",
+        "https://www.nist.gov/pml/owm/si-units-volume"
+      ],
+      "title": "health_atlas_valve_flux_title",
+      "scope": "health_atlas_valve_flux_scope",
+      "formula": "health_atlas_valve_flux_formula",
+      "companionTitle": "health_atlas_valve_flux_companion",
+      "entryIDs": [
+        "heart-valves",
+        "tricuspid-valve",
+        "mitral-valve",
+        "pulmonary-valve",
+        "aortic-valve"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "glomerularFiltration",
+      "inputs": [
+        {
+          "key": "glomerular-filtration-capillary-hydrostatic",
+          "minimum": 40,
+          "maximum": 65,
+          "initial": 52,
+          "scale": 1,
+          "label": "health_atlas_glomerular_filtration_capillary_hydrostatic",
+          "unit": "mmHg",
+          "digits": 0
+        },
+        {
+          "key": "glomerular-filtration-capsular-hydrostatic",
+          "minimum": 8,
+          "maximum": 20,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_glomerular_filtration_capsular_hydrostatic",
+          "unit": "mmHg",
+          "digits": 0
+        },
+        {
+          "key": "glomerular-filtration-capillary-oncotic",
+          "minimum": 18,
+          "maximum": 35,
+          "initial": 28,
+          "scale": 1,
+          "label": "health_atlas_glomerular_filtration_capillary_oncotic",
+          "unit": "mmHg",
+          "digits": 0
+        },
+        {
+          "key": "glomerular-filtration-kf",
+          "minimum": 5,
+          "maximum": 50,
+          "initial": 25,
+          "scale": 10,
+          "label": "health_atlas_glomerular_filtration_coefficient",
+          "unit": "nL/(min·mmHg)",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "nL/min",
+      "minimum": 0,
+      "maximum": 200,
+      "sources": [
+        "https://journals.physiology.org/doi/10.1152/advan.00120.2024"
+      ],
+      "title": "health_atlas_glomerular_filtration_title",
+      "scope": "health_atlas_glomerular_filtration_scope",
+      "formula": "health_atlas_glomerular_filtration_formula",
+      "companionTitle": "health_atlas_glomerular_filtration_net_pressure",
+      "entryIDs": [
+        "glomerulus",
+        "bowmans-capsule",
+        "cell-podocyte"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "skinWaterBarrier",
+      "inputs": [
+        {
+          "key": "skin-water-diffusivity",
+          "minimum": 10,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 20,
+          "label": "health_atlas_skin_water_barrier_diffusivity",
+          "unit": "×",
+          "digits": 2
+        },
+        {
+          "key": "skin-water-gradient",
+          "minimum": 0,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 20,
+          "label": "health_atlas_skin_water_barrier_gradient",
+          "unit": "×",
+          "digits": 2
+        },
+        {
+          "key": "skin-water-thickness",
+          "minimum": 10,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 20,
+          "label": "health_atlas_skin_water_barrier_thickness",
+          "unit": "×",
+          "digits": 2
+        }
+      ],
+      "axis": 1,
+      "unit": "×",
+      "minimum": 0,
+      "maximum": 4.5,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/9740228/",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin"
+      ],
+      "title": "health_atlas_skin_water_barrier_title",
+      "scope": "health_atlas_skin_water_barrier_scope",
+      "formula": "health_atlas_skin_water_barrier_formula",
+      "companionTitle": "health_atlas_skin_water_barrier_conductance",
+      "entryIDs": [
+        "skin",
+        "skin-organ",
+        "epidermis",
+        "tissue-epidermal",
+        "cell-keratinocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "salivaryDelivery",
+      "inputs": [
+        {
+          "key": "salivary-parotid-flow",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 4,
+          "label": "health_atlas_salivary_delivery_parotid",
+          "unit": "DU/min",
+          "digits": 2
+        },
+        {
+          "key": "salivary-submandibular-flow",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 16,
+          "scale": 4,
+          "label": "health_atlas_salivary_delivery_submandibular",
+          "unit": "DU/min",
+          "digits": 2
+        },
+        {
+          "key": "salivary-sublingual-flow",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 4,
+          "scale": 4,
+          "label": "health_atlas_salivary_delivery_sublingual",
+          "unit": "DU/min",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "DU/min",
+      "minimum": 0,
+      "maximum": 15,
+      "sources": [
+        "https://www.nidcr.nih.gov/health-info/saliva-salivary-gland-disorders",
+        "https://pubmed.ncbi.nlm.nih.gov/25680367/"
+      ],
+      "title": "health_atlas_salivary_delivery_title",
+      "scope": "health_atlas_salivary_delivery_scope",
+      "formula": "health_atlas_salivary_delivery_formula",
+      "companionTitle": "health_atlas_salivary_delivery_companion",
+      "entryIDs": [
+        "salivary-glands",
+        "parotid-glands",
+        "submandibular-glands",
+        "sublingual-glands",
+        "cell-salivary-acinar-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "tendonElongation",
+      "inputs": [
+        {
+          "key": "tendon-elongation-force",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_tendon_elongation_force",
+          "unit": "N",
+          "digits": 0
+        },
+        {
+          "key": "tendon-elongation-length",
+          "minimum": 20,
+          "maximum": 80,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_tendon_elongation_length",
+          "unit": "mm",
+          "digits": 0
+        },
+        {
+          "key": "tendon-elongation-area",
+          "minimum": 30,
+          "maximum": 60,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_tendon_elongation_area",
+          "unit": "mm²",
+          "digits": 1
+        },
+        {
+          "key": "tendon-elongation-modulus",
+          "minimum": 50,
+          "maximum": 100,
+          "initial": 75,
+          "scale": 0.1,
+          "label": "health_atlas_tendon_elongation_modulus",
+          "unit": "N/mm²",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "mm",
+      "minimum": 0,
+      "maximum": 0.65,
+      "sources": [
+        "https://mechref.engr.illinois.edu/sol/axial.html",
+        "https://pubmed.ncbi.nlm.nih.gov/11985759/"
+      ],
+      "title": "health_atlas_tendon_elongation_title",
+      "scope": "health_atlas_tendon_elongation_scope",
+      "formula": "health_atlas_tendon_elongation_formula",
+      "companionTitle": "health_atlas_tendon_elongation_strain",
+      "entryIDs": [
+        "tendons",
+        "ligaments",
+        "tissue-dense-regular-connective",
+        "cell-tenocyte"
+      ],
+      "digits": 3
+    },
+    {
+      "id": "airwaySplit",
+      "inputs": [
+        {
+          "key": "airway-split-total-flow",
+          "minimum": 10,
+          "maximum": 60,
+          "initial": 30,
+          "scale": 100,
+          "label": "health_atlas_airway_split_total_flow",
+          "unit": "L/s",
+          "digits": 2
+        },
+        {
+          "key": "airway-split-selected-resistance",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_airway_split_selected_resistance",
+          "unit": "cmH₂O·s/L",
+          "digits": 1
+        },
+        {
+          "key": "airway-split-other-resistance",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 30,
+          "scale": 10,
+          "label": "health_atlas_airway_split_other_resistance",
+          "unit": "cmH₂O·s/L",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "L/s",
+      "minimum": 0,
+      "maximum": 0.5,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing",
+        "https://openstax.org/books/university-physics-volume-2/pages/10-2-resistors-in-series-and-parallel"
+      ],
+      "title": "health_atlas_airway_split_title",
+      "scope": "health_atlas_airway_split_scope",
+      "formula": "health_atlas_airway_split_formula",
+      "companionTitle": "health_atlas_airway_split_companion",
+      "entryIDs": [
+        "trachea",
+        "bronchi",
+        "bronchioles"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "peristalticTravel",
+      "inputs": [
+        {
+          "key": "peristaltic-travel-speed",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 25,
+          "scale": 10,
+          "label": "health_atlas_peristaltic_travel_speed",
+          "unit": "cm/s",
+          "digits": 1
+        },
+        {
+          "key": "peristaltic-travel-time",
+          "minimum": 0,
+          "maximum": 25,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_peristaltic_travel_time",
+          "unit": "s",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "cm",
+      "minimum": 0,
+      "maximum": 10,
+      "sources": [
+        "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works"
+      ],
+      "title": "health_atlas_peristaltic_travel_title",
+      "scope": "health_atlas_peristaltic_travel_scope",
+      "formula": "health_atlas_peristaltic_travel_formula",
+      "companionTitle": "health_atlas_peristaltic_travel_progress",
+      "entryIDs": [
+        "esophagus",
+        "tissue-smooth-muscle",
+        "cell-smooth-muscle-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "cochlearFrequency",
+      "inputs": [
+        {
+          "key": "cochlear-frequency-position",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 100,
+          "label": "health_atlas_model_cochlear_frequency_position",
+          "unit": "",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "Hz",
+      "minimum": 0,
+      "maximum": 21000,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/2373794/",
+        "https://www.nidcd.nih.gov/research/labs/section-sensory-cell-biology"
+      ],
+      "title": "health_atlas_model_cochlear_frequency_title",
+      "scope": "health_atlas_model_cochlear_frequency_scope",
+      "formula": "health_atlas_model_cochlear_frequency_formula",
+      "companionTitle": "health_atlas_model_cochlear_frequency_from_base",
+      "entryIDs": [
+        "cochlea",
+        "inner-ear",
+        "cell-inner-ear-hair-cell"
+      ],
+      "digits": 2
+    }
+  ]
+}

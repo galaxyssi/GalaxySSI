@@ -1097,6 +1097,30 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(atlas.plate(for: "cell-keratinocyte")?.owner, "cell-keratinocyte")
   }
 
+  func testTeachingModelStateRestoresWithoutSharingInputsAcrossRelatedEntries() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let vessel = try XCTUnwrap(atlas.entry("capillaries"))
+    let cell = try XCTUnwrap(atlas.entry("cell-vascular-endothelial-cell"))
+    let baseline = GalaxySSIHealthAtlasPhysiology(kind: .capillaryExchange)
+    state.binding(vessel).wrappedValue.physiologyInputs = baseline.changing(0, to: 35)?.inputs
+    state.binding(cell).wrappedValue.physiologyInputs = baseline.inputs
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.entries[vessel.id]?.physiologyInputs, [35, 20])
+    XCTAssertEqual(restored.entries[cell.id]?.physiologyInputs, [20, 20])
+    restored.binding(vessel).wrappedValue.physiologyInputs = baseline.inputs
+    XCTAssertEqual(restored.entries[vessel.id]?.physiologyInputs, [20, 20])
+    XCTAssertEqual(restored.entries[cell.id]?.physiologyInputs, [20, 20])
+    let mapped = atlas.entries.compactMap { entry in
+      GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id).map { (entry.id, $0) }
+    }
+    let oxygenEnabled = GalaxySSIHealthAtlasPhysiology.Kind.allCases.contains { $0.rawValue == "oxygen" }
+    XCTAssertEqual(mapped.count, oxygenEnabled ? 101 : 99)
+    XCTAssertEqual(Set(mapped.map(\.1)), Set(GalaxySSIHealthAtlasPhysiology.Kind.allCases))
+    for teaching in GalaxySSIHealthAtlasTeachingModel.allCases {
+      XCTAssertEqual(Set(mapped.filter { $0.1.teaching == teaching }.map(\.0)), teaching.entryIDs)
+    }
+  }
+
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
