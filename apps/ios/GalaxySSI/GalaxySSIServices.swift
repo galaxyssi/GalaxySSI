@@ -425,14 +425,14 @@ final class MessageCoordinator: ObservableObject {
     return pendingPhonePublicPageExport
   }
 
-  private func callableAgentRegistrations() -> [AgentRegistration] {
-    let targets = AgentCallableTargetCatalog.build(
+  private func callableAgentRegistrations(targets: [AgentCallableTarget]? = nil) -> [AgentRegistration] {
+    let candidates = (targets ?? AgentCallableTargetCatalog.build(
       contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) }
-    )
+    ))
       .filter { [.agent, .model].contains($0.kind) && $0.status == .available }
     let activeCounts = UserDefaultsAgentGlobalRunSlotStore.shared.activeCounts()
-    return targets.map { target in
+    return candidates.map { target in
       var registration = AgentMentionCandidatePolicy.registration(for: target)
       registration.activeRuns = max(
         registration.activeRuns,
@@ -5119,8 +5119,7 @@ final class MessageCoordinator: ObservableObject {
       !AgentCodexSilenceRecoveryPolicy.isCodex(adapter: $0.connectorAdapterName, agentId: $0.connectorAgentId)
     }.map(\.id))
     let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(
-      targets: AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
-        apiKey: { store.apiKey(for: $0) }, activeLocalProfiles: []),
+      targets: automaticRoutingTargets(goal: source.content),
       eligibleIds: eligibleIds, goal: source.content)
     let timeout = AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: status,
       failureCode: payload.string("failure_code"), error: payload.string("error"))
@@ -6626,6 +6625,20 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func automaticRoutingTargets(goal: String) -> [AgentCallableTarget] {
+    let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+      apiKey: { store.apiKey(for: $0) })
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    return AgentAutomaticRouteAdmission.targets(targets, registrations: callableAgentRegistrations(targets: targets),
+      requirements: AgentTaskRequirementAnalyzer.analyze(
+        AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)),
+      budget: store.agentTaskBudget,
+      environment: AgentTaskBudgetEnvironment(
+        networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated, networkMetered: probe.metered),
+      connectorCallsAllowed: store.agentSafetySettings.connectorCallsAllowed)
+  }
+
   private func automaticRouteSelection(
     for contact: GalaxySSIContact,
     conversationId: String,
@@ -6634,14 +6647,11 @@ final class MessageCoordinator: ObservableObject {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes", selection.mode == .automatic else { return nil }
 
-    let targets = AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
-    let displayed = AgentStableAutoRoutePolicy.displayedTarget(targets: targets,
-      rememberedId: store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
+    let targets = automaticRoutingTargets(goal: goal)
+    let preferredTargetId = (store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
+      .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
     return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
-      preferredTargetId: displayed?.id ?? "", goal: goal, preserveHealthyPrimary: true)
+      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true)
   }
 
   private func selectedLocalModel(
@@ -14312,8 +14322,7 @@ final class MessageCoordinator: ObservableObject {
           (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
           !AgentConnectorFallbackAction.hasActiveTrail(action),
           AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return action }
-    let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) })
+    let targets = automaticRoutingTargets(goal: goal)
     let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
       preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true)
     return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
@@ -14926,10 +14935,7 @@ final class MessageCoordinator: ObservableObject {
   ) -> AgentAction? {
     guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata) else { return nil }
 
-    let targets = AgentCallableTargetCatalog.build(
-      contacts: store.visibleContacts,
-      apiKey: { store.apiKey(for: $0) }
-    )
+    let targets = automaticRoutingTargets(goal: goal)
     let currentRoute = AgentConnectorRouteSelector.select(
       targets: targets,
       decision: nil,

@@ -55,7 +55,11 @@ for (const token of ["if manuallyLocked {", 'task.verification = "manual_desktop
   '![AgentPhase.completed, .cancelled, .failed].contains(task.phase)', "store.appendSystem(detail, to: source.contactId", "release(sourceMessageId: binding.sourceIdentity)"])
   assert(stopped.includes(token), token);
 const fallback = service.split("  private func connectorFallbackAction(")[1].split("  private func markLocalNativeActionBlocked(")[0];
-assert(fallback.indexOf("guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata)") < fallback.indexOf("AgentCallableTargetCatalog.build("));
+const fallbackCandidates = fallback.includes('let targets = automaticRoutingTargets(goal: goal)')
+  ? 'let targets = automaticRoutingTargets(goal: goal)' : 'AgentCallableTargetCatalog.build(';
+assert(fallback.indexOf(fallbackCandidates) >= 0);
+assert(fallback.indexOf("guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata)") >= 0);
+assert(fallback.indexOf("guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata)") < fallback.indexOf(fallbackCandidates));
 assert(!fallback.includes('removeValue(forKey: "manual_target_locked")'));
 assert(service.includes('reason == "desktop_status_unavailable" && record.isManualTargetLocked'));
 assert(policy.includes("record.isManualTargetLocked, record.binding.matches(payload)"));

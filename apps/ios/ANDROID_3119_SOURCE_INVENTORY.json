@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Admission, encrypted Auto identity, primary/synchronous/parallel preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; generic connector/timeout and broader resume parity incomplete",
+  "scope": "Live registration/capacity/privacy/provider/network admission, encrypted Auto identity, primary/synchronous/parallel/scheduled and snapshot-less outcome-review preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; full scored router, generic connector/timeout and broader resume parity incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -32,7 +32,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentResourceRouter.kt",
       "sha256": "d95d5d072eb0637ee20e0a883559918979bf0be48daf4dfb9021fbbcfb37663f",
-      "disposition": "Healthy eligible displayed primary short-circuits quality/alternative ranking in native selector; existing capability admission retained, no new full capacity/privacy/budget router claimed"
+      "disposition": "Live exact-ID registration/global-slot capacity, privacy/capability and explicit provider/network budget admission precedes stable primary selection and fresh synchronous fallback. Current telemetry-only counters retained; full scored/circuit-health/failure-domain router remains incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentStableAutoRoute.kt",

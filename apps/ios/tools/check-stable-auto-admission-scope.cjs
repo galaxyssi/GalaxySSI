@@ -34,11 +34,18 @@ const refreshStart = source.indexOf('enum AgentAutomaticConnectorRoutePolicy {')
 const refreshEnd = source.indexOf('enum AgentConnectorFallbackAction {');
 assert(refreshStart > 0 && refreshEnd > refreshStart);
 const refreshBlock = source.slice(refreshStart, refreshEnd);
+const admissionStart = source.indexOf('enum AgentAutomaticRouteAdmission {');
+assert(admissionStart > 0 && admissionStart < refreshStart);
+const admissionBlock = source.slice(admissionStart, refreshStart);
+for (const token of ['registration?.agentId == resource.targetId', 'active >= capacity',
+  'requirements.localOnly, location == .cloud', 'requirements.dataSensitivity == .restricted',
+  'AgentCapabilityRoutingPolicy.missingRequired', 'AgentTaskBudgetPolicy.evaluate(',
+  'connector_calls_disabled']) assert(admissionBlock.includes(token));
 assert(refreshBlock.includes('var routed = action'));
 assert(refreshBlock.includes('!AgentConnectorFallbackAction.hasActiveTrail(action)'));
 assert(refreshBlock.includes('AgentPlanFactory.unavailableReasoningConnectorId'));
 const normalizedRecovery = (source.slice(0, recoveryStart) + source.slice(recoveryEnd))
-  .replace(refreshBlock, '').replace(autoMetadata, '');
+  .replace(refreshBlock, '').replace(admissionBlock, '').replace(autoMetadata, '');
 const normalizedNetwork = normalizedRecovery.replace(insertion, '').replace(predicate, '').replace(shortCircuit, '')
   .replace('    goal: String = "",\n    preserveHealthyPrimary: Bool = false', '    goal: String = ""');
 assert.equal(normalizedNetwork, git('show', `${base}:${native}`));
@@ -47,6 +54,9 @@ assert(source.includes('let preferredTarget = preferredTargetId.isEmpty ? nil : 
 assert(source.includes('let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first'));
 const tests = read('apps/ios/GalaxySSITests/AgentRoutingCapabilityTests.swift');
 for (const name of [
+  'testAutoAdmissionRejectsFullPrimaryBeforeStablePreference',
+  'testAutoAdmissionRetainsExplicitPrivacyNetworkAndProviderRestrictions',
+  'testAutoAdmissionUsesExactRegistrationCapabilitiesAndTrust',
   'testConnectorPreferenceCannotResurrectCatalogOnlyTarget',
   'testUnavailableAdmittedTargetDoesNotFallBackToExcludedHealthyTarget',
   'testAdmittedRecoveringTargetIsNotHiddenByExcludedAvailableTarget',
@@ -69,6 +79,18 @@ for (const file of [
 const services = read('apps/ios/GalaxySSI/GalaxySSIServices.swift');
 assert(services.includes('store.beginAgentAutoRouteTurn(for: message'));
 assert(services.includes('preserveHealthyPrimary: true'));
+assert.equal((services.match(/let targets = automaticRoutingTargets\(goal: goal\)/g) || []).length, 3);
+const primary = services.slice(services.indexOf('  private func automaticRouteSelection('),
+  services.indexOf('  private func selectedLocalModel('));
+assert(primary.includes('let preferredTargetId = (store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")'));
+assert(primary.includes('preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true'));
+assert(!primary.includes('AgentStableAutoRoutePolicy.displayedTarget(targets: targets'));
+const admissionCaller = services.slice(services.indexOf('  private func automaticRoutingTargets('),
+  services.indexOf('  private func automaticRouteSelection('));
+for (const token of ['AgentAutomaticRouteAdmission.targets(', 'registrations: callableAgentRegistrations(targets: targets)',
+  'AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)', 'budget: store.agentTaskBudget',
+  'probe.networkPresent && probe.internetCapable && probe.validated',
+  'connectorCallsAllowed: store.agentSafetySettings.connectorCallsAllowed']) assert(admissionCaller.includes(token));
 assert.equal((services.match(/automaticTargetId: automaticTargetId/g) || []).length, 9);
 assert.equal((services.match(/try recordAutomaticDispatch\(targetId:/g) || []).length, 8);
 assert(services.includes('code: "auto_route_turn_not_committed"'));
@@ -80,6 +102,7 @@ assert(services.includes('recordAutomaticConnectorTarget(executionAction, result
 assert(services.includes('connectorId: executionAction.parameters["connector_id"] ?? ""'));
 assert(services.includes('let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives('));
 assert(services.includes('eligibleIds: eligibleIds, goal: source.content'));
+assert(services.includes('targets: automaticRoutingTargets(goal: source.content)'));
 assert(services.includes('if status == .queued || status == .sent { recordRecoveredAutoTarget(record) }'));
 const recovered = services.slice(services.indexOf('  private func recordRecoveredAutoTarget('),
   services.indexOf('  private func scheduleCodexReplay('));
@@ -115,6 +138,9 @@ for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutRes
   const target = 'apps/ios/GalaxySSI/' + file;
   assert.equal(read(target), git('show', `${base}:${target}`), file + ' effect/timeout kernel unchanged');
 }
+assert.equal(read('apps/ios/GalaxySSI/AgentTaskBudgetModels.swift'),
+  git('show', `${base}:apps/ios/GalaxySSI/AgentTaskBudgetModels.swift`),
+  'Reuse current explicit network/provider policy; do not restore old telemetry counter cutoffs');
 const sessions = read('apps/ios/GalaxySSI/GalaxySSIStoreSessions.swift');
 const persistence = sessions.slice(sessions.indexOf('  private func persistAgentAutoRoute('), sessions.indexOf('  func updateAgentSessionSummary('));
 assert(persistence.indexOf('guard persisted else { return false }') < persistence.indexOf('cacheAgentConversation(session)'));
@@ -178,7 +204,7 @@ const disposition = file => {
   if (file.includes('/androidTest/') || file.includes('/src/test/') || file.startsWith('docs/')) return 'Android evidence inventoried; new native admission regression source added but not executed; no live acceptance claim';
   if (file.endsWith('AgentStableAutoRoute.kt')) return 'Candidate admission, exact target ID, begin-turn and stale update guards adapted using encrypted native session payload, not a new plaintext preference store';
   if (file.endsWith('MainActivityAgentExecution.kt')) return 'Native header uses the same exact target identity as dispatch, not stale display labels or a fabricated Codex fallback';
-  if (file.endsWith('AgentResourceRouter.kt')) return 'Healthy eligible displayed primary short-circuits quality/alternative ranking in native selector; existing capability admission retained, no new full capacity/privacy/budget router claimed';
+  if (file.endsWith('AgentResourceRouter.kt')) return 'Live exact-ID registration/global-slot capacity, privacy/capability and explicit provider/network budget admission precedes stable primary selection and fresh synchronous fallback. Current telemetry-only counters retained; full scored/circuit-health/failure-domain router remains incomplete';
   if (file.endsWith('MobileNativeAgentExecution.kt')) return 'Primary branch snapshot and parallel/synchronous pre-dispatch route refresh preserve updated action parameters and exact outgoing context; asynchronous recovery specifics still incomplete';
   if (file.endsWith('MainActivityAgentPage.kt')) return 'Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance';
   if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto-reroute metadata propagated through actual native/control-plane executor results; manual/explicit false flags dominate; synchronous fallback uses current admitted ranking and owned attempt trail';
@@ -188,7 +214,7 @@ const disposition = file => {
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Admission, encrypted Auto identity, primary/synchronous/parallel preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; generic connector/timeout and broader resume parity incomplete',
+  scope: 'Live registration/capacity/privacy/provider/network admission, encrypted Auto identity, primary/synchronous/parallel/scheduled and snapshot-less outcome-review preparation, attachment UI scope and bounded existing Desktop recovery ranking/header updates; full scored router, generic connector/timeout and broader resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');

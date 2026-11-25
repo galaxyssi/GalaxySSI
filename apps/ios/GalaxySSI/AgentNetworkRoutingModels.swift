@@ -473,6 +473,64 @@ enum AgentConnectorFailureScope {
   }
 }
 
+enum AgentAutomaticRouteAdmission {
+  static func targets(
+    _ targets: [AgentCallableTarget],
+    registrations: [AgentRegistration],
+    requirements: AgentTaskRequirements,
+    budget: AgentTaskBudget,
+    environment: AgentTaskBudgetEnvironment,
+    connectorCallsAllowed: Bool
+  ) -> [AgentCallableTarget] {
+    let resources = AgentResourceCatalog.build(targets: targets, tools: [])
+    return targets.filter { target in
+      guard AgentConnectorRouteSelector.isDeliverable(target),
+            let resource = resources.first(where: { $0.targetId == target.id }) else { return false }
+      return rejectionReason(resource: resource,
+        registration: registrations.first(where: { $0.agentId == target.id }),
+        requirements: requirements, budget: budget, environment: environment,
+        connectorCallsAllowed: connectorCallsAllowed) == nil
+    }
+  }
+
+  static func rejectionReason(
+    resource: AgentResourceDescriptor,
+    registration: AgentRegistration?,
+    requirements: AgentTaskRequirements,
+    budget: AgentTaskBudget,
+    environment: AgentTaskBudgetEnvironment,
+    connectorCallsAllowed: Bool
+  ) -> String? {
+    // A catalog label must not borrow another installation's capacity or trust.
+    let exact = registration?.agentId == resource.targetId ? registration : nil
+    let location = exact?.location ?? resource.location
+    let trust = exact?.trust ?? resource.trust
+    let capabilities = exact?.capabilities ?? resource.capabilities
+    let active = max(resource.activeTasks, exact?.activeRuns ?? 0)
+    let capacity = max(1, exact?.maxParallelRuns ?? resource.maxParallelTasks)
+    if let status = exact?.status, ![.online, .idle, .busy].contains(status) {
+      return "registration_unavailable"
+    }
+    if active >= capacity { return "at_capacity" }
+    if !connectorCallsAllowed, location != .phone { return "connector_calls_disabled" }
+    if requirements.localOnly, location == .cloud { return "privacy_boundary" }
+    if requirements.dataSensitivity == .restricted,
+       ![AgentResourceTrust.phoneSystem, .verifiedPaired].contains(trust) {
+      return "restricted_data_boundary"
+    }
+    if !AgentCapabilityRoutingPolicy.missingRequired(requirements, available: capabilities).isEmpty {
+      return "mandatory_capability_missing"
+    }
+    let decision = AgentTaskBudgetPolicy.evaluate(
+      budget: budget, usage: AgentTaskBudgetUsage(usageEstimated: true), environment: environment,
+      networkRequired: location != .phone,
+      trustedNetworkTarget: [.phone, .trustedDesktop, .privateNetwork].contains(location),
+      cloudProvider: location == .cloud,
+      paidProvider: (exact?.cost ?? resource.cost) != .free)
+    return decision.allowed ? nil : "task_budget:\(decision.limit?.rawValue ?? "denied")"
+  }
+}
+
 enum AgentAutomaticConnectorRoutePolicy {
   static func refresh(_ action: AgentAction, selection: AgentConnectorRouteSelection?) -> AgentAction {
     guard action.kind == .callConnector, action.parameters["manual_target_locked"] != "true",

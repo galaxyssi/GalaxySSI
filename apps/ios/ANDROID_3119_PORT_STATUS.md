@@ -52,6 +52,14 @@ The existing conversation scheduler now commits its exact outgoing Auto turn bef
 
 Existing schedule provenance/revision, private/paused/collaboration restrictions, plan-only rejection, occurrence identity, duplicate suppression and result reconciliation remain unchanged. Generic connector continuation is separate and remains incomplete. Schedule assertions are source contracts only; no scheduler/provider/device acceptance was run.
 
+## Live Admission Before Stable Selection
+
+Primary Auto selection, synchronous/parallel route preparation, fresh synchronous fallback and the existing same-Desktop alternative replay rankings now filter the actual target catalog through exact-ID registrations with the existing live global-run-slot counts. Full registrations, unavailable endpoints and missing mandatory registered capabilities cannot win via remembered preference. Local-only and restricted-data boundaries apply before stable selection; another installation's similarly named registration cannot lend trust or capacity. The original replay budget's same-target attempts remain unchanged; this does not claim new admission of those attempts or alter their existing publication gates.
+
+The same preselection path reuses the existing task budget and network detector: explicit cloud/paid-provider, trusted/offline/unmetered network policies and disabled connector calls are enforced. Phone resources remain possible without a network. The current budget implementation deliberately treats token/cost/memory/battery counters as telemetry, so this patch does not restore old Android hard cutoffs. Manual paths, disclosure authorization, actual slot acquisition and transport publication remain separate and unchanged. Registration projection consumes the same catalog snapshot. The preferred ID remains the actual remembered ID even when admission excludes it; only an admitted healthy preferred primary skips ranking, rather than prematurely treating the default replacement as a new stable primary.
+
+This is live admission, not the full Android score/circuit-health/failure-domain router. Global slot counts only cover runs tracked by the existing slot owner; this does not claim every direct model/Agent call is accounted for or reserve a slot atomically at selection. Existing disconnected-heartbeat recovery is retained when there is no contradictory registration. The header still reflects the remembered identity until a real dispatch commits a replacement. Native fixture source covers capacity, exact-ID registration, privacy, mandatory capability and explicit provider/network restrictions, but has not been executed.
+
 ## Still Incomplete
 
 ### Snapshot-less Outcome Review Recovery

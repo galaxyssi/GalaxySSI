@@ -1325,6 +1325,70 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(AgentConnectorRouteSelector.isDeliverable(recovering))
   }
 
+  func testAutoAdmissionRejectsFullPrimaryBeforeStablePreference() throws {
+    let busy = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    var registration = AgentMentionCandidatePolicy.registration(for: busy)
+    registration.activeRuns = registration.maxParallelRuns
+    let admitted = AgentAutomaticRouteAdmission.targets([busy, cloud], registrations: [registration],
+      requirements: AgentTaskRequirements(), budget: .default,
+      environment: AgentTaskBudgetEnvironment(networkAvailable: true), connectorCallsAllowed: true)
+    XCTAssertEqual(admitted.map(\.id), [cloud.id])
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: admitted, decision: nil,
+      preferredTargetId: busy.id, preserveHealthyPrimary: true)?.target.id, cloud.id)
+  }
+
+  func testAutoAdmissionRetainsExplicitPrivacyNetworkAndProviderRestrictions() {
+    var resource = routingResource(targetId: "cloud-model:deepseek", type: .cloudModel, location: .cloud)
+    resource.trust = .cloudConfigured
+    resource.cost = .high
+    let online = AgentTaskBudgetEnvironment(networkAvailable: true, networkMetered: true)
+    func reject(_ requirements: AgentTaskRequirements = AgentTaskRequirements(),
+                budget: AgentTaskBudget = .default,
+                environment: AgentTaskBudgetEnvironment = AgentTaskBudgetEnvironment(networkAvailable: true),
+                connectors: Bool = true) -> String? {
+      AgentAutomaticRouteAdmission.rejectionReason(resource: resource, registration: nil,
+        requirements: requirements, budget: budget, environment: environment,
+        connectorCallsAllowed: connectors)
+    }
+    XCTAssertEqual(reject(AgentTaskRequirements(localOnly: true)), "privacy_boundary")
+    XCTAssertEqual(reject(AgentTaskRequirements(dataSensitivity: .restricted)), "restricted_data_boundary")
+    XCTAssertEqual(reject(connectors: false), "connector_calls_disabled")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(allowCloud: false)), "task_budget:cloud")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(allowPaidProviders: false)), "task_budget:paid_provider")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(networkPolicy: .trustedOnly)), "task_budget:network")
+    XCTAssertEqual(reject(budget: AgentTaskBudget(networkPolicy: .unmeteredOnly), environment: online), "task_budget:network")
+    XCTAssertEqual(reject(environment: AgentTaskBudgetEnvironment()), "task_budget:network")
+    resource.location = .phone
+    resource.trust = .phoneSystem
+    resource.cost = .free
+    XCTAssertNil(reject(AgentTaskRequirements(localOnly: true, dataSensitivity: .restricted),
+      budget: AgentTaskBudget(networkPolicy: .offlineOnly, allowCloud: false, allowPaidProviders: false),
+      environment: AgentTaskBudgetEnvironment(), connectors: false))
+  }
+
+  func testAutoAdmissionUsesExactRegistrationCapabilitiesAndTrust() {
+    let target = routeTarget("codex", kind: .agent)
+    var registration = AgentMentionCandidatePolicy.registration(for: target)
+    var resource = routingResource(targetId: target.id, type: .remoteAgent, location: .trustedDesktop)
+    resource.trust = .unknown
+    registration.capabilities = [.chat]
+    let online = AgentTaskBudgetEnvironment(networkAvailable: true)
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(capabilities: [.code]),
+      budget: .default, environment: online, connectorCallsAllowed: true), "mandatory_capability_missing")
+    registration.status = .permissionRequired
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(), budget: .default,
+      environment: online, connectorCallsAllowed: true), "registration_unavailable")
+    registration.status = .online
+    registration.agentId = "another-installation"
+    registration.trust = .verifiedPaired
+    XCTAssertEqual(AgentAutomaticRouteAdmission.rejectionReason(resource: resource,
+      registration: registration, requirements: AgentTaskRequirements(dataSensitivity: .restricted),
+      budget: .default, environment: online, connectorCallsAllowed: true), "restricted_data_boundary")
+  }
+
   func testConnectorPreferenceCannotResurrectCatalogOnlyTarget() throws {
     let codex = routeTarget("codex", kind: .agent)
     let cloud = routeTarget("cloud-model:deepseek", kind: .model)

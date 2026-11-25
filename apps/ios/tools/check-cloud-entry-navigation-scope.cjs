@@ -62,7 +62,9 @@ for (const file of [
     if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
       // #3119 adds only this admission boundary; its own scope check verifies it.
       assert(fs.existsSync(path.join(__dirname, 'check-stable-auto-admission-scope.cjs')));
-      const refreshStart = source.indexOf('enum AgentAutomaticConnectorRoutePolicy {');
+      const refreshStart = source.indexOf('enum AgentAutomaticRouteAdmission {') >= 0
+        ? source.indexOf('enum AgentAutomaticRouteAdmission {')
+        : source.indexOf('enum AgentAutomaticConnectorRoutePolicy {');
       const refreshEnd = source.indexOf('enum AgentConnectorFallbackAction {');
       if (refreshStart >= 0) {
         assert(refreshEnd > refreshStart);
