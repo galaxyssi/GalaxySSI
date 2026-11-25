@@ -89,6 +89,12 @@ enum AgentPlanNodeClaim: Equatable {
   case observed(AgentPlanNodeObservation)
 }
 
+struct AgentPlanNodeDispatch: Codable, Equatable {
+  var action: AgentAction
+  var checkpoint: AgentExecutionCheckpoint
+  var audits: [AgentAuditEntry]
+}
+
 protocol AgentPlanNodeJournaling: AnyObject {
   func observe(_ key: AgentPlanNodeKey) throws -> AgentPlanNodeClaim?
   func claim(_ key: AgentPlanNodeKey) throws -> AgentPlanNodeClaim
@@ -110,6 +116,7 @@ final class EncryptedAgentPlanNodeJournal: AgentPlanNodeJournaling {
     var observation: AgentPlanNodeObservation?
     var startedAtMillis: Int64
     var updatedAtMillis: Int64
+    var dispatch: AgentPlanNodeDispatch? = nil
   }
 
   private let defaults: UserDefaults
@@ -131,6 +138,23 @@ final class EncryptedAgentPlanNodeJournal: AgentPlanNodeJournaling {
   }
 
   func claim(_ key: AgentPlanNodeKey) throws -> AgentPlanNodeClaim {
+    try claim(key, dispatch: nil)
+  }
+
+  func claim(_ key: AgentPlanNodeKey, action: AgentAction, checkpoint: AgentExecutionCheckpoint) throws -> AgentPlanNodeClaim {
+    guard action.id == key.actionId, checkpoint.id == key.checkpointId,
+          checkpoint.actionId == key.actionId, checkpoint.status == .active else {
+      throw AgentPlanNodeJournalError.identityMismatch
+    }
+    let now = nowMillis()
+    let dispatch = AgentPlanNodeDispatch(action: action, checkpoint: checkpoint, audits: [
+      AgentAuditEntry(event: .checkpointSaved, detail: "checkpoint=\(checkpoint.id); action=\(action.id)", timestampMillis: now),
+      AgentAuditEntry(event: .toolStarted, detail: "dispatch_intent; action=\(action.id); kind=\(action.kind.rawValue)", timestampMillis: now)
+    ])
+    return try claim(key, dispatch: dispatch)
+  }
+
+  private func claim(_ key: AgentPlanNodeKey, dispatch: AgentPlanNodeDispatch?) throws -> AgentPlanNodeClaim {
     lock.lock()
     defer { lock.unlock() }
     var entries = try load()
@@ -143,10 +167,19 @@ final class EncryptedAgentPlanNodeJournal: AgentPlanNodeJournaling {
       key: key,
       observation: nil,
       startedAtMillis: now,
-      updatedAtMillis: now
+      updatedAtMillis: now,
+      dispatch: dispatch
     )
     try persist(entries)
     return .acquired
+  }
+
+  func readDispatch(_ key: AgentPlanNodeKey) throws -> AgentPlanNodeDispatch? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let entry = try load()[key.journalId] else { return nil }
+    guard entry.key == key else { throw AgentPlanNodeJournalError.identityMismatch }
+    return entry.dispatch
   }
 
   func observe(_ key: AgentPlanNodeKey) throws -> AgentPlanNodeClaim? {
