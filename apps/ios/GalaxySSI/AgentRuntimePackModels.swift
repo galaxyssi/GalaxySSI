@@ -415,6 +415,12 @@ struct AgentRuntimePackStatus: Codable, Equatable, Identifiable {
   var reason: String
   var manifest: AgentRuntimePackManifest?
 
+  var installedVersion: String? {
+    guard state == .ready, let version = manifest?.version
+      .trimmingCharacters(in: .whitespacesAndNewlines), !version.isEmpty else { return nil }
+    return version
+  }
+
   init(
     id: String,
     state: AgentRuntimePackState,

@@ -866,25 +866,31 @@ struct GalaxySSIRuntimeSoftwareCenterView: View {
   @ViewBuilder
   private func catalogEntryRow(_ entry: AgentRuntimePackCatalogEntry) -> some View {
     let installed = GalaxySSIOnDeviceRuntimeView.packStatus(entry.packId)
-    let ready = installed.state == .ready && installed.manifest?.version == entry.version
+    let ready = installed.installedVersion == entry.version
     let installing = installingPackID == entry.packId
     GalaxySSISecurityActionRow(
       title: GalaxySSIOnDeviceRuntimeView.packTitle(entry.packId, language: interfaceLanguage),
-      subtitle: catalogEntrySubtitle(entry),
+      subtitle: catalogEntrySubtitle(entry, installed: installed),
       systemImage: entry.packId == "ffmpeg" ? "film" : "shippingbox",
       tint: ready ? .galaxySSIAccent : (installing ? .blue : .orange),
       badge: ready
         ? t("cc_status_ready", "Ready")
-        : (installing ? t("cc_runtime_catalog_installing", "Installing") : t("cc_runtime_catalog_install", "Install"))
+        : (installing ? t("cc_runtime_catalog_installing", "Installing")
+          : (installed.state == .ready ? t("cc_runtime_software_metric_installed", "Installed")
+            : t("cc_runtime_catalog_install", "Install")))
     ) {
       guard !installing && !isInstalling && !isUninstalling && !isRefreshingCatalog else { return }
       selectedCatalogEntry = entry
     }
   }
 
-  private func catalogEntrySubtitle(_ entry: AgentRuntimePackCatalogEntry) -> String {
-    let base = "\(entry.version) / \(GalaxySSIOnDeviceRuntimeView.formatBytes(entry.installedSizeBytes)) / \(entry.license)"
-    return entry.releaseNotes.isEmpty ? base : "\(base) / \(entry.releaseNotes)"
+  private func catalogEntrySubtitle(_ entry: AgentRuntimePackCatalogEntry, installed: AgentRuntimePackStatus) -> String {
+    let available = t("cc_runtime_software_metric_available", "Available") + ": " + entry.version
+    let base = "\(available) / \(GalaxySSIOnDeviceRuntimeView.formatBytes(entry.installedSizeBytes)) / \(entry.license)"
+    let catalog = entry.releaseNotes.isEmpty ? base : "\(base) / \(entry.releaseNotes)"
+    guard installed.state == .ready else { return catalog }
+    let version = installed.installedVersion ?? t("galaxyssi.status.unknown", "Unknown")
+    return t("cc_runtime_software_metric_installed", "Installed") + ": " + version + "\n" + catalog
   }
 
   private func loadCachedCatalog() {
@@ -1068,7 +1074,7 @@ private struct GalaxySSIRuntimePackDetailSheet: View {
   var onUninstall: () -> Void
 
   private var isReady: Bool {
-    installed.state == .ready && installed.manifest?.version == entry.version
+    installed.installedVersion == entry.version
   }
 
   private var dependencies: String {
@@ -1104,7 +1110,9 @@ private struct GalaxySSIRuntimePackDetailSheet: View {
             subtitle: entry.releaseNotes.ifBlank(t("cc_runtime_catalog_no_release_notes", "No release notes")),
             systemImage: entry.packId == "ffmpeg" ? "film" : "shippingbox",
             tint: isReady ? .galaxySSIAccent : .blue,
-            badge: isReady ? t("cc_status_ready", "Ready") : t("cc_runtime_catalog_install", "Install")
+            badge: isReady ? t("cc_status_ready", "Ready")
+              : (installed.state == .ready ? t("cc_runtime_software_metric_installed", "Installed")
+                : t("cc_runtime_catalog_install", "Install"))
           )
           GalaxySSISecuritySectionTitle(title: t("cc_runtime_catalog_details_section", "Package details"))
           GalaxySSISecurityStatusRow(
@@ -1116,12 +1124,21 @@ private struct GalaxySSIRuntimePackDetailSheet: View {
             monospacedSubtitle: true
           )
           GalaxySSISecurityStatusRow(
-            title: t("cc_runtime_catalog_detail_version", "Version"),
+            title: t("cc_runtime_software_metric_available", "Available"),
             subtitle: entry.version,
             systemImage: "tag",
             tint: .blue,
             badge: ""
           )
+          if installed.state == .ready {
+            GalaxySSISecurityStatusRow(
+              title: t("cc_runtime_software_metric_installed", "Installed"),
+              subtitle: installed.installedVersion ?? t("galaxyssi.status.unknown", "Unknown"),
+              systemImage: "checkmark.circle",
+              tint: .galaxySSIAccent,
+              badge: ""
+            )
+          }
           GalaxySSISecurityStatusRow(
             title: t("cc_runtime_catalog_detail_architecture", "Architecture"),
             subtitle: entry.architecture,

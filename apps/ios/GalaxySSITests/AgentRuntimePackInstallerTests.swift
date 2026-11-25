@@ -3,6 +3,34 @@ import Foundation
 import XCTest
 
 final class AgentRuntimePackInstallerTests: XCTestCase {
+  func testInstalledVersionComesOnlyFromReadyManifestWithoutChangingStoredState() throws {
+    var manifest = AgentRuntimePackManifest(
+      id: "node-js", version: "22.0.0", architecture: "arm64",
+      imageFile: "node.img", imageSha256: String(repeating: "0", count: 64),
+      capabilities: [], dependencies: [], installedSizeBytes: 1,
+      license: "MIT", signatureKeyId: "test", signature: "test"
+    )
+    let installed = AgentRuntimePackStatus(id: "node-js", state: .ready, manifest: manifest)
+    let before = try JSONEncoder().encode(installed)
+    XCTAssertEqual(installed.installedVersion, "22.0.0")
+    XCTAssertEqual(installed.manifest?.version, "22.0.0")
+    let decoded = try JSONDecoder().decode(AgentRuntimePackStatus.self, from: before)
+    XCTAssertEqual(decoded, installed)
+    XCTAssertEqual(decoded.installedVersion, "22.0.0")
+    let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: before) as? [String: Any])
+    XCTAssertNil(encoded["installedVersion"])
+    XCTAssertNil(encoded["installed_version"])
+    for state in AgentRuntimePackState.allCases where state != .ready {
+      XCTAssertNil(AgentRuntimePackStatus(id: "node-js", state: state, manifest: manifest).installedVersion)
+    }
+    XCTAssertNil(AgentRuntimePackStatus(id: "node-js", state: .ready).installedVersion)
+    manifest.version = " \n "
+    XCTAssertNil(AgentRuntimePackStatus(id: "node-js", state: .ready, manifest: manifest).installedVersion)
+    manifest.version = " 22.0.0 \n"
+    XCTAssertEqual(AgentRuntimePackStatus(id: "node-js", state: .ready, manifest: manifest).installedVersion, "22.0.0")
+    XCTAssertEqual(manifest.version, " 22.0.0 \n")
+  }
+
   func testRuntimePackInstallerActivatesSignedPackAndReplacesExistingPack() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("runtime-pack-tests-\(UUID().uuidString)", isDirectory: true)

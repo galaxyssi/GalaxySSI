@@ -1,0 +1,103 @@
+{
+  "androidPR": 3165,
+  "androidCommit": "dab287aef9f951ded0b1ebf4cbb01c9da0ae52ee",
+  "incrementalBase": "6af00b2194dcf14691b33ff3d5f79b1b77f350ce",
+  "scope": "Resource section folding and installed/catalog version separation; remaining broad settings parity unverified",
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "sha256": "3a3295ec2b1e1c9f239377c86b52d65250f95625d9404cbbbfc75c0aad3c0647",
+      "disposition": "Android version excluded"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/MyAgentSettingsRedesignDeviceTest.kt",
+      "sha256": "15df3ed8e2626eb4fec3444c5c337265d681ae87504af4fb7abacdb2046d5cbb",
+      "disposition": "Android acceptance evidence inspected; not an executed iOS test"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ControlCenterUi.kt",
+      "sha256": "9a1eb8e3efb33661b9169ad477e54c2412a1406062d9c1cc0ae8f94a2b2b69b3",
+      "disposition": "Existing native home/model hub retained, including #3169 follow-up; broad subpage redesign not newly claimed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivity.kt",
+      "sha256": "ba3485554136b00114a32164158de6379d0f8d76701f9eccf66981ae9b507299",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentSettings.kt",
+      "sha256": "8792b9deae505dc81775d2864479f5f95389dc41c7709a6df06b2b2139ab700b",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentStateViews.kt",
+      "sha256": "b58a1426d3cc373f395888a8982833f894481d08264efd711f34e048f6d78b89",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityControlCenter.kt",
+      "sha256": "a124d2e6488798a54dbe86aea3aef89c197ccc67b95335275ca49bfcd45b0e71",
+      "disposition": "Existing native home/model hub retained, including #3169 follow-up; broad subpage redesign not newly claimed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityEvolutionMemory.kt",
+      "sha256": "04ff75d252b5b59ea42bf3dd009b16fb7bc50533546988641d0ea68f3c328443",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGeneralPolicy.kt",
+      "sha256": "0e753a0cd6785294fbc065ce33a0b27d8b72c06b1c9496e623a91186a277806d",
+      "disposition": "Installed and downloadable pack versions separated in native software list/detail; other general settings parity remains unverified"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt",
+      "sha256": "60ac20b56cddc2a0ff1761cdd0152096b88686b3d999f458deb8cee62ae7385c",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityLocalAndDesktop.kt",
+      "sha256": "e9932e128c89ec77ca438125509ad6153c3f7660d5100c513a815a1f41f9e2b7",
+      "disposition": "Native collapsible resource sections adapted; existing model/ASR controls and actions retained exactly"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityMyAgentPages.kt",
+      "sha256": "a5b707fb990f4b9fd83b87dff5b3d745a8928c7f616b622109cf83063d9762d7",
+      "disposition": "Existing native home/model hub retained, including #3169 follow-up; broad subpage redesign not newly claimed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityRuntimePolicy.kt",
+      "sha256": "747d3fa26ce852355ac964cb4085924b93967b82dcb4da8a4bda157be68c60a2",
+      "disposition": "Existing native lifecycle/settings retained; remaining execution/memory/proactive/general layout differences not claimed complete"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityVoiceSettings.kt",
+      "sha256": "116f78ae880aca09a71147a9edbc0b77d60fb1034273627ba15c1cadd3c8761a",
+      "disposition": "Native collapsible resource sections adapted; existing model/ASR controls and actions retained exactly"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MyAgentResourceSections.kt",
+      "sha256": "619e19613ae264bc41d76c681ad53f0e00f80ac0900a26f9affb5ad83542e79a",
+      "disposition": "Native collapsible resource sections adapted; existing model/ASR controls and actions retained exactly"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/strings_my_agent.xml",
+      "sha256": "225a28e481abea037a97223a4595ff6ceec1defd4660884471d4de0eebfcf03d",
+      "disposition": "Native existing resource keys reused; no Android resource copy or claim of complete UI parity"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_my_agent.xml",
+      "sha256": "fb2ec1ee2e576000eb254b209d07b4a8708d0f473a1e64ec69d1d488b9ba9396",
+      "disposition": "Native existing resource keys reused; no Android resource copy or claim of complete UI parity"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/ControlCenterHomeGroupingTest.kt",
+      "sha256": "ac1da0e141ec8d0df96887cea72f8301e29a15f8d1ff293e538597415d42b112",
+      "disposition": "Android acceptance evidence inspected; not an executed iOS test"
+    },
+    {
+      "path": "docs/testing/MY_AGENT_SETTINGS_REDESIGN.md",
+      "sha256": "252f5520d8bca10656577e521339c742acd7c53f25bd82ae315714409fd56ac7",
+      "disposition": "Android acceptance evidence inspected; not an executed iOS test"
+    }
+  ]
+}
