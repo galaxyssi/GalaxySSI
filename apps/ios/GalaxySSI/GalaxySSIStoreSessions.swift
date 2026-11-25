@@ -541,7 +541,11 @@ extension GalaxySSIStore {
     if let draft = agentConversationDatabase.readDraft(clean) {
       return draft
     }
-    return mergedAgentConversations().first { $0.id == clean }
+    var legacy: AgentConversation?
+    for contact in contacts where isAgentSessionContact(contact) && defaultAgentConversationId(for: contact.id) == clean {
+      if let conversation = legacyAgentConversation(for: contact, stored: legacy) { legacy = conversation }
+    }
+    return legacy
   }
 
   func agentSessionDestination(id conversationId: String) -> String? {
@@ -1127,6 +1131,7 @@ extension GalaxySSIStore {
   }
 
   func agentSessionMetrics(_ conversationId: String) -> AgentSessionMetrics {
+    let conversation = agentSession(id: conversationId)
     let messages = agentSessionMessages(conversationId)
     let turnIds = Set(messages.map(\.turnId).filter { !$0.isBlank })
     let userTurns = messages.filter { $0.isMine && !$0.isSystem }.count
@@ -1140,9 +1145,9 @@ extension GalaxySSIStore {
         message.deliveryTrace.contains { $0.stage == "agent_started" || $0.stage == "agent_replied" }
       }.count,
       estimatedContextTokens: estimatedTokens,
-      inputTokens: agentSession(id: conversationId)?.inputTokens ?? 0,
-      outputTokens: agentSession(id: conversationId)?.outputTokens ?? 0,
-      costMicros: agentSession(id: conversationId)?.costMicros ?? 0,
+      inputTokens: conversation?.inputTokens ?? 0,
+      outputTokens: conversation?.outputTokens ?? 0,
+      costMicros: conversation?.costMicros ?? 0,
       lastResponseLatencyMillis: lastAgentResponseLatencyMillis(messages)
     )
   }
@@ -1207,24 +1212,31 @@ extension GalaxySSIStore {
     }
     for contact in contacts where isAgentSessionContact(contact) {
       let conversationId = defaultAgentConversationId(for: contact.id)
-      let messages = agentSessionMessages(conversationId)
-      guard !messages.isEmpty || contact.id == "hermes" else { continue }
-      let createdAt = messages.map { Self.millis($0.createdAt) }.min() ?? Self.nowMillis()
-      let updatedAt = messages.map { Self.millis($0.createdAt) }.max() ?? createdAt
-      var conversation = byId[conversationId] ?? AgentConversation(
-        id: conversationId,
-        title: contact.displayName,
-        createdAt: createdAt,
-        updatedAt: updatedAt,
-        selectedModelOrAgent: contact.displayName
-      )
-      conversation.title = conversation.title.ifBlank(contact.displayName)
-      conversation.selectedModelOrAgent = conversation.selectedModelOrAgent.ifBlank(contact.displayName)
-      conversation.updatedAt = max(conversation.updatedAt, updatedAt)
-      conversation.latestDialogueAt = messages.filter { !$0.isSystem }.map { Self.millis($0.createdAt) }.max() ?? 0
-      byId[conversationId] = conversation
+      if let conversation = legacyAgentConversation(for: contact, stored: byId[conversationId]) {
+        byId[conversationId] = conversation
+      }
     }
     return Self.sortedAgentConversations(Array(byId.values))
+  }
+
+  private func legacyAgentConversation(for contact: GalaxySSIContact, stored: AgentConversation?) -> AgentConversation? {
+    let conversationId = defaultAgentConversationId(for: contact.id)
+    let messages = agentSessionMessages(conversationId)
+    guard !messages.isEmpty || contact.id == "hermes" else { return nil }
+    let createdAt = messages.map { Self.millis($0.createdAt) }.min() ?? Self.nowMillis()
+    let updatedAt = messages.map { Self.millis($0.createdAt) }.max() ?? createdAt
+    var conversation = stored ?? AgentConversation(
+      id: conversationId,
+      title: contact.displayName,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      selectedModelOrAgent: contact.displayName
+    )
+    conversation.title = conversation.title.ifBlank(contact.displayName)
+    conversation.selectedModelOrAgent = conversation.selectedModelOrAgent.ifBlank(contact.displayName)
+    conversation.updatedAt = max(conversation.updatedAt, updatedAt)
+    conversation.latestDialogueAt = messages.filter { !$0.isSystem }.map { Self.millis($0.createdAt) }.max() ?? 0
+    return conversation
   }
 
   private func isAgentSessionContact(_ contact: GalaxySSIContact) -> Bool {
