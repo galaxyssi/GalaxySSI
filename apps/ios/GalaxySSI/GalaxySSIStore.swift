@@ -2022,6 +2022,7 @@ final class GalaxySSIStore: ObservableObject {
     guard let index = friendRequests.firstIndex(where: { $0.id == id }) else {
       return false
     }
+    let previousRequests = friendRequests, previousContacts = contacts
     var request = friendRequests[index]
     request.status = .approved
     request.approvedAt = now
@@ -2096,7 +2097,11 @@ final class GalaxySSIStore: ObservableObject {
     next.deletedAt = nil
     next.updatedAt = now
     upsert(next)
-    save()
+    guard save() else {
+      friendRequests = previousRequests
+      contacts = previousContacts
+      return false
+    }
     if request.opaquePhoneRoutes != nil {
       let language = LanguagePolicySettings.resolveInterface(languagePolicy.interfaceLanguage)
       let content = String(

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 3262,
+    "mergeCommit": "07156a44cd4494b6121a7d0ea255aa16210f905f",
+    "priorIOSPR": 3326,
+    "note": "Existing approval readiness was already ported. This is a narrow native durability follow-up, not a duplicate full transport port."
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "f37524efe3beb1c31a0dba147be497fbc7d58b89b01a8a28d27c05b03a4b4c9d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
+      "status": "M",
+      "sha256": "119ec3bdb691e1974e18b8b838eaeb5d30be3ffdc7c5c5db67673467071f1bb9"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttPeerRoutes.kt",
+      "status": "M",
+      "sha256": "07779b833c7809f1b4d1d3c98e1f2d7a77c7e0b2eef1381ef34cdcbae1ca6da3"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/MqttPeerRoutesTest.kt",
+      "status": "M",
+      "sha256": "b338e9b54cf17da78ef705d4f1eb0a498568c840aee828cbe94fe2c567a89166"
+    }
+  ]
+}
