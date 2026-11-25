@@ -8,6 +8,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   @Binding var physiologyInputs: [Int]?
   @Binding var previewPresented: Bool
   let destination: (String) -> AnyView
+  var mechanismFirst = false
   @State private var structure: String?
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
@@ -22,6 +23,9 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private var sweat: Bool { entry.id == GalaxySSIHealthAtlasSweat.owner }
   private var section: GalaxySSIHealthAtlasSectionLesson? { .forEntry(entry.id) }
   private var quantitativeAfterSection: Bool { section != nil && entry.kind != .cell }
+  var quantitativeAfterArt: Bool {
+    mechanismFirst || gasExchange || entry.id == "pancreas" || endocrine != nil || sweat || quantitativeAfterSection
+  }
   private var endocrine: GalaxySSIHealthAtlasEndocrinePath? { GalaxySSIHealthAtlasEndocrinePath.forEntry(entry.id) }
   private var germline: GalaxySSIHealthAtlasGermline.Counts? {
     GalaxySSIHealthAtlasGermline.counts(entry.id, stage: simulation.stage)
@@ -37,9 +41,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if !gasExchange, entry.id != "pancreas", endocrine == nil, !retinal, !sweat, !quantitativeAfterSection {
-      GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
-        legacyVentilation: lung ? [simulation.first, simulation.second] : nil)
+      if !quantitativeAfterArt {
+        quantitative.accessibilityIdentifier("atlas-quantitative-before-art")
       }
       #endif
       Text(String(format: t("related_process"), GalaxySSIHealthAtlasText.get(model.title, language))).font(.headline)
@@ -171,18 +174,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
         Link(t("digestive_routes_reference"), destination: GalaxySSIHealthAtlasPancreatic.source)
       }
       #if GALAXYSSI_ATLAS_PHYSIOLOGY
-      if sweat || quantitativeAfterSection {
-        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
-      }
-      if endocrine != nil {
-        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
-      }
-      if entry.id == "pancreas" {
-        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language)
-      }
-      if gasExchange {
-        GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
-          legacyVentilation: entry.id == "alveoli" ? [simulation.first, simulation.second] : nil)
+      if quantitativeAfterArt {
+        quantitative.accessibilityIdentifier("atlas-quantitative-after-art")
       }
       #endif
       Text(t("teaching_note")).font(.footnote).foregroundColor(.secondary)
@@ -211,6 +204,12 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     .onChange(of: previewPresented) { _ in playing = false; lastTick = nil }
     .onDisappear { playing = false; lastTick = nil }
   }
+  #if GALAXYSSI_ATLAS_PHYSIOLOGY
+  private var quantitative: some View {
+    GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,
+      legacyVentilation: (lung || entry.id == "alveoli") ? [simulation.first, simulation.second] : nil)
+  }
+  #endif
   private var playbackControls: some View {
       HStack {
         control("backward.step", "previous_step") { playing = false; simulation.selectStage(max(0, simulation.stage - 1)) }

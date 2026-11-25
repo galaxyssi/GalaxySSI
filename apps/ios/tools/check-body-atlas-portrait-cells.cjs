@@ -58,6 +58,7 @@ const source = file => execFileSync("git", ["show", sha + ":" + file], {maxBuffe
   assert(view.includes("lesson.artHeight > lesson.artWidth ? 280 : 226"));
   const simulation=fs.readFileSync(path.join(root,"GalaxySSIHealthAtlasSimulationPanel.swift"),"utf8");
   assert(simulation.includes("section != nil && entry.kind != .cell"));
-  assert(simulation.includes("!quantitativeAfterSection"));
+  assert(simulation.includes("if !quantitativeAfterArt"));
+  assert(simulation.includes("mechanismFirst || gasExchange || entry.id == \"pancreas\" || endocrine != nil || sweat || quantitativeAfterSection"));
   console.log("Android #4361 parity: three original 1024x1536 portraits, six calibrated features plus hair-cell body, exact stage maps, portrait dimensions and cell-quantitative ordering. No native UI execution.");
 })().catch(error=>{console.error(error);process.exit(1);});

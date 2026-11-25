@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4420,
+    "mergeCommit": "241177bc16b63d1b4da966c9d754144f8506de26"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "eda304faef402884da72bea63d98237a70b80105de678a9eeb3408f3f9aaf0af",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump, resource changes or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCirculationDeviceTest.kt",
+      "sourceSHA256": "e8a130012aaa12bfbfb66ce9829584fba7a0c7dfd79fc7049311c537ab09010c",
+      "kind": "android-device-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Source fixtures compare layout policy for every catalogue entry, preserve phase/speed/controls across surfaces, isolate child entry state and check full-cache restoration. Source checks assert view order/wiring and unchanged mechanism controls. No Android/XCTest/device render, drill-down gesture or pixel execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSimulationPanel.kt",
+      "sourceSHA256": "f7a770e16dfd05a9667ac2d5fb8c25f7912d42f0b93dae478bd896df4dd6127c",
+      "kind": "mechanism-first-layout-with-exclusive-quantitative-placement",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSimulationPanel.swift"
+      ],
+      "note": "Default-false mechanismFirst plus original gas/pancreatic/endocrine/sweat/non-cell-section policy. Research diagram and playback precede exactly one numerical panel; standalone retains Android ordering. Share the same inputs and legacy lung/alveolar migration. Consolidate duplicate slots and remove the old retinal exclusion that could omit its numerical panel. Mechanism renderers, timers, reset/navigation, formulas and artwork are unchanged. No native layout certification."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "fd5d3ba0f49e05c622e47f3782c2a7d827034ee509e6ced3d39a73ea0cdeb301",
+      "kind": "physiology-research-opt-in-and-return-state",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "Only physiology research opts into mechanismFirst. Detail/Simulation uses the default. Entry-local simulation and numerical bindings stay shared. A discovered 300-entry cache cap is extended to max(300, current catalogue count), retaining 256KB and all sanitization, so the 313-entry catalogue can restore after navigation."
+    }
+  ]
+}

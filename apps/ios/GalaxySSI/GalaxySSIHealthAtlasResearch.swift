@@ -28,7 +28,7 @@ struct GalaxySSIHealthAtlasResearch: View {
                 return AnyView(GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1))
               }
               return AnyView(EmptyView())
-            })
+            }, mechanismFirst: true)
         case .drugs:
           drugs
         case .aging:
