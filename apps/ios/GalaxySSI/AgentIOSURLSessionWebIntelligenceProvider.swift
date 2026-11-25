@@ -115,6 +115,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var documents: [AgentMcpJSONObject] = []
     var results: [AgentMcpJSONObject] = []
     var cacheMetadata = cacheStore.stats()
+    guard cacheMetadata["available"] != .bool(false) else {
+      return failure("cache_unavailable", "The encrypted cache could not be read. Existing data was not replaced.", retryable: true)
+    }
     switch action {
     case "status":
       break
@@ -133,6 +136,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       documents = [document.value()]
     case "clear", "clear_expired":
       let cleared = cacheStore.clear(expiredOnly: action == "clear_expired")
+      guard cleared["committed"] == .bool(true) else {
+        return failure("cache_persistence_failed", "The cache change could not be saved.", retryable: true)
+      }
       cacheMetadata.merge(cleared) { _, next in next }
     default:
       return failure("invalid_cache_action", "Unsupported iOS web cache action")
@@ -237,18 +243,29 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         createdAtMillis: now,
         updatedAtMillis: now
       )
-      cacheStore.putWatch(watch)
+      guard cacheStore.putWatch(watch) else {
+        return failure("cache_persistence_failed", "The web watch could not be saved.", retryable: true)
+      }
       watchValue = watch.value()
     case "list":
-      watchMetadata["watches"] = .array(cacheStore.watches().map { .object($0.value()) })
+      guard let watches = cacheStore.watchSnapshot() else {
+        return failure("cache_unavailable", "The saved web watches could not be read.", retryable: true)
+      }
+      watchMetadata["watches"] = .array(watches.map { .object($0.value()) })
     case "remove":
-      watchMetadata["removed"] = .bool(cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)))
+      guard let removed = cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)) else {
+        return failure("cache_persistence_failed", "The web watch change could not be saved.", retryable: true)
+      }
+      watchMetadata["removed"] = .bool(removed)
     case "check", "check_due":
+      guard let watches = cacheStore.watchSnapshot() else {
+        return failure("cache_unavailable", "The saved web watches could not be read.", retryable: true)
+      }
       let selected: [AgentIOSWebIntelligenceCacheWatch]
       if action == "check" {
-        selected = [cacheStore.watch(id: string(input, "watch_id", limit: 96))].compactMap { $0 }
+        selected = watches.filter { $0.id == string(input, "watch_id", limit: 96) }
       } else {
-        selected = cacheStore.watches().filter { watch in
+        selected = watches.filter { watch in
           watch.enabled && (watch.lastCheckedAtMillis == 0 || now - watch.lastCheckedAtMillis >= Int64(watch.intervalMinutes) * 60_000)
         }.prefix(int(input, "limit", defaultValue: 20, minimum: 1, maximum: 100)).map { $0 }
       }
@@ -273,7 +290,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
           createdAtMillis: item.createdAtMillis,
           updatedAtMillis: now
         )
-        cacheStore.putWatch(updated)
+        guard cacheStore.putWatch(updated) else {
+          return failure("cache_persistence_failed", "The web watch check could not be saved.", retryable: true)
+        }
         var value = updated.value()
         value["changed"] = .bool(changed)
         checked.append(.object(value))
@@ -371,10 +390,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       mergeSearchResults(cachedResults, networkResults),
       limit: limit
     )
-    if useCache {
-      cacheSearchResults(networkResults, input: input)
-    }
-    return searchSuccess(
+    let cacheCommitted = useCache ? cacheSearchResults(networkResults, input: input) : nil
+    var response = searchSuccess(
       operation: operation,
       query: query,
       invocation: invocation,
@@ -383,6 +400,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       cacheHit: !cachedResults.isEmpty,
       networkAttempted: true
     )
+    if let cacheCommitted {
+      var cache = response.output["cache"]?.objectValue ?? [:]
+      cache["write_committed"] = .bool(cacheCommitted)
+      response.output["cache"] = .object(cache)
+    }
+    return response
   }
 
   private func searchSuccess(
@@ -482,7 +505,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
   private func cacheSearchResults(
     _ results: [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)],
     input: AgentMcpJSONObject
-  ) {
+  ) -> Bool {
     let retrievedAt = nowMillis()
     let ttl = max(
       60_000,
@@ -491,12 +514,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         AgentIOSWebIntelligenceNativeToolCatalog.maxCacheTtlMillis
       )
     )
-    for item in results {
+    let documents = results.compactMap { item -> AgentIOSWebIntelligenceCacheDocument? in
       let url = item.result["url"]?.stringValue ?? ""
-      guard !url.isEmpty else { continue }
+      guard !url.isEmpty else { return nil }
       let title = item.result["title"]?.stringValue ?? ""
       let snippet = item.evidence["snippet"]?.stringValue ?? ""
-      cacheStore.putDocument(
+      return AgentIOSWebIntelligenceCacheDocument(
         url: url,
         title: title,
         content: snippet,
@@ -508,9 +531,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         ]),
         retrievedAtMillis: retrievedAt,
         expiresAtMillis: retrievedAt + ttl,
-        metadata: ["source": "web_search"]
+        links: [], metadata: ["source": "web_search"]
       )
     }
+    return cacheStore.putDocuments(documents)
   }
 
   func fetchCapturingHTML(
@@ -551,6 +575,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       if webResult.output["text_decoding_lossless"] == .bool(false) {
         return self.failure("web_text_decoding_failed", "The public page did not decode using its declared or detected charset")
       }
+      let committed = self.cacheFetchedDocument(webResult, requestedURL: canonical, input: input)
       var result = self.readableFetchResult(
         operation: operation,
         requestedURL: url,
@@ -566,7 +591,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         metadata["resolved_url"] = .string(resolvedURL)
         result.output["metadata"] = .object(metadata)
       }
-      self.cacheFetchedDocument(webResult, requestedURL: canonical, input: input)
+      var cache = result.output["cache"]?.objectValue ?? [:]
+      cache["write_committed"] = .bool(committed)
+      result.output["cache"] = .object(cache)
       return result
     }
     guard !force else { return fetchFromNetwork() }
@@ -684,7 +711,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation
     )
     guard webResult.isSuccess else { return webResult }
-    cacheFetchedDocument(webResult, requestedURL: url, input: input)
+    let committed = cacheFetchedDocument(webResult, requestedURL: url, input: input)
     var result = readableFetchOutput(
       operation: .diff,
       requestedURL: url,
@@ -692,6 +719,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       invocation: invocation,
       status: "partial"
     )
+    var cache = result["cache"]?.objectValue ?? [:]
+    cache["write_committed"] = .bool(committed)
+    result["cache"] = .object(cache)
     let currentSHA256 = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256([
       "url": .string(url),
       "text": webResult.output["text"] ?? .string("")
@@ -1151,11 +1181,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     )
   }
 
+  @discardableResult
   private func cacheFetchedDocument(
     _ webResult: AgentNativeToolExecutionResult,
     requestedURL: String,
     input: AgentMcpJSONObject
-  ) {
+  ) -> Bool {
     let finalURL = finalURL(from: webResult.output, fallback: requestedURL)
     let canonicalRequestedURL = canonicalURL(requestedURL)
     let canonicalResolvedURL = canonicalURL(finalURL)
@@ -1178,7 +1209,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     if canonicalResolvedURL != canonicalRequestedURL {
       metadata["resolved_url"] = canonicalResolvedURL
     }
-    cacheStore.putDocument(
+    return cacheStore.putDocument(
       url: canonicalRequestedURL,
       title: (webResult.output["article"]?.objectValue?["title"]?.stringValue ?? "")
         .ifBlank(webResult.output["title"]?.stringValue ?? "")

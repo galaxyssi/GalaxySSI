@@ -2,6 +2,105 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-corrupt-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let original = Data("not an encrypted envelope".utf8)
+    try original.write(to: url, options: .atomic)
+    let secrets = InMemorySecretStore()
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    XCTAssertFalse(cache.putDocuments([cacheDocumentFixture("new")]))
+    XCTAssertEqual(cache.stats()["available"], .bool(false))
+    XCTAssertEqual(cache.clear(expiredOnly: false)["committed"], .bool(false))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertNil(secrets.string(account: AgentIOSWebIntelligenceCacheStore.keyAccount))
+  }
+
+  func testMissingWebCacheKeyDoesNotRotateOrReplaceExistingCiphertext() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-key-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("old")]))
+    let original = try Data(contentsOf: url)
+    secrets.delete(account: AgentIOSWebIntelligenceCacheStore.keyAccount)
+    XCTAssertFalse(cache.putDocuments([cacheDocumentFixture("new")]))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertNil(secrets.string(account: AgentIOSWebIntelligenceCacheStore.keyAccount))
+  }
+
+  func testWebCacheBatchCommitsOnceAndFailedReplacementPreservesSnapshot() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-batch-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    var writes = 0
+    var reject = false
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, writeFile: { data, url in
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      writes += 1
+      try data.write(to: url, options: .atomic)
+    })
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("first"), cacheDocumentFixture("second")]))
+    XCTAssertEqual(writes, 1)
+    let original = try Data(contentsOf: url)
+    reject = true
+    XCTAssertFalse(cache.putDocuments([cacheDocumentFixture("third")]))
+    XCTAssertEqual(cache.clear(expiredOnly: false)["documents_removed"], .int(0))
+    XCTAssertNil(cache.removeWatch(id: "missing"))
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    let reopened = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    XCTAssertEqual(reopened.stats()["entry_count"], .int(2))
+    XCTAssertNil(reopened.document(url: "https://cache.test/third", allowStale: true))
+  }
+
+  func testWebCacheInstancesSerializeOneSnapshotReadModifyWrite() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-shared-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let secrets = InMemorySecretStore()
+    let first = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    let second = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
+    let documents = (0..<20).map { cacheDocumentFixture(String($0)) }
+    DispatchQueue.concurrentPerform(iterations: documents.count) { index in
+      _ = (index % 2 == 0 ? first : second).putDocuments([documents[index]])
+    }
+    XCTAssertEqual(first.stats()["entry_count"], .int(20))
+  }
+
+  func testWebWatchAndClearToolsDoNotClaimFailedPersistenceSucceeded() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-watch-\(UUID()).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    var reject = false
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), writeFile: { data, url in
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      try data.write(to: url, options: .atomic)
+    })
+    let watch = AgentIOSWebIntelligenceCacheWatch(id: "original", url: "https://cache.test/article",
+      intervalMinutes: 60, enabled: true, lastCheckedAtMillis: 0, lastChangedAtMillis: 0,
+      lastSHA256: "", createdAtMillis: 1000, updatedAtMillis: 1000)
+    XCTAssertTrue(cache.putWatch(watch))
+    reject = true
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: BudgetWebMediaFixture(), cacheStore: cache)
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(invocationId: "cache-write-failure",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission, AgentIOSWebIntelligenceNativeToolCatalog.cachePermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent, AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent])
+    for (tool, input) in [(AgentIOSWebIntelligenceNativeToolCatalog.watch,
+      ["action": AgentMcpJSONValue.string("create"), "url": .string("https://cache.test/new"), "watch_id": .string("new")]),
+      (AgentIOSWebIntelligenceNativeToolCatalog.watch, ["action": .string("remove"), "watch_id": .string("original")]),
+      (AgentIOSWebIntelligenceNativeToolCatalog.cache, ["action": .string("clear")])] {
+      let result = registry.invoke(tool, input: input, context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+      XCTAssertEqual(result.error?.code, "cache_persistence_failed")
+    }
+    XCTAssertEqual(cache.watch(id: "original"), watch)
+  }
+
+  private func cacheDocumentFixture(_ id: String) -> AgentIOSWebIntelligenceCacheDocument {
+    .init(url: "https://cache.test/\(id)", title: id, content: "Source body", contentType: "text/plain",
+      contentSHA256: String(repeating: "a", count: 64), retrievedAtMillis: 1000, expiresAtMillis: Int64.max,
+      links: [], metadata: [:])
+  }
+
   func testResearchBudgetKeepsEvidenceAndSkipsUnstartedQueriesAndPages() throws {
     let media = BudgetWebMediaFixture()
     media.spentPerSearch = 2_000

@@ -60,6 +60,14 @@ This is a partial port, NOT completion of all #3007 behavior.
 - Returning, timing out or ending early marks the request-local accumulator cancelled. Queued work and existing cooperative resource checks see that flag through scoped child invocations with hard request/global deadlines and original permissions/context. Already executing synchronous transport is not claimed to stop instantly, and abandoned providers are not proof of a network cancellation acknowledgement.
 - Added four native fixture sources for substantial/related versus title-only excerpts, balanced source/engine deduplication, distinct images and explicit/deep behavior, and compatibility/CJK tokens. NOT executed. No live latency, source-count, semantic relevance or cancellation-race acceptance claimed.
 
+## Encrypted Cache Persistence Follow-up
+
+- Search result documents now commit as one bounded encrypted snapshot instead of rewriting the full file once per result. Document/watch/envelope v1 schemas and URL normalization remain unchanged.
+- Distinguish an absent initial file from unreadable, corrupt or unsupported encrypted snapshots. Existing ciphertext is not overwritten after failed reads, and a missing or malformed key is not silently replaced. Serialize read-modify-write by standardized file path within this process and serialize key creation.
+- Production writes use throwing atomic replacement and file protection until first user authentication. Cache clear and watch mutations report persistence failure instead of claiming success. Optional caching failure retains valid network evidence and exposes write_committed=false; it does not turn a successful fetch into a network error.
+- Five additional native fixture sources cover corruption, missing keys, failed replacement, batch writes, multiple instances and actual tool failure feedback. NOT executed. Process-local serialization is not a cross-process/symlink-alias transaction; atomic replacement is not proof of fsync/power-loss recovery. Whole watch-check workflows across network calls are not CAS transactions.
+- Full-snapshot reads/decryption remain synchronous. Deferred source learning, source-health indexing and workspace record/index atomicity are still incomplete; this cache increment is not equivalent to all Android maintenance changes.
+
 ## Remaining Work
 
 The full Android PR also changes other image adapters/relevance, maintenance/index atomicity, transcript/context paths, model tool-loop spans and UI timing. Those remain explicitly incomplete, as do real media, model/transport budget and native renderer recovery acceptance; no Android/Desktop/version/credential changes or IPA generation. Source integration and fixtures are not runtime acceptance.

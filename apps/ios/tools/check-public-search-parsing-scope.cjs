@@ -30,6 +30,33 @@ for (const token of ['JSONSerialization.jsonObject', 'rows.prefix(100)', 'seen.i
   'imageSearchURL(row["oriPicUrl"]) ?? imageSearchURL(row["picUrl"])',
   '"retrieval_status": .string("search_result_not_downloaded")', 'media["original_url"] = .string(original)']) assert(parser.includes(token));
 const intelligence = read(swift('AgentIOSURLSessionWebIntelligenceProvider'));
+const cacheStore = read(swift('AgentIOSWebIntelligenceCache'));
+const oldCacheStore = git('show', base + ':' + swift('AgentIOSWebIntelligenceCache'));
+assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
+  oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
+  'Persisted document/watch schemas unchanged');
+assert.equal(cacheStore.slice(cacheStore.indexOf('  private struct Snapshot:'), cacheStore.indexOf('  static let maxDocuments')),
+  oldCacheStore.slice(oldCacheStore.indexOf('  private struct Snapshot:'), oldCacheStore.indexOf('  static let maxDocuments')),
+  'Encrypted envelope and snapshot v1 schemas unchanged');
+assert.equal(cacheStore.slice(cacheStore.indexOf('  private func canonicalURL(')),
+  oldCacheStore.slice(oldCacheStore.indexOf('  private func canonicalURL(')), 'Cache URL policy unchanged');
+for (const token of ['lock = Self.gate(for: fileURL)', 'url.standardizedFileURL.path',
+  'Self.keyLock.lock()', 'func putDocuments(', 'guard var snapshot = readUnlocked() else { return false }',
+  'encryptionKey(createIfMissing: false)', 'error.code == .fileReadNoSuchFile',
+  'envelope.version == 1', 'snapshot.version == 1', 'AES.GCM.open', 'AES.GCM.seal',
+  'try writeFile(encoded, fileURL)', '.completeFileProtectionUntilFirstUserAuthentication',
+  '"committed": .bool(committed)', 'return committed ? removed : nil']) assert(cacheStore.includes(token), token);
+assert(!cacheStore.includes('try? encoded.write'));
+for (const token of ['cacheMetadata["available"] != .bool(false)', 'cleared["committed"] == .bool(true)',
+  'guard cacheStore.putWatch(watch)', 'guard cacheStore.putWatch(updated)', 'cacheStore.watchSnapshot()',
+  'guard let removed = cacheStore.removeWatch(', 'return cacheStore.putDocuments(documents)',
+  'cache["write_committed"] = .bool(committed)']) assert(intelligence.includes(token), token);
+const cacheTests = read('apps/ios/GalaxySSITests/AgentIOSWebIntelligenceNativeToolTests.swift');
+for (const name of ['testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared',
+  'testMissingWebCacheKeyDoesNotRotateOrReplaceExistingCiphertext',
+  'testWebCacheBatchCommitsOnceAndFailedReplacementPreservesSnapshot',
+  'testWebCacheInstancesSerializeOneSnapshotReadModifyWrite',
+  'testWebWatchAndClearToolsDoNotClaimFailedPersistenceSucceeded']) assert(cacheTests.includes('func ' + name + '('));
 for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty',
   'item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue',
   'result["images"] = .array(images)', 'evidence["images"] = .array(images)',
@@ -199,7 +226,7 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and workspace/index atomicity remain incomplete';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
   if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: profile defaults, supported engine validation and actual early-completion policy use substantial query-overlap excerpts/canonical sources, balanced cross-engine evidence, distinct image URLs and NFKC/CJK tokens. Explicit/deep opt-out and existing disjoint guard retained. Full adapters/ranker/acceptance incomplete';
@@ -214,7 +241,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image search, source-owned media citations, query-aware web/image early completion and cooperative abandoned-search cancellation; renderer lifecycle and research/cloud time caps. Other image engines/semantic relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.',
+  scope: 'Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches with read-failure safety and truthful persistence results. Other image engines/relevance, deferred source maintenance, health/workspace indexing, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

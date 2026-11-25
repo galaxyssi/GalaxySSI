@@ -81,18 +81,37 @@ final class AgentIOSWebIntelligenceCacheStore {
   private let secrets: GalaxySSISecretStore
   private let fileManager: FileManager
   private let nowMillis: () -> Int64
-  private let lock = NSLock()
+  private let lock: NSLock
+  private let writeFile: (Data, URL) throws -> Void
+  private static let gatesLock = NSLock()
+  private static var fileGates: [String: NSLock] = [:]
+  private static let keyLock = NSLock()
+
+  private static func gate(for url: URL) -> NSLock {
+    gatesLock.lock()
+    defer { gatesLock.unlock() }
+    let path = url.standardizedFileURL.path
+    if let gate = fileGates[path] { return gate }
+    let gate = NSLock()
+    fileGates[path] = gate
+    return gate
+  }
 
   init(
     fileURL: URL = AgentIOSWebIntelligenceCacheStore.defaultFileURL(),
     secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
     fileManager: FileManager = .default,
-    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    writeFile: @escaping (Data, URL) throws -> Void = {
+      try $0.write(to: $1, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
   ) {
     self.fileURL = fileURL
     self.secrets = secrets
     self.fileManager = fileManager
     self.nowMillis = nowMillis
+    self.writeFile = writeFile
+    lock = Self.gate(for: fileURL)
   }
 
   static func defaultFileURL(fileManager: FileManager = .default) -> URL {
@@ -103,6 +122,7 @@ final class AgentIOSWebIntelligenceCacheStore {
       .appendingPathComponent("web-intelligence-cache.json", isDirectory: false)
   }
 
+  @discardableResult
   func putDocument(
     url: String,
     title: String,
@@ -113,9 +133,9 @@ final class AgentIOSWebIntelligenceCacheStore {
     expiresAtMillis: Int64,
     links: [String] = [],
     metadata: [String: String] = [:]
-  ) {
+  ) -> Bool {
     let cleanURL = canonicalURL(url)
-    guard !cleanURL.isEmpty else { return }
+    guard !cleanURL.isEmpty else { return false }
     let document = AgentIOSWebIntelligenceCacheDocument(
       url: cleanURL,
       title: String(title.prefix(512)),
@@ -129,9 +149,33 @@ final class AgentIOSWebIntelligenceCacheStore {
         result[String(entry.key.prefix(128))] = String(entry.value.prefix(512))
       }
     )
-    mutate { snapshot in
-      snapshot.documents.removeAll { canonicalURL($0.url) == cleanURL }
-      snapshot.documents.append(document)
+    return putDocuments([document])
+  }
+
+  @discardableResult
+  func putDocuments(_ documents: [AgentIOSWebIntelligenceCacheDocument]) -> Bool {
+    if documents.isEmpty { return true }
+    var bounded: [AgentIOSWebIntelligenceCacheDocument] = []
+    for var document in documents.prefix(Self.maxDocuments) {
+      document.url = canonicalURL(document.url)
+      guard !document.url.isEmpty else { return false }
+      document.title = String(document.title.prefix(512))
+      document.content = String(document.content.prefix(Self.maxContentCharacters))
+      document.contentType = String(document.contentType.prefix(256))
+      document.contentSHA256 = String(document.contentSHA256.prefix(128))
+      document.retrievedAtMillis = max(0, document.retrievedAtMillis)
+      document.expiresAtMillis = max(0, document.expiresAtMillis)
+      document.links = Array(document.links.prefix(100))
+      document.metadata = document.metadata.reduce(into: [:]) { values, entry in
+        values[String(entry.key.prefix(128))] = String(entry.value.prefix(512))
+      }
+      bounded.removeAll { $0.url == document.url }
+      bounded.append(document)
+    }
+    let urls = Set(bounded.map(\.url))
+    return mutate { snapshot in
+      snapshot.documents.removeAll { urls.contains(canonicalURL($0.url)) }
+      snapshot.documents.append(contentsOf: bounded)
       snapshot.documents.sort { $0.retrievedAtMillis > $1.retrievedAtMillis }
       if snapshot.documents.count > Self.maxDocuments {
         snapshot.documents = Array(snapshot.documents.prefix(Self.maxDocuments))
@@ -179,9 +223,14 @@ final class AgentIOSWebIntelligenceCacheStore {
   }
 
   func stats() -> AgentMcpJSONObject {
-    let snapshot = read()
+    lock.lock()
+    defer { lock.unlock() }
+    guard let snapshot = readUnlocked() else {
+      return ["available": .bool(false), "status": .string("unavailable"), "encryption": .string("ios_keychain_aes_gcm")]
+    }
     let now = nowMillis()
     return [
+      "available": .bool(true),
       "cache_version": .int(Int64(snapshot.version)),
       "entry_count": .int(Int64(snapshot.documents.count)),
       "content_chars": .int(snapshot.documents.reduce(0) { $0 + Int64($1.content.count) }),
@@ -194,7 +243,7 @@ final class AgentIOSWebIntelligenceCacheStore {
   func clear(expiredOnly: Bool) -> AgentMcpJSONObject {
     var removed = 0
     let now = nowMillis()
-    mutate { snapshot in
+    let committed = mutate { snapshot in
       let before = snapshot.documents.count
       if expiredOnly {
         snapshot.documents.removeAll { $0.expiresAtMillis < now }
@@ -203,10 +252,11 @@ final class AgentIOSWebIntelligenceCacheStore {
       }
       removed = before - snapshot.documents.count
     }
-    return ["documents_removed": .int(Int64(removed))]
+    return ["documents_removed": .int(Int64(committed ? removed : 0)), "committed": .bool(committed)]
   }
 
-  func putWatch(_ watch: AgentIOSWebIntelligenceCacheWatch) {
+  @discardableResult
+  func putWatch(_ watch: AgentIOSWebIntelligenceCacheWatch) -> Bool {
     mutate { snapshot in
       snapshot.watches.removeAll { $0.id == watch.id }
       snapshot.watches.append(watch)
@@ -225,52 +275,62 @@ final class AgentIOSWebIntelligenceCacheStore {
     read().watches
   }
 
+  func watchSnapshot() -> [AgentIOSWebIntelligenceCacheWatch]? {
+    lock.lock()
+    defer { lock.unlock() }
+    return readUnlocked()?.watches
+  }
+
   @discardableResult
-  func removeWatch(id: String) -> Bool {
+  func removeWatch(id: String) -> Bool? {
     var removed = false
-    mutate { snapshot in
+    let committed = mutate { snapshot in
       let before = snapshot.watches.count
       snapshot.watches.removeAll { $0.id == id }
       removed = before != snapshot.watches.count
     }
-    return removed
+    return committed ? removed : nil
   }
 
   private func read() -> Snapshot {
     lock.lock()
     defer { lock.unlock() }
-    return readUnlocked()
+    return readUnlocked() ?? Snapshot()
   }
 
-  private func mutate(_ body: (inout Snapshot) -> Void) {
+  private func mutate(_ body: (inout Snapshot) -> Void) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    var snapshot = readUnlocked()
+    guard var snapshot = readUnlocked() else { return false }
     body(&snapshot)
-    writeUnlocked(snapshot)
+    return writeUnlocked(snapshot)
   }
 
-  private func readUnlocked() -> Snapshot {
-    guard let data = try? Data(contentsOf: fileURL),
-          let envelope = try? JSONDecoder().decode(EncryptedEnvelope.self, from: data),
-          let key = encryptionKey(),
+  private func readUnlocked() -> Snapshot? {
+    guard fileURL.isFileURL else { return nil }
+    let data: Data
+    do { data = try Data(contentsOf: fileURL) }
+    catch let error as CocoaError where error.code == .fileReadNoSuchFile { return Snapshot() }
+    catch { return nil }
+    guard let envelope = try? JSONDecoder().decode(EncryptedEnvelope.self, from: data), envelope.version == 1,
+          let key = encryptionKey(createIfMissing: false),
           let nonceData = Data(base64Encoded: envelope.nonce),
           let ciphertext = Data(base64Encoded: envelope.ciphertext),
           let tag = Data(base64Encoded: envelope.tag),
           let nonce = try? AES.GCM.Nonce(data: nonceData),
           let sealed = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag),
           let plaintext = try? AES.GCM.open(sealed, using: key),
-          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext) else {
-      return Snapshot()
+          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: plaintext), snapshot.version == 1 else {
+      return nil
     }
     return snapshot
   }
 
-  private func writeUnlocked(_ snapshot: Snapshot) {
-    guard let key = encryptionKey(),
+  private func writeUnlocked(_ snapshot: Snapshot) -> Bool {
+    guard fileURL.isFileURL, let key = encryptionKey(createIfMissing: !fileManager.fileExists(atPath: fileURL.path)),
           let plaintext = try? JSONEncoder().encode(snapshot),
           let sealed = try? AES.GCM.seal(plaintext, using: key) else {
-      return
+      return false
     }
     let nonce = sealed.nonce.withUnsafeBytes { Data($0) }
     guard let encoded = try? JSONEncoder().encode(EncryptedEnvelope(
@@ -279,19 +339,24 @@ final class AgentIOSWebIntelligenceCacheStore {
       ciphertext: sealed.ciphertext.base64EncodedString(),
       tag: sealed.tag.base64EncodedString()
     )) else {
-      return
+      return false
     }
     let directory = fileURL.deletingLastPathComponent()
-    try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-    try? encoded.write(to: fileURL, options: [.atomic])
+    do {
+      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+      try writeFile(encoded, fileURL)
+      return true
+    } catch { return false }
   }
 
-  private func encryptionKey() -> SymmetricKey? {
-    if let encoded = secrets.string(account: Self.keyAccount),
-       let data = Data(base64Encoded: encoded),
-       data.count == 32 {
+  private func encryptionKey(createIfMissing: Bool) -> SymmetricKey? {
+    Self.keyLock.lock()
+    defer { Self.keyLock.unlock() }
+    if let encoded = secrets.string(account: Self.keyAccount) {
+      guard let data = Data(base64Encoded: encoded), data.count == 32 else { return nil }
       return SymmetricKey(data: data)
     }
+    guard createIfMissing else { return nil }
     let key = SymmetricKey(size: .bits256)
     let data = key.withUnsafeBytes { Data($0) }
     guard (try? secrets.setString(data.base64EncodedString(), account: Self.keyAccount)) != nil else {
