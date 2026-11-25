@@ -70,6 +70,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case pelvicSupport, cushionContactPressure
     case capillaryExchange, valveFlux, glomerularFiltration, skinWaterBarrier, salivaryDelivery
     case tendonElongation, airwaySplit, peristalticTravel, cochlearFrequency
+    case diaphragmDisplacement, cardiacPhaseTime, visualAngle, serialAbsorption, hormoneSignal
+    case immuneComposition, ductTransit, oviductCiliaryCycles, kneeMoment
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -83,7 +85,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var inputs: [Input] {
       switch self {
       case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
-           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency,
+           .diaphragmDisplacement, .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
+           .immuneComposition, .ductTransit, .oviductCiliaryCycles, .kneeMoment:
         return teaching!.inputs
       case .pelvicSupport:
         return [.init(key: "pelvis_model_load", range: 0...800, initial: 400, unit: "N"),
@@ -168,7 +172,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #endif
       }
     }
-    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure].contains(self) }
+    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending, .calfPump, .pelvicSupport, .cushionContactPressure, .diaphragmDisplacement].contains(self) }
     var axis: Int {
       if let teaching { return teaching.axis }
       if self == .calfPump { return 1 }
@@ -243,7 +247,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     var source: URL {
       switch self {
       case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
-           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+           .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency,
+           .diaphragmDisplacement, .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
+           .immuneComposition, .ductTransit, .oviductCiliaryCycles, .kneeMoment:
         return teaching!.sources[0]
       case .pelvicSupport: return GalaxySSIHealthAtlasLoadTransfer.stabilitySource
       case .cushionContactPressure: return GalaxySSIHealthAtlasLoadTransfer.pressureSource
@@ -344,7 +350,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var companionValue: Double {
     switch kind {
     case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
-         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency,
+         .diaphragmDisplacement, .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
+         .immuneComposition, .ductTransit, .oviductCiliaryCycles, .kneeMoment:
       return kind.teaching!.companion(inputs.indices.map(input))!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: input(0), positionPercent: input(1))!.leftNewtons
@@ -425,7 +433,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
     case .capillaryExchange, .valveFlux, .glomerularFiltration, .skinWaterBarrier, .salivaryDelivery,
-         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency:
+         .tendonElongation, .airwaySplit, .peristalticTravel, .cochlearFrequency,
+         .diaphragmDisplacement, .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
+         .immuneComposition, .ductTransit, .oviductCiliaryCycles, .kneeMoment:
       return kind.teaching!.evaluate(values)!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: values[0], positionPercent: values[1])!.rightNewtons

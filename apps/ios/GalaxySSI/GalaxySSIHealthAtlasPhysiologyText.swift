@@ -1,6 +1,16 @@
 import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
+  static func displayUnit(_ unit: String, language: String) -> String {
+    let key: String
+    switch unit {
+    case "bpm": key = "heart_rate"
+    case "cells": key = "cells"
+    case "cycles": key = "cycles"
+    default: return unit
+    }
+    return GalaxySSIHealthAtlasText.get("health_atlas_teaching_unit_" + key, language)
+  }
   static func string(_ key: String, language: String) -> String {
     if let resource = GalaxySSIHealthAtlasTeachingModel.resource(key) {
       return GalaxySSIHealthAtlasText.get(resource, language)
@@ -94,7 +104,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
   static func input(_ model: GalaxySSIHealthAtlasPhysiology, index: Int, language: String) -> String {
     let spec = model.kind.inputs[index]
     return string(spec.key, language: language) + ": " + inputNumber(model.input(index), key: spec.key, language: language) +
-      (spec.unit.isEmpty ? "" : " " + spec.unit)
+      (spec.unit.isEmpty ? "" : " " + displayUnit(spec.unit, language: language))
   }
   static func inputNumber(_ value: Double, key: String, language: String) -> String {
     number(value, digits: ["vessel_radius", "gut_section_area_radius"].contains(key) ? 3 :
@@ -104,7 +114,7 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     number(kind == .eye && abs(value) < 0.005 ? 0 : value, digits: kind == .vessel ? 6 : kind.teaching?.digits ?? 2, language: language)
   }
   static func result(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
-    string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
+    string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + displayUnit(model.kind.unit, language: language)
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
     if let teaching = model.kind.teaching {

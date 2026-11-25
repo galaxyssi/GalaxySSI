@@ -1,9 +1,11 @@
 import Foundation
 
-/// Android #4397 synthetic teaching examples, never patient measurements or estimates.
+/// Android #4397/#4399 synthetic teaching examples, never patient measurements or estimates.
 enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case capillaryExchange, valveFlux, glomerularFiltration, skinWaterBarrier, salivaryDelivery
   case tendonElongation, airwaySplit, peristalticTravel, cochlearFrequency
+  case diaphragmDisplacement, cardiacPhaseTime, visualAngle, serialAbsorption, hormoneSignal
+  case immuneComposition, ductTransit, oviductCiliaryCycles, kneeMoment
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -13,7 +15,9 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   var inputs: [GalaxySSIHealthAtlasPhysiology.Input] { controls.map(\.input) }
   var axis: Int {
     switch self {
-    case .valveFlux, .skinWaterBarrier, .airwaySplit, .peristalticTravel: return 1
+    case .valveFlux, .skinWaterBarrier, .airwaySplit, .peristalticTravel,
+         .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
+         .immuneComposition, .oviductCiliaryCycles: return 1
     default: return 0
     }
   }
@@ -28,6 +32,14 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .airwaySplit: return "L/s"
     case .peristalticTravel: return "cm"
     case .cochlearFrequency: return "Hz"
+    case .diaphragmDisplacement: return "mL"
+    case .cardiacPhaseTime: return "ms"
+    case .visualAngle: return "\u{00b0}"
+    case .serialAbsorption, .hormoneSignal: return "%"
+    case .immuneComposition: return "cells"
+    case .ductTransit: return "TU"
+    case .oviductCiliaryCycles: return "cycles"
+    case .kneeMoment: return "N\u{00b7}m"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -41,9 +53,23 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .airwaySplit: return 0...0.5
     case .peristalticTravel: return 0...10
     case .cochlearFrequency: return 0...21_000
+    case .diaphragmDisplacement: return 0...750
+    case .cardiacPhaseTime: return 0...1200
+    case .visualAngle, .ductTransit: return 0...25
+    case .serialAbsorption, .hormoneSignal: return 0...100
+    case .immuneComposition: return 0...500
+    case .oviductCiliaryCycles: return 0...20
+    case .kneeMoment: return 0...1.25
     }
   }
-  var digits: Int { self == .glomerularFiltration ? 1 : self == .tendonElongation ? 3 : 2 }
+  var digits: Int {
+    switch self {
+    case .glomerularFiltration, .cardiacPhaseTime: return 1
+    case .tendonElongation: return 3
+    case .immuneComposition: return 0
+    default: return 2
+    }
+  }
   var resourcePrefix: String {
     switch self {
     case .capillaryExchange: return "health_atlas_capillary_exchange"
@@ -55,6 +81,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .airwaySplit: return "health_atlas_airway_split"
     case .peristalticTravel: return "health_atlas_peristaltic_travel"
     case .cochlearFrequency: return "health_atlas_model_cochlear_frequency"
+    case .diaphragmDisplacement: return "health_atlas_diaphragm_demo"
+    case .cardiacPhaseTime: return "health_atlas_cardiac_phase_time"
+    case .visualAngle: return "health_atlas_model_visual_angle"
+    case .serialAbsorption: return "health_atlas_serial_absorption"
+    case .hormoneSignal: return "health_atlas_hormone_signal"
+    case .immuneComposition: return "health_atlas_immune_composition"
+    case .ductTransit: return "health_atlas_duct_transit"
+    case .oviductCiliaryCycles: return "health_atlas_oviduct_ciliary_cycles"
+    case .kneeMoment: return "health_atlas_knee_moment"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -69,6 +104,10 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .tendonElongation: suffix = "strain"
     case .peristalticTravel: suffix = "progress"
     case .cochlearFrequency: suffix = "from_base"
+    case .diaphragmDisplacement: suffix = "per_mm"
+    case .visualAngle: suffix = "half"
+    case .hormoneSignal: suffix = "removed"
+    case .kneeMoment: suffix = "arm_meters"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -84,6 +123,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .airwaySplit: return ["trachea", "bronchi", "bronchioles"]
     case .peristalticTravel: return ["esophagus", "tissue-smooth-muscle", "cell-smooth-muscle-cell"]
     case .cochlearFrequency: return ["cochlea", "inner-ear", "cell-inner-ear-hair-cell"]
+    case .diaphragmDisplacement: return ["diaphragm"]
+    case .cardiacPhaseTime: return ["cardio", "heart", "atria", "left-atrium", "right-atrium", "tissue-cardiac-muscle", "cell-cardiomyocyte"]
+    case .visualAngle: return ["sensory", "retina"]
+    case .serialAbsorption: return ["gut", "digestive", "duodenum", "ileum", "cell-enterocyte"]
+    case .hormoneSignal: return ["endocrine", "pituitary-gland", "cell-thyrotroph"]
+    case .immuneComposition: return ["immune", "cell-neutrophil", "cell-eosinophil", "cell-basophil", "cell-monocyte", "cell-t-cell", "cell-b-cell", "cell-natural-killer-cell"]
+    case .ductTransit: return ["male", "epididymis", "vas-deferens", "ejaculatory-ducts"]
+    case .oviductCiliaryCycles: return ["female", "uterine-tubes", "cell-ciliated-oviduct-cell"]
+    case .kneeMoment: return ["patella", "quadriceps-femoris"]
     }
   }
   var sources: [URL] {
@@ -103,6 +151,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .peristalticTravel: values = ["https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works"]
     case .cochlearFrequency: values = ["https://pubmed.ncbi.nlm.nih.gov/2373794/",
       "https://www.nidcd.nih.gov/research/labs/section-sensory-cell-biology"]
+    case .diaphragmDisplacement: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/22-3-the-process-of-breathing", "https://pubmed.ncbi.nlm.nih.gov/19521009/"]
+    case .cardiacPhaseTime: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/19-3-cardiac-cycle", "https://pubmed.ncbi.nlm.nih.gov/15217800/"]
+    case .visualAngle: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC3878374/", "https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work"]
+    case .serialAbsorption: values = ["https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works", "https://pmc.ncbi.nlm.nih.gov/articles/PMC1413011/"]
+    case .hormoneSignal: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/17-2-hormones", "https://pubmed.ncbi.nlm.nih.gov/2823271/"]
+    case .immuneComposition: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets"]
+    case .ductTransit: values = ["https://www.ncbi.nlm.nih.gov/books/NBK538429/", "https://pubmed.ncbi.nlm.nih.gov/31033221/"]
+    case .oviductCiliaryCycles: values = ["https://pubmed.ncbi.nlm.nih.gov/11870107/", "https://www.nature.com/articles/s41467-024-55440-2"]
+    case .kneeMoment: values = ["https://pubmed.ncbi.nlm.nih.gov/26520912/"]
     }
     return values.map { URL(string: $0)! }
   }

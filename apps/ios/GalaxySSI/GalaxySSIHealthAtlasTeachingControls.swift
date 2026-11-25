@@ -41,6 +41,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
         control("peristaltic-travel-time", "time", 0...25, 20, "s", scale: 10, digits: 1)]
     case .cochlearFrequency:
       return [control("cochlear-frequency-position", "position", 0...100, 50, "", scale: 100)]
+    case .diaphragmDisplacement:
+      return [control("diaphragm-descent", "descent", 0...30, 12, "mm", digits: 0),
+        control("diaphragm-projected-area", "area", 100...250, 180, "cm\u{00b2}", digits: 0)]
+    case .cardiacPhaseTime:
+      return [control("cardiac-phase-time-rate", "rate", 50...150, 75, "bpm", digits: 0),
+        control("cardiac-phase-time-filling-percent", "filling_percent", 30...70, 50, "%", digits: 0)]
+    case .visualAngle:
+      return [control("visual-angle-width", "width", 1...20, 10, "cm", digits: 0),
+        control("visual-angle-distance", "distance", 50...150, 100, "cm", digits: 0)]
+    case .serialAbsorption:
+      return [control("serial-absorption-stage-a", "stage_a", 0...100, 40, "%", digits: 0),
+        control("serial-absorption-stage-b", "stage_b", 0...100, 50, "%", digits: 0)]
+    case .hormoneSignal:
+      return [control("hormone-signal-half-life", "half_life", 10...40, 20, "", scale: 10, digits: 1),
+        control("hormone-signal-elapsed", "elapsed", 0...80, 40, "", scale: 10, digits: 1)]
+    case .immuneComposition:
+      return [control("immune-composition-sample-size", "sample_size", 1...5, 2, "cells", scale: 0.01, digits: 0),
+        control("immune-composition-selected-percent", "selected_percent", 0...100, 25, "%", digits: 0)]
+    case .ductTransit:
+      return [control("duct-transit-length", "length", 4...24, 12, "LU", digits: 0),
+        control("duct-transit-speed", "speed", 10...50, 25, "LU/TU", scale: 10, digits: 1)]
+    case .oviductCiliaryCycles:
+      return [control("oviduct-ciliary-cycles-rate", "rate", 4...10, 5, "Hz", digits: 0),
+        control("oviduct-ciliary-cycles-time", "time", 0...20, 15, "s", scale: 10, digits: 1)]
+    case .kneeMoment:
+      return [control("knee-moment-force", "force", 0...20, 10, "N", digits: 0),
+        control("knee-moment-arm", "arm", 0...6, 4, "cm", digits: 0)]
     }
   }
 }
