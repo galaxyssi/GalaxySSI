@@ -2,6 +2,59 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testConnectorTrackingFailureIsUnknownNonRetriableAndNotRedispatched() {
+    var executions = 0
+    let delegate = TestAgentActionExecutor { action, _ in
+      executions += 1
+      return AgentActionResult(actionId: action.id, success: true, message: "Queued",
+        metadata: ["awaiting_response": "true", "source_message_id": "9142",
+          "contact_id": "codex", "remote_task_status": "accepted",
+          "auto_reroute_on_failure": "true", "manual_target_locked": "true"])
+    }
+    let executor = AgentControlPlaneActionExecutor(
+      registrationSource: { [actionExecutorRegistration()] }, delegate: delegate,
+      managedResponseLedger: RejectingConnectorResponseLedger())
+    let action = actionExecutorConnectorAction()
+    let screen = AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
+    let failed = executor.execute(action: action, screen: screen)
+    let replay = executor.execute(action: action, screen: screen)
+    XCTAssertFalse(failed.success)
+    XCTAssertEqual(failed.metadata["error_code"], "connector_response_tracking_unavailable")
+    XCTAssertEqual(failed.metadata["awaiting_response"], "false")
+    XCTAssertEqual(failed.metadata["completion_verified"], "false")
+    XCTAssertEqual(failed.metadata["effect_outcome_unknown"], "true")
+    XCTAssertEqual(failed.metadata["non_retriable"], "true")
+    XCTAssertEqual(failed.metadata["manual_target_locked"], "true")
+    XCTAssertEqual(failed.metadata["conversation_id"], "conversation")
+    XCTAssertEqual(failed.metadata["turn_id"], "turn")
+    XCTAssertEqual(failed.metadata["source_message_id"], "9142")
+    XCTAssertEqual(failed.metadata["provider_failure_attribution"], "local_transport")
+    XCTAssertFalse(replay.success)
+    XCTAssertEqual(replay.metadata["effect_outcome_unknown"], "true")
+    XCTAssertEqual(executions, 1)
+  }
+
+  func testMalformedQueuedConnectorReceiptCannotBecomeCompletedOrWaiting() {
+    for invalid in ["missing-source", "invalid-generation", "foreign-action"] {
+      let executor = AgentControlPlaneActionExecutor(
+        registrationSource: { [actionExecutorRegistration()] },
+        delegate: TestAgentActionExecutor { action, _ in
+          AgentActionResult(actionId: invalid == "foreign-action" ? "foreign" : action.id,
+            success: true, message: "Queued", metadata: ["awaiting_response": "true",
+              "source_message_id": invalid == "missing-source" ? "0" : "9143",
+              "execution_generation": invalid == "invalid-generation" ? "0" : "1"])
+        }, managedResponseLedger: InMemoryAgentManagedResponseLedger())
+      let action = actionExecutorConnectorAction()
+      let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "GalaxySSI"))
+      XCTAssertFalse(result.success, invalid)
+      XCTAssertEqual(result.actionId, action.id, invalid)
+      XCTAssertEqual(result.metadata["error_code"], "invalid_connector_wait_receipt", invalid)
+      XCTAssertEqual(result.metadata["awaiting_response"], "false", invalid)
+      XCTAssertEqual(result.metadata["effect_outcome_unknown"], "true", invalid)
+      XCTAssertEqual(result.metadata["non_retriable"], "true", invalid)
+    }
+  }
+
   func testAgentControlPlaneActionExecutorRoutesConnectorOnlyOnceAndAnnotatesMetadata() {
     var executions = 0
     let delegate = TestAgentActionExecutor { action, _ in
@@ -313,4 +366,17 @@ extension GalaxySSIStoreTests {
       runtimeFailureDomain: "desktop-installation:codex"
     )
   }
+}
+
+private final class RejectingConnectorResponseLedger: AgentManagedResponseLedger {
+  private enum Failure: Error { case unavailable }
+  func register(_ record: AgentManagedResponseRecord) throws { throw Failure.unavailable }
+  func ownsResponse(_ response: AgentConnectorResponse) throws -> Bool { false }
+  func complete(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? { nil }
+  func acknowledge(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? { nil }
+  func pendingForSupervisor(_ supervisorRunId: String) -> [AgentManagedResponseRecord] { [] }
+  func completedUnapplied() -> [AgentManagedResponseRecord] { [] }
+  func markApplied(ownerRunId: String) {}
+  func removeOwner(_ ownerRunId: String) {}
+  func clear() {}
 }

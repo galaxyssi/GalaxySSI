@@ -134,6 +134,47 @@ assert(source.includes('AgentConnectorHandoffRecovery.requiresRemoteObservation(
 for (const file of ['AgentNativeToolActionExecutor.swift', 'AgentControlPlaneActionExecutorModels.swift']) {
   assert(read('apps/ios/GalaxySSI/' + file).includes('AgentConnectorFallbackAction.mergingRoutingMetadata('));
 }
+const providerFile = 'apps/ios/GalaxySSI/AgentControlPlaneActionExecutorModels.swift';
+const providerText = read(providerFile);
+const validationStart = providerText.indexOf('    if awaitingResponse {\n      let generation = Int64(');
+const validationEnd = providerText.indexOf('    var waitingIdentity:', validationStart);
+assert(validationStart > 0 && validationEnd > validationStart);
+const waitValidation = providerText.slice(validationStart, validationEnd);
+for (const token of ['sourceMessageId > 0, result.actionId == item.action.id',
+  'AgentRemoteOutcomePolicy.validGeneration(generation)', 'invalid_connector_wait_receipt',
+  'metadata["conversation_id"]', 'metadata["turn_id"]', 'metadata["task_id"]']) assert(waitValidation.includes(token));
+const trackingStart = providerText.indexOf('      do {\n        try managedResponseLedger.register(');
+const trackingCatch = `      } catch {
+        return failUntrackedDispatch(result, actionId: item.action.id, request: request, registration: item.registration,
+          code: "connector_response_tracking_unavailable")
+      }
+`;
+const catchStart = providerText.indexOf(trackingCatch, trackingStart);
+assert(trackingStart > 0 && catchStart > trackingStart);
+const trackingBlock = providerText.slice(trackingStart, catchStart + trackingCatch.length);
+const oldTracking = providerText.slice(trackingStart + '      do {\n'.length, catchStart)
+  .split('\n').map(line => line.startsWith('  ') ? line.slice(2) : line).join('\n')
+  .replace('      try managedResponseLedger.register(', '      try? managedResponseLedger.register(')
+  .replace('      try AgentManagedConnectorResponseRegistry.shared.register(', '      try? AgentManagedConnectorResponseRegistry.shared.register(');
+assert(oldTracking.indexOf('managedResponseLedger.register(') < oldTracking.indexOf('AgentManagedConnectorResponseRegistry.shared.register('));
+const failureStart = providerText.indexOf('  private func failUntrackedDispatch(');
+const failureEnd = providerText.indexOf('  private func terminalDelivery(', failureStart);
+assert(failureStart > 0 && failureEnd > failureStart);
+const trackingFailure = providerText.slice(failureStart, failureEnd);
+for (const token of ['metadata["effect_outcome_unknown"] = "true"', 'metadata["non_retriable"] = "true"',
+  'metadata["awaiting_response"] = "false"', 'metadata["completion_verified"] = "false"',
+  'metadata["provider_failure_attribution"] = "local_transport"', 'activeByRunId.removeValue(forKey: request.runId)',
+  'success: false', 'type: .runFailed']) assert(trackingFailure.includes(token));
+for (const forbidden of ['globalRunSlots.release(', 'terminalDeliveryStore.mark(', 'managedResponseLedger.removeOwner('])
+  assert(!trackingFailure.includes(forbidden));
+const normalizedProvider = providerText.replace(waitValidation, '').replace(trackingBlock, oldTracking)
+  .replace(trackingFailure, '');
+assert.equal(normalizedProvider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
+  '    var result = delegate.execute(action: item.action, screen: item.screen)'), git('show', `${base}:${providerFile}`));
+module.exports.normalizedProvider = normalizedProvider;
+const dispatchTests = read('apps/ios/GalaxySSITests/AgentControlPlaneActionExecutorTests.swift');
+assert(dispatchTests.includes('func testConnectorTrackingFailureIsUnknownNonRetriableAndNotRedispatched('));
+assert(dispatchTests.includes('func testMalformedQueuedConnectorReceiptCannotBecomeCompletedOrWaiting('));
 for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutResolver.swift']) {
   const target = 'apps/ios/GalaxySSI/' + file;
   assert.equal(read(target), git('show', `${base}:${target}`), file + ' effect/timeout kernel unchanged');

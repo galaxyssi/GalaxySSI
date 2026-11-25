@@ -62,6 +62,12 @@ This is live admission, not the full Android score/circuit-health/failure-domain
 
 ## Still Incomplete
 
+### Failed Connector Receipt Tracking
+
+The real control-plane transport no longer ignores errors registering an already dispatched connector's managed response ledger and live interceptor. Validate positive source identity, matching action ID, valid generation and nonblank normalized conversation/turn/task before treating a receipt as waiting. Malformed receipts and tracking failures produce a failed, explicitly unverified/unknown, non-retriable result under the original action ID. Preserve routing/manual/scope metadata and attribute the failure to local transport rather than provider health. Replayed adapter starts see the cached unknown result, not a second delegate call.
+
+Because the delegate may already have sent an external effect, this path does not release its run slot immediately, tombstone its response or remove a successfully saved owner. Existing real-receipt/lease-expiry handling remains responsible for the slot. No claim is made that an invalid/unpersistable remote receipt can be recovered automatically. This change also does not fix the separate native finish function's treatment of a valid queued-success receipt, or implement generic app transport/continuation. Those remaining connections must still be implemented. Legacy optional contact matching is unchanged. Failure-injection/malformed/replay fixture sources were added but NOT executed.
+
 ### Snapshot-less Outcome Review Recovery
 
 The actual shortcut outcome-review provider path now binds an Auto turn only when no persisted planner snapshot exists. It captures one target for all local/cloud/paired-phone branches, including explicit no-route, and records that target only after a real snapshot passes the existing review-provider privacy/local-only/connector gate. Failure to commit current-turn metadata rejects provider selection. A saved snapshot is retained unchanged and does not rebind or overwrite newer Auto metadata; manual recovery also retains its original selection behavior. Original effect readback, uncertain-effect evidence and continuation ownership are unchanged. Broader resumed planning paths remain unported; these assertions are source-only and do not prove native recovery behavior.

@@ -977,6 +977,17 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.unlock()
     let sourceMessageId = Int64(result.metadata["source_message_id"] ?? "") ?? 0
     let contactId = result.metadata["contact_id"] ?? ""
+    if awaitingResponse {
+      let generation = Int64(result.metadata["execution_generation"] ?? "1") ?? 0
+      guard sourceMessageId > 0, result.actionId == item.action.id,
+            AgentRemoteOutcomePolicy.validGeneration(generation),
+            !(result.metadata["conversation_id"] ?? "").isBlank,
+            !(result.metadata["turn_id"] ?? "").isBlank,
+            !(result.metadata["task_id"] ?? "").isBlank else {
+        return failUntrackedDispatch(result, actionId: item.action.id, request: request, registration: item.registration,
+          code: "invalid_connector_wait_receipt")
+      }
+    }
     var waitingIdentity: AgentRunControlPayload = [:]
     if awaitingResponse && sourceMessageId > 0 {
       globalRunSlots.bindSourceMessage(ownerId: slotOwnerId, sourceMessageId: String(sourceMessageId))
@@ -995,31 +1006,36 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         contactId: contactId
       )
       lock.unlock()
-      try? managedResponseLedger.register(
-        AgentManagedResponseRecord(
-          ownerRunId: request.runId,
-          supervisorRunId: request.parentRunId,
-          agentId: agentId,
-          deliveryMode: request.deliveryMode,
+      do {
+        try managedResponseLedger.register(
+          AgentManagedResponseRecord(
+            ownerRunId: request.runId,
+            supervisorRunId: request.parentRunId,
+            agentId: agentId,
+            deliveryMode: request.deliveryMode,
+            sourceMessageId: sourceMessageId,
+            contactId: contactId,
+            conversationId: responseConversationId,
+            turnId: responseTurnId,
+            taskId: responseTaskId,
+            executionGeneration: executionGeneration
+          )
+        )
+        try AgentManagedConnectorResponseRegistry.shared.register(
           sourceMessageId: sourceMessageId,
           contactId: contactId,
+          ownerId: request.runId,
           conversationId: responseConversationId,
           turnId: responseTurnId,
           taskId: responseTaskId,
           executionGeneration: executionGeneration
-        )
-      )
-      try? AgentManagedConnectorResponseRegistry.shared.register(
-        sourceMessageId: sourceMessageId,
-        contactId: contactId,
-        ownerId: request.runId,
-        conversationId: responseConversationId,
-        turnId: responseTurnId,
-        taskId: responseTaskId,
-        executionGeneration: executionGeneration
-      ) { [weak self] response in
-        guard let self else { return false }
-        return self.acceptConnectorResponse(response, managedIdentityVerified: true) != nil
+        ) { [weak self] response in
+          guard let self else { return false }
+          return self.acceptConnectorResponse(response, managedIdentityVerified: true) != nil
+        }
+      } catch {
+        return failUntrackedDispatch(result, actionId: item.action.id, request: request, registration: item.registration,
+          code: "connector_response_tracking_unavailable")
       }
     }
     let outcome: AgentRunControlPayload = [
@@ -1302,6 +1318,37 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       payload: timeout.eventPayload
     )
     return timeout.result
+  }
+
+  private func failUntrackedDispatch(
+    _ dispatched: AgentActionResult, actionId: String, request: AgentRunRequest,
+    registration: AgentRegistration, code: String
+  ) -> AgentRunHandle {
+    var metadata = dispatched.metadata
+    metadata["awaiting_response"] = "false"
+    metadata["completion_verified"] = "false"
+    metadata["effect_outcome_unknown"] = "true"
+    metadata["non_retriable"] = "true"
+    metadata["error_code"] = code
+    metadata["connector_disposition"] = "untracked_dispatch"
+    metadata["provider_failure_attribution"] = "local_transport"
+    metadata["delivery_failure_reason"] = code
+    let failed = AgentActionResult(actionId: actionId, success: false,
+      message: "The connector was dispatched, but its response could not be tracked. Its outcome is unknown; it was not repeated.",
+      metadata: metadata)
+    lock.lock()
+    resultsByRunId[request.runId] = failed
+    activeByRunId.removeValue(forKey: request.runId)
+    lock.unlock()
+    // Keep the uncertain dispatch's slot until a real receipt or normal lease expiry.
+    // Do not tombstone its response or remove any successfully persisted owner.
+    emit(request: request, registration: registration, type: .runFailed, sequence: 4,
+      payload: ["action_id": .string(actionId), "success": .bool(false),
+        "error": .string(failed.message), "error_code": .string(code),
+        "outcome_unknown": .bool(true)])
+    return AgentRunHandle(runId: request.runId, taskId: request.taskId, agentId: agentId,
+      remoteRunId: (metadata["remote_task_id"] ?? "")
+        .ifBlank(metadata["source_message_id"] ?? "").ifBlank(request.runId))
   }
 
   private func terminalDelivery(

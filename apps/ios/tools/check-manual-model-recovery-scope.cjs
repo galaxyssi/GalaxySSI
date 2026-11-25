@@ -26,7 +26,9 @@ const checkedNetwork = network.includes("enum AgentAutomaticConnectorRoutePolicy
   ? require("./check-stable-auto-admission-scope.cjs").normalizedNetwork : network;
 assert.equal(checkedNetwork.replace(lockHelper, "").replace('    guard !isTargetLocked(action: action, metadata: [:]) else { return action }\n', ""), prior("AgentNetworkRoutingModels"));
 const pin = '    if AgentConnectorFallbackAction.isTargetLocked(action: item.action, metadata: result.metadata) {\n      result.metadata["manual_target_locked"] = "true"\n    }\n    if let language = item.action.parameters["response_language"], !language.isBlank {\n      result.metadata["response_language"] = language\n    }\n';
-const checkedProvider = provider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
+const receiptCheckedProvider = provider.includes('  private func failUntrackedDispatch(')
+  ? require('./check-stable-auto-admission-scope.cjs').normalizedProvider : provider;
+const checkedProvider = receiptCheckedProvider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
   '    var result = delegate.execute(action: item.action, screen: item.screen)');
 assert(provider.includes(pin)); assert.equal(checkedProvider.replace(pin, ""), prior("AgentControlPlaneActionExecutorModels"));
 assert(provider.indexOf(pin) < provider.indexOf('    let awaitingResponse = result.metadata["awaiting_response"]'));
