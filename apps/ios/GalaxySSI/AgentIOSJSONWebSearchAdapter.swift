@@ -174,3 +174,29 @@ enum AgentIOSJSONWebSearchAdapter {
     return base + (segment.addingPercentEncoding(withAllowedCharacters: allowed) ?? "")
   }
 }
+
+struct AgentIOSJSONWebSearchRequestPolicy {
+  var source: String
+  var githubToken: String = ""
+
+  func headers(for url: URL) -> [String: String] {
+    guard let entry = AgentIOSJSONWebSearchAdapter.entry(source),
+      let expected = URLComponents(string: entry.template.replacingOccurrences(of: "{query}", with: "query")
+        .replacingOccurrences(of: "{limit}", with: "1")),
+      let parts = URLComponents(url: url, resolvingAgainstBaseURL: false), parts.scheme == "https",
+      parts.user == nil, parts.password == nil, parts.port == nil || parts.port == 443,
+      parts.host?.lowercased() == expected.host?.lowercased(), parts.percentEncodedPath == expected.percentEncodedPath else { return [:] }
+    var headers = ["Accept": "application/json"]
+    if source == "marginalia" { headers["API-Key"] = "public" }
+    if source == "github" || source == "github_code" {
+      headers["Accept"] = "application/vnd.github+json"
+      headers["X-GitHub-Api-Version"] = "2022-11-28"
+      let token = githubToken.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !token.isEmpty, token.utf8.count <= 8192,
+        token.unicodeScalars.allSatisfy({ (33...126).contains($0.value) }) {
+        headers["Authorization"] = "Bearer " + token
+      }
+    }
+    return headers
+  }
+}

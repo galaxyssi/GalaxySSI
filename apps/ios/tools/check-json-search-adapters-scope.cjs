@@ -15,7 +15,12 @@ function retainedJSONProvider(source) {
   for (const [before, after] of [
     ['            } else if let parser = endpoint.jsonParser {\n              results = try AgentIOSJSONWebSearchAdapter.parse(resource.body, source: parser, limit: maxResults)\n', ''],
     ['      if let api = AgentIOSJSONWebSearchAdapter.entry(source.id) {\n        let url = try AgentIOSJSONWebSearchAdapter.requestURL(api, query: query, limit: maxResults)\n        return AgentIOSWebSearchEndpoint(provider: source.id,\n          url: try validatedPublicHTTPSURL(url.absoluteString), jsonParser: source.id)\n      }\n', ''],
-    ['  var jsonParser: String? = nil\n', '']
+    ['  var jsonParser: String? = nil\n', ''],
+    ['braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil,\n              jsonPolicy: endpoint.jsonParser.map { AgentIOSJSONWebSearchRequestPolicy(source: $0,\n                githubToken: ["github", "github_code"].contains($0) ? imageCredentials.credential(.githubToken) : "") }',
+      'braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil'],
+    ['    jsonPolicy: AgentIOSJSONWebSearchRequestPolicy? = nil,\n', ''],
+    ['headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL)\n            .merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image }\n            .merging(jsonPolicy?.headers(for: currentURL) ?? [:]) { _, api in api },',
+      'headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL).merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image },']
   ]) source = replaceOnce(source, before, after);
   return source;
 }
@@ -41,13 +46,17 @@ if (require.main === module) {
     'seen.insert(cleanURL).inserted', 'SwiftSoup.parse(String(title.prefix(8192)))', 'hits.count >= min(limit, 100)']) assert(adapter.includes(token), token);
   assert(adapter.indexOf('replacingOccurrences(of: "GALAXYSSI_LIMIT"', adapter.indexOf('parts.queryItems =')) <
     adapter.indexOf('replacingOccurrences(of: "GALAXYSSI_QUERY"', adapter.indexOf('parts.queryItems =')), 'Never rewrite a sentinel inside user query text');
-  assert(!adapter.includes('Authorization') && !/\bURLSession\b/.test(adapter), 'Use existing transport without implicit credentials');
+  assert(!/\bURLSession\b/.test(adapter), 'Use existing transport');
+  for (const token of ['parts.scheme == "https"', 'parts.port == nil || parts.port == 443',
+    'parts.host?.lowercased() == expected.host?.lowercased()', 'parts.percentEncodedPath == expected.percentEncodedPath',
+    'headers["API-Key"] = "public"', 'headers["X-GitHub-Api-Version"] = "2022-11-28"',
+    'token.utf8.count <= 8192', '(33...126).contains($0.value)']) assert(adapter.includes(token), token);
   for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSPublicSearchParser.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) {
     assert.equal(read(app + name), show(base, app + name), name + ' retained');
   }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSJSONWebSearchAdapterTests.swift');
-  assert.equal((tests.match(/  func test/g) || []).length, 6);
+  assert.equal((tests.match(/  func test/g) || []).length, 8);
   for (const id of ids) assert(tests.includes('"' + id + '": #"'), 'Response fixture for ' + id);
   for (const token of ['permissions: false', 'status: 401', 'XCTAssertTrue(denied.requests.isEmpty)',
     'GALAXYSSI_LIMIT', 'pageid":true', '"https://127.0.0.1/a"']) assert(tests.includes(token), token);

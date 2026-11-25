@@ -481,7 +481,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               timeoutMillis: min(4_000, remaining),
               invocation: searchInvocation,
               imagePolicy: endpoint.imageSearch ? AgentIOSImageSearchRequestPolicy(source: endpoint.provider,
-                braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil
+                braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil,
+              jsonPolicy: endpoint.jsonParser.map { AgentIOSJSONWebSearchRequestPolicy(source: $0,
+                githubToken: ["github", "github_code"].contains($0) ? imageCredentials.credential(.githubToken) : "") }
             )
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
@@ -1417,6 +1419,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText,
     allowsBrowserObservation: Bool = false,
     imagePolicy: AgentIOSImageSearchRequestPolicy? = nil,
+    jsonPolicy: AgentIOSJSONWebSearchRequestPolicy? = nil,
     willDispatch: () -> Void = {}
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
@@ -1440,7 +1443,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           url: currentURL,
           timeoutMillis: remainingMillis,
           maxBodyBytes: maxBodyBytes,
-          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL).merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image },
+          headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL)
+            .merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image }
+            .merging(jsonPolicy?.headers(for: currentURL) ?? [:]) { _, api in api },
           allowsPartialBody: allowsBrowserObservation
         )
       )

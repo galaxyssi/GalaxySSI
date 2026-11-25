@@ -86,8 +86,43 @@ final class AgentIOSJSONWebSearchAdapterTests: XCTestCase {
     XCTAssertEqual(transport.requests.first?.url.host, "api.github.com")
   }
 
-  private func invoke(transport: JSONAdapterTransport, permissions: Bool) throws -> AgentNativeToolResult {
-    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil, nowMillis: { 1_000 })
+  func testHeadersAreScopedToExactHTTPSAPIEndpointAndRejectInvalidToken() throws {
+    let policy = AgentIOSJSONWebSearchRequestPolicy(source: "github", githubToken: "fixture-token")
+    XCTAssertEqual(policy.headers(for: try XCTUnwrap(URL(string: "https://api.github.com/search/repositories?q=test")))["Authorization"], "Bearer fixture-token")
+    for value in ["http://api.github.com/search/repositories", "https://user@api.github.com/search/repositories",
+      "https://api.github.com:8443/search/repositories", "https://api.github.com.evil.test/search/repositories",
+      "https://api.github.com/search/code", "https://api.github.com/search/repositories/redirect"] {
+      XCTAssertTrue(policy.headers(for: try XCTUnwrap(URL(string: value))).isEmpty)
+    }
+    for token in ["has space", "line\r\nbreak", String(repeating: "a", count: 8193)] {
+      XCTAssertNil(AgentIOSJSONWebSearchRequestPolicy(source: "github", githubToken: token)
+        .headers(for: try XCTUnwrap(URL(string: "https://api.github.com/search/repositories")))["Authorization"])
+    }
+    let marginalia = AgentIOSJSONWebSearchRequestPolicy(source: "marginalia", githubToken: "fixture-token")
+    let headers = marginalia.headers(for: try XCTUnwrap(URL(string: "https://api2.marginalia-search.com/search?query=test")))
+    XCTAssertEqual(headers["API-Key"], "public")
+    XCTAssertNil(headers["Authorization"])
+  }
+
+  func testConfiguredGitHubCredentialIsNotForwardedOrPublishedAcrossRedirect() throws {
+    let credentials = AgentIOSWebIntelligenceCredentials(secrets: InMemorySecretStore())
+    try credentials.setCredential(.githubToken, value: "fixture-token")
+    for redirect in ["https://other.test/search/repositories", "https://api.github.com/other"] {
+      let transport = JSONAdapterTransport(status: 200, redirect: redirect)
+      let result = try invoke(transport: transport, permissions: true, credentials: credentials)
+      XCTAssertEqual(transport.requests.count, 2)
+      XCTAssertEqual(transport.requests.first?.headers["Authorization"], "Bearer fixture-token")
+      XCTAssertEqual(transport.requests.first?.headers["X-GitHub-Api-Version"], "2022-11-28")
+      XCTAssertNil(transport.requests.last?.headers["Authorization"])
+      XCTAssertNil(transport.requests.last?.headers["X-GitHub-Api-Version"])
+      XCTAssertFalse(AgentMcpJSONCodec.stringify(result.output).contains("fixture-token"))
+    }
+  }
+
+  private func invoke(transport: JSONAdapterTransport, permissions: Bool,
+    credentials: AgentIOSWebIntelligenceCredentials = .init(secrets: InMemorySecretStore())) throws -> AgentNativeToolResult {
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil,
+      imageCredentials: credentials, nowMillis: { 1_000 })
     let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider))
     return registry.invoke(AgentIOSWebMediaNativeToolCatalog.webSearch,
       input: ["query": .string("Fixture repo"), "engines": .array([.string("github")]), "max_results": .int(1)],
@@ -98,12 +133,16 @@ final class AgentIOSJSONWebSearchAdapterTests: XCTestCase {
 
 private final class JSONAdapterTransport: AgentIOSURLSessionWebTransporting {
   let status: Int
+  let redirect: String?
   private let lock = NSLock()
   private var saved: [AgentIOSURLSessionWebRequest] = []
   var requests: [AgentIOSURLSessionWebRequest] { lock.lock(); defer { lock.unlock() }; return saved }
-  init(status: Int) { self.status = status }
+  init(status: Int, redirect: String? = nil) { self.status = status; self.redirect = redirect }
   func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
-    lock.lock(); saved.append(request); lock.unlock()
+    lock.lock(); saved.append(request); let first = saved.count == 1; lock.unlock()
+    if first, let redirect {
+      return .init(statusCode: 302, finalURL: request.url, headers: ["location": redirect], body: Data(), retrievedAtEpochMillis: 1_000)
+    }
     let body = #"{"items":[{"full_name":"Fixture repo","html_url":"https://github.com/fixture/repo","description":"Fixture repo"}]}"#
     return .init(statusCode: status, finalURL: request.url, headers: ["content-type": "application/json"], body: Data(body.utf8), retrievedAtEpochMillis: 1_000)
   }
