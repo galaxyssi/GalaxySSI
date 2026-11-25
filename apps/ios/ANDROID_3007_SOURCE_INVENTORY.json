@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches with read-failure safety and truthful persistence results. Other image engines/relevance, deferred source maintenance, health/workspace indexing, timing spans and native acceptance incomplete.",
+  "scope": "Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches; same-path workspace revision/commit serialization and strict persisted snapshot reads. Other image engines/relevance, deferred source maintenance, health/workspace indexed-storage performance, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -107,7 +107,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and workspace/index atomicity remain incomplete"
+      "disposition": "Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and indexed-storage performance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",
@@ -127,7 +127,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",
       "sha256": "f3f178578b0f7a3f5497de82de0067e6502d77f06366ac9d531f5422a7313173",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",

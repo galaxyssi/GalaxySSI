@@ -103,6 +103,37 @@ assert(planning.includes('"verticals": .array([.string("image")])'));
 assert(planning.includes('try executor.executeTool(call: dispatch, context: context)'));
 const oldProvider = git('show', base + ':' + swift('AgentIOSURLSessionWebMediaProvider'));
 const section = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const workspace = read(swift('AgentWorkspaceStore'));
+const oldWorkspace = git('show', base + ':' + swift('AgentWorkspaceStore'));
+const persistedReader = section(workspace, '  // Persistence cannot interpret', '  fileprivate static func encodedListLength(');
+assert(persistedReader.includes('static func decodePersistedList('));
+assert.equal(workspace.replace(persistedReader, ''), oldWorkspace,
+  'Existing workspace identity/revision, event/checkpoint/cancel, bounds, tolerant codecs and JSON encoding unchanged');
+for (const token of ['(1...version).contains(storedVersion)', 'JSONDecoder().decode(Header.self',
+  'JSONDecoder().decode(LegacyHeader.self', 'values.count <= AgentWorkspaceBoundsPolicy.maxWorkspaces',
+  'workspaces.count == values.count', 'Set(workspaces.map(\\.workspaceId)).count == values.count']) assert(persistedReader.includes(token), token);
+const workspaceFile = read(swift('FileAgentWorkspaceStore'));
+const oldWorkspaceFile = git('show', base + ':' + swift('FileAgentWorkspaceStore'));
+assert.equal(section(workspaceFile, '  static func defaultFileURL(', '  func list()'),
+  section(oldWorkspaceFile, '  static func defaultFileURL(', '  func list()'), 'Workspace storage paths unchanged');
+assert.equal(section(workspaceFile, '  func clear()', '  func recoverable()'),
+  section(oldWorkspaceFile, '  func clear()', '  func recoverable()'), 'Explicit clear behavior unchanged');
+assert.equal((workspaceFile.match(/let store = try loadStore\(\)/g) || []).length, 5);
+assert.equal((workspaceFile.match(/try persist\(store\)/g) || []).length, 5);
+for (const token of ['lock = Self.gate(for: fileURL)', 'url.standardizedFileURL.path',
+  'error.code == .fileReadNoSuchFile', 'try AgentWorkspaceJsonCodec.decodePersistedList(raw)',
+  'try writeFile(Data(store.serializedSnapshot().utf8), fileURL)',
+  '.completeFileProtectionUntilFirstUserAuthentication']) assert(workspaceFile.includes(token), token);
+const workspacePersist = section(workspaceFile, '  private func persist(', '  private func locked<T>');
+assert(workspacePersist.indexOf('try writeFile(') < workspacePersist.indexOf('NotificationCenter.default.post('));
+assert(read(swift('AgentTaskRuntime')).includes('workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()'));
+assert(read(swift('GalaxySSIStore')).includes('workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()'));
+const workspaceTests = read('apps/ios/GalaxySSITests/AgentWorkspacePersistentStoreTests.swift');
+for (const name of ['testFailedWorkspaceCommitPreservesRecordsRecoveryAndNotifications',
+  'testInvalidWorkspaceSnapshotsCannotBeOverwrittenByMutation',
+  'testPersistedWorkspaceReaderKeepsLegacyAndEmptySnapshots',
+  'testWorkspaceInstancesShareRevisionCompareAndCommit',
+  'testWorkspaceEvictionAndRecoveryAreOneCommittedSnapshot']) assert(workspaceTests.includes('func ' + name + '('));
 const pack = read(swift('AgentIOSWebEvidencePack'));
 const oldPack = git('show', base + ':' + swift('AgentIOSWebEvidencePack'));
 assert.equal(section(pack, '  static func canonicalURL(', '  private static func normalizedDocuments('),
@@ -226,7 +257,8 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and workspace/index atomicity remain incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, validated engine IDs and truthful partial evidence. Encrypted cache batches use one atomic snapshot replacement; corrupt/missing-key reads preserve ciphertext and failed watch/clear writes report failure. Same-path process-local serialization; deferred source learning, health indexing and indexed-storage performance remain incomplete';
+  if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
   if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: profile defaults, supported engine validation and actual early-completion policy use substantial query-overlap excerpts/canonical sources, balanced cross-engine evidence, distinct image URLs and NFKC/CJK tokens. Explicit/deep opt-out and existing disjoint guard retained. Full adapters/ranker/acceptance incomplete';
@@ -241,7 +273,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches with read-failure safety and truthful persistence results. Other image engines/relevance, deferred source maintenance, health/workspace indexing, timing spans and native acceptance incomplete.',
+  scope: 'Public web/Sogou image search, source-owned media citations, query-aware completion and cooperative cancellation; renderer/research/cloud time caps; atomic encrypted cache batches; same-path workspace revision/commit serialization and strict persisted snapshot reads. Other image engines/relevance, deferred source maintenance, health/workspace indexed-storage performance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');
