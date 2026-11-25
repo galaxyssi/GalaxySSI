@@ -4,6 +4,48 @@ import XCTest
 
 @MainActor
 final class GalaxySSIHealthCareModelToolLoopTests: XCTestCase {
+  func testReservedHealthTopicCannotFallBackWhenPrivacyFlagsOrTopicAreInvalid() {
+    var conversation = AgentConversation(id: "health-agent", title: "Fixture", createdAt: 0, updatedAt: 0,
+      globalTopicKey: GalaxySSIHealthCareAgentScope.prefix + "malformed")
+    XCTAssertTrue(GalaxySSIHealthCareAgentScope.requiresScopedSubmission(conversation))
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(conversation))
+    conversation.globalTopicKey = "ordinary-topic"
+    XCTAssertFalse(GalaxySSIHealthCareAgentScope.requiresScopedSubmission(conversation))
+  }
+
+  func testComposerReviewRequiresExactHealthBindingAndDoesNotCreateAnotherTurn() throws {
+    let f = try HealthDiscussionRecoveryFixture()
+    let conversation = AgentConversation(id: "health-agent", title: "Fixture", createdAt: 0, updatedAt: 0,
+      privateMode: true, trackingPaused: true,
+      globalTopicKey: GalaxySSIHealthCareAgentScope.prefix + f.concern.id.uuidString.lowercased())
+    XCTAssertThrowsError(try GalaxySSIHealthCareComposerSubmission(records: f.records, conversation: conversation,
+      question: "Synthetic composer question"))
+    try f.records.bindLocalCareAgentDiscussion(id: f.concern.id, metric: .glucose, threadID: f.approval.threadID,
+      expectedConversationID: nil, conversationID: conversation.id)
+    let review = try GalaxySSIHealthCareComposerSubmission(records: f.records, conversation: conversation,
+      question: "Synthetic composer question")
+    XCTAssertTrue(review.matches(records: f.records, conversation: conversation))
+    XCTAssertEqual(review.question, "Synthetic composer question")
+    XCTAssertEqual(try f.records.load().localCareDiscussions?[f.concern.id.uuidString]?.turns.count, 1)
+    var foreign = conversation
+    foreign.id = "different-agent"
+    XCTAssertFalse(review.matches(records: f.records, conversation: foreign))
+    try f.records.setPrivacy(.localCare, enabled: false)
+    XCTAssertFalse(review.matches(records: f.records, conversation: conversation))
+  }
+
+  func testComposerReviewRejectsEmptyAndOversizedQuestions() throws {
+    let f = try HealthDiscussionRecoveryFixture()
+    let conversation = AgentConversation(id: "health-agent", title: "Fixture", createdAt: 0, updatedAt: 0,
+      privateMode: true, trackingPaused: true,
+      globalTopicKey: GalaxySSIHealthCareAgentScope.prefix + f.concern.id.uuidString.lowercased())
+    try f.records.bindLocalCareAgentDiscussion(id: f.concern.id, metric: .glucose, threadID: f.approval.threadID,
+      expectedConversationID: nil, conversationID: conversation.id)
+    for question in [" ", String(repeating: "a", count: 2_049)] {
+      XCTAssertThrowsError(try GalaxySSIHealthCareComposerSubmission(records: f.records, conversation: conversation, question: question))
+    }
+  }
+
   func testCatalogContainsOnlyExactApprovedHealthTools() throws {
     let plain = try HealthDiscussionRecoveryFixture()
     let empty = try session(plain)

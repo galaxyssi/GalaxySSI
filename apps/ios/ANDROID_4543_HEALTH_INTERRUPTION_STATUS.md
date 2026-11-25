@@ -111,9 +111,10 @@ still fences local final-receipt application on reopening. Legacy final receipts
 without a workspace migrate through a local-only supervised task, never an
 initial request replay.
 
-Task admission failures settle the disclosure ticket as failed. Ticket finalization
-also runs after the execution handle joins when cancellation occurred before the
-queued operation started, rather than depending on the network block's defer.
+At this historical layer task admission failures settled the early disclosure
+ticket as failed. The shared native-loop layer below supersedes that arrangement:
+it creates a ticket only immediately before HTTP dispatch, so cancelled queued
+work does not create a disclosure record for a request that never started.
 
 Nine further native fixture source methods cover real supervisor submission,
 single-executor admission, interrupted dispatch, legacy receipt migration,
@@ -237,3 +238,36 @@ planning/action path outside explicit cloud Health approval, generic private
 model-journal integration/streaming, automated-research migration and native
 build/device acceptance. No claim that all of Android #4543 or the broader
 Android-to-iOS PR backlog is complete.
+
+## Main-composer review routing follow-up
+
+The main Agent composer now intercepts a reserved `health-care:` conversation
+before screen-context publication, automatic door actions, target selection or
+ordinary message submission. It opens the existing explicit Health review UI with
+the question prefilled; it neither dispatches nor creates a turn before approval.
+The original composer draft and attachments are not consumed by opening review.
+Unreviewed attachments, missing/changed binding, invalid/paused/closed concerns,
+locked data and questions outside the existing byte limit cannot enter this route.
+
+The launch freezes owner, Agent conversation, concern, metric, private thread and
+permission epoch. Its sheet revalidates those bindings and clears the in-memory
+launch on background/lock, owner/session change or invalidation. Existing model,
+data and scope review still occurs in the Health view before sending; a composer
+question is not itself an authorization. Even a malformed reserved Health topic
+or missing privacy flags cannot fall back to the ordinary send path. A matching
+early coordinator guard also rejects alternate generic-send callers before target
+catalog construction, mention parsing, retry dispatch or message persistence.
+
+Three additional native fixture source methods cover fail-closed reserved topics,
+exact binding/revocation, no extra turn at launch, and empty/oversized questions.
+They were not executed. `check-health-composer-scope.cjs` protects early ordering
+and the unchanged ordinary coordinator flow outside its single guard. All four
+Health source-scope checks and the project structure check passed. Five other
+changed Swift files and the isolated coordinator guard parse without grammar
+errors; the full pre-existing coordinator file has 96 parser error nodes both
+before and after the edit, so whole-file grammar success is not claimed. This is
+not native compilation or runtime acceptance.
+
+This increment does not yet project private Health replies and task clocks into
+the original main Agent transcript, nor make unreviewed main-composer input a
+fully supervised general Agent plan. Those remain explicit follow-up work.

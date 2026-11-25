@@ -4,6 +4,9 @@ import UIKit
 
 enum GalaxySSIHealthCareAgentScope {
   static let prefix = "health-care:"
+  static func requiresScopedSubmission(_ conversation: AgentConversation) -> Bool {
+    conversation.globalTopicKey.hasPrefix(prefix)
+  }
   static func concernID(_ conversation: AgentConversation) -> UUID? {
     guard conversation.status == .active, conversation.privateMode, conversation.trackingPaused,
       conversation.collaborationRoster == nil, conversation.mergedIntoConversationId.isBlank,
@@ -27,6 +30,92 @@ enum GalaxySSIHealthCareAgentScope {
     }
     let english = value("en", fallback: "Open Health Agent")
     return value(LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en", fallback: english)
+  }
+}
+
+struct GalaxySSIHealthCareComposerSubmission: Identifiable {
+  let id = UUID()
+  let owner: String
+  let conversation: String
+  let concern: UUID
+  let metric: GalaxySSIHealthMetric
+  let thread: UUID
+  let permission: UUID?
+  let question: String
+
+  init(records: GalaxySSIHealthRecords, conversation: AgentConversation, question: String) throws {
+    let archive = try records.load()
+    guard let concern = GalaxySSIHealthCareAgentScope.concern(conversation, in: archive),
+          ![.paused, .closed].contains(concern.stage), concern.assessment.record != nil,
+          let thread = archive.localCareDiscussions?[concern.id.uuidString],
+          !question.isBlank, question.utf8.count <= 2_048 else { throw GalaxySSIHealthRecords.Failure.permission }
+    owner = records.owner
+    self.conversation = conversation.id
+    self.concern = concern.id
+    metric = concern.metric
+    self.thread = thread.id
+    permission = GalaxySSIHealthCare.AgentDiscussionTarget.permission(in: archive)
+    self.question = question
+  }
+
+  func matches(records: GalaxySSIHealthRecords, conversation: AgentConversation) -> Bool {
+    guard records.owner == owner, conversation.id == self.conversation,
+          let archive = try? records.load(),
+          let current = GalaxySSIHealthCareAgentScope.concern(conversation, in: archive),
+          current.id == concern, current.metric == metric, ![.paused, .closed].contains(current.stage),
+          current.assessment.record != nil,
+          archive.localCareDiscussions?[concern.uuidString]?.id == thread,
+          GalaxySSIHealthCare.AgentDiscussionTarget.permission(in: archive) == permission else { return false }
+    return true
+  }
+}
+
+@MainActor
+struct GalaxySSIHealthCareComposerSheet: ViewModifier {
+  @EnvironmentObject private var store: GalaxySSIStore
+  @Environment(\.scenePhase) private var scene
+  @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Binding var submission: GalaxySSIHealthCareComposerSubmission?
+
+  private func records() -> GalaxySSIHealthRecords {
+    .init(owner: store.profile.identityFingerprint, secrets: store.secrets)
+  }
+
+  private func available(_ launch: GalaxySSIHealthCareComposerSubmission) -> Bool {
+    guard scene == .active, UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript,
+          store.activeAgentConversationId == launch.conversation,
+          let session = store.agentSession(id: launch.conversation) else { return false }
+    return launch.matches(records: records(), conversation: session)
+  }
+
+  func body(content: Content) -> some View {
+    content.sheet(item: $submission) { launch in
+      if available(launch) {
+        NavigationView {
+          GalaxySSIHealthCareDiscussionView(records: records(), concernID: launch.concern,
+            metric: launch.metric, initialQuestion: launch.question)
+            .toolbar {
+              ToolbarItem(placement: .cancellationAction) {
+                Button(GalaxySSILocalization.string("galaxyssi.health.discussion.close", fallback: "Close", language: language)) {
+                  submission = nil
+                }
+              }
+            }
+        }.navigationViewStyle(.stack)
+      }
+    }
+    .onChange(of: scene) { if $0 != .active { submission = nil } }
+    .onChange(of: store.activeAgentConversationId) { _ in submission = nil }
+    .onChange(of: store.profile.identityFingerprint) { _ in submission = nil }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      submission = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      submission = nil
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { _ in
+      if let submission, !available(submission) { self.submission = nil }
+    }
   }
 }
 

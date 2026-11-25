@@ -28,7 +28,9 @@ if (require.main === module) {
   const old = name => clean(cp.execFileSync('git', ['show', `${baseline}:${prefix}${name}`], { cwd: root, encoding: 'utf8' }));
   for (const name of ['AgentModelToolLoop.swift', 'AgentNativeToolExecutionModels.swift', 'AgentNativeToolCore.swift',
     'AgentModelToolProtocolGeminiAdapter.swift', 'AgentModelToolProtocolModels.swift', 'GalaxySSIServices.swift']) {
-    assert.equal(read(prefix + name), old(name), `${name}: reuse unchanged core, no broader planner or phone-tool changes`);
+    const current = name === 'GalaxySSIServices.swift'
+      ? require('./check-health-composer-scope.cjs').retainedHealthComposerGuard(read(prefix + name)) : read(prefix + name);
+    assert.equal(current, old(name), `${name}: reuse unchanged core outside declared Health submission guard`);
   }
   const research = old('GalaxySSIHealthCareResearchLifecycle.swift');
   const before = '            route(authorization, owner: records.owner)?.0';
@@ -67,6 +69,6 @@ if (require.main === module) {
   assert.match(view, /let bytes = try await GalaxySSIHealthCareModelToolLoop\.finish\(review/);
   assert.doesNotMatch(view, /responseBytes\(|beginCloudRequest\(/);
   assert.match(view, /careDiscussionExecution\(review\)\.state == \.applied/);
-  assert.equal((read('apps/ios/GalaxySSITests/GalaxySSIHealthCareModelToolLoopTests.swift').match(/func test/g) || []).length, 7);
+  assert.equal((read('apps/ios/GalaxySSITests/GalaxySSIHealthCareModelToolLoopTests.swift').match(/func test/g) || []).length, 10);
   console.log('Health native model-loop source scope passed (not native execution or typechecking).');
 }

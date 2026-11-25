@@ -62,7 +62,8 @@ for (const name of ['GalaxySSIHealthScopedReadTransport.swift', 'GalaxySSIHealth
   'GalaxySSIHealthFollowUp.swift', 'GalaxySSIServices.swift', 'AgentTaskSupervisor.swift']) {
   const current = name === 'GalaxySSIHealthScopedReadTransport.swift'
     ? require('./check-health-discussion-rounds-scope.cjs').retainedScopedReadTransport(read(prefix + name))
-    : read(prefix + name);
+    : name === 'GalaxySSIServices.swift'
+      ? require('./check-health-composer-scope.cjs').retainedHealthComposerGuard(read(prefix + name)) : read(prefix + name);
   assert.equal(current, old(prefix + name), `${name}: behavior retained outside declared hooks`);
 }
 

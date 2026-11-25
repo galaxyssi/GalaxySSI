@@ -34,6 +34,13 @@ struct GalaxySSIHealthCareDiscussionView: View {
   @State private var readingTask: Task<Void, Never>?
   @State private var readingID: UUID?
 
+  init(records: GalaxySSIHealthRecords, concernID: UUID, metric: GalaxySSIHealthMetric, initialQuestion: String = "") {
+    self.records = records
+    self.concernID = concernID
+    self.metric = metric
+    _question = State(initialValue: initialQuestion)
+  }
+
   private var busy: Bool { task != nil || readingTask != nil }
   private var canRead: Bool {
     scene == .active && UIApplication.shared.isProtectedDataAvailable && store.profile.identityFingerprint == records.owner
