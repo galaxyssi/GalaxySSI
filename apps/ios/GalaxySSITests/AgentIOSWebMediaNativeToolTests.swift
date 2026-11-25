@@ -2,6 +2,54 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testSogouImageParserKeepsOriginalSourceDimensionsAndThumbnailFallback() throws {
+    let html = #"<script>window.__INITIAL_STATE__={"searchList":{"searchList":[{"title":"Galaxy <b>photo</b>","url":"https://source.example/page","oriPicUrl":"https://images.example/original.jpg","thumbUrl":"https://images.example/thumb.jpg","width":2048,"height":1024},{"title":"Duplicate","url":"https://source.example/another","oriPicUrl":"https://images.example/original.jpg"},{"title":"Fallback","url":"http://source.example/page","oriPicUrl":"http://images.example/not-https.jpg","thumbUrl":"https://images.example/fallback.jpg","thumbWidth":320,"thumbHeight":180},{"title":"Unsafe","url":"file:///private/data","oriPicUrl":"https://images.example/unsafe.jpg"}]}};</script>"#
+    let hits = try AgentIOSPublicSearchParser.sogouImages(html, limit: 5)
+    XCTAssertEqual(hits.count, 2)
+    XCTAssertEqual(hits[0].title, "Galaxy photo")
+    XCTAssertEqual(hits[0].image?["url"], .string("https://images.example/original.jpg"))
+    XCTAssertEqual(hits[0].image?["source_url"], .string(hits[0].url))
+    XCTAssertEqual(hits[0].image?["width"], .int(2048))
+    XCTAssertEqual(hits[1].image?["url"], .string("https://images.example/fallback.jpg"))
+    XCTAssertEqual(hits[1].image?["width"], .int(320))
+    XCTAssertThrowsError(try AgentIOSPublicSearchParser.sogouImages("<script>secret()</script>", limit: 2))
+  }
+
+  func testImageSearchReachesPublicEndpointAndKeepsImagesThroughEvidenceProjection() throws {
+    final class Images: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        let html = #"<script>window.__INITIAL_STATE__={"searchList":{"searchList":[{"title":"Galaxy first","url":"https://source.example/page","oriPicUrl":"https://images.example/first.jpg","width":640,"height":480},{"title":"Galaxy second","url":"https://source.example/page","oriPicUrl":"https://images.example/second.jpg","width":640,"height":480}]}};</script>"#
+        return AgentIOSURLSessionWebResponse(statusCode: 200, finalURL: request.url,
+          headers: ["content-type": "text/html; charset=utf-8"], body: Data(html.utf8), retrievedAtEpochMillis: 1100)
+      }
+    }
+    let transport = Images()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 })
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, nowMillis: { 1200 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(invocationId: "public-images",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    let output = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "limit": .int(2), "verticals": .array([.string("image")]), "use_cache": .bool(true)],
+      context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(output.isSuccess, output.error?.message ?? "")
+    XCTAssertEqual(transport.requests.count, 1)
+    XCTAssertEqual(transport.requests.first?.url.host, "pic.sogou.com")
+    XCTAssertEqual(output.output["results"]?.arrayValue?.count, 2)
+    XCTAssertEqual(output.output["results"]?.arrayValue?.first?.objectValue?["images"]?.arrayValue?.first?.objectValue?["width"], .int(640))
+    XCTAssertEqual(output.output["evidence"]?.arrayValue?.last?.objectValue?["lead_image_url"], .string("https://images.example/second.jpg"))
+    XCTAssertEqual(output.output["cache"]?.objectValue?["hit"], .bool(false))
+    let unsupported = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "engines": .array([.string("brave_image")])],
+      context: context, hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(unsupported.error?.code, "unsupported_image_engine")
+    XCTAssertEqual(transport.requests.count, 1)
+  }
+
   func testPublicSearchParserKeepsCardsAndSnippetsButNotNavigationOrAds() throws {
     let html = """
     <nav><h2><a href='https://nav.example/'>Navigation</a></h2></nav>

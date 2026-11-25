@@ -308,7 +308,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       minimum: 1,
       maximum: 24
     )
-    let useCache = input["use_cache"]?.boolValue ?? false
+    let imageSearch = (input["verticals"]?.arrayValue ?? []).contains(.string("image")) ||
+      (input["engines"]?.arrayValue ?? []).contains(where: { $0.stringValue?.hasSuffix("_image") == true })
+    // Text-document cache entries cannot satisfy image evidence or preserve image identity.
+    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch
     let cachedDocuments = useCache
       ? cacheStore.search(query: query, limit: limit, allowStale: false)
       : []
@@ -443,7 +446,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
   ) -> [(result: AgentMcpJSONObject, evidence: AgentMcpJSONObject)] {
     var seen = Set<String>()
     return (cached + network).filter { item in
-      let url = canonicalURL(item.result["url"]?.stringValue ?? "")
+      let identity = item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue ?? ""
+      let url = canonicalURL(identity)
       return !url.isEmpty && seen.insert(url).inserted
     }
   }
@@ -1223,12 +1227,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard !url.isEmpty else { return nil }
       let rank = index + 1
       let receipt = sourceReceipt(forURL: url, rank: rank)
-      let result: AgentMcpJSONObject = [
+      var result: AgentMcpJSONObject = [
         "rank": .int(Int64(rank)),
         "title": .string(title),
         "url": .string(url)
       ]
-      let evidence: AgentMcpJSONObject = [
+      var evidence: AgentMcpJSONObject = [
         "id": .string(evidenceId(url: url, rank: rank)),
         "rank": .int(Int64(rank)),
         "title": .string(title),
@@ -1237,6 +1241,15 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         "trust": .string("untrusted_public_web"),
         "source_receipt": .object(receipt)
       ]
+      if object["vertical"] == .string("image"), let images = object["images"]?.arrayValue {
+        result["vertical"] = .string("image")
+        result["images"] = .array(images)
+        evidence["images"] = .array(images)
+        if let lead = images.first?.objectValue?["url"] {
+          result["lead_image_url"] = lead
+          evidence["lead_image_url"] = lead
+        }
+      }
       return (result, evidence)
     }
   }
@@ -1274,6 +1287,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       result["web_media_status"] = .string(webResult.isSuccess ? "succeeded" : "failed")
       if let provider = webResult.metadata["provider"] {
         result["search_provider"] = provider
+      }
+      if let unavailable = webResult.metadata["unavailable_sources"] {
+        result["unavailable_sources"] = unavailable
       }
     }
     return result

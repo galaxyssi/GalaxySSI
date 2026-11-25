@@ -6,6 +6,56 @@ enum AgentIOSPublicSearchParser {
     var title: String
     var url: String
     var excerpt: String
+    var image: AgentMcpJSONObject? = nil
+  }
+
+  static func sogouImages(_ source: String, limit: Int) throws -> [Hit] {
+    guard limit > 0 else { return [] }
+    let document = try SwiftSoup.parse(source)
+    let assignment = "window.__INITIAL_STATE__="
+    guard let script = try document.select("script").array().map({ $0.data().trimmingCharacters(in: .whitespacesAndNewlines) })
+      .first(where: { $0.hasPrefix(assignment) }) else { throw AgentIOSURLSessionWebError.invalidSearchResponse }
+    var json = String(script.dropFirst(assignment.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    if json.hasSuffix(";") { json.removeLast() }
+    guard let root = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+          let search = root["searchList"] as? [String: Any], let rows = search["searchList"] as? [Any] else {
+      throw AgentIOSURLSessionWebError.invalidSearchResponse
+    }
+    var seen = Set<String>()
+    var results: [Hit] = []
+    for value in rows.prefix(100) {
+      guard let row = value as? [String: Any] else { continue }
+      let title = try SwiftSoup.parse(row["title"] as? String ?? "").text()
+      let excerpt = try SwiftSoup.parse(row["content_major"] as? String ?? "").text()
+      guard !title.isEmpty, let page = imageSearchURL(row["url"], httpsOnly: false) else { continue }
+      let thumbnail = imageSearchURL(row["thumbUrl"])
+      let original = imageSearchURL(row["oriPicUrl"]) ?? imageSearchURL(row["picUrl"])
+      guard let image = original ?? thumbnail, seen.insert(image).inserted else { continue }
+      func dimension(_ key: String) -> AgentMcpJSONValue {
+        let value = row[key] as? NSNumber
+        return .int(Int64(max(0, min(100_000, value?.intValue ?? 0))))
+      }
+      var media: AgentMcpJSONObject = ["url": .string(image),
+        "source_url": .string(page), "title": .string(String(title.prefix(512))),
+        "width": dimension(original == nil ? "thumbWidth" : "width"),
+        "height": dimension(original == nil ? "thumbHeight" : "height"),
+        "retrieval_status": .string("search_result_not_downloaded")]
+      if let thumbnail { media["thumbnail_url"] = .string(thumbnail) }
+      if let original { media["original_url"] = .string(original) }
+      results.append(Hit(title: String(title.prefix(512)), url: page,
+        excerpt: String(excerpt.prefix(2_048)), image: media))
+      if results.count >= min(limit, 100) { break }
+    }
+    return results
+  }
+
+  private static func imageSearchURL(_ raw: Any?, httpsOnly: Bool = true) -> String? {
+    guard let value = raw as? String, value.utf8.count <= 4_096,
+          let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+          components.scheme == "https" || (!httpsOnly && components.scheme == "http"),
+          components.user == nil, components.password == nil, let host = components.host?.lowercased(),
+          !host.isEmpty, host != "localhost", !host.hasSuffix(".localhost"), !host.hasSuffix(".local") else { return nil }
+    return components.url?.absoluteString
   }
 
   static func parse(_ source: String, baseURL: String, limit: Int) throws -> [Hit] {

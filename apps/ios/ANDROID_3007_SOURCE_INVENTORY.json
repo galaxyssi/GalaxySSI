@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Partial public web search parsing integration only. Image search, renderer recovery, maintenance/index atomicity, model-loop budgets and performance acceptance remain incomplete.",
+  "scope": "Partial public web search DOM and Sogou image-only integration, image evidence preservation and honest source diagnostics. Other image engines/relevance, renderer recovery, maintenance/index atomicity, model-loop budgets and performance acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -72,7 +72,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPublicImageSearchParser.kt",
       "sha256": "72a8d02e05352982baaf6c1d66e3d5d03ac08faab7ca2208eda1e7c08a1f5c32",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPublicWebSearchParser.kt",
@@ -222,7 +222,7 @@
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentPublicImageSearchTest.kt",
       "sha256": "2732d401f6aadfba5aec4c61979b3085ef1434eab12c4931f770696268f0d782",
-      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+      "disposition": "Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentPublicWebSearchParserTest.kt",

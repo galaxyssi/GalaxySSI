@@ -36,6 +36,8 @@ enum AgentIOSURLSessionWebError: Error {
   case invalidURL
   case invalidSearchQuery
   case sourceVerificationRequired
+  case invalidSearchResponse
+  case unsupportedImageEngine
   case invalidMethod
   case invalidTimeout
   case invalidLimit
@@ -385,6 +387,13 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(24))))
       let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
+      let engineIds = Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
+      let verticalIds = Set((input["verticals"]?.arrayValue ?? []).compactMap(\.stringValue))
+      let imageSearch = verticalIds.contains("image") || engineIds.contains(where: { $0.hasSuffix("_image") })
+      if imageSearch, (!engineIds.isEmpty && engineIds != ["sogou_image"]) ||
+         (!verticalIds.isEmpty && verticalIds != ["image"]) {
+        throw AgentIOSURLSessionWebError.unsupportedImageEngine
+      }
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
       let routing = AgentIOSWebIntelligenceQueryRouting.select(
@@ -398,6 +407,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         query: query,
         maxResults: maxResults,
         routing: routing,
+        imageSearch: imageSearch,
         fanout: Int(input["engine_fanout"]?.intValue ?? 6)
       )
       let accumulator = AgentIOSWebSearchAccumulator()
@@ -429,17 +439,19 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               invocation: invocation
             )
             let html = decodedText(resource).text
+            let results: [AgentIOSWebSearchResult]
+            if endpoint.imageSearch {
+              results = try AgentIOSPublicSearchParser.sogouImages(html, limit: maxResults)
+            } else {
+              results = try parseSearchResults(html, baseURL: resource.finalURL,
+                maxResults: maxResults, allowedHosts: endpoint.allowedHosts)
+            }
             accumulator.append(
               AgentIOSWebSearchAttempt(
                 index: index,
                 provider: endpoint.provider,
                 resource: resource,
-                results: try parseSearchResults(
-                  html,
-                  baseURL: resource.finalURL,
-                  maxResults: maxResults,
-                  allowedHosts: endpoint.allowedHosts
-                )
+                results: results
               )
             )
           } catch let error as AgentIOSURLSessionWebError {
@@ -504,7 +516,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var seenURLs: Set<String> = []
       for attempt in attempts where attempt.resource != nil {
         for result in attempt.results {
-          let key = URL(string: result.url).map(canonicalURL) ?? result.url.lowercased()
+          let identity = result.image?["url"]?.stringValue ?? result.url
+          let key = URL(string: identity).map(canonicalURL) ?? identity.lowercased()
           guard !key.isEmpty, seenURLs.insert(key).inserted else { continue }
           merged.append(result)
           if merged.count >= maxResults { break }
@@ -514,12 +527,18 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       var output = commonOutput(resource)
       output["query"] = .string(query)
       output["results"] = .array(merged.map { result in
-        .object([
+        var value: AgentMcpJSONObject = [
           "title": .string(result.title),
           "url": .string(result.url),
           "excerpt": .string(result.excerpt),
           "snippet": .string(result.excerpt)
-        ])
+        ]
+        if let image = result.image {
+          value["vertical"] = .string("image")
+          value["images"] = .array([.object(image)])
+          value["lead_image_url"] = image["url"]
+        }
+        return .object(value)
       })
       output["result_count"] = .int(Int64(merged.count))
       var resultMetadata = metadata(operation: .webSearch, method: .get)
@@ -1132,8 +1151,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     query: String,
     maxResults: Int,
     routing: AgentIOSWebIntelligenceSourceSelection,
+    imageSearch: Bool,
     fanout: Int
   ) throws -> [AgentIOSWebSearchEndpoint] {
+    if imageSearch {
+      let components = searchComponents(scheme: "https", host: "pic.sogou.com", path: "/pics",
+        queryItems: [URLQueryItem(name: "query", value: query)])
+      guard let url = components.url else { throw AgentIOSURLSessionWebError.invalidURL }
+      return [AgentIOSWebSearchEndpoint(provider: "sogou_image",
+        url: try validatedPublicHTTPSURL(url.absoluteString), imageSearch: true)]
+    }
     let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
       ? ["baidu", "bing", "duckduckgo"]
       : ["bing", "baidu", "duckduckgo"]
@@ -1656,6 +1683,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("invalid_query", "Search query must not be blank")
     case .sourceVerificationRequired:
       return failure("source_verification_required", "Search source requires verification")
+    case .invalidSearchResponse:
+      return failure("invalid_engine_response", "Image search did not return readable public result data")
+    case .unsupportedImageEngine:
+      return failure("unsupported_image_engine", "The requested image engine is not available on iOS; no alternative engine was substituted")
     case .invalidMethod:
       return failure("invalid_method", "HTTP method must be GET or HEAD")
     case .invalidTimeout:
@@ -1912,6 +1943,7 @@ private struct AgentIOSWebSearchEndpoint {
   var provider: String
   var url: URL
   var allowedHosts: [String] = []
+  var imageSearch = false
 }
 
 private struct AgentIOSWebSearchAttempt {
