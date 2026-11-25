@@ -27,16 +27,17 @@ assert(oldAfter > 0 && afterEnd > oldAfter);
 expectedPanel = expectedPanel.slice(0, oldAfter) + '      if quantitativeAfterArt {\n        quantitative.accessibilityIdentifier("atlas-quantitative-after-art")\n      }\n' + expectedPanel.slice(afterEnd);
 expectedPanel = expectedPanel.replace("  private var playbackControls: some View {",
   '  #if GALAXYSSI_ATLAS_PHYSIOLOGY\n  private var quantitative: some View {\n    GalaxySSIHealthAtlasPhysiologyPanel(entryID: entry.id, inputs: $physiologyInputs, language: language,\n      legacyVentilation: (lung || entry.id == "alveoli") ? [simulation.first, simulation.second] : nil)\n  }\n  #endif\n  private var playbackControls: some View {');
-// #4435 intentionally replaces playback and adds inline controls. Preserve the
-// original renderer block and quantitative invocation rather than freezing its old timer.
-const rendererBlock = s => s.slice(s.indexOf('      Text(String(format: t("related_process")'), s.indexOf('      ProgressView(value: simulation.phase)'));
-assert.equal(rendererBlock(panel), rendererBlock(expectedPanel).replaceAll("playing = false;", "pause();"));
+// #4442 frames the renderers and moves notes/links into a disclosure. Preserve
+// all original renderer registrations and the numerical invocation/ordering.
+const renderers = [...expectedPanel.matchAll(/(GalaxySSIHealthAtlas\w+(?:View|Panel|Phagocytosis))\(/g)].map(m => m[1]);
+for (const renderer of renderers) assert(panel.includes(renderer + "("), renderer);
+assert(panel.includes("private var simulationArtwork:"));
 const quantitativeBlock = s => s.split("  private var quantitative: some View {")[1].split("  private var playbackControls:")[0];
 assert.equal(quantitativeBlock(panel), quantitativeBlock(expectedPanel));
 assert(panel.includes('mechanismFirst || gasExchange || entry.id == "pancreas" || endocrine != nil || sweat || quantitativeAfterSection'));
 assert.equal((panel.match(/GalaxySSIHealthAtlasPhysiologyPanel\(/g) || []).length, 1);
 const beforeAt = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-before-art")');
-const mechanismAt = panel.indexOf("GalaxySSIHealthAtlasCirculationView(");
+const mechanismAt = panel.indexOf("GalaxySSIHealthAtlasSceneFrame(identifier:");
 const afterAt = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-after-art")');
 assert(beforeAt < mechanismAt && mechanismAt < afterAt);
 assert(research.includes("}, mechanismFirst: true)"));

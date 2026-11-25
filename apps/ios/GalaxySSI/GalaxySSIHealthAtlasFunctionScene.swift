@@ -15,30 +15,21 @@ struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
     }
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      if showTitle {
-        Text(t(story.title)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-          .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+    GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame") {
+      VStack(alignment: .leading, spacing: 0) {
+        if showTitle {
+          Text(t(story.title)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
+        }
+        artwork
+        VStack(alignment: .leading, spacing: 2) {
+          GalaxySSIHealthAtlasReservedCaption(values: labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
+            .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthTheme.accent)
+          GalaxySSIHealthAtlasReservedCaption(values: story.chapters.map { t($0.caption) }, selected: story.chapter(phase), identifier: "atlas-function-caption")
+            .font(.system(size: captionSize))
+        }.padding(.horizontal, 12).padding(.top, 9).padding(.bottom, 10)
+          .accessibilityIdentifier("atlas-function-subtitles")
       }
-      artwork
-      VStack(alignment: .leading, spacing: 2) {
-        stableText(labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
-          .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthTheme.accent)
-        stableText(story.chapters.map { t($0.caption) }, selected: story.chapter(phase), identifier: "atlas-function-caption")
-          .font(.system(size: captionSize))
-      }.padding(.horizontal, 12).padding(.top, 9).padding(.bottom, 10)
-        .accessibilityIdentifier("atlas-function-subtitles")
-    }.background(Color(.secondarySystemGroupedBackground)).clipShape(RoundedRectangle(cornerRadius: 8))
-      .accessibilityIdentifier("atlas-function-frame")
-  }
-  private func stableText(_ values: [String], selected: Int, identifier: String) -> some View {
-    ZStack(alignment: .topLeading) {
-      // Every chapter participates in layout, including wrapping and Dynamic Type.
-      // Only the current chapter participates in accessibility and drawing.
-      ForEach(values.indices, id: \.self) { index in
-        Text(values[index]).fixedSize(horizontal: false, vertical: true).hidden().accessibilityHidden(true).allowsHitTesting(false)
-      }
-      Text(values[selected]).fixedSize(horizontal: false, vertical: true).accessibilityIdentifier(identifier)
-    }.frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 }

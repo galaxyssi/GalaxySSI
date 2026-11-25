@@ -36,7 +36,8 @@ for (const token of ["selection.wrappedValue.researchPresented == true", "state.
   't(usesInlineModels ? "targeted_research" : "research")'])
   assert(detail.includes(token), token);
 const inlineBody = detail.split("state.playback.claim(\"models-disclosure|\" + entry.id)")[1].split('Text(t("inline_models"))')[0];
-assert(inlineBody.indexOf("simulationPanel") < inlineBody.indexOf("mechanismSource"));
+assert(inlineBody.includes("simulationPanel") && !inlineBody.includes("mechanismSource"));
+assert(source("SimulationPanel").split("private var referenceNotes:")[1].includes('"atlas-source-physiology"'));
 for (const token of ["GalaxySSIHealthAtlasState.researchTopics(entry)", "GalaxySSIHealthAtlasCompactTabs(options: topics, selection: topic",
   'key: { $0.rawValue }, identifier: "atlas-research-tab"', "switch topic.wrappedValue", "topics.contains(selection.wrappedValue.research)",
   "state.openNumericalModel(entry); state.closeResearch(entry); dismiss()", '.navigationTitle(title)', '"targeted_research"'])
@@ -52,7 +53,10 @@ assert(!scroll.includes(".delegate =")); assert(!scroll.includes("@Published var
 assert(!scroll.includes("asyncAfter")); assert(!scroll.includes("URLSession"));
 // #4439 replaces the player layout, not its clock/lifecycle implementation.
 assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
-for (const name of ["SimulationPanel", "ChapterClock", "Physiology", "ModelComparison", "Distribution", "ComparisonPanel", "AgentContext", "AgentHandoff", "Aging"]) assert.equal(source(name), prior(name), name + " must remain unchanged");
+for (const name of ["ChapterClock", "Physiology", "ModelComparison", "Distribution", "ComparisonPanel", "AgentContext", "AgentHandoff", "Aging"]) assert.equal(source(name), prior(name), name + " must remain unchanged");
+// #4442 reorganizes scene/layout only; the playback and lifecycle block stays exact.
+const simulationLifecycle = s => s.split(".onReceive(timer)")[1].split(".onDisappear { pause() }")[0];
+assert.equal(simulationLifecycle(source("SimulationPanel")), simulationLifecycle(prior("SimulationPanel")));
 assert.equal(detail.split("struct GalaxySSIHealthAtlasValues:")[1], prior("Detail").split("struct GalaxySSIHealthAtlasValues:")[1]);
 for (const locale of ["en", "zh-Hans"]) {
   const table = read("apps/ios/GalaxySSI/" + locale + ".lproj/AtlasResearchNavigation.strings");

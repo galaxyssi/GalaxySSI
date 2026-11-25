@@ -5,6 +5,29 @@ import SwiftUI
 
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
+  func testEveryBundledEntryResolvesToAnimatedLessonsWithLocalizedCaptions() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
+    let lessons = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle))
+    XCTAssertEqual(atlas.entries.count, 313)
+    XCTAssertEqual(Set(lessons.routes.keys), Set(atlas.entries.map(\.id)))
+    for entry in atlas.entries {
+      let choices = lessons.choices(for: entry.id)
+      XCTAssertFalse(choices.isEmpty, entry.id)
+      XCTAssertTrue(choices.allSatisfy { GalaxySSIHealthAtlasFunctionRendering.implemented.contains($0.id) }, entry.id)
+      for language in ["en", "zh-CN"] {
+        for lesson in choices {
+          for chapter in lesson.chapters {
+            for key in [chapter.title, chapter.caption] {
+              let value = GalaxySSIHealthAtlasFunctionText.get(key, language, bundle: bundle)
+              XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, entry.id + ":" + key)
+              XCTAssertNotEqual(value, key, entry.id + ":" + key)
+            }
+          }
+        }
+      }
+    }
+  }
+
   func testCrossBridgeCycleUsesBindingStrokeAtpDetachmentAndRecovery() {
     typealias Motion = GalaxySSIHealthAtlasMovementMotion
     XCTAssertEqual((0...3).map { Motion.crossBridge((Double($0) + 0.5) / 4) }, [.bind, .pull, .detach, .reset])
