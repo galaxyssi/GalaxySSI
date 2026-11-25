@@ -461,19 +461,13 @@ internal fun MainActivity.showAboutGalaxySSIPage() {
         packageManager.getPackageInfo(packageName, 0).versionName
     }.getOrNull().orEmpty().ifBlank { "0.1.0" }
     showFeaturePage(getString(R.string.settings_about_galaxyssi))
-    featureContent.addView(featureHeroCard(
-        getString(R.string.app_name),
-        getString(R.string.about_product_subtitle),
-        R.mipmap.ic_launcher,
-        "#16B981",
-        "v$versionName"
-    ))
     addSectionTitle(getString(R.string.about_section_product))
-    featureContent.addView(featureRow(
+    featureContent.addView(featureValueRow(
         getString(R.string.about_version),
         getString(R.string.about_version_subtitle),
         R.drawable.ic_info_outline,
-        "v$versionName"
+        "v$versionName",
+        valueMaxLines = 3
     ))
     featureContent.addView(featureRow(
         getString(R.string.settings_signal_link_protocol),
