@@ -25,6 +25,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
   @State private var historyTask: Task<[GalaxySSIHealthActivityDay], Error>?
   @State private var request: UUID?
   @State private var failure: Failure?
+  @State private var trackingTouch = false
   init(records: GalaxySSIHealthRecords) {
     self.records = records
     let prefix = "galaxyssi.health.activity." + records.owner + "."
@@ -62,7 +63,10 @@ struct GalaxySSIHealthActivityComparisonView: View {
           summary(comparison)
           Section {
             GalaxySSIHealthActivityChart(result: comparison, kind: kind, locale: locale, zone: timeZone,
-              language: language, selectedDay: $selectedDay)
+              language: language, selectedDay: $selectedDay, onTracking: { active in
+                trackingTouch = active
+                if !active { renderLive() }
+              })
               .frame(height: max(220, UIFontMetrics(forTextStyle: .body).scaledValue(for: 220)))
           }
         } else { ProgressView().accessibilityLabel(t("loading", "Loading activity history")) }
@@ -174,7 +178,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
     }
   }
   private func renderLive() {
-    guard canRead, let loaded else { return }
+    guard canRead, let loaded, !trackingTouch else { return }
     let now = Date()
     // A day rollover changes the query window, not just the display-only overlay.
     if days > 0, loaded.pairs.last?.day != calendar.startOfDay(for: now) { reload(); return }
@@ -185,7 +189,7 @@ struct GalaxySSIHealthActivityComparisonView: View {
   private func clear() {
     task?.cancel(); task = nil; historyTask?.cancel(); historyTask = nil
     liveTask?.cancel(); liveTask = nil; request = nil
-    comparison = nil; loaded = nil; liveMotion = nil; failure = nil
+    comparison = nil; loaded = nil; liveMotion = nil; failure = nil; trackingTouch = false
   }
   private func amount(_ value: Int64?) -> String {
     guard let value else { return "\u{2014}" }

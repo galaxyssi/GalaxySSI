@@ -8,6 +8,12 @@ const check=(text,tokens)=>{for(const token of tokens)assert(text.includes(token
 const changed=git(['diff','--name-status','--no-renames',sha+'^1',sha]).toString().trim().split(/\r?\n/).map(line=>line.split('\t'));
 assert.equal(changed.length,8);
 const inventory={schema:1,source:{androidPR:4493,headCommit:sha,stateAtReview:'OPEN',note:'Pinned open PR head, not a merged Android commit.'},files:changed.map(([status,file])=>({path:file,status,sha256:crypto.createHash('sha256').update(git(['show',sha+':'+file])).digest('hex')}))};
+if(fs.existsSync(path.join(root,'apps/ios/ANDROID_4497_PORT_COVERAGE.json'))){
+ assert.deepEqual(JSON.parse(read('apps/ios/ANDROID_4493_SOURCE_INVENTORY.json')),inventory);
+ cp.execFileSync(process.execPath,[path.join(__dirname,'check-activity-day-scrubbing-scope.cjs'),...(process.argv.includes('--checks')?['--checks']:[])],{cwd:root,stdio:'inherit'});
+ console.log('Android #4493 point-only interaction contracts are superseded explicitly by #4497 calendar-day scrubbing; historical source inventory retained.');
+ process.exit(0);
+}
 const model=source('GalaxySSIHealthActivityComparison'),view=source('GalaxySSIHealthActivityComparisonView'),chart=source('GalaxySSIHealthActivityChart');
 check(model,['func dateTickIndices(limit: Int)','min(max(2, min(7, limit)), pairs.count)','$0 * (pairs.count - 1) / (count - 1)','Pair(id: index, day: day, current: totals','max(pair.current ?? 0, row.total)']);
 for(const forbidden of ['previousDay','currentPaired','previousPaired','changePercent'])assert(!model.includes(forbidden));

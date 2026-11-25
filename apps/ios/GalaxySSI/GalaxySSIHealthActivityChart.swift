@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 struct GalaxySSIHealthActivityChart: UIViewRepresentable {
   let result: GalaxySSIHealthActivityComparison
@@ -8,11 +9,12 @@ struct GalaxySSIHealthActivityChart: UIViewRepresentable {
   let zone: TimeZone
   let language: String
   @Binding var selectedDay: String
+  var onTracking: (Bool) -> Void = { _ in }
 
   func makeUIView(context: Context) -> GalaxySSIHealthActivityChartView { GalaxySSIHealthActivityChartView() }
   func updateUIView(_ view: GalaxySSIHealthActivityChartView, context: Context) {
     view.configure(result: result, kind: kind, locale: locale, zone: zone, language: language,
-      selectedDay: selectedDay, onSelection: { selectedDay = $0 })
+      selectedDay: selectedDay, onSelection: { selectedDay = $0 }, onTracking: onTracking)
   }
 }
 
@@ -23,11 +25,12 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
   private var language = "en", selectedDay = ""
   private var onSelection: (String) -> Void = { _ in }
   private var area = CGRect.zero, dates: [String] = [], values: [String] = []
-  private var recorded: [Int] { result?.pairs.indices.filter { result?.pairs[$0].current != nil } ?? [] }
-  private var selectedIndex: Int? { recorded.first { key($0) == selectedDay } }
+  private var days: [Int] { result.map { Array($0.pairs.indices) } ?? [] }
+  private var selectedIndex: Int? { days.first { key($0) == selectedDay } }
   private var maximum: Double = 3, interval: Double = 1
-  private var down: CGPoint?, dragged = false
   private var outsideTap: UITapGestureRecognizer?
+  private var timeline: GalaxySSIHealthActivityTimelineGesture!
+  private var onTracking: (Bool) -> Void = { _ in }
   private var axisFont: UIFont { UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .systemFont(ofSize: 11)) }
   private var tipFont: UIFont { UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .systemFont(ofSize: 12)) }
   private let accent = GalaxySSIHealthTheme.accentUIColor
@@ -36,6 +39,11 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
     super.init(frame: frame)
     isOpaque = false; isAccessibilityElement = true; isMultipleTouchEnabled = true; contentMode = .redraw
     accessibilityIdentifier = "health-activity-chart"
+    timeline = GalaxySSIHealthActivityTimelineGesture(target: self, action: #selector(timelineChanged))
+    timeline.cancelsTouchesInView = false
+    timeline.onTimeline = { [weak self] in self?.onTimeline($0) == true }
+    timeline.onTracking = { [weak self] active in self?.onTracking(active) }
+    addGestureRecognizer(timeline)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -44,9 +52,9 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
 
   func configure(result: GalaxySSIHealthActivityComparison, kind: GalaxySSIHealthActivityKind,
                  locale: Locale, zone: TimeZone, language: String, selectedDay: String,
-                 onSelection: @escaping (String) -> Void) {
+                 onSelection: @escaping (String) -> Void, onTracking: @escaping (Bool) -> Void = { _ in }) {
     self.result = result; self.kind = kind; self.locale = locale; self.zone = zone
-    self.language = language; self.selectedDay = selectedDay; self.onSelection = onSelection
+    self.language = language; self.selectedDay = selectedDay; self.onSelection = onSelection; self.onTracking = onTracking
     let divisor: Double = kind == .cycling ? 60_000 : 1
     interval = max(1, ceil(Double(result.pairs.compactMap(\.current).max() ?? 0) / divisor / 3))
     maximum = interval * 3 * divisor
@@ -58,7 +66,7 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
       calendar.component(.year, from: first.day) == calendar.component(.year, from: result.pairs.last?.day ?? first.day)
     } == true ? "M/d" : "yy/M/d"
     dates = result.pairs.map { formatter.string(from: $0.day) }
-    accessibilityTraits = recorded.isEmpty ? .staticText : [.button, .adjustable]
+    accessibilityTraits = days.isEmpty ? .staticText : [.button, .adjustable]
     updateDescription(); setNeedsDisplay()
   }
   private func key(_ index: Int) -> String {
@@ -68,21 +76,31 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
   private func point(_ index: Int) -> CGPoint {
     guard let pairs = result?.pairs else { return .zero }
     let x = pairs.count == 1 ? area.midX : area.minX + area.width * CGFloat(index) / CGFloat(pairs.count - 1)
-    return CGPoint(x: x, y: area.maxY - area.height * CGFloat(Double(pairs[index].current ?? 0) / maximum))
+    let y = pairs[index].current.map { area.maxY - area.height * CGFloat(Double($0) / maximum) } ?? area.midY
+    return CGPoint(x: x, y: y)
   }
   private func label(_ index: Int) -> String {
-    guard let value = result?.pairs[index].current else { return "" }
-    let number = kind == .steps ? value.formatted(.number.locale(locale)) :
-      (Double(value) / 60_000).formatted(.number.precision(.fractionLength(0...1)).locale(locale))
+    guard let result else { return "" }
     let unit = GalaxySSILocalization.string("galaxyssi.health.activity_comparison." + (kind == .steps ? "steps_unit" : "minutes"),
       fallback: kind == .steps ? "steps" : "min", language: language)
-    func localizedFormat(_ locale: String, fallback: String) -> String {
+    func localized(_ key: String, _ locale: String, fallback: String) -> String {
       guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }
-      return bundle.localizedString(forKey: "health_activity_point_value", value: fallback, table: "HealthActivitySelection")
+      return bundle.localizedString(forKey: key, value: fallback,
+        table: key == "health_activity_day_unrecorded" ? "HealthActivityScrubbing" : "HealthActivitySelection")
     }
-    let english = localizedFormat("en", fallback: "%1$@ \u{00b7} %2$@")
-    let template = localizedFormat(LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en", fallback: english)
-    return String(format: template, dates[index], number + " " + unit)
+    let resolved = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
+    let english = localized("health_activity_point_value", "en", fallback: "%1$@ \u{00b7} %2$@")
+    let template = localized("health_activity_point_value", resolved, fallback: english)
+    let amount: String
+    if let value = result.pairs[index].current {
+      let number = kind == .steps ? value.formatted(.number.locale(locale)) :
+        (Double(value) / 60_000).formatted(.number.precision(.fractionLength(0...1)).locale(locale))
+      amount = number + " " + unit
+    } else {
+      let english = localized("health_activity_day_unrecorded", "en", fallback: "No record")
+      amount = localized("health_activity_day_unrecorded", resolved, fallback: english)
+    }
+    return String(format: template, dates[index], amount)
   }
   override func draw(_ rect: CGRect) {
     guard let context = UIGraphicsGetCurrentContext(), let result, !result.pairs.isEmpty else { return }
@@ -120,9 +138,11 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
     }
     if let index = selectedIndex {
       let p = point(index)
-      context.setFillColor(accent.cgColor); context.fillEllipse(in: CGRect(x: p.x - 5.5, y: p.y - 5.5, width: 11, height: 11))
-      context.setFillColor(UIColor.systemBackground.cgColor); context.fillEllipse(in: CGRect(x: p.x - 4.5, y: p.y - 4.5, width: 9, height: 9))
-      context.setFillColor(accent.cgColor); context.fillEllipse(in: CGRect(x: p.x - 2.5, y: p.y - 2.5, width: 5, height: 5))
+      if result.pairs[index].current != nil {
+        context.setFillColor(accent.cgColor); context.fillEllipse(in: CGRect(x: p.x - 5.5, y: p.y - 5.5, width: 11, height: 11))
+        context.setFillColor(UIColor.systemBackground.cgColor); context.fillEllipse(in: CGRect(x: p.x - 4.5, y: p.y - 4.5, width: 9, height: 9))
+        context.setFillColor(accent.cgColor); context.fillEllipse(in: CGRect(x: p.x - 2.5, y: p.y - 2.5, width: 5, height: 5))
+      }
       drawTooltip(label(index), at: p)
     }
   }
@@ -152,31 +172,25 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
     accessibilityLabel = selectedIndex.map(label) ?? GalaxySSILocalization.string("galaxyssi.health.activity_comparison.data",
       fallback: "Chart data", language: language)
   }
-  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-    if touches.count == 1 { down = touches.first?.location(in: self); dragged = false } else { dragged = true }
+  private func onTimeline(_ p: CGPoint) -> Bool {
+    !area.isEmpty && p.x >= area.minX - 10 && p.x <= area.maxX + 10 && p.y >= area.minY - 10 && p.y <= bounds.height
   }
-  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-    guard let down, let p = touches.first?.location(in: self) else { return }
-    if hypot(p.x - down.x, p.y - down.y) > 10 { dragged = true }
+  @objc private func timelineChanged() {
+    guard timeline.state == .began || timeline.state == .changed || timeline.state == .ended else { return }
+    let p = timeline.position
+    if timeline.scrubbing || onTimeline(p), let result, !area.isEmpty {
+      select(result.nearestDayIndex(fraction: Double((p.x - area.minX) / area.width))); becomeFirstResponder()
+    } else if timeline.state == .ended { select(nil) }
   }
-  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-    defer { down = nil }
-    guard !dragged, let down, let p = touches.first?.location(in: self), hypot(p.x - down.x, p.y - down.y) <= 10 else { return }
-    func distance(_ index: Int) -> CGFloat { let q = point(index); return hypot(q.x - p.x, q.y - p.y) }
-    let hit = recorded.min { distance($0) < distance($1) }.flatMap { !area.isEmpty && distance($0) <= 22 ? $0 : nil }
-    select(hit)
-    if hit != nil { becomeFirstResponder() }
-  }
-  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { down = nil; dragged = true }
-  override func accessibilityActivate() -> Bool { guard let last = recorded.last else { return false }; if selectedIndex == nil { select(last) }; return true }
+  override func accessibilityActivate() -> Bool { guard let last = days.last else { return false }; if selectedIndex == nil { select(last) }; return true }
   override func accessibilityIncrement() { moveSelection(forward: true) }
   override func accessibilityDecrement() { moveSelection(forward: false) }
   private func moveSelection(forward: Bool) {
     let current = selectedIndex
-    let next = forward ? recorded.first { current == nil || $0 > current! } : recorded.last { current == nil || $0 < current! }
+    let next = forward ? days.first { current == nil || $0 > current! } : days.last { current == nil || $0 < current! }
     if let next { select(next); UIAccessibility.post(notification: .announcement, argument: label(next)) }
   }
-  override var canBecomeFirstResponder: Bool { !recorded.isEmpty }
+  override var canBecomeFirstResponder: Bool { !days.isEmpty }
   override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
     if presses.contains(where: { $0.key?.keyCode == .keyboardRightArrow }) { moveSelection(forward: true); return }
     if presses.contains(where: { $0.key?.keyCode == .keyboardLeftArrow }) { moveSelection(forward: false); return }
@@ -184,6 +198,7 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
   }
   // Observe outside taps without swallowing List controls or vertical scrolling.
   override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil { timeline.isEnabled = false; timeline.isEnabled = true }
     if let outsideTap { outsideTap.view?.removeGestureRecognizer(outsideTap) }
     outsideTap = nil
     super.willMove(toWindow: newWindow)
@@ -192,9 +207,59 @@ final class GalaxySSIHealthActivityChartView: UIView, UIGestureRecognizerDelegat
       tap.cancelsTouchesInView = false; tap.delegate = self; newWindow.addGestureRecognizer(tap); outsideTap = tap
     }
   }
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    var ancestor = superview
+    while let view = ancestor {
+      if let scroll = view as? UIScrollView { scroll.panGestureRecognizer.require(toFail: timeline); break }
+      ancestor = view.superview
+    }
+  }
   @objc private func clearFromOutside() { select(nil) }
   func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
     !isHidden && !bounds.contains(touch.location(in: self)) && selectedIndex != nil
   }
-  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+    gestureRecognizer === outsideTap || other === outsideTap
+  }
+}
+
+// A directional recognizer fails early for vertical scrolls, before claiming a horizontal scrub.
+final class GalaxySSIHealthActivityTimelineGesture: UIGestureRecognizer {
+  var onTimeline: (CGPoint) -> Bool = { _ in false }
+  var onTracking: (Bool) -> Void = { _ in }
+  private(set) var position = CGPoint.zero
+  private(set) var scrubbing = false
+  private var origin = CGPoint.zero, tracking = false
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard !tracking, touches.count == 1, let touch = touches.first else { abort(); return }
+    origin = touch.location(in: view); position = origin; tracking = true; onTracking(true)
+  }
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard tracking, let touch = touches.first else { return }
+    position = touch.location(in: view)
+    if state == .possible {
+      let dx = abs(position.x - origin.x), dy = abs(position.y - origin.y)
+      if max(dx, dy) > 10 {
+        guard dx > dy, onTimeline(origin) else { state = .failed; finish(); return }
+        scrubbing = true; state = .began
+      }
+    } else if scrubbing { state = .changed }
+  }
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard tracking, let touch = touches.first else { return }
+    position = touch.location(in: view)
+    if state == .possible && max(abs(position.x - origin.x), abs(position.y - origin.y)) > 10 { state = .failed }
+    else { state = .ended }
+    finish()
+  }
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) { abort() }
+  private func abort() { state = state == .possible ? .failed : .cancelled; finish() }
+  private func finish() {
+    guard tracking else { return }
+    tracking = false
+    let callback = onTracking
+    DispatchQueue.main.async { callback(false) }
+  }
+  override func reset() { finish(); scrubbing = false; super.reset() }
 }

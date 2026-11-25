@@ -20,6 +20,10 @@ struct GalaxySSIHealthActivityComparison: Equatable, Sendable {
   private(set) var pairs: [Pair]
   var coverage: Int { pairs.filter { $0.current != nil }.count }
   var currentTotal: Int64 { pairs.compactMap(\.current).reduce(0, +) }
+  func nearestDayIndex(fraction: Double) -> Int {
+    guard fraction.isFinite, !pairs.isEmpty else { return 0 }
+    return Int((min(1, max(0, fraction)) * Double(pairs.count - 1)).rounded())
+  }
   func dateTickIndices(limit: Int) -> [Int] {
     let count = min(max(2, min(7, limit)), pairs.count)
     guard count > 1 else { return Array(pairs.indices) }

@@ -94,7 +94,7 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
   }
 
   @MainActor
-  func testChartAccessibilitySelectsRecordedDaysIncludingZeroAndSkipsMissing() throws {
+  func testChartAccessibilityVisitsMissingDatesWithoutInventingZero() throws {
     let now = try date("2026-11-25", calendar: utcCalendar)
     let range = try GalaxySSIHealthActivityComparison.trailing(days: 7, now: now, calendar: utcCalendar)
     for kind in GalaxySSIHealthActivityKind.allCases {
@@ -109,11 +109,30 @@ final class GalaxySSIHealthActivityComparisonTests: XCTestCase {
       view.configure(result: result, kind: kind, locale: Locale(identifier: "en_US"), zone: utcCalendar.timeZone,
         language: "en", selectedDay: "", onSelection: { selected = $0 })
       XCTAssertTrue(view.accessibilityActivate()); XCTAssertEqual(selected, "2026-11-25")
+      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-24")
+      XCTAssertTrue(view.accessibilityLabel?.contains("No record") == true)
+      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-23")
       view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-22")
       XCTAssertTrue(view.accessibilityLabel?.contains("0") == true)
-      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-19")
+      view.accessibilityDecrement(); XCTAssertEqual(selected, "2026-11-21")
       view.accessibilityIncrement(); XCTAssertEqual(selected, "2026-11-22")
     }
+  }
+
+  func testHorizontalFractionsSelectCalendarDatesIncludingGaps() throws {
+    let today = try date("2026-11-25", calendar: utcCalendar)
+    let range = try GalaxySSIHealthActivityComparison.trailing(days: 7, now: today, calendar: utcCalendar)
+    let result = try GalaxySSIHealthActivityComparison(first: range.lowerBound, last: range.upperBound,
+      now: today, calendar: utcCalendar, rows: [.init(kind: .steps, day: "2026-11-22", total: 0)], kind: .steps)
+    for (fraction, index) in [(-0.1, 0), (0.34, 2), (0.47, 3), (0.66, 4), (1.1, 6)] {
+      XCTAssertEqual(result.nearestDayIndex(fraction: fraction), index)
+    }
+    XCTAssertNil(result.pairs[result.nearestDayIndex(fraction: 0.34)].current)
+    XCTAssertEqual(result.pairs[result.nearestDayIndex(fraction: 0.47)].current, 0)
+    let one = try GalaxySSIHealthActivityComparison(first: today, last: today,
+      now: today, calendar: utcCalendar, rows: [], kind: .steps)
+    XCTAssertEqual(one.nearestDayIndex(fraction: 0.9), 0)
+    XCTAssertEqual(one.nearestDayIndex(fraction: .nan), 0)
   }
 
   func testUnobservedStepsStayUnknownButRealZeroAndPausedTotalsRemain() throws {
