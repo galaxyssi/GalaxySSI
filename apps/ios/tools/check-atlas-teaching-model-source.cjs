@@ -27,8 +27,10 @@ const unitBody = property("unit", "bounds"), boundsBody = property("bounds", "di
 const prefixBody = property("resourcePrefix", "title"), companionBody = property("companionTitle", "entryIDs");
 const ownersBody = property("entryIDs", "sources"), sourcesBody = property("sources", "unused").split("static func forEntry")[0];
 const axisBody = property("axis", "unit");
-const axisOne = new Set([...axisBody.match(/case ([^:]+): return 1/)[1].matchAll(/\.(\w+)/g)].map(m => m[1]));
-for (const model of declarations.models) assert.equal(axisOne.has(model.id), model.axis === 1);
+for (const model of declarations.models) {
+  const axis = Number(caseBody(axisBody, model.id)?.match(/return (\d)/)?.[1] ?? 0);
+  assert.equal(axis, model.axis);
+}
 assert(axisBody.includes("default: return 0"));
 const resourceKeys = new Set();
 for (const model of declarations.models) {

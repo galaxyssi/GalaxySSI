@@ -2,16 +2,20 @@
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"), cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
 const pleural = process.argv.includes("--pleural-4412"), exchange = process.argv.includes("--exchange-4410"), phase = process.argv.includes("--phase-4407"), transport = process.argv.includes("--transport-4405"), regional = process.argv.includes("--regional-4402"), organ = process.argv.includes("--organ-4401"), system = process.argv.includes("--system-4399"), revision = pleural ? 4412 : exchange ? 4410 : phase ? 4407 : transport ? 4405 : regional ? 4402 : organ ? 4401 : system ? 4399 : 4397;
 const root = path.resolve(__dirname, "../../.."), sha = pleural ? "c704a171da9336535ab659d65e6c6af0a4ebd9ba" : exchange ? "e8ddebdcc70942880fcfeaacee57474c2d711b32" : phase ? "2b0a455e59948d31606010edf3ddba25d01c180f" : transport ? "82d853f1d3d9c7e3455e732771f876a911fd0ce7" : regional ? "0d0112b055947c3747c7910b255aa299587dfd75" : organ ? "e228e379f307fcd6c1eb93b289126e9c473ddf7e" : system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82", check = process.argv.includes("--check");
+const completion = process.argv.includes("--completion-4414");
+const sourceRevision = completion ? 4414 : revision;
+const sourceSHA = completion ? "7dd7f35525ed800b74a3439bf708b1793316de42" : sha;
 const directory = "apps/android/app/src/main/java/com/galaxyssi/chat/";
 const git = args => cp.execFileSync("git", args, {cwd: root, maxBuffer: 32_000_000});
 const names = pleural ? ["PleuralSlide", "RetinalLightAttenuation", "GametePathDistance", "TestisTubuleSection", "UterineLiningArea", "VulvarFoldOverlap", "CapillarySupportSurface", "MarrowRenewal", "EpendymalBeatPhase"] : exchange ? ["PlacentalMarker", "RenalTubuleRetention", "MerkelContact", "ToothEnamelSection", "MucosalSampling", "MammaryDuctDelivery", "RectalReservoir", "StromalMatrix", "MucusFilmThickness"] : phase ? ["VocalCycle", "VertebralSeries", "OralMarkerDilution", "OlfactorySurfaceRetention", "CircadianLightWindow", "AdiposeVolumeShare", "ThymicBranching", "GastricPrecursorBalance", "MelaninDistribution"] : transport ? ["UreterDelivery", "CornealRefraction", "ExternalEarResonance", "NeuralRelayDelays", "BiliaryFlowTally", "ParathyroidSignalOccupancy", "FollicleSurface", "JointArticularArc", "SweatDuctBalance"] : regional ? ["BladderExpansion", "VestibularTilt", "AirwayCiliaryClearance", "GastricLiquidEmptying", "BileStorage", "ThoracicCrossSection", "PlateletFragmentCount", "BoneRemodelingBalance", "CutaneousSebum"] : organ ? ["ArterialContinuity", "GlialCapacitance", "ColonicWaterBalance", "LymphParticleTransport", "EndocrineDilution", "BoneSection", "RetinalConvergence", "MuscleShortening", "KeratinGrowth"] : system ? ["Diaphragm", "CardiacPhaseTime", "VisualAngle", "SerialAbsorption", "HormoneSignal", "ImmuneComposition", "DuctTransit", "OviductCiliaryCycles", "KneeMoment"] : ["CapillaryExchange", "ValveFlux", "GlomerularFiltration", "SkinWaterBarrier", "SalivaryDelivery",
   "TendonElongation", "AirwaySplit", "PeristalticTravel", "CochlearFrequency"];
+const selectedNames = completion ? ["AccessoryGlandEntry", "AiiAmacrineRelay", "AstrocyteRecycling", "CecalPouchMixing", "ClitoralRouteTrace", "ClubCellDome", "DendriticCellOutline", "EnteroendocrinePolarity", "IntestinalStemRenewal", "LangerhansDendriteReach", "MacrophageClearanceTally", "MastCellGranuleTally", "MicrogliaSurveillance", "MuscleSatelliteFusionTally", "NailPlateAdvance", "PancreaticAcinarApicalBand", "PanethLuminalRelease", "PenilePathTrace", "PlasmaCellSecretionTally", "SatelliteGlialSheathGap", "ScrotalHeatTally", "SkullVaultLayers", "SplenicSlitSorting", "ThyroidCCellReleaseGrid", "ThyroidFollicularFaces", "UrethralOpeningArea", "VaginalRugaSpan", "VestibularGlandVolume"] : names;
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "galaxyssi-teaching-models-")), files = [];
 function generated(name, text) {
   const target = path.join(temporary, name + ".kt"); fs.writeFileSync(target, text); files.push(target);
 }
-for (const name of ["TeachingModelSpec", ...names.map(n => n + "TeachingModel")]) {
-  generated("HealthAtlas" + name, git(["show", sha + ":" + directory + "HealthAtlas" + name + ".kt"]).toString());
+for (const name of ["TeachingModelSpec", ...selectedNames.map(n => n + "TeachingModel")]) {
+  generated("HealthAtlas" + name, git(["show", sourceSHA + ":" + directory + "HealthAtlas" + name + ".kt"]).toString());
 }
 generated("Input", "package com.galaxyssi.chat\ninternal data class HealthAtlasInput(val key: String, val range: IntRange, val initial: Int, val scale: Double = 1.0)");
 const keys = [...new Set(files.flatMap(file => [...fs.readFileSync(file, "utf8").matchAll(/R\.string\.(\w+)/g)].map(m => m[1])))].sort();
@@ -40,18 +44,18 @@ fun main() {
   }
   println(json(models))
 }
-`.replace("MODELS", names.map(n => JSON.stringify(n === "Diaphragm" ? "diaphragmDisplacement" : n === "VocalCycle" ? "vocalCycles" : n[0].toLowerCase() + n.slice(1)) + " to HealthAtlas" + n + "TeachingModel.spec").join(", ")));
+`.replace("MODELS", selectedNames.map(n => JSON.stringify(n === "Diaphragm" ? "diaphragmDisplacement" : n === "VocalCycle" ? "vocalCycles" : n[0].toLowerCase() + n.slice(1)) + " to HealthAtlas" + n + "TeachingModel.spec").join(", ")));
 const models = require("./atlas-kotlin-extract.cjs")({files, temporary, mainClass: "com.galaxyssi.chat.ExportKt", cwd: root});
-assert.equal(models.length, 9); assert.equal(models.flatMap(m => m.inputs).length, pleural || exchange || phase || transport || regional || organ || system ? 18 : 24);
-const owners = models.flatMap(m => m.entryIDs); assert.equal(owners.length, pleural ? 21 : exchange ? 22 : phase ? 19 : transport ? 24 : regional ? 19 : organ ? 42 : system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
-const source = {androidPR: revision, mergeCommit: sha};
+assert.equal(models.length, completion ? 28 : 9); assert.equal(models.flatMap(m => m.inputs).length, completion ? 48 : pleural || exchange || phase || transport || regional || organ || system ? 18 : 24);
+const owners = models.flatMap(m => m.entryIDs); assert.equal(owners.length, completion ? 30 : pleural ? 21 : exchange ? 22 : phase ? 19 : transport ? 24 : regional ? 19 : organ ? 42 : system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
+const source = {androidPR: sourceRevision, mergeCommit: sourceSHA};
 function write(file, data) {
   const target = path.join(root, "apps/ios", file), text = JSON.stringify(data, null, 2) + "\n";
   if (check) assert.equal(fs.readFileSync(target, "utf8").replace(/\r\n/g, "\n"), text);
   else fs.writeFileSync(target, text);
 }
-write(`ANDROID_${revision}_MODEL_DECLARATIONS.json`, {schema: 1, source, models});
-const changed = git(["diff", "--name-status", "--no-renames", sha + "^1", sha]).toString().trim().split(/\r?\n/).map(l => l.split("\t"));
-write(`ANDROID_${revision}_SOURCE_INVENTORY.json`, {schema: 1, source, files: changed.map(([status, file]) => ({path: file, status,
-  sha256: crypto.createHash("sha256").update(git(["show", (status === "D" ? sha + "^1" : sha) + ":" + file])).digest("hex")}))});
-console.log(`${check ? "Verified" : "Exported"} nine original teaching specifications / ${models.flatMap(m => m.inputs).length} controls / ${owners.length} owners. No native execution or acceptance.`);
+write(`ANDROID_${sourceRevision}_MODEL_DECLARATIONS.json`, {schema: 1, source, models});
+const changed = git(["diff", "--name-status", "--no-renames", sourceSHA + "^1", sourceSHA]).toString().trim().split(/\r?\n/).map(l => l.split("\t"));
+write(`ANDROID_${sourceRevision}_SOURCE_INVENTORY.json`, {schema: 1, source, files: changed.map(([status, file]) => ({path: file, status,
+  sha256: crypto.createHash("sha256").update(git(["show", (status === "D" ? sourceSHA + "^1" : sourceSHA) + ":" + file])).digest("hex")}))});
+console.log(`${check ? "Verified" : "Exported"} ${models.length} original teaching specifications / ${models.flatMap(m => m.inputs).length} controls / ${owners.length} owners. No native execution or acceptance.`);

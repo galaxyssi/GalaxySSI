@@ -184,7 +184,8 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
                 .gastricLiquidEmptying, .boneRemodelingBalance, .cutaneousSebum,
                 .externalEarResonance, .sweatDuctBalance, .oralMarkerDilution,
                 .renalTubuleRetention, .mucusFilmThickness, .gametePathDistance,
-                .vulvarFoldOverlap, .retinalLightAttenuation].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
+                .vulvarFoldOverlap, .retinalLightAttenuation, .thyroidFollicularFaces,
+                .vaginalRugaSpan].contains(kind) { XCTAssertLessThanOrEqual(point.y, previous + 1e-9) }
             else { XCTAssertGreaterThanOrEqual(point.y, previous - 1e-9) }
           }
           previous = point.y
@@ -263,11 +264,25 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
       (.pleuralSlide, 10, 0.1), (.retinalLightAttenuation, 36.7879441171, 63.2120558829),
       (.gametePathDistance, 10, 16), (.testisTubuleSection, 100.0 * 20 / 36, 16 * .pi),
       (.uterineLiningArea, 16 * .pi, 4 * .pi), (.vulvarFoldOverlap, 25, 37.5),
-      (.capillarySupportSurface, 240 * .pi, 8 * .pi), (.marrowRenewal, 2, 14), (.ependymalBeatPhase, 1.5625, 0.5625)
+      (.capillarySupportSurface, 240 * .pi, 8 * .pi), (.marrowRenewal, 2, 14), (.ependymalBeatPhase, 1.5625, 0.5625),
+      (.accessoryGlandEntry, 5, 1), (.aiiAmacrineRelay, 4, -4), (.astrocyteRecycling, 30, 40),
+      (.cecalPouchMixing, 5.25, 6.75), (.clitoralRouteTrace, 25, 3),
+      (.clubCellDome, 100 * (1.5 * .pi) / (1.5 * .pi + 16), 1.5 * .pi),
+      (.dendriticCellOutline, 18, 12), (.enteroendocrinePolarity, 18.75, 6.5),
+      (.intestinalStemRenewal, 6, 6), (.langerhansDendriteReach, 10, 1),
+      (.macrophageClearanceTally, 5, 3), (.mastCellGranuleTally, 30, 14),
+      (.microgliaSurveillance, 6, 2), (.muscleSatelliteFusionTally, 9, 5), (.nailPlateAdvance, 3.2, 7.2),
+      (.pancreaticAcinarApicalBand, 100.0 * (16.0 / 3) / 24, 16.0 / 3),
+      (.panethLuminalRelease, 4, 3), (.penilePathTrace, 4, 6), (.plasmaCellSecretionTally, 12, 3),
+      (.satelliteGlialSheathGap, 3.69 * .pi, 6.3), (.scrotalHeatTally, 4.8, 7.2), (.skullVaultLayers, 6, 4.5),
+      (.splenicSlitSorting, 6, 6), (.thyroidCCellReleaseGrid, 6, 9),
+      (.thyroidFollicularFaces, 2 * .pi / 3, .pi), (.urethralOpeningArea, 4.5 * .pi, 3),
+      (.vaginalRugaSpan, 8, 2), (.vestibularGlandVolume, 5, 1)
     ]
-    XCTAssertEqual(Teaching.allCases.count, 72)
-    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 150)
-    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 216)
+    XCTAssertEqual(Teaching.allCases.count, 100)
+    XCTAssertEqual(fixtures.count, Teaching.allCases.count)
+    XCTAssertEqual(Teaching.allCases.flatMap(\.controls).count, 198)
+    XCTAssertEqual(Set(Teaching.allCases.flatMap(\.entryIDs)).count, 246)
     for (teaching, expected, companion) in fixtures {
       let kind = try XCTUnwrap(Model.Kind(rawValue: teaching.rawValue)), model = Model(kind: kind)
       XCTAssertEqual(model.result, expected, accuracy: 1e-6)
@@ -303,6 +318,45 @@ final class GalaxySSIHealthAtlasPhysiologyTests: XCTestCase {
     XCTAssertNil(Model.restore("inner-ear", inputs: [35, 20, 160]))
     XCTAssertEqual(Model.restore("inner-ear", inputs: [50])?.kind, .cochlearFrequency)
     XCTAssertNil(Model.restore("tendons", inputs: [40, 38]))
+  }
+
+  func testCompletionTeachingCountsKeepWholeStepsAndGeometryContinuous() throws {
+    typealias Teaching = GalaxySSIHealthAtlasTeachingModel
+    XCTAssertEqual(try XCTUnwrap(Teaching.accessoryGlandEntry.evaluate([2.49, 1.49, 4])), 3)
+    XCTAssertEqual(try XCTUnwrap(Teaching.accessoryGlandEntry.evaluate([2.5, 1.5, 4])), 5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.accessoryGlandEntry.companion([0, 0, 3.5])), 4)
+    XCTAssertEqual(try XCTUnwrap(Teaching.cecalPouchMixing.evaluate([2.49, 16])), 6)
+    XCTAssertEqual(try XCTUnwrap(Teaching.cecalPouchMixing.evaluate([2.5, 16])), 7)
+    XCTAssertEqual(try XCTUnwrap(Teaching.clitoralRouteTrace.evaluate([1.49])), 25)
+    XCTAssertEqual(try XCTUnwrap(Teaching.clitoralRouteTrace.evaluate([1.5])), 50)
+    XCTAssertEqual(try XCTUnwrap(Teaching.dendriticCellOutline.evaluate([2.5])), 18)
+    XCTAssertEqual(try XCTUnwrap(Teaching.intestinalStemRenewal.evaluate([5.5, 3.5])), 12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.langerhansDendriteReach.evaluate([7.5, 7.5])), 10)
+    XCTAssertEqual(try XCTUnwrap(Teaching.langerhansDendriteReach.companion([7.5, 7.5])), 6)
+    XCTAssertEqual(try XCTUnwrap(Teaching.macrophageClearanceTally.evaluate([4.49, 4.5])), 4)
+    XCTAssertEqual(try XCTUnwrap(Teaching.mastCellGranuleTally.evaluate([0.5])), 5)
+    XCTAssertEqual(try XCTUnwrap(Teaching.microgliaSurveillance.evaluate([3.5, 2.5])), 7)
+    XCTAssertEqual(try XCTUnwrap(Teaching.microgliaSurveillance.companion([3.5, 2.5])), 1)
+    XCTAssertEqual(try XCTUnwrap(Teaching.muscleSatelliteFusionTally.evaluate([2.5, 5.5])), 9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.panethLuminalRelease.evaluate([8.5, 3.5])), 4)
+    XCTAssertEqual(try XCTUnwrap(Teaching.plasmaCellSecretionTally.evaluate([3.5])), 12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.thyroidCCellReleaseGrid.evaluate([1.5, 2.5])), 6)
+    XCTAssertEqual(try XCTUnwrap(Teaching.thyroidCCellReleaseGrid.companion([1.5, 2.5])), 9)
+    XCTAssertEqual(try XCTUnwrap(Teaching.thyroidFollicularFaces.evaluate([8.5, 6])), 12 * .pi / 9, accuracy: 1e-12)
+    for width in [0.0, 0.999, 1, 1.999, 2, 2.999, 3, 3.999, 4, 4.999, 5, 5.999, 6, 6.999, 7, 7.999, 8] {
+      let count = Double([1, 2, 2, 3, 3, 3, 4, 4, 5, 6, 7, 8].filter { Double($0) <= width }.count)
+      XCTAssertEqual(try XCTUnwrap(Teaching.splenicSlitSorting.evaluate([width])), count)
+      XCTAssertEqual(try XCTUnwrap(Teaching.splenicSlitSorting.companion([width])), 12 - count)
+    }
+    for signal in [-10.0, -0.5, 0, 0.5, 10] {
+      XCTAssertEqual(try XCTUnwrap(Teaching.aiiAmacrineRelay.evaluate([signal])), signal)
+      XCTAssertEqual(try XCTUnwrap(Teaching.aiiAmacrineRelay.companion([signal])), -signal)
+    }
+    XCTAssertEqual(try XCTUnwrap(Teaching.nailPlateAdvance.evaluate([2.5, 0.75])), 1.875)
+    XCTAssertEqual(try XCTUnwrap(Teaching.penilePathTrace.evaluate([35.5])), 3.55, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.vaginalRugaSpan.evaluate([2.5])), 2 * sqrt(18.75), accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.urethralOpeningArea.evaluate([8, 100])), 16 * .pi, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Teaching.thyroidFollicularFaces.companion([8, 6])), 2 * .pi, accuracy: 1e-12)
   }
 
   func testTeachingModelBoundaryFixturesPreservePressureAndFlowMeaning() throws {

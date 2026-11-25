@@ -39,6 +39,7 @@ struct GalaxySSIHealthAtlasDetail: View {
               GalaxySSIHealthAtlasFunctionPanel(catalogue: catalogue, entryID: entry.id, language: language,
                 previewPresented: state.previewPresented, selection: functionSelection,
                 onPhase: { state.recordFunctionPhase(entryID: entry.id, storyID: $0, phase: $1) })
+              numericalModelButton
               if let story = functionSelection.wrappedValue.current(entryID: entry.id, catalogue: catalogue) {
                 ForEach(Array(story.related.enumerated()), id: \.offset) { _, related in
                   if let target = atlas.entry(related.entryID), let lesson = catalogue.story(related.storyID) {
@@ -59,6 +60,7 @@ struct GalaxySSIHealthAtlasDetail: View {
                   entry.id != GalaxySSIHealthAtlasSweat.owner && GalaxySSIHealthAtlasSectionLesson.forEntry(entry.id) == nil)) {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
             }
+            if selection.wrappedValue.tab == .function && !hasFunctionPlayer { numericalModelButton }
             if selection.wrappedValue.tab != .structure { Text(GalaxySSIHealthAtlasText.get(entry.description, language)) }
             if selection.wrappedValue.tab == .structure {
               structure
@@ -71,7 +73,6 @@ struct GalaxySSIHealthAtlasDetail: View {
               if showFunctionStructurePreview {
                 GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
               }
-              Button(t("simulation")) { selection.wrappedValue.tab = .simulation }
             } else {
               GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
                 physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
@@ -91,7 +92,7 @@ struct GalaxySSIHealthAtlasDetail: View {
               Link(t("plate_source"), destination: source).frame(minHeight: 44)
             }
           }.padding()
-        }
+        }.id(selection.wrappedValue.tab)
       }
     }
     .navigationTitle(name).navigationBarTitleDisplayMode(.inline)
@@ -106,6 +107,17 @@ struct GalaxySSIHealthAtlasDetail: View {
       GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
+  }
+  private var numericalModelButton: some View {
+    Button {
+      state.openNumericalModel(entry)
+    } label: {
+      HStack {
+        Label(t("open_quantitative_model"), systemImage: "chart.bar")
+        Spacer()
+        Image(systemName: "chevron.right").accessibilityHidden(true)
+      }.frame(minHeight: 44).contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityIdentifier("atlas-open-simulation")
   }
   @ViewBuilder private var structure: some View {
     if entry.kind == .organ {

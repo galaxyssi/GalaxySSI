@@ -19,6 +19,14 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case pleuralSlide, retinalLightAttenuation, gametePathDistance, testisTubuleSection, uterineLiningArea
   case vulvarFoldOverlap, capillarySupportSurface, marrowRenewal, ependymalBeatPhase
 
+  case accessoryGlandEntry, aiiAmacrineRelay, astrocyteRecycling, cecalPouchMixing
+  case clitoralRouteTrace, clubCellDome, dendriticCellOutline, enteroendocrinePolarity
+  case intestinalStemRenewal, langerhansDendriteReach, macrophageClearanceTally, mastCellGranuleTally
+  case microgliaSurveillance, muscleSatelliteFusionTally, nailPlateAdvance, pancreaticAcinarApicalBand
+  case panethLuminalRelease, penilePathTrace, plasmaCellSecretionTally, satelliteGlialSheathGap
+  case scrotalHeatTally, skullVaultLayers, splenicSlitSorting, thyroidCCellReleaseGrid
+  case thyroidFollicularFaces, urethralOpeningArea, vaginalRugaSpan, vestibularGlandVolume
+
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
     let label: String
@@ -27,6 +35,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   var inputs: [GalaxySSIHealthAtlasPhysiology.Input] { controls.map(\.input) }
   var axis: Int {
     switch self {
+    case .accessoryGlandEntry: return 0
+    case .aiiAmacrineRelay: return 0
+    case .astrocyteRecycling: return 0
+    case .cecalPouchMixing: return 0
+    case .clitoralRouteTrace: return 0
+    case .clubCellDome: return 0
+    case .dendriticCellOutline: return 0
+    case .enteroendocrinePolarity: return 0
+    case .intestinalStemRenewal: return 0
+    case .langerhansDendriteReach: return 0
+    case .macrophageClearanceTally: return 0
+    case .mastCellGranuleTally: return 0
+    case .microgliaSurveillance: return 1
+    case .muscleSatelliteFusionTally: return 0
+    case .nailPlateAdvance: return 0
+    case .pancreaticAcinarApicalBand: return 0
+    case .panethLuminalRelease: return 0
+    case .penilePathTrace: return 0
+    case .plasmaCellSecretionTally: return 0
+    case .satelliteGlialSheathGap: return 1
+    case .scrotalHeatTally: return 1
+    case .skullVaultLayers: return 0
+    case .splenicSlitSorting: return 0
+    case .thyroidCCellReleaseGrid: return 0
+    case .thyroidFollicularFaces: return 0
+    case .urethralOpeningArea: return 1
+    case .vaginalRugaSpan: return 0
+    case .vestibularGlandVolume: return 0
     case .valveFlux, .skinWaterBarrier, .airwaySplit, .peristalticTravel,
          .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
          .immuneComposition, .oviductCiliaryCycles, .colonicWaterBalance,
@@ -41,6 +77,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   }
   var unit: String {
     switch self {
+    case .accessoryGlandEntry: return ""
+    case .aiiAmacrineRelay: return "u"
+    case .astrocyteRecycling: return "%"
+    case .cecalPouchMixing: return "u"
+    case .clitoralRouteTrace: return "%"
+    case .clubCellDome: return "%"
+    case .dendriticCellOutline: return ""
+    case .enteroendocrinePolarity: return "%"
+    case .intestinalStemRenewal: return ""
+    case .langerhansDendriteReach: return ""
+    case .macrophageClearanceTally: return ""
+    case .mastCellGranuleTally: return "%"
+    case .microgliaSurveillance: return ""
+    case .muscleSatelliteFusionTally: return ""
+    case .nailPlateAdvance: return "u"
+    case .pancreaticAcinarApicalBand: return "%"
+    case .panethLuminalRelease: return ""
+    case .penilePathTrace: return "u"
+    case .plasmaCellSecretionTally: return ""
+    case .satelliteGlialSheathGap: return "u\u{b2}"
+    case .scrotalHeatTally: return "hu"
+    case .skullVaultLayers: return "u"
+    case .splenicSlitSorting: return ""
+    case .thyroidCCellReleaseGrid: return ""
+    case .thyroidFollicularFaces: return "u"
+    case .urethralOpeningArea: return "u\u{b2}"
+    case .vaginalRugaSpan: return "u"
+    case .vestibularGlandVolume: return "vu"
     case .capillaryExchange: return "%"
     case .valveFlux: return "mL/s"
     case .glomerularFiltration: return "nL/min"
@@ -111,6 +175,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   }
   var bounds: ClosedRange<Double> {
     switch self {
+    case .accessoryGlandEntry: return 0...8
+    case .aiiAmacrineRelay: return -10...10
+    case .astrocyteRecycling: return 0...100
+    case .cecalPouchMixing: return 0...8
+    case .clitoralRouteTrace: return 0...100
+    case .clubCellDome: return 0...50
+    case .dendriticCellOutline: return 12...20
+    case .enteroendocrinePolarity: return 0...50
+    case .intestinalStemRenewal: return 0...12
+    case .langerhansDendriteReach: return 0...10
+    case .macrophageClearanceTally: return 0...8
+    case .mastCellGranuleTally: return 0...100
+    case .microgliaSurveillance: return 0...12
+    case .muscleSatelliteFusionTally: return 1...20
+    case .nailPlateAdvance: return 0...18
+    case .pancreaticAcinarApicalBand: return 0...40
+    case .panethLuminalRelease: return 0...10
+    case .penilePathTrace: return 0...10
+    case .plasmaCellSecretionTally: return 0...24
+    case .satelliteGlialSheathGap: return 0...26
+    case .scrotalHeatTally: return 0...20
+    case .skullVaultLayers: return 3.5...9.5
+    case .splenicSlitSorting: return 0...12
+    case .thyroidCCellReleaseGrid: return 0...20
+    case .thyroidFollicularFaces: return 0...(2 * .pi * 6 / 8)
+    case .urethralOpeningArea: return 0...(16 * .pi)
+    case .vaginalRugaSpan: return 6...10
+    case .vestibularGlandVolume: return 0...12
     case .capillaryExchange: return 0...100
     case .valveFlux: return 0...500
     case .glomerularFiltration: return 0...200
@@ -178,6 +270,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   }
   var digits: Int {
     switch self {
+    case .accessoryGlandEntry: return 0
+    case .aiiAmacrineRelay: return 0
+    case .astrocyteRecycling: return 2
+    case .cecalPouchMixing: return 2
+    case .clitoralRouteTrace: return 0
+    case .clubCellDome: return 2
+    case .dendriticCellOutline: return 0
+    case .enteroendocrinePolarity: return 2
+    case .intestinalStemRenewal: return 0
+    case .langerhansDendriteReach: return 0
+    case .macrophageClearanceTally: return 0
+    case .mastCellGranuleTally: return 0
+    case .microgliaSurveillance: return 0
+    case .muscleSatelliteFusionTally: return 0
+    case .nailPlateAdvance: return 1
+    case .pancreaticAcinarApicalBand: return 2
+    case .panethLuminalRelease: return 0
+    case .penilePathTrace: return 1
+    case .plasmaCellSecretionTally: return 0
+    case .satelliteGlialSheathGap: return 2
+    case .scrotalHeatTally: return 2
+    case .skullVaultLayers: return 1
+    case .splenicSlitSorting: return 0
+    case .thyroidCCellReleaseGrid: return 0
+    case .thyroidFollicularFaces: return 2
+    case .urethralOpeningArea: return 2
+    case .vaginalRugaSpan: return 2
+    case .vestibularGlandVolume: return 1
     case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance, .neuralRelayDelays: return 1
     case .tendonElongation, .muscleShortening: return 3
     case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance, .thymicBranching,
@@ -187,6 +307,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   }
   var resourcePrefix: String {
     switch self {
+    case .accessoryGlandEntry: return "health_atlas_accessory_gland_entry"
+    case .aiiAmacrineRelay: return "health_atlas_aii_amacrine_relay"
+    case .astrocyteRecycling: return "health_atlas_astrocyte_recycling"
+    case .cecalPouchMixing: return "health_atlas_cecal_pouch_mixing"
+    case .clitoralRouteTrace: return "health_atlas_clitoral_route_trace"
+    case .clubCellDome: return "health_atlas_club_cell_dome"
+    case .dendriticCellOutline: return "health_atlas_dendritic_cell_outline"
+    case .enteroendocrinePolarity: return "health_atlas_enteroendocrine_polarity"
+    case .intestinalStemRenewal: return "health_atlas_intestinal_stem_model"
+    case .langerhansDendriteReach: return "health_atlas_langerhans_dendrite_reach"
+    case .macrophageClearanceTally: return "health_atlas_macrophage_clearance_tally"
+    case .mastCellGranuleTally: return "health_atlas_mast_cell_granule_tally"
+    case .microgliaSurveillance: return "health_atlas_microglia_surveillance"
+    case .muscleSatelliteFusionTally: return "health_atlas_muscle_satellite_fusion_tally"
+    case .nailPlateAdvance: return "health_atlas_nail_plate_advance"
+    case .pancreaticAcinarApicalBand: return "health_atlas_pancreatic_acinar_apical_band"
+    case .panethLuminalRelease: return "health_atlas_paneth_luminal_release"
+    case .penilePathTrace: return "health_atlas_penile_path_trace"
+    case .plasmaCellSecretionTally: return "health_atlas_plasma_cell_secretion_tally"
+    case .satelliteGlialSheathGap: return "health_atlas_satellite_glial_sheath_gap"
+    case .scrotalHeatTally: return "health_atlas_scrotal_heat_tally"
+    case .skullVaultLayers: return "health_atlas_skull_vault_layers"
+    case .splenicSlitSorting: return "health_atlas_splenic_slit_sorting"
+    case .thyroidCCellReleaseGrid: return "health_atlas_thyroid_c_cell_release_grid"
+    case .thyroidFollicularFaces: return "health_atlas_thyroid_follicular_faces"
+    case .urethralOpeningArea: return "health_atlas_urethral_opening_area"
+    case .vaginalRugaSpan: return "health_atlas_vaginal_ruga_span"
+    case .vestibularGlandVolume: return "health_atlas_vestibular_gland_volume"
     case .capillaryExchange: return "health_atlas_capillary_exchange"
     case .valveFlux: return "health_atlas_valve_flux"
     case .glomerularFiltration: return "health_atlas_glomerular_filtration"
@@ -267,6 +415,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   var companionTitle: String {
     let suffix: String
     switch self {
+    case .nailPlateAdvance: suffix = "mark"
+    case .skullVaultLayers: suffix = "bone"
     case .capillaryExchange: suffix = "remaining"
     case .glomerularFiltration: suffix = "net_pressure"
     case .skinWaterBarrier: suffix = "conductance"
@@ -297,6 +447,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   }
   var entryIDs: Set<String> {
     switch self {
+    case .accessoryGlandEntry: return ["seminal-vesicles", "prostate", "bulbourethral-glands"]
+    case .aiiAmacrineRelay: return ["cell-retinal-aii-amacrine-cell"]
+    case .astrocyteRecycling: return ["cell-astrocyte"]
+    case .cecalPouchMixing: return ["cecum"]
+    case .clitoralRouteTrace: return ["clitoris"]
+    case .clubCellDome: return ["cell-club-cell"]
+    case .dendriticCellOutline: return ["cell-dendritic-cell"]
+    case .enteroendocrinePolarity: return ["cell-enteroendocrine-cell"]
+    case .intestinalStemRenewal: return ["cell-intestinal-stem-cell"]
+    case .langerhansDendriteReach: return ["cell-langerhans-cell"]
+    case .macrophageClearanceTally: return ["cell-macrophage"]
+    case .mastCellGranuleTally: return ["cell-mast-cell"]
+    case .microgliaSurveillance: return ["cell-microglia"]
+    case .muscleSatelliteFusionTally: return ["cell-muscle-satellite-cell"]
+    case .nailPlateAdvance: return ["nails"]
+    case .pancreaticAcinarApicalBand: return ["cell-pancreatic-acinar-cell"]
+    case .panethLuminalRelease: return ["cell-paneth-cell"]
+    case .penilePathTrace: return ["penis"]
+    case .plasmaCellSecretionTally: return ["cell-plasma-cell"]
+    case .satelliteGlialSheathGap: return ["cell-satellite-glial-cell"]
+    case .scrotalHeatTally: return ["scrotum"]
+    case .skullVaultLayers: return ["skull"]
+    case .splenicSlitSorting: return ["spleen"]
+    case .thyroidCCellReleaseGrid: return ["cell-thyroid-parafollicular-cell"]
+    case .thyroidFollicularFaces: return ["cell-thyroid-follicular-cell"]
+    case .urethralOpeningArea: return ["urethra"]
+    case .vaginalRugaSpan: return ["vagina"]
+    case .vestibularGlandVolume: return ["greater-vestibular-glands"]
     case .capillaryExchange: return ["capillaries", "tissue-vascular-endothelium", "cell-vascular-endothelial-cell"]
     case .valveFlux: return ["heart-valves", "tricuspid-valve", "mitral-valve", "pulmonary-valve", "aortic-valve"]
     case .glomerularFiltration: return ["glomerulus", "bowmans-capsule", "cell-podocyte"]
@@ -374,6 +552,34 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   var sources: [URL] {
     let values: [String]
     switch self {
+    case .accessoryGlandEntry: values = ["https://training.seer.cancer.gov/anatomy/reproductive/male/duct.html", "https://training.seer.cancer.gov/anatomy/reproductive/male/glands.html"]
+    case .aiiAmacrineRelay: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC6133723/", "https://escholarship.org/content/qt81b3q81m/qt81b3q81m.pdf"]
+    case .astrocyteRecycling: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC2995528/"]
+    case .cecalPouchMixing: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines", "https://pubmed.ncbi.nlm.nih.gov/18513218/"]
+    case .clitoralRouteTrace: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC11452485/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC4965354/"]
+    case .clubCellDome: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC6290945/"]
+    case .dendriticCellOutline: values = ["https://rupress.org/jem/article-pdf/163/2/436/1666573/436.pdf", "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"]
+    case .enteroendocrinePolarity: values = ["https://www.jstage.jst.go.jp/article/aohc1950/31/3-4/31_3-4_477/_article/-char/en", "https://open.umich.edu/sites/default/files/downloads/01.07.09-hist-velkey-esophstom.pdf"]
+    case .intestinalStemRenewal: values = ["https://pubmed.ncbi.nlm.nih.gov/19156773/", "https://histology.oit.duke.edu/NormalBody/GItract/GItract_answers.html"]
+    case .langerhansDendriteReach: values = ["https://pubmed.ncbi.nlm.nih.gov/9435249/"]
+    case .macrophageClearanceTally: values = ["https://www.cancer.gov/publications/dictionaries/cancer-terms/def/macrophage"]
+    case .mastCellGranuleTally: values = ["https://www.histologyguide.com/EM-view/EM-110-mast-cell/03-photo-1.html"]
+    case .microgliaSurveillance: values = ["https://pubmed.ncbi.nlm.nih.gov/15831717/"]
+    case .muscleSatelliteFusionTally: values = ["https://discovery.ucl.ac.uk/id/eprint/1340766/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC4618654/"]
+    case .nailPlateAdvance: values = ["https://pubmed.ncbi.nlm.nih.gov/15327543/", "https://doi.org/10.1002/ar.22660"]
+    case .pancreaticAcinarApicalBand: values = ["https://pancreapedia.org/reviews/anatomy-and-histology-of-pancreas"]
+    case .panethLuminalRelease: values = ["https://histology.oit.duke.edu/NormalBody/GItract/GItract_answers.html", "https://histology.leeds.ac.uk/home/digestive/small_intestine/"]
+    case .penilePathTrace: values = ["https://training.seer.cancer.gov/anatomy/reproductive/male/penis.html", "https://anatomy.ttuhscep.edu/reproductive_system/perineum_tables.html"]
+    case .plasmaCellSecretionTally: values = ["https://www.cancer.gov/publications/dictionaries/cancer-terms/def/plasma-cell"]
+    case .satelliteGlialSheathGap: values = ["https://advanced.onlinelibrary.wiley.com/doi/10.1002/advs.202511569"]
+    case .scrotalHeatTally: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC12572243/", "https://pubmed.ncbi.nlm.nih.gov/14507047/"]
+    case .skullVaultLayers: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure", "https://openstax.org/books/anatomy-and-physiology-2e/pages/13-3-circulation-and-the-central-nervous-system"]
+    case .splenicSlitSorting: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC9526706/", "https://pmc.ncbi.nlm.nih.gov/articles/PMC6199658/"]
+    case .thyroidCCellReleaseGrid: values = ["https://www.jstage.jst.go.jp/article/endocrine1927/59/9/59_1244/_article/-char/en", "https://zoomify.luc.edu/endocrine/lumc195-21/popup.html"]
+    case .thyroidFollicularFaces: values = ["https://histology.oit.duke.edu/NormalBody/Endocrine/Endocrine.html"]
+    case .urethralOpeningArea: values = ["https://www.niddk.nih.gov/health-information/urologic-diseases/urinary-tract-how-it-works"]
+    case .vaginalRugaSpan: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system", "https://pmc.ncbi.nlm.nih.gov/articles/PMC5382597/"]
+    case .vestibularGlandVolume: values = ["https://pmc.ncbi.nlm.nih.gov/articles/PMC9544139/", "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"]
     case .capillaryExchange: values = ["https://pubmed.ncbi.nlm.nih.gov/14078649/"]
     case .valveFlux: values = ["https://openstax.org/books/college-physics-ap-courses-2e/pages/12-1-flow-rate-and-its-relation-to-velocity",
       "https://www.nist.gov/pml/owm/si-units-volume"]

@@ -84,6 +84,13 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case mammaryDuctDelivery, rectalReservoir, stromalMatrix, mucusFilmThickness
     case pleuralSlide, retinalLightAttenuation, gametePathDistance, testisTubuleSection, uterineLiningArea
     case vulvarFoldOverlap, capillarySupportSurface, marrowRenewal, ependymalBeatPhase
+    case accessoryGlandEntry, aiiAmacrineRelay, astrocyteRecycling, cecalPouchMixing
+    case clitoralRouteTrace, clubCellDome, dendriticCellOutline, enteroendocrinePolarity
+    case intestinalStemRenewal, langerhansDendriteReach, macrophageClearanceTally, mastCellGranuleTally
+    case microgliaSurveillance, muscleSatelliteFusionTally, nailPlateAdvance, pancreaticAcinarApicalBand
+    case panethLuminalRelease, penilePathTrace, plasmaCellSecretionTally, satelliteGlialSheathGap
+    case scrotalHeatTally, skullVaultLayers, splenicSlitSorting, thyroidCCellReleaseGrid
+    case thyroidFollicularFaces, urethralOpeningArea, vaginalRugaSpan, vestibularGlandVolume
     case sweatEvaporation
     case photonCapture
     case thyroidFeedback
@@ -111,7 +118,14 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
            .placentalMarker, .renalTubuleRetention, .merkelContact, .toothEnamelSection, .mucosalSampling,
            .mammaryDuctDelivery, .rectalReservoir, .stromalMatrix, .mucusFilmThickness,
            .pleuralSlide, .retinalLightAttenuation, .gametePathDistance, .testisTubuleSection, .uterineLiningArea,
-           .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase:
+           .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase,
+           .accessoryGlandEntry, .aiiAmacrineRelay, .astrocyteRecycling, .cecalPouchMixing,
+           .clitoralRouteTrace, .clubCellDome, .dendriticCellOutline, .enteroendocrinePolarity,
+           .intestinalStemRenewal, .langerhansDendriteReach, .macrophageClearanceTally, .mastCellGranuleTally,
+           .microgliaSurveillance, .muscleSatelliteFusionTally, .nailPlateAdvance, .pancreaticAcinarApicalBand,
+           .panethLuminalRelease, .penilePathTrace, .plasmaCellSecretionTally, .satelliteGlialSheathGap,
+           .scrotalHeatTally, .skullVaultLayers, .splenicSlitSorting, .thyroidCCellReleaseGrid,
+           .thyroidFollicularFaces, .urethralOpeningArea, .vaginalRugaSpan, .vestibularGlandVolume:
         return teaching!.inputs
       case .pelvicSupport:
         return [.init(key: "pelvis_model_load", range: 0...800, initial: 400, unit: "N"),
@@ -285,7 +299,14 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
            .placentalMarker, .renalTubuleRetention, .merkelContact, .toothEnamelSection, .mucosalSampling,
            .mammaryDuctDelivery, .rectalReservoir, .stromalMatrix, .mucusFilmThickness,
            .pleuralSlide, .retinalLightAttenuation, .gametePathDistance, .testisTubuleSection, .uterineLiningArea,
-           .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase:
+           .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase,
+           .accessoryGlandEntry, .aiiAmacrineRelay, .astrocyteRecycling, .cecalPouchMixing,
+           .clitoralRouteTrace, .clubCellDome, .dendriticCellOutline, .enteroendocrinePolarity,
+           .intestinalStemRenewal, .langerhansDendriteReach, .macrophageClearanceTally, .mastCellGranuleTally,
+           .microgliaSurveillance, .muscleSatelliteFusionTally, .nailPlateAdvance, .pancreaticAcinarApicalBand,
+           .panethLuminalRelease, .penilePathTrace, .plasmaCellSecretionTally, .satelliteGlialSheathGap,
+           .scrotalHeatTally, .skullVaultLayers, .splenicSlitSorting, .thyroidCCellReleaseGrid,
+           .thyroidFollicularFaces, .urethralOpeningArea, .vaginalRugaSpan, .vestibularGlandVolume:
         return teaching!.sources[0]
       case .pelvicSupport: return GalaxySSIHealthAtlasLoadTransfer.stabilitySource
       case .cushionContactPressure: return GalaxySSIHealthAtlasLoadTransfer.pressureSource
@@ -400,7 +421,14 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
          .placentalMarker, .renalTubuleRetention, .merkelContact, .toothEnamelSection, .mucosalSampling,
          .mammaryDuctDelivery, .rectalReservoir, .stromalMatrix, .mucusFilmThickness,
          .pleuralSlide, .retinalLightAttenuation, .gametePathDistance, .testisTubuleSection, .uterineLiningArea,
-         .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase:
+         .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase,
+           .accessoryGlandEntry, .aiiAmacrineRelay, .astrocyteRecycling, .cecalPouchMixing,
+           .clitoralRouteTrace, .clubCellDome, .dendriticCellOutline, .enteroendocrinePolarity,
+           .intestinalStemRenewal, .langerhansDendriteReach, .macrophageClearanceTally, .mastCellGranuleTally,
+           .microgliaSurveillance, .muscleSatelliteFusionTally, .nailPlateAdvance, .pancreaticAcinarApicalBand,
+           .panethLuminalRelease, .penilePathTrace, .plasmaCellSecretionTally, .satelliteGlialSheathGap,
+           .scrotalHeatTally, .skullVaultLayers, .splenicSlitSorting, .thyroidCCellReleaseGrid,
+           .thyroidFollicularFaces, .urethralOpeningArea, .vaginalRugaSpan, .vestibularGlandVolume:
       return kind.teaching!.companion(inputs.indices.map(input))!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: input(0), positionPercent: input(1))!.leftNewtons
@@ -495,7 +523,14 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
          .placentalMarker, .renalTubuleRetention, .merkelContact, .toothEnamelSection, .mucosalSampling,
          .mammaryDuctDelivery, .rectalReservoir, .stromalMatrix, .mucusFilmThickness,
          .pleuralSlide, .retinalLightAttenuation, .gametePathDistance, .testisTubuleSection, .uterineLiningArea,
-         .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase:
+         .vulvarFoldOverlap, .capillarySupportSurface, .marrowRenewal, .ependymalBeatPhase,
+           .accessoryGlandEntry, .aiiAmacrineRelay, .astrocyteRecycling, .cecalPouchMixing,
+           .clitoralRouteTrace, .clubCellDome, .dendriticCellOutline, .enteroendocrinePolarity,
+           .intestinalStemRenewal, .langerhansDendriteReach, .macrophageClearanceTally, .mastCellGranuleTally,
+           .microgliaSurveillance, .muscleSatelliteFusionTally, .nailPlateAdvance, .pancreaticAcinarApicalBand,
+           .panethLuminalRelease, .penilePathTrace, .plasmaCellSecretionTally, .satelliteGlialSheathGap,
+           .scrotalHeatTally, .skullVaultLayers, .splenicSlitSorting, .thyroidCCellReleaseGrid,
+           .thyroidFollicularFaces, .urethralOpeningArea, .vaginalRugaSpan, .vestibularGlandVolume:
       return kind.teaching!.evaluate(values)!
     case .pelvicSupport:
       return GalaxySSIHealthAtlasLoadTransfer.PelvicSupport(loadNewtons: values[0], positionPercent: values[1])!.rightNewtons

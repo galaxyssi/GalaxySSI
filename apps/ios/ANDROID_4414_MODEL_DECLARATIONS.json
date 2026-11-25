@@ -1,0 +1,1068 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4414,
+    "mergeCommit": "7dd7f35525ed800b74a3439bf708b1793316de42"
+  },
+  "models": [
+    {
+      "id": "accessoryGlandEntry",
+      "inputs": [
+        {
+          "key": "accessory-gland-entry-vesicle-markers",
+          "minimum": 0,
+          "maximum": 4,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_accessory_gland_entry_vesicles",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "accessory-gland-entry-prostate-markers",
+          "minimum": 0,
+          "maximum": 4,
+          "initial": 2,
+          "scale": 1,
+          "label": "health_atlas_accessory_gland_entry_prostate",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "accessory-gland-entry-bulbourethral-markers",
+          "minimum": 0,
+          "maximum": 4,
+          "initial": 1,
+          "scale": 1,
+          "label": "health_atlas_accessory_gland_entry_bulbourethral",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 8,
+      "sources": [
+        "https://training.seer.cancer.gov/anatomy/reproductive/male/duct.html",
+        "https://training.seer.cancer.gov/anatomy/reproductive/male/glands.html"
+      ],
+      "title": "health_atlas_accessory_gland_entry_title",
+      "scope": "health_atlas_accessory_gland_entry_scope",
+      "formula": "health_atlas_accessory_gland_entry_formula",
+      "companionTitle": "health_atlas_accessory_gland_entry_companion",
+      "entryIDs": [
+        "seminal-vesicles",
+        "prostate",
+        "bulbourethral-glands"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "aiiAmacrineRelay",
+      "inputs": [
+        {
+          "key": "aii-amacrine-relay-input",
+          "minimum": -10,
+          "maximum": 10,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_aii_amacrine_relay_input",
+          "unit": "u",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": -10,
+      "maximum": 10,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC6133723/",
+        "https://escholarship.org/content/qt81b3q81m/qt81b3q81m.pdf"
+      ],
+      "title": "health_atlas_aii_amacrine_relay_title",
+      "scope": "health_atlas_aii_amacrine_relay_scope",
+      "formula": "health_atlas_aii_amacrine_relay_formula",
+      "companionTitle": "health_atlas_aii_amacrine_relay_companion",
+      "entryIDs": [
+        "cell-retinal-aii-amacrine-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "astrocyteRecycling",
+      "inputs": [
+        {
+          "key": "astrocyte-recycling-uptake",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 60,
+          "scale": 1,
+          "label": "health_atlas_astrocyte_recycling_uptake",
+          "unit": "%",
+          "digits": 0
+        },
+        {
+          "key": "astrocyte-recycling-return",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_astrocyte_recycling_return",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC2995528/"
+      ],
+      "title": "health_atlas_astrocyte_recycling_title",
+      "scope": "health_atlas_astrocyte_recycling_scope",
+      "formula": "health_atlas_astrocyte_recycling_formula",
+      "companionTitle": "health_atlas_astrocyte_recycling_companion",
+      "entryIDs": [
+        "cell-astrocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "cecalPouchMixing",
+      "inputs": [
+        {
+          "key": "cecal-pouch-mixing-rounds",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_cecal_pouch_mixing_rounds",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "cecal-pouch-mixing-marker-amount",
+          "minimum": 0,
+          "maximum": 16,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_cecal_pouch_mixing_marker_amount",
+          "unit": "u",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 8,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
+        "https://pubmed.ncbi.nlm.nih.gov/18513218/"
+      ],
+      "title": "health_atlas_cecal_pouch_mixing_title",
+      "scope": "health_atlas_cecal_pouch_mixing_scope",
+      "formula": "health_atlas_cecal_pouch_mixing_formula",
+      "companionTitle": "health_atlas_cecal_pouch_mixing_companion",
+      "entryIDs": [
+        "cecum"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "clitoralRouteTrace",
+      "inputs": [
+        {
+          "key": "clitoral-route-trace-links",
+          "minimum": 0,
+          "maximum": 4,
+          "initial": 1,
+          "scale": 1,
+          "label": "health_atlas_clitoral_route_trace_links",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC11452485/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4965354/"
+      ],
+      "title": "health_atlas_clitoral_route_trace_title",
+      "scope": "health_atlas_clitoral_route_trace_scope",
+      "formula": "health_atlas_clitoral_route_trace_formula",
+      "companionTitle": "health_atlas_clitoral_route_trace_companion",
+      "entryIDs": [
+        "clitoris"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "clubCellDome",
+      "inputs": [
+        {
+          "key": "club-cell-dome-rise",
+          "minimum": 5,
+          "maximum": 30,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_club_cell_dome_rise",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "club-cell-dome-body-height",
+          "minimum": 30,
+          "maximum": 60,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_club_cell_dome_body_height",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 50,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC6290945/"
+      ],
+      "title": "health_atlas_club_cell_dome_title",
+      "scope": "health_atlas_club_cell_dome_scope",
+      "formula": "health_atlas_club_cell_dome_formula",
+      "companionTitle": "health_atlas_club_cell_dome_companion",
+      "entryIDs": [
+        "cell-club-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "dendriticCellOutline",
+      "inputs": [
+        {
+          "key": "dendritic-cell-outline-tabs",
+          "minimum": 0,
+          "maximum": 4,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_dendritic_cell_outline_tabs",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 12,
+      "maximum": 20,
+      "sources": [
+        "https://rupress.org/jem/article-pdf/163/2/436/1666573/436.pdf",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types"
+      ],
+      "title": "health_atlas_dendritic_cell_outline_title",
+      "scope": "health_atlas_dendritic_cell_outline_scope",
+      "formula": "health_atlas_dendritic_cell_outline_formula",
+      "companionTitle": "health_atlas_dendritic_cell_outline_companion",
+      "entryIDs": [
+        "cell-dendritic-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "enteroendocrinePolarity",
+      "inputs": [
+        {
+          "key": "enteroendocrine-polarity-basal-offset",
+          "minimum": 5,
+          "maximum": 25,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_enteroendocrine_polarity_basal_offset",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "enteroendocrine-polarity-cell-height",
+          "minimum": 60,
+          "maximum": 120,
+          "initial": 80,
+          "scale": 10,
+          "label": "health_atlas_enteroendocrine_polarity_cell_height",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 50,
+      "sources": [
+        "https://www.jstage.jst.go.jp/article/aohc1950/31/3-4/31_3-4_477/_article/-char/en",
+        "https://open.umich.edu/sites/default/files/downloads/01.07.09-hist-velkey-esophstom.pdf"
+      ],
+      "title": "health_atlas_enteroendocrine_polarity_title",
+      "scope": "health_atlas_enteroendocrine_polarity_scope",
+      "formula": "health_atlas_enteroendocrine_polarity_formula",
+      "companionTitle": "health_atlas_enteroendocrine_polarity_companion",
+      "entryIDs": [
+        "cell-enteroendocrine-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "intestinalStemRenewal",
+      "inputs": [
+        {
+          "key": "intestinal-stem-renewal-steps",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 2,
+          "scale": 1,
+          "label": "health_atlas_intestinal_stem_model_steps",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "intestinal-stem-renewal-base-icons",
+          "minimum": 1,
+          "maximum": 4,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_intestinal_stem_model_base_icons",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/19156773/",
+        "https://histology.oit.duke.edu/NormalBody/GItract/GItract_answers.html"
+      ],
+      "title": "health_atlas_intestinal_stem_model_title",
+      "scope": "health_atlas_intestinal_stem_model_scope",
+      "formula": "health_atlas_intestinal_stem_model_formula",
+      "companionTitle": "health_atlas_intestinal_stem_model_companion",
+      "entryIDs": [
+        "cell-intestinal-stem-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "langerhansDendriteReach",
+      "inputs": [
+        {
+          "key": "langerhans-dendrite-reach-left",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_langerhans_dendrite_reach_left",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "langerhans-dendrite-reach-right",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 5,
+          "scale": 1,
+          "label": "health_atlas_langerhans_dendrite_reach_right",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 10,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/9435249/"
+      ],
+      "title": "health_atlas_langerhans_dendrite_reach_title",
+      "scope": "health_atlas_langerhans_dendrite_reach_scope",
+      "formula": "health_atlas_langerhans_dendrite_reach_formula",
+      "companionTitle": "health_atlas_langerhans_dendrite_reach_companion",
+      "entryIDs": [
+        "cell-langerhans-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "macrophageClearanceTally",
+      "inputs": [
+        {
+          "key": "macrophage-clearance-tally-outside",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_macrophage_clearance_tally_outside",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "macrophage-clearance-tally-spaces",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 5,
+          "scale": 1,
+          "label": "health_atlas_macrophage_clearance_tally_spaces",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 8,
+      "sources": [
+        "https://www.cancer.gov/publications/dictionaries/cancer-terms/def/macrophage"
+      ],
+      "title": "health_atlas_macrophage_clearance_tally_title",
+      "scope": "health_atlas_macrophage_clearance_tally_scope",
+      "formula": "health_atlas_macrophage_clearance_tally_formula",
+      "companionTitle": "health_atlas_macrophage_clearance_tally_companion",
+      "entryIDs": [
+        "cell-macrophage"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "mastCellGranuleTally",
+      "inputs": [
+        {
+          "key": "mast-cell-granule-tally-released",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_mast_cell_granule_tally_released",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.histologyguide.com/EM-view/EM-110-mast-cell/03-photo-1.html"
+      ],
+      "title": "health_atlas_mast_cell_granule_tally_title",
+      "scope": "health_atlas_mast_cell_granule_tally_scope",
+      "formula": "health_atlas_mast_cell_granule_tally_formula",
+      "companionTitle": "health_atlas_mast_cell_granule_tally_companion",
+      "entryIDs": [
+        "cell-mast-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "microgliaSurveillance",
+      "inputs": [
+        {
+          "key": "microglia-surveillance-width",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_microglia_surveillance_width",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "microglia-surveillance-offset",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 2,
+          "scale": 1,
+          "label": "health_atlas_microglia_surveillance_offset",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/15831717/"
+      ],
+      "title": "health_atlas_microglia_surveillance_title",
+      "scope": "health_atlas_microglia_surveillance_scope",
+      "formula": "health_atlas_microglia_surveillance_formula",
+      "companionTitle": "health_atlas_microglia_surveillance_companion",
+      "entryIDs": [
+        "cell-microglia"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "muscleSatelliteFusionTally",
+      "inputs": [
+        {
+          "key": "muscle-satellite-fusion-tally-fused",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_muscle_satellite_fusion_tally_fused",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "muscle-satellite-fusion-tally-starting",
+          "minimum": 1,
+          "maximum": 12,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_muscle_satellite_fusion_tally_starting",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 1,
+      "maximum": 20,
+      "sources": [
+        "https://discovery.ucl.ac.uk/id/eprint/1340766/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4618654/"
+      ],
+      "title": "health_atlas_muscle_satellite_fusion_tally_title",
+      "scope": "health_atlas_muscle_satellite_fusion_tally_scope",
+      "formula": "health_atlas_muscle_satellite_fusion_tally_formula",
+      "companionTitle": "health_atlas_muscle_satellite_fusion_tally_companion",
+      "entryIDs": [
+        "cell-muscle-satellite-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "nailPlateAdvance",
+      "inputs": [
+        {
+          "key": "nail-plate-advance-steps",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_nail_plate_advance_steps",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "nail-plate-advance-addition",
+          "minimum": 0,
+          "maximum": 15,
+          "initial": 8,
+          "scale": 10,
+          "label": "health_atlas_nail_plate_advance_addition",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 18,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/15327543/",
+        "https://doi.org/10.1002/ar.22660"
+      ],
+      "title": "health_atlas_nail_plate_advance_title",
+      "scope": "health_atlas_nail_plate_advance_scope",
+      "formula": "health_atlas_nail_plate_advance_formula",
+      "companionTitle": "health_atlas_nail_plate_advance_mark",
+      "entryIDs": [
+        "nails"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "pancreaticAcinarApicalBand",
+      "inputs": [
+        {
+          "key": "pancreatic-acinar-apical-band-depth",
+          "minimum": 0,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_pancreatic_acinar_apical_band_depth",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 40,
+      "sources": [
+        "https://pancreapedia.org/reviews/anatomy-and-histology-of-pancreas"
+      ],
+      "title": "health_atlas_pancreatic_acinar_apical_band_title",
+      "scope": "health_atlas_pancreatic_acinar_apical_band_scope",
+      "formula": "health_atlas_pancreatic_acinar_apical_band_formula",
+      "companionTitle": "health_atlas_pancreatic_acinar_apical_band_companion",
+      "entryIDs": [
+        "cell-pancreatic-acinar-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "panethLuminalRelease",
+      "inputs": [
+        {
+          "key": "paneth-luminal-release-selected",
+          "minimum": 0,
+          "maximum": 10,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_paneth_luminal_release_selected",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "paneth-luminal-release-starting",
+          "minimum": 1,
+          "maximum": 10,
+          "initial": 7,
+          "scale": 1,
+          "label": "health_atlas_paneth_luminal_release_starting",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 10,
+      "sources": [
+        "https://histology.oit.duke.edu/NormalBody/GItract/GItract_answers.html",
+        "https://histology.leeds.ac.uk/home/digestive/small_intestine/"
+      ],
+      "title": "health_atlas_paneth_luminal_release_title",
+      "scope": "health_atlas_paneth_luminal_release_scope",
+      "formula": "health_atlas_paneth_luminal_release_formula",
+      "companionTitle": "health_atlas_paneth_luminal_release_companion",
+      "entryIDs": [
+        "cell-paneth-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "penilePathTrace",
+      "inputs": [
+        {
+          "key": "penile-path-trace-position",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_penile_path_trace_position",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 10,
+      "sources": [
+        "https://training.seer.cancer.gov/anatomy/reproductive/male/penis.html",
+        "https://anatomy.ttuhscep.edu/reproductive_system/perineum_tables.html"
+      ],
+      "title": "health_atlas_penile_path_trace_title",
+      "scope": "health_atlas_penile_path_trace_scope",
+      "formula": "health_atlas_penile_path_trace_formula",
+      "companionTitle": "health_atlas_penile_path_trace_companion",
+      "entryIDs": [
+        "penis"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "plasmaCellSecretionTally",
+      "inputs": [
+        {
+          "key": "plasma-cell-secretion-tally-cells",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_plasma_cell_secretion_tally_cells",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 24,
+      "sources": [
+        "https://www.cancer.gov/publications/dictionaries/cancer-terms/def/plasma-cell"
+      ],
+      "title": "health_atlas_plasma_cell_secretion_tally_title",
+      "scope": "health_atlas_plasma_cell_secretion_tally_scope",
+      "formula": "health_atlas_plasma_cell_secretion_tally_formula",
+      "companionTitle": "health_atlas_plasma_cell_secretion_tally_companion",
+      "entryIDs": [
+        "cell-plasma-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "satelliteGlialSheathGap",
+      "inputs": [
+        {
+          "key": "satellite-glial-sheath-gap-radius",
+          "minimum": 40,
+          "maximum": 80,
+          "initial": 60,
+          "scale": 10,
+          "label": "health_atlas_satellite_glial_sheath_gap_radius",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "satellite-glial-sheath-gap-width",
+          "minimum": 0,
+          "maximum": 5,
+          "initial": 3,
+          "scale": 10,
+          "label": "health_atlas_satellite_glial_sheath_gap_width",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "u²",
+      "minimum": 0,
+      "maximum": 26,
+      "sources": [
+        "https://advanced.onlinelibrary.wiley.com/doi/10.1002/advs.202511569"
+      ],
+      "title": "health_atlas_satellite_glial_sheath_gap_title",
+      "scope": "health_atlas_satellite_glial_sheath_gap_scope",
+      "formula": "health_atlas_satellite_glial_sheath_gap_formula",
+      "companionTitle": "health_atlas_satellite_glial_sheath_gap_companion",
+      "entryIDs": [
+        "cell-satellite-glial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "scrotalHeatTally",
+      "inputs": [
+        {
+          "key": "scrotal-heat-tally-surplus",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_scrotal_heat_tally_surplus",
+          "unit": "hu",
+          "digits": 0
+        },
+        {
+          "key": "scrotal-heat-tally-share",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 40,
+          "scale": 1,
+          "label": "health_atlas_scrotal_heat_tally_share",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "hu",
+      "minimum": 0,
+      "maximum": 20,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC12572243/",
+        "https://pubmed.ncbi.nlm.nih.gov/14507047/"
+      ],
+      "title": "health_atlas_scrotal_heat_tally_title",
+      "scope": "health_atlas_scrotal_heat_tally_scope",
+      "formula": "health_atlas_scrotal_heat_tally_formula",
+      "companionTitle": "health_atlas_scrotal_heat_tally_companion",
+      "entryIDs": [
+        "scrotum"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "skullVaultLayers",
+      "inputs": [
+        {
+          "key": "skull-vault-layers-diploe",
+          "minimum": 10,
+          "maximum": 50,
+          "initial": 25,
+          "scale": 10,
+          "label": "health_atlas_skull_vault_layers_diploe",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "skull-vault-layers-fluid",
+          "minimum": 5,
+          "maximum": 25,
+          "initial": 15,
+          "scale": 10,
+          "label": "health_atlas_skull_vault_layers_fluid",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 3.5,
+      "maximum": 9.5,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/13-3-circulation-and-the-central-nervous-system"
+      ],
+      "title": "health_atlas_skull_vault_layers_title",
+      "scope": "health_atlas_skull_vault_layers_scope",
+      "formula": "health_atlas_skull_vault_layers_formula",
+      "companionTitle": "health_atlas_skull_vault_layers_bone",
+      "entryIDs": [
+        "skull"
+      ],
+      "digits": 1
+    },
+    {
+      "id": "splenicSlitSorting",
+      "inputs": [
+        {
+          "key": "splenic-slit-sorting-width",
+          "minimum": 0,
+          "maximum": 16,
+          "initial": 6,
+          "scale": 2,
+          "label": "health_atlas_splenic_slit_sorting_width",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC9526706/",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC6199658/"
+      ],
+      "title": "health_atlas_splenic_slit_sorting_title",
+      "scope": "health_atlas_splenic_slit_sorting_scope",
+      "formula": "health_atlas_splenic_slit_sorting_formula",
+      "companionTitle": "health_atlas_splenic_slit_sorting_companion",
+      "entryIDs": [
+        "spleen"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "thyroidCCellReleaseGrid",
+      "inputs": [
+        {
+          "key": "thyroid-c-cell-release-grid-moved",
+          "minimum": 0,
+          "maximum": 5,
+          "initial": 2,
+          "scale": 1,
+          "label": "health_atlas_thyroid_c_cell_release_grid_moved",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "thyroid-c-cell-release-grid-rows",
+          "minimum": 1,
+          "maximum": 4,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_thyroid_c_cell_release_grid_rows",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 20,
+      "sources": [
+        "https://www.jstage.jst.go.jp/article/endocrine1927/59/9/59_1244/_article/-char/en",
+        "https://zoomify.luc.edu/endocrine/lumc195-21/popup.html"
+      ],
+      "title": "health_atlas_thyroid_c_cell_release_grid_title",
+      "scope": "health_atlas_thyroid_c_cell_release_grid_scope",
+      "formula": "health_atlas_thyroid_c_cell_release_grid_formula",
+      "companionTitle": "health_atlas_thyroid_c_cell_release_grid_companion",
+      "entryIDs": [
+        "cell-thyroid-parafollicular-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "thyroidFollicularFaces",
+      "inputs": [
+        {
+          "key": "thyroid-follicular-faces-wedges",
+          "minimum": 8,
+          "maximum": 16,
+          "initial": 12,
+          "scale": 1,
+          "label": "health_atlas_thyroid_follicular_faces_wedges",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "thyroid-follicular-faces-radius",
+          "minimum": 20,
+          "maximum": 60,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_thyroid_follicular_faces_radius",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 0,
+      "maximum": 4.71238898038469,
+      "sources": [
+        "https://histology.oit.duke.edu/NormalBody/Endocrine/Endocrine.html"
+      ],
+      "title": "health_atlas_thyroid_follicular_faces_title",
+      "scope": "health_atlas_thyroid_follicular_faces_scope",
+      "formula": "health_atlas_thyroid_follicular_faces_formula",
+      "companionTitle": "health_atlas_thyroid_follicular_faces_companion",
+      "entryIDs": [
+        "cell-thyroid-follicular-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "urethralOpeningArea",
+      "inputs": [
+        {
+          "key": "urethral-opening-area-width",
+          "minimum": 20,
+          "maximum": 80,
+          "initial": 60,
+          "scale": 10,
+          "label": "health_atlas_urethral_opening_area_width",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "urethral-opening-area-height-percent",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 50,
+          "scale": 1,
+          "label": "health_atlas_urethral_opening_area_height_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "u²",
+      "minimum": 0,
+      "maximum": 50.26548245743669,
+      "sources": [
+        "https://www.niddk.nih.gov/health-information/urologic-diseases/urinary-tract-how-it-works"
+      ],
+      "title": "health_atlas_urethral_opening_area_title",
+      "scope": "health_atlas_urethral_opening_area_scope",
+      "formula": "health_atlas_urethral_opening_area_formula",
+      "companionTitle": "health_atlas_urethral_opening_area_companion",
+      "entryIDs": [
+        "urethra"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "vaginalRugaSpan",
+      "inputs": [
+        {
+          "key": "vaginal-ruga-span-height",
+          "minimum": 0,
+          "maximum": 40,
+          "initial": 30,
+          "scale": 10,
+          "label": "health_atlas_vaginal_ruga_span_height",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "u",
+      "minimum": 6,
+      "maximum": 10,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC5382597/"
+      ],
+      "title": "health_atlas_vaginal_ruga_span_title",
+      "scope": "health_atlas_vaginal_ruga_span_scope",
+      "formula": "health_atlas_vaginal_ruga_span_formula",
+      "companionTitle": "health_atlas_vaginal_ruga_span_companion",
+      "entryIDs": [
+        "vagina"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "vestibularGlandVolume",
+      "inputs": [
+        {
+          "key": "vestibular-gland-volume-a",
+          "minimum": 0,
+          "maximum": 60,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_vestibular_gland_volume_a",
+          "unit": "vu",
+          "digits": 1
+        },
+        {
+          "key": "vestibular-gland-volume-b",
+          "minimum": 0,
+          "maximum": 60,
+          "initial": 30,
+          "scale": 10,
+          "label": "health_atlas_vestibular_gland_volume_b",
+          "unit": "vu",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "vu",
+      "minimum": 0,
+      "maximum": 12,
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC9544139/",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system"
+      ],
+      "title": "health_atlas_vestibular_gland_volume_title",
+      "scope": "health_atlas_vestibular_gland_volume_scope",
+      "formula": "health_atlas_vestibular_gland_volume_formula",
+      "companionTitle": "health_atlas_vestibular_gland_volume_companion",
+      "entryIDs": [
+        "greater-vestibular-glands"
+      ],
+      "digits": 1
+    }
+  ]
+}
