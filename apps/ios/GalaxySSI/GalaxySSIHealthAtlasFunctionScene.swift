@@ -6,7 +6,6 @@ struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
   let phase: Double
   let showTitle: Bool
   let artwork: Artwork
-  @Environment(\.colorScheme) private var colorScheme
   @ScaledMetric(relativeTo: .subheadline) private var captionSize: CGFloat = 15
   @ScaledMetric(relativeTo: .footnote) private var chapterSize: CGFloat = 14
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get(key, language) }
@@ -16,22 +15,19 @@ struct GalaxySSIHealthAtlasFunctionScene<Artwork: View>: View {
     }
   }
   var body: some View {
-    let colors = GalaxySSIHealthAtlasFilmPalette.values(dark: colorScheme == .dark)
-    GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame", ground: GalaxySSIHealthAtlasFilmPalette.color(colors.ground)) {
-      VStack(alignment: .leading, spacing: 0) {
-        if showTitle {
-          Text(t(story.title)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 8)
-        }
-        artwork.frame(maxWidth: .infinity)
-        VStack(alignment: .leading, spacing: 2) {
-          GalaxySSIHealthAtlasReservedCaption(values: labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
-            .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthAtlasFilmPalette.color(colors.chapter))
-          GalaxySSIHealthAtlasReservedCaption(values: story.chapters.map { t($0.caption) }, selected: story.chapter(phase), identifier: "atlas-function-caption")
-            .font(.system(size: captionSize)).foregroundColor(GalaxySSIHealthAtlasFilmPalette.color(colors.text))
-        }.padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 12)
-          .background(GalaxySSIHealthAtlasFilmPalette.color(colors.caption))
-          .accessibilityIdentifier("atlas-function-subtitles")
+    GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame", legendIdentifier: "atlas-function-subtitles") {
+      if showTitle {
+        Text(t(story.title)).font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.top, 12)
+      }
+    } artwork: {
+      artwork
+    } legend: {
+      VStack(alignment: .leading, spacing: 2) {
+        GalaxySSIHealthAtlasReservedCaption(values: labels, selected: story.chapter(phase), identifier: "atlas-function-chapter")
+          .font(.system(size: chapterSize, weight: .semibold)).foregroundColor(GalaxySSIHealthTheme.accent)
+        GalaxySSIHealthAtlasReservedCaption(values: story.chapters.map { t($0.caption) }, selected: story.chapter(phase), identifier: "atlas-function-caption")
+          .font(.system(size: captionSize)).foregroundColor(.primary)
       }
     }
   }

@@ -9,7 +9,7 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
-  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
   private var research: Binding<Bool> {
     Binding(get: { selection.wrappedValue.researchPresented == true }, set: { if !$0 { state.closeResearch(entry) } })
   }
@@ -50,10 +50,19 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
       } label: { EmptyView() }.hidden())
       .background(GalaxySSIHealthAtlasRestoredDetailLink(atlas: atlas, entry: entry, state: state, records: records, depth: depth,
         enabled: selection.wrappedValue.researchPresented != true))
-      .onAppear { if let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) } }
+      .onAppear {
+        let location = GalaxySSIHealthAtlasLessonNavigation.Location(entryID: entry.id, depth: depth)
+        if GalaxySSIHealthAtlasSearchSurface.standalone.contains(selection.wrappedValue),
+          let offset = state.lessonReturnScroll.removeValue(forKey: location.key) ??
+            state.lessonNavigation.returns[location.key]?.scroll ?? selection.wrappedValue.researchReturnScroll {
+          scrollMemory.restore(offset)
+        }
+      }
       .onChange(of: selection.wrappedValue.researchPresented) {
         if $0 != true, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
       }
+      .modifier(GalaxySSIHealthAtlasSearchNavigation(atlas: atlas, entry: entry, state: state, records: records,
+        depth: depth, surface: .standalone, memory: scrollMemory))
       .galaxySSIHealthTheme().environmentObject(state.playback)
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }

@@ -9,6 +9,9 @@ struct GalaxySSIHealthAtlasArtwork: View {
   let records: GalaxySSIHealthRecords
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @ScaledMetric(relativeTo: .footnote) private var titleSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .subheadline) private var explanationSize: CGFloat = 15
+  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 12
   @State private var layers = true
   @State private var zoom: Double = 1
   @State private var fullscreen = false
@@ -54,8 +57,8 @@ struct GalaxySSIHealthAtlasArtwork: View {
     }
   }
   private var choices: [GalaxySSIHealthAtlas.Entry] {
-    let candidates = entry.map { atlas.children($0) + atlas.cells($0) + spots.compactMap { atlas.entry($0.0) } }
-      ?? atlas.entries.filter { $0.kind == .system }
+    let candidates = entry == nil ? atlas.entries.filter { $0.kind == .system } :
+      (plate?.markers.compactMap { atlas.entry($0.id) } ?? [])
     return candidates.reduce(into: []) { result, candidate in
       if candidate.id != entry?.id, !result.contains(where: { $0.id == candidate.id }) { result.append(candidate) }
     }
@@ -69,41 +72,31 @@ struct GalaxySSIHealthAtlasArtwork: View {
     return name + " \u{00b7} " + caption
   }
   var body: some View {
-    if let art, entry.map({ state.binding($0).wrappedValue.tab != .simulation || !GalaxySSIHealthAtlasGasExchange.supports($0.id) }) ?? true {
-      VStack(alignment: .leading, spacing: 8) {
-        viewPicker
-        canvas(art)
-        HStack {
-          Menu {
-            Toggle(t("layers"), isOn: $layers)
-            ForEach(choices) { target in
-              Button(GalaxySSIHealthAtlasText.get(target.name, language)) { selected = target.id }
-                .disabled(depth >= 32)
-            }
-            ForEach(plate?.annotations ?? []) { feature in
-              Button(GalaxySSIHealthAtlasText.get(feature.title, language)) { selectedFeature = feature }
-            }
-          } label: { Image(systemName: "square.3.layers.3d").frame(width: 44, height: 44) }
-            .accessibilityLabel(t("layers")).help(t("layers"))
-          Spacer()
-          Button { zoom = 1 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44) }
-            .accessibilityLabel(t("reset")).help(t("reset"))
-          Button {
-            fullscreenLayers = true; fullscreenZoom = 1; fullscreenReset += 1; fullscreen = true
-          } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 44, height: 44) }
-            .accessibilityLabel(bodyText("zoom")).help(bodyText("zoom"))
+    Group {
+      if let art {
+        VStack(alignment: .leading, spacing: 8) {
+          viewPicker
+          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-structure-figure", header: { controls }, artwork: {
+            canvas(art)
+          }, legend: { legend(title: caption, explanation: entry?.description, note: "illustration") })
         }
-        Slider(value: $zoom, in: 1...4).accessibilityLabel(bodyText("zoom"))
-        Text(caption).font(.caption).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
-        Text(t("illustration")).font(.caption).foregroundColor(.secondary)
+      } else if let entry {
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-concept-figure", header: { EmptyView() }, artwork: {
+          Image(systemName: conceptSymbol).font(.system(size: 64)).foregroundColor(GalaxySSIHealthTheme.accent)
+            .frame(maxWidth: .infinity).frame(height: 132).accessibilityHidden(true)
+        }, legend: { legend(title: GalaxySSIHealthAtlasText.get(entry.name, language),
+          explanation: entry.description, note: "symbol_only") })
       }
+    }
       .fullScreenCover(isPresented: $fullscreen) {
         NavigationView {
           VStack(alignment: .leading, spacing: 8) {
-            Text(fullscreenCaption).font(.subheadline).fixedSize(horizontal: false, vertical: true).padding(.horizontal)
             ScrollView {
-              canvas(art, full: true).padding(.horizontal)
-                .accessibilityIdentifier("atlas-fullscreen-image")
+              if let art {
+                GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-fullscreen-figure", header: { EmptyView() }, artwork: {
+                  canvas(art, full: true).accessibilityIdentifier("atlas-fullscreen-image")
+                }, legend: { legend(title: fullscreenCaption, explanation: nil, note: "illustration") })
+              }
             }.id(fullscreenReset).accessibilityIdentifier("atlas-fullscreen-viewport")
             HStack {
               Spacer()
@@ -146,18 +139,69 @@ struct GalaxySSIHealthAtlasArtwork: View {
         if entry == nil, let id { state.rememberWholeSelection(id, in: atlas) }
       }
       .onDisappear { selectedFeature = nil }
+  }
+  private var controls: some View {
+    HStack {
+      if !choices.isEmpty || !(plate?.annotations.isEmpty ?? true) {
+        Menu {
+          Toggle(t("layers"), isOn: $layers)
+          ForEach(choices) { target in
+            Button(GalaxySSIHealthAtlasText.get(target.name, language)) { selected = target.id }.disabled(depth >= 32)
+          }
+          ForEach(plate?.annotations ?? []) { feature in
+            Button(GalaxySSIHealthAtlasText.get(feature.title, language)) { selectedFeature = feature }
+          }
+        } label: { Image(systemName: "square.3.layers.3d").frame(width: 44, height: 44) }
+          .accessibilityLabel(t("layers")).help(t("layers"))
+      }
+      Spacer()
+      if let source = plate?.source {
+        Link(destination: source) { Image(systemName: "doc.text").frame(width: 44, height: 44) }
+          .accessibilityLabel(t("plate_source")).help(t("plate_source")).accessibilityIdentifier("atlas-source-structure")
+      }
+      Button { zoom = 1 } label: { Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44) }
+        .accessibilityLabel(t("reset")).help(t("reset"))
+      Button {
+        fullscreenLayers = true; fullscreenZoom = 1; fullscreenReset += 1; fullscreen = true
+      } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 44, height: 44) }
+        .accessibilityLabel(bodyText("zoom")).help(bodyText("zoom"))
+    }.padding(.horizontal, 8)
+  }
+  private var conceptSymbol: String {
+    switch entry?.icon {
+    case "brain": return "brain.head.profile"
+    case "eye": return "eye"
+    case "heart-pulse": return "heart"
+    case "wind": return "wind"
+    case "bone": return "figure.walk"
+    case "shield-plus": return "cross.case"
+    case "microscope": return "circle.hexagongrid"
+    default: return entry?.kind == .cell || entry?.kind == .fragment ? "circle.hexagongrid" : "square.stack.3d.up"
     }
+  }
+  private func legend(title: String, explanation: String?, note: String) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text(title).font(.system(size: titleSize, weight: .bold)).foregroundColor(GalaxySSIHealthTheme.accent)
+        .accessibilityIdentifier("atlas-art-caption")
+      if let explanation {
+        Text(GalaxySSIHealthAtlasText.get(explanation, language)).font(.system(size: explanationSize)).padding(.top, 3)
+          .accessibilityIdentifier("atlas-art-explanation")
+      }
+      Text(t(note)).font(.system(size: noteSize)).foregroundColor(.secondary).padding(.top, 6)
+    }.fixedSize(horizontal: false, vertical: true)
   }
   private func canvas(_ art: String, full: Bool = false) -> some View {
     let shown = full ? fullscreenLayers : layers
     let scale = full ? $fullscreenZoom : $zoom
     if shown, !spots.isEmpty {
       return AnyView(GalaxySSIHealthAtlasLabeledArtwork(asset: art, aspectRatio: plate?.aspectRatio ?? 1, zoom: scale,
-        currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: plate?.splitCallouts ?? false, onSelect: choose))
+        currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: plate?.splitCallouts ?? false,
+        legendInset: GalaxySSIHealthAtlasFigureLayout.overlap, minimumHeight: entry == nil ? 366 : 266, onSelect: choose))
     }
     return AnyView(GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: scale, currentID: entry?.id, spots: shown ? spots : [],
       labels: labels, onSelect: choose)
-      .aspectRatio(plate?.aspectRatio ?? 1, contentMode: .fit))
+      .aspectRatio(plate?.aspectRatio ?? 1, contentMode: .fit)
+      .padding(.horizontal, 12).padding(.bottom, 20).frame(minHeight: entry == nil ? 366 : 266))
   }
   private func choose(_ id: String) {
     switch plate?.labelTarget(id, in: atlas) {

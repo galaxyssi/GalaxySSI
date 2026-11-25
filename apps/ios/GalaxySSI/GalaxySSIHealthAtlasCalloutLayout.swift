@@ -11,9 +11,10 @@ struct GalaxySSIHealthAtlasCalloutLayout {
   let labelFrames: [CGRect]
 
   static func make(width: CGFloat, aspectRatio: Double, anchors: [CGPoint], splitRequested: Bool,
-                   accessibility: Bool, preferredWidths: [CGFloat],
+                   accessibility: Bool, preferredWidths: [CGFloat], legendInset: CGFloat = 0, minimumHeight: CGFloat = 300,
                    measureHeight: (Int, CGFloat) -> CGFloat) -> Self? {
     guard width.isFinite, width > 0, aspectRatio.isFinite, aspectRatio > 0, !anchors.isEmpty,
+      legendInset.isFinite, legendInset >= 0, minimumHeight.isFinite, minimumHeight >= 0,
       anchors.count <= 64, preferredWidths.count == anchors.count,
       preferredWidths.allSatisfy({ $0.isFinite && $0 >= 0 }),
       anchors.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) })
@@ -41,9 +42,9 @@ struct GalaxySSIHealthAtlasCalloutLayout {
     }
     func required(_ indices: [Int]) -> CGFloat { indices.reduce(CGFloat(8)) { $0 + heights[$1] + 8 } }
     let artHeight = artWidth / CGFloat(aspectRatio)
-    let height = ceil(max(300, max(artHeight, max(required(left), required(right)))))
+    let height = ceil(max(minimumHeight, max(artHeight + legendInset, max(required(left), required(right)) + legendInset)))
     guard height.isFinite else { return nil }
-    let imageRect = CGRect(x: leftWidth, y: (height - artHeight) / 2, width: artWidth, height: artHeight)
+    let imageRect = CGRect(x: leftWidth, y: (height - legendInset - artHeight) / 2, width: artWidth, height: artHeight)
     var frames = Array(repeating: CGRect.zero, count: anchors.count)
     func pack(_ indices: [Int], x: CGFloat, column: CGFloat) {
       var tops: [CGFloat] = [], next: CGFloat = 8
@@ -51,7 +52,7 @@ struct GalaxySSIHealthAtlasCalloutLayout {
         let desired = floor(imageRect.minY + imageRect.height * anchors[index].y - heights[index] / 2)
         let top = max(next, desired); tops.append(top); next = top + heights[index] + 8
       }
-      var bottom = height - 8
+      var bottom = height - 8 - legendInset
       for order in indices.indices.reversed() {
         let index = indices[order], top = min(tops[order], bottom - heights[index])
         frames[index] = CGRect(x: x, y: top, width: column, height: heights[index])
