@@ -269,7 +269,7 @@ struct AgentHomeView: View {
             if screenAssistantCompact { Spacer(minLength: 0) }
           } else {
             if let session = store.agentSession(id: store.activeAgentConversationId),
-               !session.privateMode, !session.trackingPaused, session.collaborationRoster == nil {
+               GalaxySSIHealthCareAgentScope.concernID(session) != nil {
               GalaxySSIHealthCareEntry(records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets),
                 conversationID: session.id)
                 .id([store.profile.identityFingerprint, session.id])

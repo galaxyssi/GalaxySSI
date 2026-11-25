@@ -12,7 +12,14 @@ const inventory={schema:1,source:{androidPR:4497,headCommit:sha,incrementalAndro
 const model=source('GalaxySSIHealthActivityComparison'),view=source('GalaxySSIHealthActivityComparisonView'),chart=source('GalaxySSIHealthActivityChart');
 check(model,['func nearestDayIndex(fraction: Double)','fraction.isFinite','Int((min(1, max(0, fraction)) * Double(pairs.count - 1)).rounded())']);
 assert.equal(model.split('  func dateTickIndices(')[1],prior('GalaxySSIHealthActivityComparison').split('  func dateTickIndices(')[1],'Date ranges, totals, live overlay and migration unchanged');
-for(const name of ['GalaxySSIHealthActivityHistoryStore','GalaxySSIHealthMotionState','GalaxySSIHealthMotionController','GalaxySSIHealthRecords'])assert.equal(source(name),prior(name),name+' unchanged');
+for(const name of ['GalaxySSIHealthActivityHistoryStore','GalaxySSIHealthMotionState','GalaxySSIHealthMotionController','GalaxySSIHealthRecords']){
+ let current=source(name);
+ if(name==='GalaxySSIHealthRecords'&&fs.existsSync(path.join(root,'apps/ios/ANDROID_4276_PORT_COVERAGE.json'))){
+   const binding=current.split('  func bindLocalCareAgentDiscussion(')[1]?.split('  func overviewDiscussionConcern(')[0];assert(binding);
+   current=current.replace('  func bindLocalCareAgentDiscussion('+binding,'');
+ }
+ assert.equal(current,prior(name),name+' unchanged except the explicitly isolated #4276 conversation-binding method, covered by its own checker');
+}
 check(view,['@State private var trackingTouch = false','onTracking: { active in','trackingTouch = active','if !active { renderLive() }','guard canRead, let loaded, !trackingTouch else { return }','failure = nil; trackingTouch = false']);
 assert.equal(view.split('  private func reload()')[1].split('  private func motionChanged(')[0],prior('GalaxySSIHealthActivityComparisonView').split('  private func reload()')[1].split('  private func motionChanged(')[0],'Selected-only read, consent and request correlation unchanged');
 check(chart,['import UIKit.UIGestureRecognizerSubclass','private var days: [Int]','days.first { key($0) == selectedDay }','?? area.midY','"health_activity_day_unrecorded"','"No record"','if result.pairs[index].current != nil','timeline.scrubbing || onTimeline(p)','result.nearestDayIndex(fraction:','p.x >= area.minX - 10','p.y >= area.minY - 10','p.y <= bounds.height','scroll.panGestureRecognizer.require(toFail: timeline)','dx > dy, onTimeline(origin)','state = .failed; finish()','scrubbing = true; state = .began','else if scrubbing { state = .changed }','touchesCancelled','touches.count == 1','private func abort()','DispatchQueue.main.async { callback(false) }','override func reset() { finish(); scrubbing = false','tap.cancelsTouchesInView = false','outsideTap.view?.removeGestureRecognizer','gestureRecognizer === outsideTap || other === outsideTap']);

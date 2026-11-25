@@ -5,6 +5,60 @@ import XCTest
 final class GalaxySSIHealthOverviewCareTests: XCTestCase {
   typealias Care = GalaxySSIHealthOverviewCare
 
+  func testIndependentAgentScopeRequiresExactPrivateActiveTopic() {
+    let concern = UUID()
+    let session = AgentConversation(id: "ios-agent-fixture", title: "Fixture", createdAt: 1, updatedAt: 1,
+      privateMode: true, trackingPaused: true, globalTopicKey: GalaxySSIHealthCareAgentScope.prefix + concern.uuidString.lowercased())
+    XCTAssertEqual(GalaxySSIHealthCareAgentScope.concernID(session), concern)
+    var changed = session; changed.privateMode = false
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    changed = session; changed.trackingPaused = false
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    changed = session; changed.status = .archived
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    changed = session; changed.mergedIntoConversationId = "another"
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    for suffix in ["", "invalid", " " + concern.uuidString, concern.uuidString + ":extra", concern.uuidString + " "] {
+      changed = session; changed.globalTopicKey = GalaxySSIHealthCareAgentScope.prefix + suffix
+      XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    }
+    for topic in ["", "news", "collaboration:" + concern.uuidString, "prefix-" + session.globalTopicKey] {
+      changed = session; changed.globalTopicKey = topic
+      XCTAssertNil(GalaxySSIHealthCareAgentScope.concernID(changed))
+    }
+    changed = session; changed.selectedModelOrAgent = "Another provider"
+    XCTAssertEqual(GalaxySSIHealthCareAgentScope.concernID(changed), concern)
+  }
+
+  func testIndependentAgentCannotBorrowAnUnboundOrOtherConcern() throws {
+    let f = try Fixture(), concern = try f.concern()
+    var archive = try f.records.load()
+    let session = AgentConversation(id: "ios-agent-fixture", title: "Fixture", createdAt: 1, updatedAt: 1,
+      privateMode: true, trackingPaused: true, globalTopicKey: GalaxySSIHealthCareAgentScope.prefix + concern.id.uuidString.lowercased())
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concern(session, in: archive))
+    var thread = GalaxySSIHealthCareDiscussion.Thread(concernID: concern.id)
+    thread.agentConversationID = session.id
+    archive.localCareDiscussions = [concern.id.uuidString: thread]
+    XCTAssertEqual(GalaxySSIHealthCareAgentScope.concern(session, in: archive)?.id, concern.id)
+    var impostor = session; impostor.id = "unbound-copy"
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concern(impostor, in: archive))
+    impostor = session; impostor.globalTopicKey = GalaxySSIHealthCareAgentScope.prefix + UUID().uuidString
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concern(impostor, in: archive))
+    archive.localCareAllowed = false
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concern(session, in: archive))
+    archive.localCareAllowed = true; archive.localCareDiscussions?[concern.id.uuidString]?.archivedAt = f.now
+    XCTAssertNil(GalaxySSIHealthCareAgentScope.concern(session, in: archive))
+  }
+
+  func testLegacyHealthDiscussionDecodesWithoutAgentBinding() throws {
+    let thread = GalaxySSIHealthCareDiscussion.Thread(concernID: UUID())
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(thread)) as? [String: Any])
+    object.removeValue(forKey: "agentConversationID")
+    let restored = try JSONDecoder().decode(GalaxySSIHealthCareDiscussion.Thread.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertEqual(restored.id, thread.id); XCTAssertEqual(restored.concernID, thread.concernID)
+    XCTAssertNil(restored.agentConversationID); XCTAssertEqual(restored.turns, thread.turns)
+  }
+
   func testOverviewAttentionOrderHasRealCategoryPrioritiesAndStableTies() {
     typealias Attention = GalaxySSIHealthOverviewAttention
     let at = Date(timeIntervalSince1970: 100)
