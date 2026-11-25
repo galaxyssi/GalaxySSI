@@ -6,22 +6,30 @@ const read = name => JSON.parse(fs.readFileSync(path.join(assets, name + '.datas
 const pack = read('HealthAtlasGutSections'), sha = 'eb17db473412f018fe6b67eb364bdbe482210b5b';
 const source = file => execFileSync('git', ['show', sha + ':' + file], {encoding: 'utf8', maxBuffer: 4_000_000});
 assert.equal(pack.schema, 1); assert.equal(pack.source.androidPR, 4353); assert.equal(pack.source.mergeCommit, sha);
+assert.deepEqual(pack.functionArtworkSource, {androidPR: 4384, mergeCommit: 'ab78711d467c013444883dbaeca23c39a601c875'});
+execFileSync(process.execPath, [path.join(__dirname, 'check-body-atlas-sensory-sections.cjs'), '--function-gut-structures'], {stdio: 'inherit'});
 const kotlin = source('apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGutSections.kt');
+const latestSha = 'ab78711d467c013444883dbaeca23c39a601c875';
+execFileSync(process.execPath, [path.join(__dirname, 'check-atlas-function-gut-plates.cjs')], {stdio: 'inherit'});
+const latest = execFileSync('git', ['show', latestSha + ':apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGutSections.kt'], {encoding: 'utf8'});
 const blocks = [...kotlin.matchAll(/section\("([^"]+)", R.drawable.(\w+), R.string.(\w+), (\w+),([\s\S]*?)(?=\n        section|\n    \)\.associateBy)/g)];
+const latestBlocks = [...latest.matchAll(/section\("([^"]+)", R.drawable.(\w+), R.string.(\w+), (\w+),([\s\S]*?)(?=\n        section|\n    \)\.associateBy)/g)];
 const book = 'https://openstax.org/books/anatomy-and-physiology-2e/pages/';
 const chapters = {UPPER: '23-3-the-mouth-pharynx-and-esophagus', STOMACH: '23-4-the-stomach', INTESTINES: '23-5-the-small-and-large-intestines'};
 assert.equal(blocks.length, 14); assert.equal(pack.plates.length, 14);
 let features = 0, markers = 0, paths = 0, tracks = 0;
 const routes = {};
 for (const [index, plate] of pack.plates.entries()) {
-  const b = blocks[index], body = b[5];
+  const painted = ['teeth', 'jejunum'].includes(plate.owner);
+  const b = (painted ? latestBlocks : blocks)[index], body = b[5];
+  const width = painted ? 1254 : 360, height = painted ? 1254 : 280;
   assert.equal(plate.id, b[1]); assert.equal(plate.owner, b[1]); assert.equal(plate.viewLabel, b[3]);
-  assert.equal(plate.source, book + chapters[b[4]]); assert.equal(plate.aspectRatio, 360 / 280);
-  const local = [...body.matchAll(/feature\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)].map(f => ({
-    marker: {id: f[1], x: Number(f[2]) / 360, y: Number(f[3]) / 280}, title: f[4], explanation: f[5]
+  assert.equal(plate.source, book + chapters[b[4]]); assert.equal(plate.aspectRatio, painted ? 1 : 360 / 280);
+  const local = [...body.matchAll(/(?:feature|paintedFeature)\("([^"]+)", (\d+), (\d+), R.string.(\w+), R.string.(\w+)\)/g)].map(f => ({
+    marker: {id: f[1], x: Number(f[2]) / width, y: Number(f[3]) / height}, title: f[4], explanation: f[5]
   }));
-  const anatomy = [...body.matchAll(/marker\("([^"]+)", (\d+), (\d+)\)/g)].map(m => ({
-    id: m[1], x: Number(m[2]) / 360, y: Number(m[3]) / 280
+  const anatomy = [...body.matchAll(/(?:marker|paintedMarker)\("([^"]+)", (\d+), (\d+)\)/g)].map(m => ({
+    id: m[1], x: Number(m[2]) / width, y: Number(m[3]) / height
   }));
   assert.deepEqual(plate.features, local); assert.deepEqual(plate.markers, anatomy);
   assert.deepEqual(plate.entryIDs, [plate.owner, ...anatomy.map(m => m.id)]);
@@ -39,13 +47,19 @@ for (const [index, plate] of pack.plates.entries()) {
     ...[...body.matchAll(/note = R.string.(\w+)/g)].map(m => m[1])];
   assert.deepEqual(pack.notes[plate.owner], notes);
   features += local.length; markers += anatomy.length;
-  assert.equal(plate.drawable, 'apps/android/app/src/main/res/drawable/' + b[2] + '.xml');
-  paths += (source(plate.drawable).match(/<path\b/g) || []).length;
-  const dir = path.join(assets, plate.asset + '.imageset'), metadata = JSON.parse(fs.readFileSync(path.join(dir, 'Contents.json')));
-  assert.equal(metadata.properties['preserves-vector-representation'], true);
-  assert.equal(fs.readFileSync(path.join(dir, metadata.images[0].filename)).subarray(0, 5).toString(), '%PDF-');
+  if (painted) {
+    assert.equal(plate.drawable, 'apps/android/app/src/main/res/drawable-nodpi/' + b[2] + '.png');
+    // The dedicated #4384 audit verifies original PNG bytes, anchors and square lesson fitting.
+  } else {
+    assert.equal(plate.drawable, 'apps/android/app/src/main/res/drawable/' + b[2] + '.xml');
+    paths += (source(plate.drawable).match(/<path\b/g) || []).length;
+    const dir = path.join(assets, plate.asset + '.imageset'), metadata = JSON.parse(fs.readFileSync(path.join(dir, 'Contents.json')));
+    assert.equal(metadata.properties['preserves-vector-representation'], true);
+    assert.equal(fs.readFileSync(path.join(dir, metadata.images[0].filename)).subarray(0, 5).toString(), '%PDF-');
+  }
 }
-assert.equal(features, 47); assert.equal(markers, 29); assert.equal(paths, 99); assert.equal(tracks, 24);
+assert.equal(features, 47); assert.equal(markers, 29); const replacedPaths = ['tooth', 'jejunum'].reduce((n, slug) => n + (source('apps/android/app/src/main/res/drawable/health_atlas_gut_' + slug + '.xml').match(/<path\b/g) || []).length, 0);
+assert.equal(paths, 99 - replacedPaths); assert.equal(tracks, 24);
 assert.deepEqual(pack.routes, routes);
 const base = JSON.parse(fs.readFileSync(path.join(root, 'body-atlas/body-atlas.json')));
 const entries = new Map(base.entries.map(e => [e.id, e])), models = new Map(base.mechanisms.map(m => [m.id, m]));
@@ -90,4 +104,4 @@ for (const [language, directory] of [['en', 'values'], ['zh-Hans', 'values-zh']]
   }
 }
 
-console.log('Android #4353 parity: 14 sections / 47 features / 29 links / 99 vector paths / 24 exact motion tracks / 384 localized values; graph 313 entries and 192 mechanisms.');
+console.log('Alimentary checkpoint: 14 sections / 47 features / 29 links; 12 #4384 shaded vector plates plus two #4384 painted replacements, 24 exact motion tracks / 384 localized values; graph 313 entries and 192 mechanisms. No native rendering executed.');

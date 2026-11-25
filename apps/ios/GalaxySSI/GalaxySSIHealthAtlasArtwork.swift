@@ -28,9 +28,9 @@ struct GalaxySSIHealthAtlasArtwork: View {
     let views = atlas.views(for: entry?.id)
     if views.count > 1 {
       Picker(t("illustration"), selection: artworkView) {
-        ForEach(views) { view in
+        ForEach(Array(views.enumerated()), id: \.element.id) { index, view in
           Text(view.selectorLabel.map { GalaxySSIHealthAtlasText.get($0, language) } ??
-            t(view.viewKey?.hasSuffix("posterior") == true ? "view_back" : "view_front")).tag(view.viewKey ?? "")
+            t(index == 0 ? "view_front" : "view_back")).tag(view.viewKey ?? "")
         }
       }.pickerStyle(.segmented).accessibilityIdentifier("atlas-artwork-view")
     }

@@ -1,0 +1,21 @@
+// Source/window wiring audit, not UIKit layout or XCTest execution.
+const fs=require("node:fs"),path=require("node:path"),cp=require("node:child_process"),assert=require("node:assert/strict");
+const root=path.resolve(__dirname,"../../.."),sha="ab78711d467c013444883dbaeca23c39a601c875";
+const read=n=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",n+".swift"),"utf8");
+const source=n=>cp.execFileSync("git",["show",sha+":apps/android/app/src/main/java/com/galaxyssi/chat/"+n+".kt"],{cwd:root,encoding:"utf8"});
+const art=source("HealthAtlasFunctionArt"),cell=source("HealthAtlasCellFunctionArt"),view=read("GalaxySSIHealthAtlasFunctionViewport");
+assert(art.includes("(windowHeight - 268).coerceIn(144, 390) else 390"));
+assert(cell.includes("scene.measure(widthMeasureSpec, heightMeasureSpec)"));
+assert(view.includes("min(390, max(144, windowHeight - 268))"));
+assert(view.includes("guard !cellCourse, windowHeight.isFinite, windowHeight > 0 else { return 390 }"));
+assert(view.includes("viewIfLoaded?.window?.bounds.height"));assert(!view.includes("UIScreen.main"));
+for(const token of ["viewDidLayoutSubviews","viewSafeAreaInsetsDidChange","viewWillTransition","DispatchQueue.main.async","[weak self]","height != reported","self.viewIfLoaded?.window?.bounds.height == height"])assert(view.includes(token),token);
+assert(read("GalaxySSIHealthAtlasFunctionPlayer").includes("artwork(position).modifier(GalaxySSIHealthAtlasFunctionViewport(storyID: story.id))"));
+const ids=[...view.match(/cellCourses: Set<String> = \[([^\]]+)\]/)[1].matchAll(/"([^"]+)"/g)].map(m=>m[1]);
+const data=JSON.parse(fs.readFileSync(path.join(root,"apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasFunctionStories.dataset/content.json")));
+assert.equal(ids.length,9);for(const id of ids)assert.equal(data.stories.find(s=>s.id===id)?.chapters.length,4);
+const tests=fs.readFileSync(path.join(root,"apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"),"utf8");
+assert(tests.includes("testFunctionViewportUsesCurrentWindowAndPreservesCellHeightDelegation"));
+const pbx=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI.xcodeproj/project.pbxproj"),"utf8");
+assert.equal(pbx.split("path = GalaxySSIHealthAtlasFunctionViewport.swift;").length-1,1);
+console.log("Android #4384 Function viewport: source 268/144/390 height policy, actual window-bound observer, layout/rotation updates, deferred deduplicated state updates and nine delegated cell courses. XCTest/native layout not executed.");

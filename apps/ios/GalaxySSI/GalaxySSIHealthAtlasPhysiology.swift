@@ -30,6 +30,7 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case middleEar
     case nerveTransit
     case lymphValve
+    case alveolarDiffusion, cartilageCompression, boneBending
     case villusArea
     case sweatEvaporation
     case photonCapture
@@ -42,6 +43,17 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     #endif
     var inputs: [Input] {
       switch self {
+      case .alveolarDiffusion:
+        return [.init(key: "diffusion_gradient", range: 0...200, initial: 100, scale: 100, unit: "\u{00d7}"),
+          .init(key: "diffusion_area", range: 50...200, initial: 100, scale: 100, unit: "\u{00d7}"),
+          .init(key: "diffusion_thickness", range: 50...200, initial: 100, scale: 100, unit: "\u{00d7}")]
+      case .cartilageCompression:
+        return [.init(key: "compression_stress", range: 0...64, initial: 32, unit: "kPa"),
+          .init(key: "compression_modulus", range: 80...240, initial: 160, scale: 100, unit: "MPa")]
+      case .boneBending:
+        return [.init(key: "bone_bending_moment", range: 0...12, initial: 6, unit: "N\u{00b7}m"),
+          .init(key: "bone_bending_diameter", range: 20...40, initial: 30, unit: "mm"),
+          .init(key: "bone_bending_cavity", range: 30...80, initial: 60, scale: 100, unit: "")]
       case .villusArea:
         return [.init(key: "gut_section_area_density", range: 0...24, initial: 12, unit: "/mm\u{00b2}"),
           .init(key: "gut_section_area_radius", range: 25...70, initial: 45, scale: 1000, unit: "mm"),
@@ -104,7 +116,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       #endif
       }
     }
+    var hasMaterialResponse: Bool { [.alveolarDiffusion, .cartilageCompression, .boneBending].contains(self) }
     var axis: Int {
+      if hasMaterialResponse { return 0 }
       if self == .villusArea { return 0 }
       if self == .lymphValve { return 0 }
       if self == .sweatEvaporation { return 0 }
@@ -121,6 +135,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .potassium ? 0 : 1
     }
     var unit: String {
+      if self == .alveolarDiffusion { return "\u{00d7}" }
+      if self == .cartilageCompression { return "%" }
+      if self == .boneBending { return "MPa" }
       if self == .villusArea { return "\u{00d7}" }
       if self == .lymphValve { return "mL/min" }
       if self == .sweatEvaporation { return "W" }
@@ -140,6 +157,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       return self == .ventilation ? "L/min" : self == .renal ? "mg/min" : "mV"
     }
     var bounds: ClosedRange<Double> {
+      if self == .alveolarDiffusion || self == .cartilageCompression { return 0...8 }
+      if self == .boneBending { return 0...26 }
       if self == .villusArea { return 1...14 }
       if self == .lymphValve { return 0...2 }
       if self == .sweatEvaporation { return 0...900 }
@@ -160,6 +179,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     var source: URL {
       switch self {
+      case .alveolarDiffusion: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/8210754/")!
+      case .cartilageCompression: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/7054208/")!
+      case .boneBending: return URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC8933494/")!
       case .villusArea: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/24694282/")!
       case .lymphValve: return URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC4500195/")!
       case .sweatEvaporation: return URL(string: "https://pubmed.ncbi.nlm.nih.gov/23459754/")!
@@ -182,6 +204,8 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
       }
     }
     var sources: [URL] {
+      if self == .alveolarDiffusion { return [source, URL(string: "https://pmc.ncbi.nlm.nih.gov/articles/PMC2106384/")!] }
+      if self == .cartilageCompression { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/7382457/")!] }
       if self == .photonCapture { return [source, URL(string: "https://pubmed.ncbi.nlm.nih.gov/112243/")!] }
       if self == .middleEar { return [GalaxySSIHealthAtlasMiddleEar.source, GalaxySSIHealthAtlasMiddleEar.measurementSource] }
       if self == .vessel { return GalaxySSIHealthAtlasVesselFlow.sources }
@@ -192,6 +216,10 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     }
     static func forEntry(_ id: String) -> Self? {
       switch id {
+      case "respiratory-membrane", "pulmonary-capillaries", "tissue-alveolar-epithelium",
+           "cell-type-i-pneumocyte": return .alveolarDiffusion
+      case "cartilage", "tissue-hyaline-cartilage", "cell-chondrocyte": return .cartilageCompression
+      case "limb-bones", "femur", "tibia", "fibula": return .boneBending
       case "small-intestine", "jejunum": return .villusArea
       case "lymphatic-vessels": return .lymphValve
       case "sweat-glands": return .sweatEvaporation
@@ -239,6 +267,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   var result: Double { evaluate(inputs.indices.map(input)) }
   var companionValue: Double {
     switch kind {
+    case .alveolarDiffusion: return input(1) / input(2)
+    case .cartilageCompression: return 100 - result
+    case .boneBending: return Self.circularSectionMoment(diameter: input(1), innerRatio: input(2))
     case .villusArea: return result - 1
     case .lymphValve: return input(0) / input(1)
     case .sweatEvaporation: return input(0) * input(1) / 100
@@ -309,6 +340,12 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
   }
   private func evaluate(_ values: [Double]) -> Double {
     switch kind {
+    case .alveolarDiffusion: return values[0] * values[1] / values[2]
+    // Stress kPa / modulus MPa, converted from strain fraction to percent.
+    case .cartilageCompression: return values[0] / (10 * values[1])
+    // Outer-fiber flexure; 1000 converts the applied N m into N mm.
+    case .boneBending:
+      return 500 * values[0] * values[1] / Self.circularSectionMoment(diameter: values[1], innerRatio: values[2])
     case .villusArea: return 1 + values[0] * 2 * .pi * values[1] * values[2]
     case .lymphValve: return max(values[0], 0) / values[1]
     // Evaporated g/min times the example latent heat near 30 C, converted to watts.
@@ -333,6 +370,9 @@ struct GalaxySSIHealthAtlasPhysiology: Equatable, Sendable {
     case .oxygen: return 100 * GalaxySSIHealthAtlasOxygen.saturation(pressure: values[0], p50: values[1])!
     #endif
     }
+  }
+  nonisolated static func circularSectionMoment(diameter: Double, innerRatio: Double) -> Double {
+    .pi * pow(diameter, 4) * (1 - pow(innerRatio, 4)) / 64
   }
   static func potassiumPotential(outside: Double, inside: Double) -> Double? {
     guard outside.isFinite, inside.isFinite, outside > 0, inside > 0 else { return nil }

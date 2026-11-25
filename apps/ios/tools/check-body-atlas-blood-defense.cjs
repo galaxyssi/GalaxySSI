@@ -47,7 +47,7 @@ const local=file=>fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",file),"utf
     }
     for(const key of keys)assert.equal(map.get(key),strings.find(s=>s._attributes.name===key)._text);
   }
-  const model=local("GalaxySSIHealthAtlasBloodDefense.swift"),view=local("GalaxySSIHealthAtlasBloodDefenseView.swift");
+  const model=local("GalaxySSIHealthAtlasBloodDefense.swift"),view=local("GalaxySSIHealthAtlasBloodDefenseView.swift")+local("GalaxySSIHealthAtlasBloodDefenseDrawing.swift");
   const android=show(sha,"apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBloodDefenseView.kt").toString();
   const pairs=[["83 + 26 * ease","83f + 26f * t"],["48 - ease * 16","48f - t * 16f"],
     ["112 + 34 * ease","112f + 34f * t"],["146 + 74 * ease","146f + 74f * t"],["137 + 20 * ease","137f + 20f * t"],

@@ -1,0 +1,1944 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4384,
+    "mergeCommit": "ab78711d467c013444883dbaeca23c39a601c875"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "ff02e5ce90a3c60d786d395bf5a7f409490ec9a9566e1f20d233f0c23c7dcdf3"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "status": "A",
+      "sha256": "040ab69c37b44f8babc7bd21bf7030ca4a4123db866245c511fe6ab25661d3fb"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasIllustrationStyleDeviceTest.kt",
+      "status": "M",
+      "sha256": "74f4903e7552068cd92254f8e73500be62b143ff5e9383c79ac000651f2411fa"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "status": "M",
+      "sha256": "c89761f2700ca6affb6ac779a16bb9ac7cc033fe48547dfcc900c078a6061fd5"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "status": "M",
+      "sha256": "7c513c72e29f0953229072ea89240b5195c395766f2a782e6d10552138618147"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "status": "M",
+      "sha256": "d15ec1b631c2988ca34bffeb2378c4b8e99612b6871f11e9e9b0bb8b915507a4"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAcinarEnzymeStoryView.kt",
+      "status": "A",
+      "sha256": "7f3d76d1dd0b3e70ffa337188e874b0d501addb7557b98c22c9e215d6c345c70"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAdrenalMedullaStoryView.kt",
+      "status": "A",
+      "sha256": "8ba05f9443f3bc09d80a01f798360b4bb8464dcb53ed11a8f7c5fbdfe0de2228"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAgentContext.kt",
+      "status": "M",
+      "sha256": "4eaaa4cb24de7c0e4fb5306c6cd7eac1d1dcc0b1c3d64be3a2bfc2acbffe4916"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAirwayStoryView.kt",
+      "status": "A",
+      "sha256": "8303561a922d3bfd73aed897a8273c305db9fc3f898c2cdcd7e6f913f40c57d7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasArterialStoryView.kt",
+      "status": "A",
+      "sha256": "37ad9ed25ef5f1afb8eb48f6814b245b2cac28907416fbf3741d9cdbd1439aa6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAstrocyteStoryView.kt",
+      "status": "A",
+      "sha256": "840f082237e5e38014b5662f4cd97e1efb99e0875023c3dc310ae96ffe44364c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAutonomicNervesPlate.kt",
+      "status": "A",
+      "sha256": "0c78d94e10cb453c7d13c3277b9af7148d649dd5bf60ba7cb41a879dcbfe8751"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAutonomicRelayStoryView.kt",
+      "status": "A",
+      "sha256": "50bc2ef94baee4070073657e10092ab0b84e15b4198b61bd945d638be317087b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBarrierStoryView.kt",
+      "status": "A",
+      "sha256": "5f24e364bc3964e43e7cec6abe178298c96b9cf828bb1fd3c078ce1774c76db6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBeatStage.kt",
+      "status": "A",
+      "sha256": "1beca3ea1eb0db63026c1410e54a5b754fa7071b5eaf45f965199f269ea16a65"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBloodDefenseView.kt",
+      "status": "M",
+      "sha256": "bee7b8196076e80d15f299446b2dc433b187d6f46651a6965a3cdc4450e78abd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBrainstemRhythmStoryView.kt",
+      "status": "A",
+      "sha256": "b714c74d2e19cdad13619513afde138ead688ce02abb8987adc7e2060a534d91"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBreathingStage.kt",
+      "status": "A",
+      "sha256": "b7010ccfe1b5e622282831508b7ff4e491fc07985f20e62872046ff05420dffd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBreathingView.kt",
+      "status": "A",
+      "sha256": "58c2ddb282ede46c0a73389121bb76a10b4b7b9b41ca40f2ca9cb3a5242c469e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCalciumFeedbackStoryView.kt",
+      "status": "A",
+      "sha256": "1869d7cc0e8fc5865cc51150143fc62ef6c4a37d995922b665d769cb2a6e6c10"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCardiacSignalStoryView.kt",
+      "status": "A",
+      "sha256": "1191282f93e16b0154cb781173fb124d15c38ec1ea7deca2bd2ca42bcc0ed2eb"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCartilageOverviewPlate.kt",
+      "status": "A",
+      "sha256": "cdbc56187757fe3e60cf871f693b544ef3ecc673d4f226104103dacc1f433b7e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCartilageStoryView.kt",
+      "status": "A",
+      "sha256": "fc51ca0f4163e47365db11818eb72efc7f72e46b6c91cd7d89c1145ac282e583"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCellFunctionArt.kt",
+      "status": "A",
+      "sha256": "ee6a414b559735fd2b89b6384e082b131590dc8b724ed213c94c7625deaecba7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCellSceneView.kt",
+      "status": "M",
+      "sha256": "ed237f6aed52e4628e15bf05a20e93b471b782f981acd21abfc320198212e876"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCerebellumStoryView.kt",
+      "status": "A",
+      "sha256": "d4df290d96a4d90e559256199339d0f6379bbaeb8211767b12d773e15d822344"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCerebralSensorimotorStoryView.kt",
+      "status": "A",
+      "sha256": "2442c60ec28dbdf6dae89ed1592dc1f5edbc0ca737789ad03492c557b19bcabb"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasChemicalSenseStoryView.kt",
+      "status": "A",
+      "sha256": "2bc032e90597d451ea2548bdef1d1ad838dcc89acde78d65db4cc5c1c29fa6ab"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCholangiocyteStoryView.kt",
+      "status": "A",
+      "sha256": "80de65e18cc46b28f5f5ec59e4c79b6b2e5d94a7fb8e9c138419766d01189471"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasChondrocyteStoryView.kt",
+      "status": "A",
+      "sha256": "d079ecbc597198e366e95ab3b2a2fce4aada1fbfdcb4641a872172580bb4cd89"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasClubCellStoryView.kt",
+      "status": "A",
+      "sha256": "d97e1c35943b240e564a373953987d9b1da08fa6770a1708af3986f2a2b463b8"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCoronaryStoryView.kt",
+      "status": "A",
+      "sha256": "dea4833e9ea095c1bee290cda5173b0014c0352fa77a70edaeccc2ba52b67d0c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCranialReflexStoryView.kt",
+      "status": "A",
+      "sha256": "acb50c49ffec8a06ca6ac879eae2dba5c4e4c83653b392df0fea80c85f411f2f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDeltoidStoryView.kt",
+      "status": "A",
+      "sha256": "469add7413289d24f4f9270d0ba39c81a0a0619b58c8587a8fcd3bc907a43fb0"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDigestionStage.kt",
+      "status": "A",
+      "sha256": "ef91f45db951ec3e4cf90682e77e4f7e5b3d726b51ce4344d0f57b10f6e2f813"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDigestiveStoryView.kt",
+      "status": "A",
+      "sha256": "08e48e64cbbc98ef2e787bd821bcd6f40951f35d525104a998508a7ee6bcb70a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDuctBufferStoryView.kt",
+      "status": "A",
+      "sha256": "8d166bdbd20464332cafb5ef9e35e1451c0bff5c948d5ef587cc9755d969c6ed"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndometriumStoryView.kt",
+      "status": "A",
+      "sha256": "1897ff23446b02e51d3020654f626c1f80ae292944edfc8b4d52af64689b1a54"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndothelialStoryView.kt",
+      "status": "A",
+      "sha256": "500dcdcbfff3e5c42429cbd13199f7110518a7844506f94974540fb46a49b437"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEpendymalStoryView.kt",
+      "status": "A",
+      "sha256": "4eec41456694a4cf916d033a007d4580464fade701e69afa33c0d8dc926d87e7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasErectorSupportStoryView.kt",
+      "status": "A",
+      "sha256": "0433692bbae8abf024e7fabbee316c6b9cc75336567250fe8c0687b3da163b22"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFibroblastStoryView.kt",
+      "status": "A",
+      "sha256": "67aaf4a5e70f69fad01ab44243592fcfa62d1805ab8a818fc64ff01402d6b5d2"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionArt.kt",
+      "status": "A",
+      "sha256": "b8347b4f23113b7a703e525868f8a20916a56f5eafe67c396ae01f1de6a8284a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "status": "A",
+      "sha256": "222968f8e6c0c75431d9a2f1f627c6a5bb97a043e99402db05c6342346562630"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionState.kt",
+      "status": "A",
+      "sha256": "1456061faa2f2aaa77d2f4c7939755d6545ad2d865922ea71c4f64cb3544b6bd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionStory.kt",
+      "status": "A",
+      "sha256": "eb66200819f0515d632e510e5e35129bde6b5d8d34ed220108c546b3dc8cbdf7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGameteStoryView.kt",
+      "status": "A",
+      "sha256": "dcd14019b5b0e32cd0aaddb1ba9a584c4bb150f7ed26cb44b7a1d39585286b7a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGanglionRelayAssignment.kt",
+      "status": "A",
+      "sha256": "20db7f7cd4735613dab254b11114e848f4b1364e365b22242ea0205adff858e6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGanglionRelayStoryView.kt",
+      "status": "A",
+      "sha256": "b01d52f37167bf6664af392a98984fff90ad6e41afdfe68140f046f7e15a26e6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGastricAcidStoryView.kt",
+      "status": "A",
+      "sha256": "aa9c7cc9e2e87e6231f5822eded6532fee428b75c73c7dfe7e59a1503edbdf19"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGastricChiefStoryView.kt",
+      "status": "A",
+      "sha256": "a0f80a65f4e445a05fb4357bc2c9b0eb075bed13e672799bcbfc076ce3c45898"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGlutealExtensionStoryView.kt",
+      "status": "A",
+      "sha256": "cea92c0835fe6b3ba221ea10c604cd6ae13ced9ac93834df593fca8bc03d030c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGranulocyteView.kt",
+      "status": "M",
+      "sha256": "7fe5c876fd9e07cb2111bfb83c950457351c1952a4886a800935b91df4bbc8cf"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGutLymphoidStoryView.kt",
+      "status": "A",
+      "sha256": "83cc08719e59b6260d50ae0d9c344b2d78e8297ca573e9610529b78e4de2dbc1"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGutSections.kt",
+      "status": "M",
+      "sha256": "2e8dfa5cc9f7283adfdd8305f2b39566d805e41a81f0ce03e3b3ff637cf30b7a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHairCycleStoryView.kt",
+      "status": "A",
+      "sha256": "3203f0a975f3ae5dfc97f29e4621987161c85c56a616f55fc16e7d5feff00d9f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHearingStoryView.kt",
+      "status": "A",
+      "sha256": "61327eb2a257db0eb54ff9123576a1149a46b85ce9b937814d9b517c51d92805"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHeartbeatView.kt",
+      "status": "A",
+      "sha256": "606bc989e9e23973f27b97780373cc962be27cd4f9d81220723cf7d1d9626061"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHomeostasisStoryView.kt",
+      "status": "A",
+      "sha256": "3699345d5f36becf6b9a149860025b787abbb386fa8b2dbe8ddec4e0f45f075b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasImmuneLinkView.kt",
+      "status": "M",
+      "sha256": "35bb4df073a286c8ea78c0ec1de8d8ee8fd15131ba6fc725cda548167f3f0ba5"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasInsulinStoryView.kt",
+      "status": "A",
+      "sha256": "978eb9a62a3753d8b9044c8d7c13ce2d01de283aedcf7753ef95f32de9376d08"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntercalatedStoryView.kt",
+      "status": "A",
+      "sha256": "0465aa6b8cef7a5599ea98ce75df0f49f193f7a981fedbc9ce118788eca7270f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalAbsorptionStoryView.kt",
+      "status": "A",
+      "sha256": "ab0453c76cd6ad5485a2297b3de6a77e72fce565a47e76ab06cb1c3aa7d57669"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasKneeStoryView.kt",
+      "status": "A",
+      "sha256": "a9920e3ede87498e32f65e284b0819480d18464cc17b546a0088b4f5ff844ee4"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLarynxStoryView.kt",
+      "status": "A",
+      "sha256": "408859a3e350766ee6afc77775cab8f4cb77487361029fb6203e4ec6418f6d60"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLigamentGuidanceStoryView.kt",
+      "status": "A",
+      "sha256": "f8aaddc436eceeb43f9ee393847d6179df307dc7717bce4e94477cd2443d4831"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLigamentsPlate.kt",
+      "status": "A",
+      "sha256": "e7dd892a1d1d0bfc352cc98cf2543fae48b801fd750d8c7bcd490eb70504c390"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLymphImmuneStoryView.kt",
+      "status": "A",
+      "sha256": "510e729f5cd2d588771fa90a1b5313f48a219ca26847e1afe239cc50fa37c75f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMammaryStoryView.kt",
+      "status": "A",
+      "sha256": "3ea0342d8ddebec2f0345cdef26ebcba4860143e15fdca5e66ad4520f34331c6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMarrowStoryView.kt",
+      "status": "A",
+      "sha256": "18b06d829186735c19413ae2d91214d5660f56932572d7fbcd0711230a35d6a8"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "status": "A",
+      "sha256": "76a61d79da9dc78b596a51bb74544a3f07ea3707dd33cca4879b2e6d038fce69"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMelaninStoryView.kt",
+      "status": "A",
+      "sha256": "2ecf791d332c472d08c159fdde210260d3b1c62c957e13a896aaef0a5ee8248f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMesangialStoryView.kt",
+      "status": "A",
+      "sha256": "49e82dd0bb9106ddeeb43499a5282989a8e50e90fb2713e83632a27cbaa0cb17"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMicrogliaStoryView.kt",
+      "status": "A",
+      "sha256": "1c4a7201518c687eb584c7053df52e027e260d101a11496401f590745b580f4a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMotionSenseStoryView.kt",
+      "status": "A",
+      "sha256": "f67dbeb3629ad0a1ea11210e2f287828b798e8101619ead99aea9ff7b13e0973"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMovementStoryView.kt",
+      "status": "A",
+      "sha256": "6c8afa635cdac4f8adbfd49a8f421f8a92c4419ad102d952e5da629a983260b0"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNailStoryView.kt",
+      "status": "A",
+      "sha256": "2516016ebcee2a0a51f6109178803cd288263c45ae28401f0840a58cfdff09bc"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNephronStage.kt",
+      "status": "A",
+      "sha256": "135feb330b03ef34800e20940a150c3b0918f64721251b4ef5ae838e0f15ee9a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNephronStoryView.kt",
+      "status": "A",
+      "sha256": "16e39ec60cbc44ada7d933dc1e814688de7ea4842f760d7d634e47cb59dea1e0"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasObliqueRotationStoryView.kt",
+      "status": "A",
+      "sha256": "86ec8125dc041d320a0e5c8f84adf6c5d3f93517e7677c4a29237277fe873585"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOcularStoryView.kt",
+      "status": "A",
+      "sha256": "060365b5c22c8d6b0d8fdd7e56b176a82ffcc73c2897cd5584e4877d3234bffe"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhagocytosisView.kt",
+      "status": "M",
+      "sha256": "85bc801b3e1b624b9548a0f7cbfecf0609697490b6f5759a90f32306b2129d1e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "status": "M",
+      "sha256": "76174df2f638e1228bff535aedc1fa7db7d6932a72b125492b68e22eba028aef"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "status": "M",
+      "sha256": "c1c8180a053b191adf79c08c0aa9e8fa4b0a58e5c6eb6c58034ce7f806298df5"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyText.kt",
+      "status": "M",
+      "sha256": "2444b18bb4ca04282d3b48acc07c71a0de163cee1b8967629c762c8dfb517f49"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPinealStoryView.kt",
+      "status": "A",
+      "sha256": "af532cac1c4971b8d26c7fc8ad82ebbaa2ba9f25b3b4cfd6be1c6c3d364de81c"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlacentaPlate.kt",
+      "status": "A",
+      "sha256": "2ec3f479502c39542f0b1949602b147325b5f65cbc98de0c42351da512383c8b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlacentalExchangeStoryView.kt",
+      "status": "A",
+      "sha256": "bcdfac027c044b93dd3e7b0cd7433fc83fbb4a2c8fea7618ac6983c209139396"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlateletStoryView.kt",
+      "status": "A",
+      "sha256": "6f200a510b5fea6151f12ddb60b8fadbc5e4f5f0234d6a2cef33e198a9d1fd1b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPlates.kt",
+      "status": "M",
+      "sha256": "150354e3086f5e048c7f4ae80251ad8a497d67291fdd5ef29564cc18febd3e57"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPleuraStoryView.kt",
+      "status": "A",
+      "sha256": "edf8c1ed54b1b5ca9be7c97e6ccbba340feaabf630843edb850ab4978c4066a9"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPodocyteStoryView.kt",
+      "status": "A",
+      "sha256": "2a23b929fea68a89d81a91eb1ada9e539590595505b362ea43a49782fb44cbdd"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRectusFlexionStoryView.kt",
+      "status": "A",
+      "sha256": "61644d7731bd6f090b5ce50dde58d83c0cdb2bd0c6677c3e2604ff06973470c5"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRedCellStoryView.kt",
+      "status": "A",
+      "sha256": "4c67ed283f9635035a212b4cf9821d6dc670ec4e80b57441ed7f8e6b002bb533"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSalivaStoryView.kt",
+      "status": "A",
+      "sha256": "5cf16fee6eb748643360273dc098098842394dcfe9d6a085e85fb390e452cc7a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasScapularRotationStoryView.kt",
+      "status": "A",
+      "sha256": "bc032b826f56b53fdfaeede6f9505df10f447ceebe3e261b41d7c396df402b26"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSebaceousStoryView.kt",
+      "status": "A",
+      "sha256": "bedd5bb16d9a030de07ecf28c8021017ce918b337e593b5f1d3305d02c480f8b"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSensoryPlates.kt",
+      "status": "M",
+      "sha256": "738f4a6e36b368b1e3d1d21681d3a0eabb34eb3d43733ae32d298075301b3892"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSignalStoryView.kt",
+      "status": "A",
+      "sha256": "eff25b814401e449bf8f3d26752c8b427b953076284dcd8a4a39ac903836e2a6"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSinusDrainageStoryView.kt",
+      "status": "A",
+      "sha256": "6ddb6bdeabc6f175369f21647a6e54ba0e0594e0eb9676200c2e208deacbfc54"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSmoothMuscleStoryView.kt",
+      "status": "A",
+      "sha256": "766c20692ee2e2945ba7a116fcf2be55b2d316e7f46ecc857df2930435a8f7c5"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSoundStage.kt",
+      "status": "A",
+      "sha256": "78e99679605c3f4e81b17d666631a3dd36f83a069f5055187fe52b26fe87b99f"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSplenicFilterStoryView.kt",
+      "status": "A",
+      "sha256": "e5a92d2cace7451e7a84b0ee07865e9bc80f0b3795def31153860d7123f9f480"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSurfactantStoryView.kt",
+      "status": "A",
+      "sha256": "c661b7a196f27968c290fd6c16441f33cc4af308fb014401dc24881a8ff0b323"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSweatView.kt",
+      "status": "M",
+      "sha256": "7a1b8d391d1199697806c451d5f4e059ce83f87395b1f21108407e1ccac0b4e2"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSynovialJointPlate.kt",
+      "status": "A",
+      "sha256": "b88f624b0128a57c33824eb4964bfe4093b4c0ac3b622e189d73668988e7dcca"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTendonStoryView.kt",
+      "status": "A",
+      "sha256": "960b9d38c65427da58240c1c2f582f8c6039d43301eadd7bff0b95bde09f7908"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThoracicFrameStoryView.kt",
+      "status": "A",
+      "sha256": "0cd5b0f4108bf5430fea5f9c1741aaf31fb3ef22fae2f10947f6be319c2cb2da"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThymusStoryView.kt",
+      "status": "A",
+      "sha256": "30061038eed8543f45bdf41b35c462a2e08d8a5eeb89a3e1da555213b8662f4e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTissueContextPlates.kt",
+      "status": "M",
+      "sha256": "a493af4c4a8c6b040373de966649676af0702feeb9bef4bee6f242a78edc17a7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTonsilStoryView.kt",
+      "status": "A",
+      "sha256": "f387122cf1853da7eed412e375f775ff21503445576a6fddfe3d1c508627ad5d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasToothMasticationStoryView.kt",
+      "status": "A",
+      "sha256": "4b183bd9cfbc83654867454cefad15cb1c8bf153087fde0a0f66c6a0ceba3c3d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUptakeView.kt",
+      "status": "A",
+      "sha256": "76c0d08f9c3d51d3b3d3af976b6dc829691f98ce2bbd9da166734afba69af59a"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUrineRouteStoryView.kt",
+      "status": "A",
+      "sha256": "0616a2797870c58079e3fb1a6f1bf7510c1d0fed6872cf6d22af3d9d7b6dde48"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVenousReturnStoryView.kt",
+      "status": "A",
+      "sha256": "876975a8d719d94e5cc45dd3b909a403b548113685ae11bd47a43a484ca089b7"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVisionStage.kt",
+      "status": "A",
+      "sha256": "ae44ecb5198a0029e198fda0f9d7872f484bba20f81024f55c27401616ad21de"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasVisionStoryView.kt",
+      "status": "A",
+      "sha256": "b185435dfb73820419627d68812ec2c9baa35406dafa49ed90dca8b6b47ab826"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "status": "M",
+      "sha256": "3c7288742e569df17434ca41161fa2d18e9f80467e09ea78ea4648d490335cb5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_gut_jejunum.png",
+      "status": "A",
+      "sha256": "633fbf812a6763fc9d28207d5c3bff45b0536c79697e3c740bbf11380cf4d47f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_gut_tooth.png",
+      "status": "A",
+      "sha256": "3f33d79527f4aa2057a3fc97873abb15d41e95b8384934a04ab313dc692ab7e3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_appendix_plate.xml",
+      "status": "A",
+      "sha256": "61294f449a81ec1d5152c2a88177b3176ffcfe798f4383cb8495b0fd3539f6b0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_artery_layers_plate.xml",
+      "status": "A",
+      "sha256": "0009adcf6955d00e3485a55be5fa34837e07a5d90d540a66a487fa44aebcf13d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_autonomic_outflows.xml",
+      "status": "A",
+      "sha256": "255e8e40c3a3b95d5519f9e79b54ec991c287e1f9bd42b8f1c3e0f139d19af67"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_biliary_tract_plate.xml",
+      "status": "A",
+      "sha256": "4ade9150afa86e60b0f52c41e1d3a9076499568f1936fbbc20ddcd5f74236cf5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_bronchioles_plate.xml",
+      "status": "A",
+      "sha256": "5a2383500c23c86fc60f927c81222faf944a5f6a1276272f18c43163548357c4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_cartilage_overview_plate.xml",
+      "status": "A",
+      "sha256": "803f27cb92531bfd4937cf6bdf13808ebb98fc683568b89cd4c35d6cee3ce210"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_cranial_nerve_map.xml",
+      "status": "A",
+      "sha256": "bba7faa93c56692e8b2d82337de1cdf57f14ac11839174895038c0707fde6fa6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_alpha.xml",
+      "status": "M",
+      "sha256": "9356f97891b167cb0063743ee2cc43c0adadb767b6f6293776ec02c94374e27c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_bile_duct.xml",
+      "status": "M",
+      "sha256": "fdcd239dd4a958978e6e3adee2472e460ea50d139d53a38f54605c2586dc6914"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_chief.xml",
+      "status": "M",
+      "sha256": "8fd5bd523dff2dfb55d9a12125da39ad05988c39860ad0a52c57924fce67c925"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_crypt_stem.xml",
+      "status": "M",
+      "sha256": "672f73bac4395445d0d2716a436df13d64c5ad2a9cdb4349f88a0b3711330615"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_delta.xml",
+      "status": "M",
+      "sha256": "669f822b19a23709ac976d5e2cf18ff998f60888907a4656a6730ab98b1a9723"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_enteroendocrine.xml",
+      "status": "M",
+      "sha256": "eceda4a21d35b89da48ae37a928e989aaa77ea6c6d05a38976e373c8b15c8131"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_islet.xml",
+      "status": "M",
+      "sha256": "0e3ab1db51d439f6220c858ca369deee44aa3d0b802999a1f05b95e7d9030841"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_myoepithelial.xml",
+      "status": "M",
+      "sha256": "da6a91bc6f87937b1fc5eb3995080145e3c4340ca6897a47e3af49f5fb8fdf1e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pancreatic_acinar.xml",
+      "status": "M",
+      "sha256": "d115d3c5bd74bdea81b486bb89e803f79fc68fd96e0c1c791c500e328442c893"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pancreatic_duct.xml",
+      "status": "M",
+      "sha256": "db85d35728fb0931cfb576a6b25887013f632091a207e38d0ba3d8a1f927fafc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_paneth.xml",
+      "status": "M",
+      "sha256": "ec69018b97830b69cf1fa85db24b8968244f85015332b929132a04cd6805b09a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_parietal.xml",
+      "status": "M",
+      "sha256": "0acc8e99f1f927834e90d8c71aaf5878d67d97ac9eba94ee5ecf22417341114b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_pp.xml",
+      "status": "M",
+      "sha256": "299356c416f509c022fb1209205662e1a802a1b43dce4b6cd3c314a1560d5a4c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_digestive_salivary_acinar.xml",
+      "status": "M",
+      "sha256": "2c9abbc0f3a7bcdbc65845ce9056ebe169cd426230f42beb180e1337ac55b489"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_ependymal_plate.xml",
+      "status": "A",
+      "sha256": "c32493b99697a6861c33b7fc0ad20303735a727e97341a1b634739f8089b1667"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_erector_spinae_plate.xml",
+      "status": "A",
+      "sha256": "bca31a0b49265a9decca08146bb7ad0d4a7eb661d03d3450927ca9a3759ec8f7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_anal.xml",
+      "status": "M",
+      "sha256": "4c27f6a7fbbba5c79e957844e676e26c24d482318102a61ae9a88de7dadc2f57"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_appendix.xml",
+      "status": "M",
+      "sha256": "ff66ae2b921ea93f7165054db81938ee9cf7d6f1ec0000e45667306448f0208e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_cecum.xml",
+      "status": "M",
+      "sha256": "4b638c1199cba2ec2918af3ee2b1e104792b534315b5efd23ca0b76aa3747b65"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_colon.xml",
+      "status": "M",
+      "sha256": "efd0122bb572e687f95179f1b2f91a31d9099c730611858c1755aa34fb542cd7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_duodenum.xml",
+      "status": "M",
+      "sha256": "920b90690f635afb5b9f285c9d1a549bc837e7ba4062997b5304dc0a83b7b731"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_esophagus.xml",
+      "status": "M",
+      "sha256": "d87c4696922b37f56bc1bf048294e7a3f3d69bdd1e3825fc244f38db4c77fbc6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_ileum.xml",
+      "status": "M",
+      "sha256": "8939078264455a9364732d6cdc440294d12031bea187dc1d5ce4a19fb42a63ff"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_jejunum.xml",
+      "status": "D",
+      "sha256": "3cd0917274e442e9c1c443c9e63ff1ad3a3a512087697da2e187f382e7d71d96"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_large.xml",
+      "status": "M",
+      "sha256": "04b3e1b2810c926dc8ad489192fd2daa2c94d9b918653e0009945299db466b74"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_lymphoid_comparison.xml",
+      "status": "A",
+      "sha256": "57a3ceb3a65f2e7ca2eb10b55c703faefce3b7892b2c135efd1a83bfe4d38e75"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_lymphoid_locator.xml",
+      "status": "A",
+      "sha256": "7e1768bb7b4f228fd64ad8ab912524727494de25123a07eabd59aba4405c56f2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_mouth.xml",
+      "status": "M",
+      "sha256": "b85c440fd9e8012a1ae0e3de7bdc85ae302dbf9584ad988f6b368c7887524805"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_rectum.xml",
+      "status": "M",
+      "sha256": "2451e8f8158b105daa41650f633940a6951c7f40de0e61101e1592bd6d52ee37"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_small.xml",
+      "status": "M",
+      "sha256": "3c9f038547c7df4aebb832af43480ee7daf26571d2055a9336443e595dfa7c7b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_stomach.xml",
+      "status": "M",
+      "sha256": "7b76dd67a02f9eebc96d77801681ab02603fb1e58c91bd944927419f38a1b85c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_gut_tooth.xml",
+      "status": "D",
+      "sha256": "44159c46365fe27af8ac122b963bcae3f9295dea22a492f9b58220c1301a2d32"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_hair_shaft_section.xml",
+      "status": "A",
+      "sha256": "e2fe8a2a4aa9f3fbfd54f70f761ef71c65b331b6346760e843e7838aa13f03fc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_hypothalamus_plate.xml",
+      "status": "A",
+      "sha256": "db38b84149359bab18ae9e5503027ad757e284c5ef263a0756b6d07b401a86f0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_ligaments_plate.xml",
+      "status": "A",
+      "sha256": "0c8ef3be72a266e56098602f02b1c870d8acbe33f930e37b9a7f458ca73ea417"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_limb_bones_overview.xml",
+      "status": "A",
+      "sha256": "ae471a47f7d4dd52b770d4bf2bfd43423b44e68f598315f5b247a8016d4f67b5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_microglia_plate.xml",
+      "status": "A",
+      "sha256": "51039ab1b09ab637f47abdb9d24b06e39171a003ee7da556f86888dcda8506dd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_muscle_abdominal_obliques.xml",
+      "status": "A",
+      "sha256": "ae787d92d2efc8f826c26d2ae97b9d2ec38958429d4ec8e752b04887a0a4eaf2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_muscle_deltoid.xml",
+      "status": "A",
+      "sha256": "5e815c7359ef37fac0c06993d5ced124ea81e6ef5fe5eeee79af404e02e41e61"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_muscle_rectus_abdominis.xml",
+      "status": "A",
+      "sha256": "d8e8096cb1d11b9993d9d910fddf6ab36da30896a1dc2f98b2470920af91acda"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_muscle_trapezius.xml",
+      "status": "A",
+      "sha256": "7e7c53352d6f051bd4462830c1a03393e7a25d89e15c31c800ea4b260ee73639"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_nail_section.xml",
+      "status": "A",
+      "sha256": "ab50ea2bfae2da587dd5c381116c607b4da8796e3d59b02fcd25b35f1077f846"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_olfactory_mucosa_section.xml",
+      "status": "A",
+      "sha256": "f8c051c1f03004eebd82950c834b47cafffbe156a5b214cefc8a609a2794f14e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_pineal_plate.xml",
+      "status": "A",
+      "sha256": "37fa9e334c1c87705f68695e8f3f36ada249fa6d90ab9a5933ba2d2d3f7530ee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_placenta_plate.xml",
+      "status": "A",
+      "sha256": "316d2be03dab8235bcc4490a23770849f703a5a94956c113a2db3e7cab9ad5aa"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_pleura_section.xml",
+      "status": "A",
+      "sha256": "e9ec72183bf32ee8d3ee1b4f27265e14ab044cc0cc88cfc5787a7ad3f9e8346d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_radius_section.xml",
+      "status": "A",
+      "sha256": "918812f0dce99d8ebe36d9084d2afe6ae07397c47051856642feda73c5e4c29c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_ribs_attachments_plate.xml",
+      "status": "A",
+      "sha256": "f04e8678332a07216adbd78744b443b6a7122093d3b611cf4afefdcf79b8a8c1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_sebaceous_section.xml",
+      "status": "A",
+      "sha256": "b453db509b417ee170022ee2b5a2244dee0b54391ae60a75c863218cbc05edde"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_sinus_plate.xml",
+      "status": "A",
+      "sha256": "a7438ddebbc922a493b0a478db13d44dcd802807562f47baef09849f1e7d8d59"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_synovial_joint_plate.xml",
+      "status": "A",
+      "sha256": "ca8225adcb65884bc14f622b0d7886ce619203b455e7bfbc1260b29d3175f179"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_taste_buds_plate.xml",
+      "status": "A",
+      "sha256": "868a839e09c1eeeb7b75d196fbe0bd4483a50c852602bb152e4b9fdc9c7b3aa9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_vessel_comparison_plate.xml",
+      "status": "A",
+      "sha256": "99b40a9cc4b66780c487f010c86e6dd2dbf893d778d2150ea04ae3cd8bb92eee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_whole_blood_plate.xml",
+      "status": "A",
+      "sha256": "7833632214f9435d2f06870b1f7a0665aa46ff430dab079068c3840f99ca8eac"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_absorption_story.xml",
+      "status": "A",
+      "sha256": "d24ce73da218fb0329e426816a3ce482a788663927104234ef4d4fc0f7feda46"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_acinar_enzyme_story.xml",
+      "status": "A",
+      "sha256": "c094efd039147893d1b85b9fc2b90710057ba2fbf898dabd8832e334a694a1de"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_adrenal_medulla_story.xml",
+      "status": "A",
+      "sha256": "0a2c5d7a31c287d4fc547e9d092c54b7e9f76ecc7d9f782656cf1019717c2c85"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_airway.xml",
+      "status": "A",
+      "sha256": "9db184984ac104a8847915a5c674a3b94cf3ae4eca31c1c32dbc5b550135bc67"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_appendix_plate.xml",
+      "status": "A",
+      "sha256": "e339be26fa97429d6905eed7bc0110e4d8ac90d246ab7cab215c4b415511850f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_arterial_story.xml",
+      "status": "A",
+      "sha256": "5c571f4306ffcabed6b67b7c3e2c13801722fc6f86aa17a94e54b967ef07dbbf"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_artery_layers_plate.xml",
+      "status": "A",
+      "sha256": "aec4a23e7cf7f97b113f9183b510c1b82eb66a6899f57bf1ec9e7f5e047d8d5f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_astrocyte_story.xml",
+      "status": "A",
+      "sha256": "2fb16dd8b19c724317c5d7bca2ba10b8297d446b09a66394bed7400d151d3505"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_autonomic_relay_story.xml",
+      "status": "A",
+      "sha256": "4dc40624b7c9fc852edacd6d8482b931daa1bc7a6f1a26629c08aa35168c4feb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_barrier_gamete_story.xml",
+      "status": "A",
+      "sha256": "b0fd2024b5d11072a60ce88af279df691f14be5c865658dc3f6e0b3fee840058"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_biliary_tract_plate.xml",
+      "status": "A",
+      "sha256": "6e443369ebb52705471e07e9f579254dacabf64ab0547c1ceeca84b0a57b1d7c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_brainstem_story.xml",
+      "status": "A",
+      "sha256": "c1a97227d0f314994f5fca40d8099c9744f0264957a74edf5e4aa3f91d1f98b3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_breathing.xml",
+      "status": "A",
+      "sha256": "af0be6d2d58e401d1f27f279e87e3a6908dfcddb83f2f142d22a4a1f80398e6b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_bronchioles_plate.xml",
+      "status": "A",
+      "sha256": "b27996f37dfafde771269c6ff599554d7675ee8400990e0764f167223c35bcbf"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_calcium_feedback_story.xml",
+      "status": "A",
+      "sha256": "19002d994924440fefda8f6b58ed42646520672650fd6e0cf1826572631ebefb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cardiac_signal_story.xml",
+      "status": "A",
+      "sha256": "26d52debc5e85046922f1294ffcc73a2d926d0de47715a42485cf773993166ce"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cartilage_overview_plate.xml",
+      "status": "A",
+      "sha256": "c8858cb260d215163fa69e4e32677968f724eb66b90ca0b52f340a110c1e0bae"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cartilage_story.xml",
+      "status": "A",
+      "sha256": "a442555fb9141c07618ced1ad9c39319d8e3c5f490505f1e458f53b83aa5e65b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cell_playback.xml",
+      "status": "A",
+      "sha256": "602bf65f7bfdbc881c130caef6d51b21022e47d73575c26e85cbaa728e0417bc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cerebellum_story.xml",
+      "status": "A",
+      "sha256": "59f3682a422c34f579881e28a5bc0036e24d67458027639d0b8b5694a8a7a389"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cerebral_sensorimotor_story.xml",
+      "status": "A",
+      "sha256": "f0b5773c6ad91563b83eb31c0da789a0d88eb3115bc7e9eca013aa661cc83b66"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cholangiocyte_story.xml",
+      "status": "A",
+      "sha256": "efc536a2ebae8fb7a1824152368843893ca0c060ac6c463f476a095ff18df6d4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_chondrocyte_story.xml",
+      "status": "A",
+      "sha256": "e8e31ab213269ecc4131f4dc16a6af2cae48122930b571fcc834005d665d7bd0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_club_cell_story.xml",
+      "status": "A",
+      "sha256": "76a9a58a4c73127f25e6b75e7d766b3272dc347eaef033b6e14c3c2e2397ace5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_coronary_story.xml",
+      "status": "A",
+      "sha256": "34985e7e9a1838b8edfbe67b22e124a16fecdf68f5917ef202d9379c0510fc8b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_cranial_reflex_story.xml",
+      "status": "A",
+      "sha256": "0a918ccf0ef0cf83703565ab8145129d21adf69da6db2bfac0b5bfe958e8cc4e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_deltoid_story.xml",
+      "status": "A",
+      "sha256": "3eddfec881a6b7456878c3d5741933f394e20c6d7129591a167512945548f2cb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_digestive_story.xml",
+      "status": "A",
+      "sha256": "c20e2af4528d255975824cd8b12540d1ca418085dc49a1bdbb5bdf3e24f558f7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_duct_buffer_story.xml",
+      "status": "A",
+      "sha256": "a8f95db74e14e82d83382140bf830d36584aa0024daa73ba86b034ad6c5d5d8c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_endometrium_story.xml",
+      "status": "A",
+      "sha256": "b16ebab7718d0354cea22661213669bd593206dfd2dd525862c829ce09b53923"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_endothelium.xml",
+      "status": "A",
+      "sha256": "a740c7bbd5ce5059b93f06e5344fd643c1a40192f334b0d3a028c9e7a361b259"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ependymal_story.xml",
+      "status": "A",
+      "sha256": "ba208d47f39642e002a30e4ec3ca16e6935c1c83f40679cf0940ffac284e0e9d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_erector_spinae_plate.xml",
+      "status": "A",
+      "sha256": "bace7e2ff0847c73e15b833c77dc42d6499ab3748218cd4130a488f434518fbb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_erector_support_story.xml",
+      "status": "A",
+      "sha256": "89e209c24d1ebe7b623af588cb1c90db01f2995a9bae8d857fad98290b6b33f4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_fibroblast_story.xml",
+      "status": "A",
+      "sha256": "5e74f03e5c6a0da31c81110cd4082d1815eb82b16ef1c660f8c940820a63b2aa"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ganglion_relay.xml",
+      "status": "A",
+      "sha256": "b7d7b685aa4f7c1d4f69119b2d493fc866df7339200dd56800eb6ab54e50f6be"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_gastric_acid_story.xml",
+      "status": "A",
+      "sha256": "bacd2b6bbd8c2341564958be052aeed6d05f98fce15957dab71003d8f694b509"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_gastric_chief_story.xml",
+      "status": "A",
+      "sha256": "4346555126e667fa7f30aaf05bfdbbbd646bc0b8ec115e25b64d4bd161612a95"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_gluteal_extension_story.xml",
+      "status": "A",
+      "sha256": "9487fc07bc1894a8393d89db40a2855ba3a3744a64a43993f0c36b773c0e0c2d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_gut_lymphoid_story.xml",
+      "status": "A",
+      "sha256": "721da76cd9642aa86c9b1ae0c4aaff39dc6296a602c034e698e6a43c0a5f1a96"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_hair_cycle_story.xml",
+      "status": "A",
+      "sha256": "e43e3f4d8deff5cc42a8464333616ddfb8579e6ef669643ef649f29e94ada478"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_heartbeat.xml",
+      "status": "A",
+      "sha256": "aa6f371951da1ac42f72204ae91ade536b5d78c03befb35715f7fcf7d582372d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_homeostasis_story.xml",
+      "status": "A",
+      "sha256": "100f6a11dd24d73dbcb27462764a2cb2d9ac4c58c72040df807afa0ffcb64826"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_hypothalamus_plate.xml",
+      "status": "A",
+      "sha256": "3b5a287c62fe7148fcdb8fec333eec7ea774afd214a355a63262c4bf098b1b8d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_insulin_story.xml",
+      "status": "A",
+      "sha256": "61b311cdfbf4729b3689c9b3d2eb458b56437dd0c3b3912f2627898407a9e878"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_intercalated_story.xml",
+      "status": "A",
+      "sha256": "a30fc021944f898f25bc58e10bf3ce036150f832661927c6bbc0ef6bf09f7424"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_knee_story.xml",
+      "status": "A",
+      "sha256": "b572421819034cbe072f4e9ff8517135f2ef4133773649cc14d0e0f8461478e2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_larynx_story.xml",
+      "status": "A",
+      "sha256": "e2046bfb9c621be6172a35c0349b92a27830fc88a761355e2441eeff07eff2f0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ligament_guidance_story.xml",
+      "status": "A",
+      "sha256": "77fe1d2590df410c490eef4905d070258c9512027db4784dc11867bd62ae6ff5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ligaments_plate.xml",
+      "status": "A",
+      "sha256": "640d5b63bbfd2aee3323fbab6ec45c5ca8a124f6f0877c4027c480d01307ca23"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_lymph_immune_story.xml",
+      "status": "A",
+      "sha256": "09b467538f36ac6adb44eda254b131c9c7ed0782150e2fc0206faaea96217d4c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_mammary_story.xml",
+      "status": "A",
+      "sha256": "32d1b71f5f08e4664ec5b1c0a2e896b0ade23e842dd31593a18804aa28ad3086"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_marrow_story.xml",
+      "status": "A",
+      "sha256": "1a2789aa12f3e650fff6c59c1e17b61b7206c373c37d3637efe988b8af210aa6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_material_response.xml",
+      "status": "A",
+      "sha256": "d98d98621b4c0c25a85a33023be9c2f3038c2f2e9a1b9ba8652a1ee4a12be975"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_melanin_story.xml",
+      "status": "A",
+      "sha256": "5392154532765a895ee4da051632bea6350996cae09eb90a6705d19feb9fb89c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_mesangial_story.xml",
+      "status": "A",
+      "sha256": "2ba0d7675cbbf0d9f77f0ad632959353eba520acd86fbfe0706de5495a3b3c3e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_microglia_story.xml",
+      "status": "A",
+      "sha256": "a73a451d534ba3e83b68184b32220873f57829e6154ab83b53d415946c2eca43"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_movement_story.xml",
+      "status": "A",
+      "sha256": "c0cfd05aadcfdb8b93d7732d19f13b1f887da5f75de7104184e9c61c56d9024c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_nail_story.xml",
+      "status": "A",
+      "sha256": "e611a81d3b0cdd841d749260d7a409d24393633b74cace4d2d7293c37f2bdf74"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_nephron_story.xml",
+      "status": "A",
+      "sha256": "9e597bbd7b629ac97abd5a763298277358dbf3dfaae5c0aa7cdeb015c83b66f1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_oblique_rotation_story.xml",
+      "status": "A",
+      "sha256": "9b0d01a76b7762e8f1f44e5ed912385649f1feb1edccfee4f5d934e7c48050bd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ocular_stories.xml",
+      "status": "A",
+      "sha256": "547c55fbebed737a51f4ac6627bcf7b719e9e42de57a245f3dee1464718756ba"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_pineal_plate.xml",
+      "status": "A",
+      "sha256": "73f0d773fc05cd7fe77738021c7d2e81b1874be983d8ccdf3db3ad2e5242d39c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_pineal_story.xml",
+      "status": "A",
+      "sha256": "f14f3e7bb37ae60c80bbc74488319a0fc3e4f641a496b59294f21638a8b699b2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_placenta_plate.xml",
+      "status": "A",
+      "sha256": "c67a43bd2964f726e57dd96c20e65ac819a73d645c6832ac65fbdccbb0bd5f17"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_placental_exchange_story.xml",
+      "status": "A",
+      "sha256": "fdb191a599c016d6cc5d21f829dc6d8bca0d78bd5d0ef27db61f535c4449df5c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_platelet.xml",
+      "status": "A",
+      "sha256": "ec04e7e713f9d0482982d83e8fcb9761ee15a5334c5f1bf04b9931f4e481aad6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_pleura_section.xml",
+      "status": "A",
+      "sha256": "ab0e3c51c5e79190cb96339cc42a47aa17d9b8066894a7363f9d74479b5fbbfc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_pleura_story.xml",
+      "status": "A",
+      "sha256": "0e6d8dc4012ae4088e6d001ec4e3e03d263ca96fa7a03bdcb6abc3d5129eba5e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_podocyte_story.xml",
+      "status": "A",
+      "sha256": "58f57e824e7e557072c27b66a40d4026e4aaa79cf4c29c4aa9b9e42b7198c8a9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_rectus_flexion_story.xml",
+      "status": "A",
+      "sha256": "08532e0ed2e6aee7173335851e68a4c7ff0d8d5e3b16d7175cbf0c7ece3ed513"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_red_cell_story.xml",
+      "status": "A",
+      "sha256": "912e9b392f8bf66daa06e18da722c8ba1e339570fd1c9d02adb532f88c0832a8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_regional_sections.xml",
+      "status": "A",
+      "sha256": "dfd3ef3f0b914c56e5355fe46794ff4975b9152ffba46170d57613b266c3eef1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_ribs_attachments_plate.xml",
+      "status": "A",
+      "sha256": "259ae70e3e82e8d603ce1605b86846e58d395e62e1a7e4a65fdd17f038fc85f5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_saliva_story.xml",
+      "status": "A",
+      "sha256": "cca81a198f5a499950da10b9c02c8b59d5199efc2855a24a619ae917663b30e8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_scapular_rotation_story.xml",
+      "status": "A",
+      "sha256": "98d7264c34631180bc1ac4e7eda442957b58e704779451c9d67d50b57d385f04"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sebaceous_story.xml",
+      "status": "A",
+      "sha256": "93bdc0d0723ee66d356068631544a09e20a5a3f151ff4dde9a5d0c7b605457dc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sensory_stories.xml",
+      "status": "A",
+      "sha256": "2e75edc2cf37db8f9d2aee901fb787b15922862b651e03fa0557c59cfb5b7824"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_shoulder_plate.xml",
+      "status": "A",
+      "sha256": "5dde534a8d42295501d316ee289506dd8e2d9fe0afe9a544d5c42644e9bd1e2b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_signal_story.xml",
+      "status": "A",
+      "sha256": "9d5b90b484e5d97af650931264d1b7591a6a46a1517a6d32590380e6f0f0978c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sinus_drainage_story.xml",
+      "status": "A",
+      "sha256": "494d8eb1a046fc2abeec76c373f9c193cd95eb742401bd083cc9dec8206d3901"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sinus_plate.xml",
+      "status": "A",
+      "sha256": "8345c2e6d51ec31623d80d012e16a75e4c9914f017541096b714f2527a6e8fb7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_smooth_muscle_story.xml",
+      "status": "A",
+      "sha256": "3421c75a0b2d9601748c0902d47e5b6f731657de78c78f23f3e23f424edf4cc6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_sound_story.xml",
+      "status": "A",
+      "sha256": "ae89e1a63b5376f535ca4b5945ac922f36f5cd0e5f8e0220b35a9ab863facd60"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_splenic_filter_story.xml",
+      "status": "A",
+      "sha256": "ae8120ad09e4c75ccd49b0dfd272525120b0de325031706b1d00d25b1ba579c9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_surfactant_story.xml",
+      "status": "A",
+      "sha256": "5374e5028a8aa0aef5fbd9384161d8ae18b6010cb7a3da3d6ecfedcf5e62b071"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_synovial_joint_plate.xml",
+      "status": "A",
+      "sha256": "2a3841a20ad7ab3ab71a8fdf09aa875ffa8d5bec8a0386ea9e8a36bf5295296c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_taste_buds_plate.xml",
+      "status": "A",
+      "sha256": "96fd667624d37b980f8477a9f08619d735dd590dc2b0ec1d4b8f93f32147eac1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tendon_story.xml",
+      "status": "A",
+      "sha256": "2866426d6a009ee29ce2736350d2d524af38fd2a1e66e26a80f778529fc053ea"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_thoracic_frame_story.xml",
+      "status": "A",
+      "sha256": "aa56861db303a79356fac72a8e63696e2ab4ed64daa7dd888f9be03aeab5450a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_thymus_story.xml",
+      "status": "A",
+      "sha256": "b5b8c9485bc20a0fe370b25f42fa8a77b47aac6abeb1712c16625b73b0d6ef87"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tissue_context.xml",
+      "status": "M",
+      "sha256": "9f0f2341e1aa36f63876341a80cd06c35a4c6071c02a18cac428184f53ce2339"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tonsil_story.xml",
+      "status": "A",
+      "sha256": "eaa17f44ab1d354b438c6ee76b289afd5692b3b9a4067506f3b7140b64746dca"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_tooth_mastication_story.xml",
+      "status": "A",
+      "sha256": "30a9a19a948ce26c7c9ea1514060046a95b9aad9bd38fda97d354c3676f7d25a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_uptake.xml",
+      "status": "A",
+      "sha256": "cadd07ef6bf952d2b1deb16f474ee1d6ec0322c9544d59773684fd9f069cc20b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_urine_route_story.xml",
+      "status": "A",
+      "sha256": "a283ba74ba67122e90b9dba98dccf77d35419f704250b797a7a300f0f0e72b14"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_venous_return_story.xml",
+      "status": "A",
+      "sha256": "c4314dad2c374c0d0b42af170fc193c272ec78eccd44cb9f72e9b56a1522f172"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_vessel_comparison_plate.xml",
+      "status": "A",
+      "sha256": "ddec1f1d8ebc4b84ef09cea7c865646c819067360b3a42b101704beabbe9ff60"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_vision_story.xml",
+      "status": "A",
+      "sha256": "43191d21f1b78c5e34a47f1d70c79330a2a2d0be6183839a1300dc3cacf02206"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_whole_blood_plate.xml",
+      "status": "A",
+      "sha256": "1c65622912dd3257a89a58252aadc8742863cf083569910bc39cad263ec0f79f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_absorption_story.xml",
+      "status": "A",
+      "sha256": "a263846cc8ac462a71bbfb8ff103fbcc39058faa209effac22e2093dc540eaf1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_acinar_enzyme_story.xml",
+      "status": "A",
+      "sha256": "e2346e730f2b32f7970e18c33776e2ae07745bd4f7334dc57509778e14a75a60"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_adrenal_medulla_story.xml",
+      "status": "A",
+      "sha256": "9cbc7fc9417637011fc105f7b288f9f3f3ea57209ddb83314bfe7604e00c8643"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_airway.xml",
+      "status": "A",
+      "sha256": "e3585b343998a92f1a5812213bc6c4096b2d300856fce31db87dc671b219d30b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_appendix_plate.xml",
+      "status": "A",
+      "sha256": "97578e6e3c98f37aabfd6b0c0bf16f4c4fcea34cb33163acbae0e8649a8359de"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_arterial_story.xml",
+      "status": "A",
+      "sha256": "053a68ea2eadead830531793a9fe138c1514d92988574ff4a17dd20bdf1a27a9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_artery_layers_plate.xml",
+      "status": "A",
+      "sha256": "781b32d33903f3da4d021f085591e4ae40f41dbfd72d1b85c10140240c32dd36"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_astrocyte_story.xml",
+      "status": "A",
+      "sha256": "c6d4414a768179a7ae1b6f1158833ef74acbc70058493a6916cd314d0d1b55cb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_autonomic_relay_story.xml",
+      "status": "A",
+      "sha256": "87660c13e49fbe41b7cddb71eb305f4e926d2873b3ed9ca0f1085c3d000fe68b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_barrier_gamete_story.xml",
+      "status": "A",
+      "sha256": "264f713ffd89d0db5b2f44b4ae1ccd876c08a6db28b4f86395881805330ae08f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_biliary_tract_plate.xml",
+      "status": "A",
+      "sha256": "3880326f4aae7b89dad5e560de0735c5d1ec0bd31fa9f2b4d6c9464c3945539d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_brainstem_story.xml",
+      "status": "A",
+      "sha256": "2e82cd5c530c3c748abe1e67ad83203a0d2c2e76fe78c1a0619791f34fe6276b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_breathing.xml",
+      "status": "A",
+      "sha256": "0b7f9f63d6e06cb74b3657941bd54e9051153e086ceabbcb4d67bede84d5f1a1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_bronchioles_plate.xml",
+      "status": "A",
+      "sha256": "599e537b8ce241eaf12004a72c81e4b3f777144180624ea8165e80b2fc91f611"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_calcium_feedback_story.xml",
+      "status": "A",
+      "sha256": "e65476c440c592aa30c7d229b86991f35a8aa14360dbb926698055b70aedc5ad"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cardiac_signal_story.xml",
+      "status": "A",
+      "sha256": "0ca05ec4adabc6b8c085206caa62b25dc18f538fc0dfee3641edd599a7316435"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cartilage_overview_plate.xml",
+      "status": "A",
+      "sha256": "10db12746a67266b66cad01d9e2f280bc13f7eac1cbf6e1058d94bcb857fdaa0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cartilage_story.xml",
+      "status": "A",
+      "sha256": "9e2ca92e65c9902d81a55d09043a4e6d68daca5c48f6e7723424d9140596b4f8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cell_playback.xml",
+      "status": "A",
+      "sha256": "484bafb24e98c73b951fd62e99e5d30b864449190ad311d6bcba12c5fa9d452d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cerebellum_story.xml",
+      "status": "A",
+      "sha256": "7b5765d12e1cc196bd672199b99972735f576af641b7ff36b7fa86c8beb43ecd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cerebral_sensorimotor_story.xml",
+      "status": "A",
+      "sha256": "12d84970758e11683f6e44fe465e28d7325ef1ae29b89b39a9103051f2cdc5da"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cholangiocyte_story.xml",
+      "status": "A",
+      "sha256": "0569e628cdba3bf922a00937aaa0ce7ddcc4ed1693903bce14681f8f82dfa964"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_chondrocyte_story.xml",
+      "status": "A",
+      "sha256": "5ee22d2fc5026f4ee419afc74751926653e671e76e3bec6a3df1a54705a2de5f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_club_cell_story.xml",
+      "status": "A",
+      "sha256": "76515030570625bb546b9e611adda82181b5c9d5b27860371a68c8542164a03a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_coronary_story.xml",
+      "status": "A",
+      "sha256": "672c9307aa10f9e569acd3bb9af8e08b59f88da9973167018e62acf3acff73de"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_cranial_reflex_story.xml",
+      "status": "A",
+      "sha256": "b77ff98172d9d8b9206cfe48f652a3031b730f2b65020861d88595e0a7e9b338"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_deltoid_story.xml",
+      "status": "A",
+      "sha256": "43f293f8aaf289b6364d3360f25431647005b1989a254047acabe2c69a60342f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_digestive_story.xml",
+      "status": "A",
+      "sha256": "39d8ec4313da734b37db54702b5064b6d8285edd7d6230e77c5f4c0152cec23c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_duct_buffer_story.xml",
+      "status": "A",
+      "sha256": "e73f0eb2bad2d41738100eb8867f31a256b8130c9adf044e5c0ad0daf49bf1ff"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_endometrium_story.xml",
+      "status": "A",
+      "sha256": "1e5617ab56a3660d6883b0d5b7729d5f44e7ff1db05843d77d608fe3fb917fa5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_endothelium.xml",
+      "status": "A",
+      "sha256": "32110c63386dfad5b197f2580f5cffce7516dd8754130975b5ed593f0e0286d8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ependymal_story.xml",
+      "status": "A",
+      "sha256": "e6c4bd8967cdcfd9290101223fc753ad89f6ec7b1bc98b24d8a739b730d643ee"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_erector_spinae_plate.xml",
+      "status": "A",
+      "sha256": "4a9b31ded17293c23cc6a54462bdc291ba2290d5f4121ce7e1fee15a6c74bbaf"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_erector_support_story.xml",
+      "status": "A",
+      "sha256": "16106720894bdeda288703b2d8c75c06927d59570f1cf9bb6e04302572b5d7a5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_fibroblast_story.xml",
+      "status": "A",
+      "sha256": "7af28d2dd4dc28e697693457cc2d69eba614a17de739f6c1906ee1c65e992392"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ganglion_relay.xml",
+      "status": "A",
+      "sha256": "8dbdb99d33c6f3c8af959cf76d3fe0e920ef166c6a6ea4379dab7f0702343d81"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_gastric_acid_story.xml",
+      "status": "A",
+      "sha256": "fc544f08371d7bfd9e5728d623fc5b0a155794f89c548e54cc3f2481f7c8b154"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_gastric_chief_story.xml",
+      "status": "A",
+      "sha256": "5aef255f2ff29c13b9eca018acf39eeca09a55d066f4a319fea053b4b53505a1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_gluteal_extension_story.xml",
+      "status": "A",
+      "sha256": "b9646e5ce149cc19948bf8614c00fbc11126f15047c1ecfd46c441b10bad0505"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_gut_lymphoid_story.xml",
+      "status": "A",
+      "sha256": "f1626a754b837d76eb060397d4223bebd3df460676c4ecccd320fbef609ea281"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_hair_cycle_story.xml",
+      "status": "A",
+      "sha256": "d9ab812faf76eba9d95ff7f02ad8a105875a5924c48d02d6e6ad09935b62b02a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_heartbeat.xml",
+      "status": "A",
+      "sha256": "debeb145dc7b239df9a5c2eaf1238b9b7c31a07d662791a46ffa17a985a24cf4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_homeostasis_story.xml",
+      "status": "A",
+      "sha256": "65b7ea1fc1ca72093edbc8fb79ac109a30460367769673b466a5b78579a3ad5e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_hypothalamus_plate.xml",
+      "status": "A",
+      "sha256": "9e6d4ba424ff68979442da2408046d3cf1cae6f573b374376046f90fad049337"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_insulin_story.xml",
+      "status": "A",
+      "sha256": "dc98476552faf86cc57dc21f2f4eb724e8e5ab4f59617cb977bdab249340d48c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_intercalated_story.xml",
+      "status": "A",
+      "sha256": "49dd203b221e52a7d3f1864059c5aa486dbbc0c6aa3658b61f6d3abe5b1c588f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_knee_story.xml",
+      "status": "A",
+      "sha256": "652fbce3ece557c3a624e5e0cd029370bf3eef0fe788b459fc3721983f6231eb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_larynx_story.xml",
+      "status": "A",
+      "sha256": "942bcbb43d57e82bed8da6445fff0acd941d29fe8b1decda9295ab40ede371df"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ligament_guidance_story.xml",
+      "status": "A",
+      "sha256": "a4875dfb5ea74038499de44e675cad4f87d79abbef063fd0af540f5d935080de"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ligaments_plate.xml",
+      "status": "A",
+      "sha256": "a7eb199a1eafc2b718d5236ee8958424ab9f29d91ea2c5b942fb6d8f45fd3f9a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_lymph_immune_story.xml",
+      "status": "A",
+      "sha256": "feac82e07670704c6395919c71baf30b89b523dbb7e51f8e5f082f4858b7e2d3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_mammary_story.xml",
+      "status": "A",
+      "sha256": "1fc5d4a5230cb5e3adf3f9cdba417f08dbef061a48faa3fa3819b554175a8058"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_marrow_story.xml",
+      "status": "A",
+      "sha256": "3ec57bcda89fd59be3c4cd6121f16ee2c927d919e17452c72f84be38f795debc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_material_response.xml",
+      "status": "A",
+      "sha256": "9524e64077164badfde168500a63fb2ed5866aefcc8259e0d89a14af3707702c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_melanin_story.xml",
+      "status": "A",
+      "sha256": "6f7869b30bac1e01daa9095c6f77d1ac4ada6dc8733097f11f5d40bdf08c255f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_mesangial_story.xml",
+      "status": "A",
+      "sha256": "2ab68a2b4bbd19ade7803b8d336b391fbd8bc7377f0c1143dbafe71a228516e1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_microglia_story.xml",
+      "status": "A",
+      "sha256": "4898d4572cf47963c48b60c356dc5739e89e66f45a050a44cac73451071cf997"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_movement_story.xml",
+      "status": "A",
+      "sha256": "a5125fbb25a64db2a5b0a172ca9a3936b0add3910791cc5a90152f9aa3891c05"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_nail_story.xml",
+      "status": "A",
+      "sha256": "bb65a87e6d0c815fd15688796d8904aa4294dc312087217e21efdd00eec6b1fb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_nephron_story.xml",
+      "status": "A",
+      "sha256": "bc3ab7e018499965960f9a730251113c09197e511b814c341419adf3bea14458"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_oblique_rotation_story.xml",
+      "status": "A",
+      "sha256": "8bd911c4293ea635687722e360ea1169d27147218cb2ae8ed358fae5121807bb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ocular_stories.xml",
+      "status": "A",
+      "sha256": "c0b3b6e41bb45313072f69381ee2271c0b154beae1f3b5dd99c13ccb102b9b8e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_pineal_plate.xml",
+      "status": "A",
+      "sha256": "c83c7d83ceb616c2ca146fcb745971961b310b19ce6a625ebc67b096636fda85"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_pineal_story.xml",
+      "status": "A",
+      "sha256": "facdd1f242ff4791b481502898ce37a8e2b6f1605163a1e14c5656ee38b2f9aa"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_placenta_plate.xml",
+      "status": "A",
+      "sha256": "5385f78d9ac7f9a07124887e9328ccc76465fd6537ab290cc29f114f0ad45d23"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_placental_exchange_story.xml",
+      "status": "A",
+      "sha256": "fc1b09a12facdafe21bb2f3ad300eb451f36932aaaecef5e88df98d9e03a80e2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_platelet.xml",
+      "status": "A",
+      "sha256": "dbd40cdffc7c8bde3729a5d85cddcd399e37a08e3631693db09f2b41eb0a1ba6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_pleura_section.xml",
+      "status": "A",
+      "sha256": "aa44920ffdad5c76c51783e01c3659822161fb3683204a2ec5c83d72382cd126"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_pleura_story.xml",
+      "status": "A",
+      "sha256": "6b691d59c44874c81e2fbf7b69ab9144c1c9336901423c4feb3fad3dec28ab21"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_podocyte_story.xml",
+      "status": "A",
+      "sha256": "8d39069abcfb851a14d085e60719e488a81114feabce32d7d1ac56d31a2703b5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_rectus_flexion_story.xml",
+      "status": "A",
+      "sha256": "052840f00eb13b3403a56daab3b42cde1f46075db20b985aa2c9bfbd82051e8c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_red_cell_story.xml",
+      "status": "A",
+      "sha256": "ec4890fed215ab57f541ebbdb39d9cb3d077c93d640392a1449cb92567bcde04"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_regional_sections.xml",
+      "status": "A",
+      "sha256": "ef28def9dcf52f34a703deaae82fb57faf6c71061edf2ff8f81ab1be6960c15c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_ribs_attachments_plate.xml",
+      "status": "A",
+      "sha256": "54f30460831466113434a64c23601d72ced7765561d9465b1f021d2b5f1200c9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_saliva_story.xml",
+      "status": "A",
+      "sha256": "92bf8cbbce39fd152a8e7697230ff43f35278ac8bdcb8f06310ee662376af6e3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_scapular_rotation_story.xml",
+      "status": "A",
+      "sha256": "8e5abf68079179620bfc1355309cf8f208b694fa1e408d9f2332a134bcaa4d62"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sebaceous_story.xml",
+      "status": "A",
+      "sha256": "429ffffe4deb028607038d88284cb4f2beda1c0aecf33eedda8bcfd36ae0eedb"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sensory_stories.xml",
+      "status": "A",
+      "sha256": "65e291c943cffa1e7bd15f13c85d0734137cbc40bdc3e30c6af14e8d7f328020"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_shoulder_plate.xml",
+      "status": "A",
+      "sha256": "932a4bdaabf5afcfc335a85e65bd19eaaf987653fbeea05fdd591b25539e7501"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_signal_story.xml",
+      "status": "A",
+      "sha256": "1c915782f68429dc206752bf2a8ed5db2f5550c5248fe181811612cc8764d233"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sinus_drainage_story.xml",
+      "status": "A",
+      "sha256": "15da32915eecf6dd729bc1c928591612cb8138f6ac5056c652be269f84ac9edf"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sinus_plate.xml",
+      "status": "A",
+      "sha256": "dda0b18ba927fb8f4a1b157eb2d3459c395035dc28daddfe4b5ea1ee8974ab2f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_smooth_muscle_story.xml",
+      "status": "A",
+      "sha256": "352d79e3a8212a763852c86bfb17984049271453060030120b7d28f39ff45c92"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_sound_story.xml",
+      "status": "A",
+      "sha256": "9fa4ad8965325d53c4ea5c7faff672c2b43bbc983b4f7f289baa0279306ed08f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_splenic_filter_story.xml",
+      "status": "A",
+      "sha256": "5cd8a5883955047ada792f4b79b64d23e527b43f8b42e2f74a3d81faecb72043"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_surfactant_story.xml",
+      "status": "A",
+      "sha256": "91f2168377b7d53438f58ed085cac4265c341e483e8c44b9bf8031eb66abcc64"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_synovial_joint_plate.xml",
+      "status": "A",
+      "sha256": "10760584b26eec8aac5455adb03039ed490bd789fdbf408586fbbc2d53e0a18f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_taste_buds_plate.xml",
+      "status": "A",
+      "sha256": "2a60344c102c5deb8593b994872f971c234881fc398e15fb1a53501e82281c0d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tendon_story.xml",
+      "status": "A",
+      "sha256": "57fb51b2983bec502da9b798d28473cba0aa717d17c6ec9833ed70912098a384"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_thoracic_frame_story.xml",
+      "status": "A",
+      "sha256": "3d8aafc615952293ce78255206c055ff2787ffc467ae8bbf69060427e23e0177"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_thymus_story.xml",
+      "status": "A",
+      "sha256": "f63ff447b53bfc5cdf18dfb118976efd8d24b17310cce592eecb980792698320"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tissue_context.xml",
+      "status": "M",
+      "sha256": "38da5b7f00a1022bd3240745fc867cdcdb084de3448f3a8446f5c6d50f8195ec"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tonsil_story.xml",
+      "status": "A",
+      "sha256": "64f66595f8e0654b34183bad772326eafad469895016bd2f099dd79a7e8f2f34"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_tooth_mastication_story.xml",
+      "status": "A",
+      "sha256": "f01835d6a3d9172feef59955b024d127c0516338f9bd3fe8f5ddd517d943b863"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_uptake.xml",
+      "status": "A",
+      "sha256": "1519fc09a8e21d51ce6347d5410e779fb31ef169aae6427182ed679ab5589a8c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_urine_route_story.xml",
+      "status": "A",
+      "sha256": "1644f1ca3a4772560bb00de439a29a111970fe9ff147d197f0cf27ff3158098c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_venous_return_story.xml",
+      "status": "A",
+      "sha256": "ea64bd4a2690238f47dff12ab7d33c921f5cdb4ed8c3c3de13a69675cbe88cc3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_vessel_comparison_plate.xml",
+      "status": "A",
+      "sha256": "e0f4630264813f4d22d77b6c805a1e71e279ce775faa879a7ab74f7793757f39"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_vision_story.xml",
+      "status": "A",
+      "sha256": "99c68f9bb94512e833e15698bed1a35d4f8b208e3a016d9822a5c67ad75a4662"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_whole_blood_plate.xml",
+      "status": "A",
+      "sha256": "dec8d4c68b2767ec20eaa127fb162c3a18da223e92839eb69a276ef3712bb381"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasElbowTest.kt",
+      "status": "M",
+      "sha256": "e99540e3322c6fee91c7de9ef66c0586f3328887c08e174296d35484aca3c03a"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasFunctionStoryTest.kt",
+      "status": "A",
+      "sha256": "73f3124f083b147498130d8834e3757af2fb8361c9a794dc78fab0cab2f1ab9e"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasGasExchangeTest.kt",
+      "status": "M",
+      "sha256": "063e82196e45d3441885424fea76e66f47d8d5919b8c203330359007e09d4129"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "status": "M",
+      "sha256": "76588d8a285342270091c4ab861d30f66188f4d9dd5e11517d861e299bbdc59d"
+    },
+    {
+      "path": "docs/architecture/android-body-atlas.md",
+      "status": "M",
+      "sha256": "c82f3b73e0128e7a98e8ca62296b14576c67742d533376ec848f4073c22c118c"
+    }
+  ]
+}

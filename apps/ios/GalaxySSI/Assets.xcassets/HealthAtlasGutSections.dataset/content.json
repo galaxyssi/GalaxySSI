@@ -69,20 +69,20 @@
     {
       "id": "teeth",
       "owner": "teeth",
-      "asset": "HealthAtlasGutTooth",
+      "asset": "HealthAtlasFunctionGutTooth",
       "viewLabel": "health_atlas_gut_section_tooth_view",
       "entryIDs": [
         "teeth"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-3-the-mouth-pharynx-and-esophagus",
       "features": [
         {
           "marker": {
             "id": "tooth-0",
-            "x": 0.40555555555555556,
-            "y": 0.21785714285714286
+            "x": 0.36762360446570974,
+            "y": 0.2583732057416268
           },
           "title": "health_atlas_gut_section_tooth_feature_0",
           "explanation": "health_atlas_gut_section_tooth_detail_0"
@@ -90,8 +90,8 @@
         {
           "marker": {
             "id": "tooth-1",
-            "x": 0.41944444444444445,
-            "y": 0.3678571428571429
+            "x": 0.3923444976076555,
+            "y": 0.3133971291866029
           },
           "title": "health_atlas_gut_section_tooth_feature_1",
           "explanation": "health_atlas_gut_section_tooth_detail_1"
@@ -99,8 +99,8 @@
         {
           "marker": {
             "id": "tooth-2",
-            "x": 0.5083333333333333,
-            "y": 0.41785714285714287
+            "x": 0.48325358851674644,
+            "y": 0.44258373205741625
           },
           "title": "health_atlas_gut_section_tooth_feature_2",
           "explanation": "health_atlas_gut_section_tooth_detail_2"
@@ -108,14 +108,14 @@
         {
           "marker": {
             "id": "tooth-3",
-            "x": 0.6277777777777778,
-            "y": 0.6535714285714286
+            "x": 0.6746411483253588,
+            "y": 0.6196172248803827
           },
           "title": "health_atlas_gut_section_tooth_feature_3",
           "explanation": "health_atlas_gut_section_tooth_detail_3"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_tooth.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_gut_tooth.png"
     },
     {
       "id": "esophagus",
@@ -364,24 +364,24 @@
     {
       "id": "jejunum",
       "owner": "jejunum",
-      "asset": "HealthAtlasGutJejunum",
+      "asset": "HealthAtlasFunctionGutJejunum",
       "viewLabel": "health_atlas_gut_section_jejunum_view",
       "entryIDs": [
         "jejunum",
         "cell-enterocyte",
         "lymphatic-vessels"
       ],
-      "aspectRatio": 1.2857142857142858,
+      "aspectRatio": 1,
       "markers": [
         {
           "id": "cell-enterocyte",
-          "x": 0.45,
-          "y": 0.3142857142857143
+          "x": 0.43859649122807015,
+          "y": 0.34290271132376393
         },
         {
           "id": "lymphatic-vessels",
-          "x": 0.5027777777777778,
-          "y": 0.6142857142857143
+          "x": 0.4944178628389155,
+          "y": 0.638755980861244
         }
       ],
       "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-5-the-small-and-large-intestines",
@@ -389,8 +389,8 @@
         {
           "marker": {
             "id": "jejunum-0",
-            "x": 0.2638888888888889,
-            "y": 0.6285714285714286
+            "x": 0.2535885167464115,
+            "y": 0.7320574162679426
           },
           "title": "health_atlas_gut_section_jejunum_feature_0",
           "explanation": "health_atlas_gut_section_jejunum_detail_0"
@@ -398,8 +398,8 @@
         {
           "marker": {
             "id": "jejunum-1",
-            "x": 0.46944444444444444,
-            "y": 0.2571428571428571
+            "x": 0.4904306220095694,
+            "y": 0.2679425837320574
           },
           "title": "health_atlas_gut_section_jejunum_feature_1",
           "explanation": "health_atlas_gut_section_jejunum_detail_1"
@@ -407,8 +407,8 @@
         {
           "marker": {
             "id": "jejunum-2",
-            "x": 0.45,
-            "y": 0.4714285714285714
+            "x": 0.48484848484848486,
+            "y": 0.36762360446570974
           },
           "title": "health_atlas_gut_section_jejunum_feature_2",
           "explanation": "health_atlas_gut_section_jejunum_detail_2"
@@ -416,14 +416,14 @@
         {
           "marker": {
             "id": "jejunum-3",
-            "x": 0.5027777777777778,
-            "y": 0.525
+            "x": 0.5127591706539075,
+            "y": 0.4840510366826156
           },
           "title": "health_atlas_gut_section_jejunum_feature_3",
           "explanation": "health_atlas_gut_section_jejunum_detail_3"
         }
       ],
-      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_gut_jejunum.xml"
+      "drawable": "apps/android/app/src/main/res/drawable-nodpi/health_atlas_gut_jejunum.png"
     },
     {
       "id": "ileum",
@@ -2081,5 +2081,9 @@
       ],
       "chapter": "23-5-the-small-and-large-intestines"
     }
-  ]
+  ],
+  "functionArtworkSource": {
+    "androidPR": 4384,
+    "mergeCommit": "ab78711d467c013444883dbaeca23c39a601c875"
+  }
 }

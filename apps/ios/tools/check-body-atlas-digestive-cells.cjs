@@ -6,6 +6,8 @@ const read = name => JSON.parse(fs.readFileSync(path.join(assets, name + '.datas
 const pack = read('HealthAtlasDigestiveCells'), sha = 'c37bf1deaf377b1092972e64f8bfbc9e05eb225b';
 const source = file => execFileSync('git', ['show', sha + ':' + file], {encoding: 'utf8', maxBuffer: 4_000_000});
 assert.equal(pack.source.mergeCommit, sha); assert.equal(pack.source.androidPR, 4348); assert.equal(pack.schema, 1);
+assert.deepEqual(pack.artworkSource, {androidPR: 4384, mergeCommit: 'ab78711d467c013444883dbaeca23c39a601c875'});
+execFileSync(process.execPath, [path.join(__dirname, 'check-body-atlas-sensory-sections.cjs'), '--function-digestive-structures'], {stdio: 'inherit'});
 const kotlin = source('apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDigestivePlates.kt');
 const blocks = [...kotlin.matchAll(/plate\("([^"]+)", R.drawable.(\w+),\s*"([^"]+)",\s*R.string.(\w+),([\s\S]*?)(?=\n        plate|\n    \))/g)];
 assert.equal(blocks.length, 14); assert.equal(pack.plates.length, 14);

@@ -19,6 +19,7 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var artworkView: String?
     var aging: GalaxySSIHealthAtlasAgingSelection?
     var structureLayer: String?
+    var functionSelection: GalaxySSIHealthAtlasFunctionSelection?
     var selectedStructureLayer: StructureLayer {
       get { StructureLayer(rawValue: structureLayer ?? "") ?? .organ }
       set { structureLayer = newValue.rawValue }
@@ -26,6 +27,22 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   }
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
+  private var liveFunctionPhases: [String: [String: Double]] = [:]
+
+  func recordFunctionPhase(entryID: String, storyID: String, phase: Double) {
+    guard let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get(),
+      catalogue.routes[entryID]?.contains(storyID) == true else { return }
+    liveFunctionPhases[entryID, default: [:]][storyID] = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(phase)
+  }
+  func functionSnapshot(_ entry: GalaxySSIHealthAtlas.Entry) -> Selection {
+    var value = binding(entry).wrappedValue
+    guard let phases = liveFunctionPhases[entry.id], !phases.isEmpty,
+      let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() else { return value }
+    var function = value.functionSelection ?? .init()
+    for (storyID, phase) in phases { function.save(phase, storyID: storyID, entryID: entry.id, catalogue: catalogue) }
+    value.functionSelection = function
+    return value
+  }
 
   func binding(_ entry: GalaxySSIHealthAtlas.Entry) -> Binding<Selection> {
     Binding(get: { self.entries[entry.id] ?? Selection(simulation: .initial(entry.id)) },
@@ -35,7 +52,14 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     guard text.utf8.count <= 256_000, let data = text.data(using: .utf8),
       let decoded = try? JSONDecoder().decode([String: Selection].self, from: data), decoded.count <= 300 else { return }
     entries = decoded.filter { atlas.entry($0.key) != nil }.mapValues { $0 }
+    liveFunctionPhases = [:]
+    let functionCatalogue: GalaxySSIHealthAtlasFunctionCatalogue?
+    if decoded.values.contains(where: { $0.functionSelection != nil }) {
+      functionCatalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get()
+    } else { functionCatalogue = nil }
     for id in Array(entries.keys) {
+      if let functionCatalogue { entries[id]?.functionSelection?.sanitize(entryID: id, catalogue: functionCatalogue) }
+      else { entries[id]?.functionSelection = nil }
       if atlas.entry(id)?.kind != .organ || StructureLayer(rawValue: entries[id]?.structureLayer ?? "") == nil {
         entries[id]?.structureLayer = nil
       }

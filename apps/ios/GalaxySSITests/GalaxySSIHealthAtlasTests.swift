@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import SwiftUI
 @testable import GalaxySSI
 
 @MainActor
@@ -917,6 +918,1943 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertFalse(platelet.annotations.contains { $0.id.contains("nucleus") })
   }
 
+  func testFunctionViewportUsesCurrentWindowAndPreservesCellHeightDelegation() {
+    typealias Viewport = GalaxySSIHealthAtlasFunctionViewport
+    XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: false), 144)
+    XCTAssertEqual(Viewport.limit(windowHeight: 568, cellCourse: false), 300)
+    XCTAssertEqual(Viewport.limit(windowHeight: 844, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: 0, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: .nan, cellCourse: false), 390)
+    XCTAssertEqual(Viewport.limit(windowHeight: 390, cellCourse: true), 390)
+    XCTAssertEqual(Viewport.cellCourses.count, 9)
+  }
+
+  func testFunctionStructurePlatesKeepCanonicalOwnersAndSeparateContextViews() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
+    let pack = try XCTUnwrap(GalaxySSIHealthAtlas.FunctionStructurePack.read(bundle: bundle))
+    try pack.validating(in: atlas, bundle: bundle)
+    XCTAssertEqual(pack.plates.count, 54)
+    XCTAssertEqual(pack.plates.flatMap(\.annotations).count, 177)
+    XCTAssertEqual(pack.plates.flatMap(\.markers).count, 27)
+    for language in ["en", "zh-Hans"] {
+      XCTAssertEqual(GalaxySSIHealthAtlasText.get("health_atlas_belongs", language),
+        GalaxySSIHealthAtlasFunctionText.get("health_atlas_belongs", language))
+    }
+    for plate in pack.plates {
+      let owner = try XCTUnwrap(plate.owner)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.views(for: owner).first?.id, owner)
+      for feature in plate.annotations {
+        guard case .feature(let resolved) = plate.labelTarget(feature.id, in: atlas) else {
+          return XCTFail("Expected local structure explanation")
+        }
+        XCTAssertEqual(resolved.id, feature.id)
+      }
+      for marker in plate.markers {
+        guard case .anatomy(let id) = plate.labelTarget(marker.id, in: atlas) else {
+          return XCTFail("Expected canonical anatomy destination")
+        }
+        XCTAssertEqual(id, marker.id)
+      }
+    }
+    for id in ["ribs", "cartilage", "joints", "deltoid", "rectus-abdominis"] {
+      let context = try XCTUnwrap(GalaxySSIHealthAtlas.MusculoskeletalPack.read(bundle: bundle))
+        .plates.filter { $0.entryIDs.contains(id) }
+      XCTAssertEqual(atlas.views(for: id).map(\.asset),
+        [try XCTUnwrap(pack.plates.first { $0.owner == id }).asset] + context.map(\.asset))
+    }
+    XCTAssertNil(GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: "ulna"))
+    XCTAssertNil(GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: nil))
+    XCTAssertNotEqual(atlas.plate(for: "radius")?.asset, atlas.plate(for: "ulna")?.asset)
+    XCTAssertNotEqual(atlas.plate(for: "appendix")?.asset, GalaxySSIHealthAtlasSectionLesson.forEntry("appendix")?.plate.asset)
+  }
+
+  func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
+    let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
+    try catalogue.validate(in: completeCatalogue())
+    XCTAssertEqual(catalogue.stories.count, 101); XCTAssertEqual(catalogue.routes.count, 268)
+    XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 491)
+    XCTAssertEqual(catalogue.choices(for: "pancreas").map(\.id), ["DIGESTION", "INSULIN_SECRETION", "GLUCAGON_RESPONSE"])
+    XCTAssertTrue(catalogue.choices(for: "unknown").isEmpty)
+    let heartbeat = try XCTUnwrap(catalogue.story("HEARTBEAT"))
+    XCTAssertEqual(heartbeat.chapter(0), 0); XCTAssertEqual(heartbeat.chapter(1), 4)
+    XCTAssertEqual(heartbeat.fraction(1), 1); XCTAssertEqual(heartbeat.startOf(3), 0.6)
+    XCTAssertEqual(heartbeat.chapter(.nan), 0); XCTAssertEqual(heartbeat.startOf(-1), 0)
+    XCTAssertEqual(catalogue.initialPhase(entryID: "aorta", storyID: heartbeat.id), 0.6)
+    var first = GalaxySSIHealthAtlasFunctionSelection(), second = GalaxySSIHealthAtlasFunctionSelection()
+    first.choose("INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    first.save(0.7, storyID: "INSULIN_SECRETION", entryID: "pancreas", catalogue: catalogue)
+    first.save(0.2, storyID: "DIGESTION", entryID: "pancreas", catalogue: catalogue)
+    first.choose("HEARTBEAT", entryID: "pancreas", catalogue: catalogue)
+    XCTAssertEqual(first.current(entryID: "pancreas", catalogue: catalogue)?.id, "INSULIN_SECRETION")
+    XCTAssertEqual(first.phase(entryID: "pancreas", storyID: "DIGESTION", catalogue: catalogue), 0.2)
+    XCTAssertEqual(second.phase(entryID: "pancreas", storyID: "INSULIN_SECRETION", catalogue: catalogue), 0)
+    second.selected = "HEARTBEAT"; second.phases = ["HEARTBEAT": 0.5, "DIGESTION": 2]
+    second.sanitize(entryID: "pancreas", catalogue: catalogue)
+    XCTAssertNil(second.selected); XCTAssertNil(second.phases["HEARTBEAT"]); XCTAssertEqual(second.phases["DIGESTION"], 1)
+    let restored = try JSONDecoder().decode(GalaxySSIHealthAtlasFunctionSelection.self, from: JSONEncoder().encode(first))
+    XCTAssertEqual(restored, first)
+  }
+
+  func testFunctionPlaybackSnapshotDoesNotSerializeEveryAnimationFrame() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    let entry = try XCTUnwrap(atlas.entry("tissue-skeletal-muscle"))
+    let foreign = try XCTUnwrap(atlas.entry("cell-adipocyte"))
+    state.recordFunctionPhase(entryID: entry.id, storyID: "GLUCOSE", phase: 0.57)
+    state.recordFunctionPhase(entryID: entry.id, storyID: "HEARTBEAT", phase: 0.9)
+    XCTAssertTrue(state.entries.isEmpty)
+    let snapshot = state.functionSnapshot(entry)
+    XCTAssertEqual(snapshot.functionSelection?.phases["GLUCOSE"], 0.57)
+    XCTAssertNil(snapshot.functionSelection?.phases["HEARTBEAT"])
+    XCTAssertNil(state.functionSnapshot(foreign).functionSelection)
+    XCTAssertEqual(snapshot.simulation, state.binding(entry).wrappedValue.simulation)
+    var value = state.binding(entry).wrappedValue
+    value.functionSelection = snapshot.functionSelection
+    state.binding(entry).wrappedValue = value
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    XCTAssertEqual(restored.binding(entry).wrappedValue.functionSelection?.phases["GLUCOSE"], 0.57)
+    let committed = restored.binding(entry).wrappedValue.functionSelection
+    restored.recordFunctionPhase(entryID: entry.id, storyID: "GLUCOSE", phase: 0.82)
+    XCTAssertEqual(restored.binding(entry).wrappedValue.functionSelection, committed)
+    XCTAssertEqual(restored.functionSnapshot(entry).functionSelection?.phases["GLUCOSE"], 0.82)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(state.serialized.utf8)) as? [String: [String: Any]])
+    object[entry.id]?["functionSelection"] = "corrupt"
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+    let recovered = GalaxySSIHealthAtlasState()
+    recovered.restore(try XCTUnwrap(String(data: damaged, encoding: .utf8)), atlas: atlas)
+    XCTAssertEqual(recovered.binding(entry).wrappedValue.simulation, value.simulation)
+    XCTAssertTrue(recovered.binding(entry).wrappedValue.functionSelection?.phases.isEmpty == true)
+    typealias Player = GalaxySSIHealthAtlasFunctionPlayer<EmptyView>
+    XCTAssertEqual(Player.advance(0.4, elapsed: 0.1, durationMs: 15_000), 0.4 + 0.1 / 15, accuracy: 0.000001)
+    XCTAssertEqual(Player.advance(0.4, elapsed: 2, durationMs: 15_000), 0.4 + 2.0 / 15, accuracy: 0.000001)
+    XCTAssertEqual(Player.advance(0.99, elapsed: 30, durationMs: 15_000), 1)
+    XCTAssertEqual(Player.advance(0.4, elapsed: -1, durationMs: 15_000), 0.4)
+    XCTAssertEqual(Player.advance(0.4, elapsed: .nan, durationMs: 15_000), 0.4)
+  }
+
+  func testUptakeFusionTracksSourceGeometryAndIndependentRelayStages() throws {
+    typealias Motion = GalaxySSIHealthAtlasUptakeMotion
+    let resting = Motion(chapter: 0, fraction: 0)
+    XCTAssertEqual(resting.vesicleX, 158); XCTAssertEqual(resting.vesicleY, 210)
+    XCTAssertEqual(resting.transporterRotation, -90); XCTAssertFalse(resting.bound)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0.95).bound)
+    XCTAssertFalse(Motion(chapter: 1, fraction: 0.81).irsActive)
+    XCTAssertTrue(Motion(chapter: 1, fraction: 0.82).irsActive)
+    let docking = Motion(chapter: 3, fraction: 0.58)
+    XCTAssertEqual(docking.approach, 1); XCTAssertEqual(docking.flatten, 0)
+    XCTAssertEqual(docking.vesicleX, 245); XCTAssertEqual(docking.vesicleY, 252)
+    let fused = Motion(chapter: 4, fraction: 1)
+    XCTAssertEqual(fused.flatten, 1); XCTAssertEqual(fused.radiusY, 0)
+    XCTAssertEqual(fused.transporterX, 268); XCTAssertEqual(fused.transporterY, 275)
+    XCTAssertEqual(fused.transporterRotation, 0)
+    XCTAssertEqual(fused.glucoseTravel(0), 1); XCTAssertEqual(fused.glucoseTravel(2), 1)
+    let relay = Motion(chapter: 2, fraction: 0.2)
+    XCTAssertEqual(relay.signalProgress(2), 0.7, accuracy: 0.000001)
+    XCTAssertEqual(relay, Motion(chapter: 2, fraction: 0.2))
+    XCTAssertEqual(Motion(chapter: 3, fraction: .nan), Motion(chapter: 3, fraction: 0))
+  }
+
+  func testBreathingStagesKeepExpansionZoomAndOpposingGasDirections() throws {
+    typealias Motion = GalaxySSIHealthAtlasBreathingMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    XCTAssertEqual(Motion.Stage.inhale.expansion(0), 0)
+    XCTAssertEqual(Motion.Stage.inhale.expansion(1), 1)
+    XCTAssertEqual(Motion.Stage.exhale.expansion(0), 1)
+    XCTAssertEqual(Motion.Stage.exhale.expansion(1), 0)
+    XCTAssertEqual(Motion.Stage.reachAlveolus.closeUp(0.12), 0)
+    XCTAssertEqual(Motion.Stage.reachAlveolus.closeUp(0.74), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.Stage.exhale.closeUp(0.35), 0)
+    XCTAssertEqual(Motion.Stage.diffuse.closeUp(0), 1)
+    XCTAssertEqual(Motion.Stage.perfuse.closeUp(1), 1)
+    let detail = Motion(chapter: 2, fraction: 0.5, phase: 0.5)
+    XCTAssertEqual(detail.detailSpan, 286)
+    XCTAssertEqual(detail.detailX, 31)
+    XCTAssertEqual(detail.detailY, 18)
+    XCTAssertEqual(detail.bloodPositions.count, 7)
+    XCTAssertEqual(detail.diffusionPositions.count, 3)
+    for phase in detail.diffusionPositions {
+      XCTAssertEqual(GalaxySSIHealthAtlasGasExchange.position(.oxygen, phase: phase) +
+        GalaxySSIHealthAtlasGasExchange.position(.carbon, phase: phase), 1, accuracy: 1e-12)
+    }
+    let inhale = Motion(chapter: 0, fraction: 0.5, phase: 0.1)
+    let exhale = Motion(chapter: 4, fraction: 0.5, phase: 0.1)
+    for (forward, backward) in zip(inhale.airPositions, exhale.airPositions) {
+      XCTAssertEqual(forward + backward, 1, accuracy: 1e-12)
+    }
+    let invalid = Motion(chapter: -1, fraction: .nan, phase: .infinity)
+    XCTAssertEqual(invalid.stage, .inhale)
+    XCTAssertEqual(invalid.fraction, 0)
+    XCTAssertEqual(invalid.phase, 0)
+    XCTAssertEqual(Motion.loop(.nan), 0)
+    let routes = [GalaxySSIHealthAtlasBreathingView.toRightLung, GalaxySSIHealthAtlasBreathingView.toLeftLung,
+      GalaxySSIHealthAtlasBreathingView.blood, GalaxySSIHealthAtlasBreathingView.oxygen, GalaxySSIHealthAtlasBreathingView.carbon]
+    XCTAssertEqual(GalaxySSIHealthAtlasBreathingView.blood.commands.count, 9)
+    for route in routes {
+      for phase in [0.0, 0.2, 0.5, 0.8, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: phase))
+        XCTAssertTrue(sample.point.x.isFinite && sample.point.y.isFinite)
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+      let start = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: 0))
+      XCTAssertEqual(start.point.x, route.start.x)
+      XCTAssertEqual(start.point.y, route.start.y)
+      let end = try XCTUnwrap(GalaxySSIHealthAtlasBreathingView.sample(route, position: 1))
+      let last = try XCTUnwrap(route.commands.last?.points.last)
+      XCTAssertEqual(end.point.x, last.x, accuracy: 1e-8)
+      XCTAssertEqual(end.point.y, last.y, accuracy: 1e-8)
+      XCTAssertNil(GalaxySSIHealthAtlasBreathingView.sample(route, position: .nan))
+    }
+  }
+  func testHearingStagesPreserveOscillationPacketAndMeshExtents() throws {
+    typealias Motion = GalaxySSIHealthAtlasHearingMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    XCTAssertEqual(Motion.oscillation(1.0 / 12), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.oscillation(1.0 / 4), -1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.packet(1, progress: 0), 0)
+    XCTAssertEqual(Motion.packet(0.46, progress: 0.5), Motion.oscillation(0.5, delay: 0.46 * 2.8), accuracy: 1e-12)
+    XCTAssertEqual(Motion.influence(0.5, center: 0.5, radius: 0.2), 1)
+    XCTAssertEqual(Motion.influence(1, center: 0.5, radius: 0.2), 0)
+    XCTAssertEqual(Motion.influence(.nan, center: 0.5, radius: 0.2), 0)
+    XCTAssertEqual(Motion.oscillation(.infinity), 0)
+    let stillEar = Motion(chapter: 1, fraction: 0), stillHair = Motion(chapter: 3, fraction: 0)
+    XCTAssertEqual(stillEar.mesh.count, 841)
+    XCTAssertEqual(stillEar.mesh.first, CGPoint(x: 16, y: 58))
+    XCTAssertEqual(stillEar.mesh.last, CGPoint(x: 328, y: 266))
+    XCTAssertEqual(stillHair.mesh.first, CGPoint(x: 45, y: 0))
+    XCTAssertEqual(stillHair.mesh.last, CGPoint(x: 267, y: 333))
+    let movingEar = Motion(chapter: 1, fraction: 1.0 / 12), movingHair = Motion(chapter: 3, fraction: 1.0 / 12)
+    XCTAssertGreaterThan(movingEar.mesh[14 * 29 + 12].x, stillEar.mesh[14 * 29 + 12].x)
+    XCTAssertGreaterThan(movingHair.mesh[4 * 29 + 13].x, stillHair.mesh[4 * 29 + 13].x)
+    for (moving, still) in zip(movingHair.mesh, stillHair.mesh) { XCTAssertEqual(moving.y, still.y) }
+    XCTAssertEqual(Motion(chapter: 0, fraction: 0).soundDistances.count, 6)
+    XCTAssertEqual(Motion(chapter: 4, fraction: 0).nervePositions.count, 4)
+    XCTAssertNil(Motion(chapter: 0, fraction: 0).meshAsset)
+    XCTAssertNil(Motion(chapter: 2, fraction: 0).meshAsset)
+    XCTAssertNil(Motion(chapter: 4, fraction: 0).meshAsset)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).stage, .sound)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).fraction, 0)
+    for route in [GalaxySSIHealthAtlasHearingView.cochlea, GalaxySSIHealthAtlasHearingView.nerveRoute] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 344, height: 344))
+        XCTAssertTrue((0...344).contains(sample.point.x) && (0...344).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
+  func testNephronHasStageSpecificTransportAndTallArtworkRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasNephronMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 5)
+    let counts = [[5, 2], [5, 2], [8, 2, 2], [7, 3], [2, 7]]
+    let inks: [[Motion.Ink]] = [[.blood, .crosses], [.fluid, .crosses], [.fluid, .crosses, .salt],
+      [.fluid, .secreted], [.crosses, .salt]]
+    for stage in Motion.Stage.allCases {
+      let motion = Motion(chapter: stage.rawValue, fraction: 0.6)
+      XCTAssertEqual(motion.streams.map(\.count), counts[stage.rawValue])
+      XCTAssertEqual(motion.streams.map(\.ink), inks[stage.rawValue])
+      XCTAssertEqual(motion.vessel != nil, stage == .proximal || stage == .distal)
+      for stream in motion.streams {
+        let positions = motion.positions(count: stream.count)
+        XCTAssertEqual(positions.count, stream.count)
+        XCTAssertTrue(positions.allSatisfy { (0..<1).contains($0) })
+        for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+          let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(stream.route, position: phase, width: 1173, height: 1341))
+          XCTAssertTrue((0...1173).contains(sample.point.x) && (0...1341).contains(sample.point.y))
+          XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+        }
+      }
+    }
+    XCTAssertEqual(Motion.distal.commands.count, 8)
+    XCTAssertEqual(Motion.loop.commands.count, 5)
+    XCTAssertEqual(Motion(chapter: 4, fraction: 0).positions(count: 2), [0, 0.5])
+    XCTAssertEqual(Motion(chapter: 4, fraction: 1).positions(count: 2)[0], 0.3, accuracy: 1e-12)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0).positions(count: 0).isEmpty)
+    XCTAssertTrue(Motion(chapter: 0, fraction: 0).positions(count: 17).isEmpty)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).stage, .filter)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).fraction, 0)
+  }
+  func testDigestionAndColonKeepSeparateStagesAndTransportGeometry() throws {
+    typealias Motion = GalaxySSIHealthAtlasDigestionMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 10)
+    XCTAssertEqual(Motion.Stage.meal, [.swallow, .peristalsis, .stomach, .duodenum, .villus])
+    XCTAssertEqual(Motion.Stage.colon, [.cecum, .mix, .water, .propulsion, .rectum])
+    for chapter in 0..<5 {
+      XCTAssertEqual(Motion(courseID: "DIGESTION", chapter: chapter, fraction: 0).stage, Motion.Stage.meal[chapter])
+      XCTAssertEqual(Motion(courseID: "COLON", chapter: chapter, fraction: 0).stage, Motion.Stage.colon[chapter])
+    }
+    let start = Motion(courseID: "DIGESTION", chapter: 2, fraction: 0)
+    let end = Motion(courseID: "DIGESTION", chapter: 2, fraction: 1)
+    XCTAssertEqual(start.stomachParticles.count, 11)
+    XCTAssertEqual(start.stomachParticles[0].point, CGPoint(x: 244, y: 133))
+    XCTAssertEqual(start.stomachParticles[0].radius, 4.3)
+    for (first, last) in zip(start.stomachParticles, end.stomachParticles) {
+      XCTAssertEqual(first.radius - last.radius, 2, accuracy: 1e-12)
+      XCTAssertTrue(last.point.x.isFinite && last.point.y.isFinite && last.radius > 0)
+    }
+    XCTAssertEqual(end.duodenalPositions.count, 6)
+    XCTAssertTrue(end.duodenalPositions.allSatisfy { (0..<1).contains($0) })
+    XCTAssertEqual(start.flowPositions(count: 4), [0, 0.25, 0.5, 0.75])
+    XCTAssertEqual(end.flowPositions(count: 4), [0.25, 0.5, 0.75, 0])
+    XCTAssertTrue(start.flowPositions(count: 0).isEmpty)
+    XCTAssertTrue(start.flowPositions(count: 17).isEmpty)
+    XCTAssertTrue(start.flowPositions(count: 4, time: .nan).isEmpty)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 0).rectalAdvance, 0.52)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 0.58).rectalAdvance, 0.66)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 4, fraction: 1).rectalAdvance, 0.9372, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "DIGESTION", chapter: -1, fraction: .nan).stage, .swallow)
+    XCTAssertEqual(Motion(courseID: "COLON", chapter: 20, fraction: .infinity).fraction, 0)
+    let routes = [Motion.swallow, Motion.downEsophagus, Motion.stomachExit, Motion.smallBowel, Motion.bile,
+      Motion.enzymes, Motion.waterSoluble, Motion.dietaryFat, Motion.colonEntry, Motion.ascending,
+      Motion.transverse, Motion.descending, Motion.colonFlow, Motion.rectal] + Motion.waterTracks
+    XCTAssertEqual(routes.count, 17)
+    for route in routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
+  func testVisionPathwayAndLightAdaptationRetainSourceResponses() throws {
+    typealias Motion = GalaxySSIHealthAtlasVisionMotion
+    XCTAssertEqual(Motion.Stage.allCases.count, 10)
+    XCTAssertEqual(Motion.Stage.pathway, [.entry, .focus, .capture, .relay, .output])
+    XCTAssertEqual(Motion.Stage.adaptation, [.dim, .rod, .mixed, .bright, .color])
+    let rods = [[1, 2, 3], [1, 3, 5], [3, 3, 2], [0, 0, 0], [0, 0, 0]]
+    let cones = [[4, 3, 1], [0, 0, 0], [1, 2, 4], [5, 5, 5], [5, 5, 5]]
+    let light = [[0.68, 0.415, 0.15], [0.15, 0.15, 0.15], [0.15, 0.365, 0.58],
+      [0.58, 0.76, 0.94], [0.94, 0.94, 0.94]]
+    for chapter in 0..<5 {
+      for (index, phase) in [0.0, 0.5, 1.0].enumerated() {
+        let motion = Motion(courseID: "LIGHT_ADAPTATION", chapter: chapter, fraction: phase)
+        XCTAssertEqual(motion.stage, Motion.Stage.adaptation[chapter])
+        XCTAssertEqual(motion.rodCount, rods[chapter][index])
+        XCTAssertEqual(motion.coneCount, cones[chapter][index])
+        XCTAssertEqual(motion.light, light[chapter][index], accuracy: 1e-12)
+        XCTAssertTrue((0...1).contains(motion.chroma))
+      }
+    }
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 0, fraction: 0).opticsDrawn, 0.43)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 0, fraction: 1).opticsDrawn, 0.8, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 1, fraction: 0).opticsDrawn, 1)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.459).captureCount, 6)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.46).captureCount, 2)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.1).incident, 0)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: 2, fraction: 0.48).incident, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "LIGHT_ADAPTATION", chapter: 4, fraction: 1).emphasis, 2)
+    XCTAssertEqual(Motion.blend(0, 0xFFFFFF, fraction: 0.5), 0x7F7F7F)
+    XCTAssertEqual(Motion.blend(0x123456, 0xFFFFFF, fraction: .nan), 0x123456)
+    XCTAssertEqual(Motion(courseID: "VISION", chapter: -1, fraction: .nan).stage, .entry)
+    XCTAssertEqual(Motion(courseID: "LIGHT_ADAPTATION", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.rays.count, 3)
+    let routes = Motion.rays + [Motion.lightInRetina, Motion.coneRelay, Motion.nerve]
+    for route in routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 344, height: 344))
+        XCTAssertTrue((0...344).contains(sample.point.x) && (0...344).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+    for ray in Motion.rays {
+      let focus = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(ray, position: 1, width: 344, height: 344))
+      XCTAssertEqual(focus.point, CGPoint(x: 255, y: 149))
+    }
+  }
+  func testMovementPreservesFilamentLengthsAnglesAndBoneSurfaceDepth() throws {
+    typealias Motion = GalaxySSIHealthAtlasMovementMotion
+    XCTAssertEqual(Motion.actinLength, 80)
+    XCTAssertEqual(Motion.myosinLength, 122)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(0), 111)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(0.5), 94.5)
+    XCTAssertEqual(Motion.sarcomereHalfWidth(1), 78)
+    XCTAssertEqual(Motion.elbowAngle(extending: false, fraction: 0), 0)
+    XCTAssertEqual(Motion.elbowAngle(extending: false, fraction: 1), 96)
+    XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: 0), 96)
+    XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: 1), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.elbowAngle(extending: true, fraction: phase) +
+        Motion.elbowAngle(extending: false, fraction: phase), 96, accuracy: 1e-12)
+      XCTAssertEqual(Motion.erosionDepth(chapter: 0, fraction: phase), 0)
+      XCTAssertEqual(Motion.erosionDepth(chapter: 2, fraction: phase), 62)
+      XCTAssertEqual(Motion.exposedDepth(chapter: 4, fraction: phase), 14)
+      for chapter in 0..<5 {
+        let depth = Motion.exposedDepth(chapter: chapter, fraction: phase)
+        let surface = Motion.surfacePoints(depth)
+        XCTAssertEqual(surface.count, 75)
+        XCTAssertEqual(surface.first?.x, 22)
+        XCTAssertEqual(surface.last?.x, 318)
+        XCTAssertTrue(surface.allSatisfy { (151...213.000001).contains($0.y) })
+      }
+    }
+    XCTAssertEqual(Motion.erosionDepth(chapter: 1, fraction: 0.5), 31)
+    XCTAssertEqual(Motion.exposedDepth(chapter: 3, fraction: 0), 62)
+    XCTAssertEqual(Motion.exposedDepth(chapter: 3, fraction: 1), 14)
+    XCTAssertEqual(Motion.boneY(170, depth: 62), 213)
+    XCTAssertEqual(Motion.boneY(170, depth: 14), 165)
+    XCTAssertEqual(Motion.boneY(22, depth: 62), 151)
+    XCTAssertEqual(Motion.blend(0x8AC2B2, 0xECD5AB, fraction: 0.5), 0xFFBBCBAE)
+    XCTAssertEqual(Motion(courseID: "MUSCLE_MOTION", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "BONE_REMODELING", chapter: 8, fraction: .infinity).fraction, 0)
+    XCTAssertTrue(Motion(courseID: "BONE_REMODELING", chapter: 0, fraction: 0).bone)
+    XCTAssertEqual(Motion.tubule.commands.count, 8)
+    for route in [Motion.nerve, Motion.tubule] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 340, height: 340))
+        XCTAssertTrue((0...340).contains(sample.point.x) && (0...340).contains(sample.point.y))
+      }
+    }
+  }
+  func testLymphPumpAndAntibodyExpansionKeepSourceTiming() throws {
+    typealias Motion = GalaxySSIHealthAtlasLymphImmuneMotion
+    XCTAssertEqual(Motion.PumpStage.at(0), .filling)
+    XCTAssertEqual(Motion.PumpStage.at(0.409), .filling)
+    XCTAssertEqual(Motion.PumpStage.at(0.41), .holding)
+    XCTAssertEqual(Motion.PumpStage.at(0.57), .emptying)
+    XCTAssertEqual(Motion.PumpStage.at(0.97), .holding)
+    XCTAssertTrue(Motion.PumpStage.filling.inletOpen)
+    XCTAssertFalse(Motion.PumpStage.filling.outletOpen)
+    XCTAssertFalse(Motion.PumpStage.holding.inletOpen)
+    XCTAssertFalse(Motion.PumpStage.holding.outletOpen)
+    XCTAssertFalse(Motion.PumpStage.emptying.inletOpen)
+    XCTAssertTrue(Motion.PumpStage.emptying.outletOpen)
+    XCTAssertEqual(Motion.PumpStage.expansion(0), 0)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.41), 1)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.57), 1)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.77), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.PumpStage.expansion(0.97), 0)
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: 2, fraction: 1).pumpCycle, 0.75)
+    let initial = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 0).clones
+    let split = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 0.47).clones
+    let last = Motion(courseID: "ANTIBODY_RESPONSE", chapter: 2, fraction: 1).clones
+    XCTAssertEqual(initial.centers.count, 2)
+    XCTAssertEqual(initial.diameter, 121)
+    XCTAssertEqual(split.centers.count, 4)
+    XCTAssertEqual(split.diameter, 105)
+    XCTAssertEqual(last.centers.count, 4)
+    XCTAssertEqual(last.diameter, 85)
+    XCTAssertEqual(last.centers, [CGPoint(x: 122, y: 126), CGPoint(x: 122, y: 224), CGPoint(x: 238, y: 126), CGPoint(x: 238, y: 224)])
+    XCTAssertEqual(Motion.cellBounds(x: 112, y: 181, diameter: 220), CGRect(x: 2, y: 71, width: 220, height: 220))
+    XCTAssertEqual(Motion.cellBounds(x: 100.2, y: 100.2, diameter: 93), CGRect(x: 53, y: 53, width: 93, height: 93))
+    XCTAssertNil(Motion.cellBounds(x: .nan, y: 0, diameter: 100))
+    XCTAssertNil(Motion.cellBounds(x: 0, y: 0, diameter: 0))
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "LYMPH_RETURN", chapter: 10, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Set(Motion.sections.keys), ["lymph-nodes", "thoracic-duct"])
+    for section in Motion.sections.values {
+      XCTAssertEqual(section.route.commands.count, 5)
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(section.route, position: phase, width: 360, height: 280))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...280).contains(sample.point.y))
+      }
+    }
+  }
+  func testInsulinChannelsFusionAndReleaseKeepDistinctThresholds() throws {
+    typealias Motion = GalaxySSIHealthAtlasInsulinMotion
+    XCTAssertEqual(Motion.fusionStart, 0.54)
+    XCTAssertEqual(Motion.potassiumOpen(0.04), 1)
+    XCTAssertEqual(Motion.potassiumOpen(0.68), 0)
+    XCTAssertEqual(Motion.calciumOpen(0.04), 0)
+    XCTAssertEqual(Motion.calciumOpen(0.34), 1)
+    XCTAssertEqual(Motion.approach(0), 0)
+    XCTAssertEqual(Motion.approach(0.54), 1)
+    XCTAssertEqual(Motion.aperture(0.54), 0)
+    XCTAssertEqual(Motion.aperture(0.72), 1)
+    XCTAssertEqual(Motion(chapter: 3, fraction: 0).granuleCenterY, 239)
+    XCTAssertEqual(Motion(chapter: 3, fraction: 0.54).granuleCenterY, 175)
+    for index in 0...2 {
+      XCTAssertEqual(Motion.release(0.60 + 0.075 * Double(index), index: index), 0)
+      XCTAssertEqual(Motion.release(0.90 + 0.04 * Double(index), index: index), 1)
+    }
+    XCTAssertEqual(Motion.release(0.7, index: 0), 1.0 / 3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.release(0.7, index: 2), 0)
+    XCTAssertEqual(Motion.release(1, index: 3), 0)
+    XCTAssertEqual(Motion(chapter: 1, fraction: 1).potassiumParticles.count, 5)
+    XCTAssertTrue(Motion(chapter: 1, fraction: 1).potassiumParticles.allSatisfy { $0.y >= 185 })
+    XCTAssertEqual(Motion(chapter: 2, fraction: 0).calciumParticles.count, 2)
+    XCTAssertTrue(Motion(chapter: 2, fraction: 0).calciumParticles.allSatisfy { $0.y < 127 })
+    XCTAssertEqual(Motion(chapter: 2, fraction: 1).calciumParticles.count, 7)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(chapter: 8, fraction: .infinity).fraction, 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(Motion.bloodRoute, position: phase, width: 360, height: 280))
+      XCTAssertTrue((0...360).contains(sample.point.x) && (0...280).contains(sample.point.y))
+    }
+  }
+  func testHomeostasisRetainsRelativeHumidityGlycogenAndSourceDuct() throws {
+    typealias Motion = GalaxySSIHealthAtlasHomeostasisMotion
+    XCTAssertEqual(Motion.liquidRemaining(0, humid: false), 1)
+    XCTAssertEqual(Motion.liquidRemaining(0, humid: true), 1)
+    XCTAssertEqual(Motion.liquidRemaining(1, humid: false), 0.09, accuracy: 1e-12)
+    XCTAssertEqual(Motion.liquidRemaining(1, humid: true), 0.65, accuracy: 1e-12)
+    XCTAssertEqual(Motion.liquidRemaining(-1, humid: false), 1)
+    XCTAssertEqual(Motion.liquidRemaining(.nan, humid: false), 1)
+    XCTAssertEqual(Motion.glycogenRemaining(0), 1)
+    XCTAssertEqual(Motion.glycogenRemaining(1), 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 0).glycogenCount, 12)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 0.5).glycogenCount, 7)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 3, fraction: 1).glycogenCount, 3)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertGreaterThanOrEqual(Motion.liquidRemaining(phase, humid: true), Motion.liquidRemaining(phase, humid: false))
+      XCTAssertGreaterThan(21 * sqrt(Motion.liquidRemaining(phase, humid: false)), 0)
+    }
+    XCTAssertTrue(Motion(courseID: "SWEAT_COOLING", chapter: 0, fraction: 0).cooling)
+    XCTAssertFalse(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 0, fraction: 0).cooling)
+    XCTAssertEqual(Motion(courseID: "SWEAT_COOLING", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "GLUCAGON_RESPONSE", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.sweatDuct.commands.count, 11)
+    XCTAssertEqual(Motion.glucoseExit.start.y, 281)
+    for route in [Motion.nerve, Motion.alphaExit, Motion.liverEntry, Motion.glucoseExit, Motion.sweatDuct] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+  }
+  func testSignalTimingsAndPhysicalTrailLength() throws {
+    typealias Motion = GalaxySSIHealthAtlasSignalMotion
+    XCTAssertEqual(Motion.axonTravel(1, myelinated: true), 0.98)
+    XCTAssertEqual(Motion.axonTravel(1, myelinated: false), 0.63)
+    XCTAssertEqual(Motion.axonTravel(.nan, myelinated: true), 0)
+    XCTAssertEqual(Motion.upstreamDrive(0), 1)
+    XCTAssertEqual(Motion.upstreamDrive(1), 0.3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.upstreamDrive(2), 0.3, accuracy: 1e-12)
+    for i in 0...4 {
+      XCTAssertEqual(Motion.synapticRelease(0.38 + Double(i) * 0.085, index: i), 0, accuracy: 1e-12)
+      XCTAssertEqual(Motion.synapticRelease(0.38 + Double(i) * 0.085 + 0.39, index: i), 1, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.synapticRelease(1, index: 4), 0.28 / 0.39, accuracy: 1e-12)
+    XCTAssertEqual(Motion.synapticRelease(.nan, index: 0), 0)
+    XCTAssertEqual(Motion.nodes, [94, 160, 226, 292])
+    XCTAssertEqual(try XCTUnwrap(Motion.trailStart(0.5, length: 100)), 0.23, accuracy: 1e-12)
+    XCTAssertEqual(Motion.trailStart(0.1, length: 100), 0)
+    XCTAssertEqual(Motion.trailStart(1, length: 10), 0)
+    XCTAssertNil(Motion.trailStart(.nan, length: 100))
+    XCTAssertNil(Motion.trailStart(0.5, length: 0))
+    XCTAssertEqual(Motion(courseID: "SYNAPTIC_SIGNAL", chapter: -1, fraction: .nan).course, .synaptic)
+    XCTAssertEqual(Motion(courseID: "MYELIN_SIGNAL", chapter: 0, fraction: 0).course, .myelin)
+    XCTAssertEqual(Motion(courseID: "THYROID_FEEDBACK", chapter: 0, fraction: 0).course, .thyroid)
+    XCTAssertEqual(Motion.dendriteLengths.count, 2)
+    for length in Motion.dendriteLengths + [Motion.axonLength] { XCTAssertGreaterThan(try XCTUnwrap(length), 27) }
+    for route in Motion.dendrites + [Motion.axon, Motion.portal, Motion.tshRoute, Motion.thyroidOut] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testCurveLengthUsesBoundedSubdivisionAgainstAnalyticCurves() throws {
+    typealias Length = GalaxySSIHealthAtlasCurveLength
+    XCTAssertEqual(try XCTUnwrap(Length.bezier([.zero, CGPoint(x: 3, y: 4)])), 5)
+    let quadratic = [CGPoint.zero, CGPoint(x: 50, y: 100), CGPoint(x: 100, y: 0)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(quadratic)), 50 * sqrt(5) + 25 * asinh(2), accuracy: 0.0001)
+    let cubic = [CGPoint.zero, CGPoint(x: 100, y: 0), CGPoint(x: 100, y: 100), CGPoint(x: 0, y: 100)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(cubic)), 200, accuracy: 0.0001)
+    let half = [CGPoint.zero, CGPoint(x: 50, y: 0), CGPoint(x: 75, y: 25), CGPoint(x: 75, y: 50)]
+    XCTAssertEqual(try XCTUnwrap(Length.bezier(half)), 100, accuracy: 0.0001)
+    let closed = [CGPoint.zero, CGPoint(x: 100, y: 100), CGPoint(x: -100, y: 100), CGPoint.zero]
+    XCTAssertGreaterThan(try XCTUnwrap(Length.bezier(closed)), 200)
+    XCTAssertEqual(try XCTUnwrap(Length.bezier([.zero, .zero, .zero, .zero])), 0)
+    XCTAssertNil(Length.bezier([.zero]))
+    XCTAssertNil(Length.bezier([.zero, CGPoint(x: CGFloat.nan, y: 0)]))
+    XCTAssertNil(Length.bezier(quadratic, accuracy: 0))
+  }
+  func testEpidermalBarrierKeepsAscentAndDisruptionComparison() throws {
+    typealias Motion = GalaxySSIHealthAtlasBarrierMotion
+    XCTAssertEqual(Motion.ascent(0), 277)
+    XCTAssertEqual(Motion.ascent(0.5), 212.5)
+    XCTAssertEqual(Motion.ascent(1), 148)
+    XCTAssertEqual(Motion.ascent(-1), 277)
+    XCTAssertEqual(Motion.ascent(.nan), 277)
+    XCTAssertEqual(Motion.escape(1, disrupted: false, index: 0), 0.98)
+    XCTAssertEqual(Motion.escape(1, disrupted: false, index: 1), 0.342, accuracy: 1e-12)
+    XCTAssertEqual(Motion.escape(0.25, disrupted: true, index: 5), 0)
+    for index in 0...5 {
+      XCTAssertEqual(Motion.escape(0, disrupted: true, index: index), 0)
+      XCTAssertEqual(Motion.escape(1, disrupted: true, index: index), 1)
+      var previous = 0.0
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let broken = Motion.escape(phase, disrupted: true, index: index)
+        XCTAssertGreaterThanOrEqual(broken, Motion.escape(phase, disrupted: false, index: index))
+        XCTAssertGreaterThanOrEqual(broken, previous)
+        XCTAssertTrue((0...1).contains(broken)); previous = broken
+      }
+    }
+    XCTAssertEqual(Motion.escape(.infinity, disrupted: true, index: 0), 0)
+    XCTAssertEqual(Motion.escape(1, disrupted: true, index: 6), 0)
+    XCTAssertEqual(Motion(chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(chapter: 20, fraction: .infinity).fraction, 0)
+  }
+  func testGameteTransportPreservesReleasePickupAndMovingConstriction() throws {
+    typealias Motion = GalaxySSIHealthAtlasGameteMotion
+    XCTAssertEqual(Motion.follicleOpens, 0.30)
+    XCTAssertEqual(Motion.release(0.299), 0)
+    XCTAssertEqual(Motion.release(0.30), 0)
+    XCTAssertEqual(Motion.release(0.65), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.release(1), 1)
+    XCTAssertEqual(Motion.pickup(0), 0)
+    XCTAssertEqual(Motion.pickup(0.5), 0.5)
+    XCTAssertEqual(Motion.pickup(1), 1)
+    XCTAssertEqual(Motion.pickup(.nan), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let center = 16 + 328 * phase
+      XCTAssertEqual(Motion.ductRadius(center, phase), 11)
+      XCTAssertEqual(Motion.ductRadius(center + 26, phase), 28 - 17 / exp(1), accuracy: 1e-12)
+      XCTAssertEqual(Motion.ductRadius(center - 26, phase), Motion.ductRadius(center + 26, phase), accuracy: 1e-12)
+      for x in stride(from: 24, through: 336, by: 4) { XCTAssertTrue((11...28).contains(Motion.ductRadius(Double(x), phase))) }
+    }
+    XCTAssertEqual(Motion.ductRadius(.nan, 0.5), 28)
+    XCTAssertTrue(Motion(courseID: "SPERM_TRANSPORT", chapter: 0, fraction: 0).sperm)
+    XCTAssertFalse(Motion(courseID: "OVUM_TRANSPORT", chapter: 0, fraction: 0).sperm)
+    XCTAssertEqual(Motion(courseID: "SPERM_TRANSPORT", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "OVUM_TRANSPORT", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.epididymis.commands.count, 8)
+    for route in [Motion.rete, Motion.epididymis, Motion.vas, Motion.pickupPath, Motion.ampulla] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testChemicalSenseKeepsDelayedTransferAndOdorChannelPatterns() throws {
+    typealias Motion = GalaxySSIHealthAtlasChemicalSenseMotion
+    XCTAssertEqual(Motion.odorChannels(false), [0, 2])
+    XCTAssertEqual(Motion.odorChannels(true), [1, 2])
+    XCTAssertEqual(Motion.transfer(0, index: 0), 0)
+    XCTAssertEqual(Motion.transfer(1, index: 0), 1)
+    XCTAssertEqual(Motion.transfer(0.2, index: 0, startsAt: 0.2), 0)
+    XCTAssertEqual(Motion.transfer(0.2, index: 0), 0.31, accuracy: 1e-12)
+    XCTAssertEqual(Motion.transfer(0.12, index: 0, startsAt: 0.12), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 2), (0.5 - 0.156) * 1.55, accuracy: 1e-12)
+    XCTAssertEqual(Motion.transfer(.nan, index: 0), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 8), 0)
+    XCTAssertEqual(Motion.transfer(0.5, index: 0, startsAt: .infinity), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      for index in 1...4 { XCTAssertLessThanOrEqual(Motion.transfer(phase, index: index), Motion.transfer(phase, index: index - 1)) }
+    }
+    XCTAssertTrue(Motion(courseID: "OLFACTION", chapter: 0, fraction: 0).smell)
+    XCTAssertFalse(Motion(courseID: "TASTE_SIGNAL", chapter: 0, fraction: 0).smell)
+    XCTAssertEqual(Motion(courseID: "OLFACTION", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "TASTE_SIGNAL", chapter: 20, fraction: .infinity).fraction, 0)
+    XCTAssertEqual(Motion.smellRoutes.count, 3)
+    for route in [Motion.airway, Motion.tasteNerve] + Motion.smellRoutes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testMotionSensePreservesLoadReleaseFluidAndCounterRotation() throws {
+    typealias Motion = GalaxySSIHealthAtlasMotionSenseMotion
+    XCTAssertEqual(Motion.touchLoad(step: 0, time: 0.31), 0)
+    XCTAssertEqual(Motion.touchLoad(step: 0, time: 1), 1)
+    XCTAssertEqual(Motion.touchLoad(step: 1, time: 0), 0.66)
+    XCTAssertEqual(Motion.touchLoad(step: 1, time: 1), 0.86, accuracy: 1e-12)
+    XCTAssertEqual(Motion.touchLoad(step: 2, time: 1), 0.94, accuracy: 1e-12)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 0), 0.91)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 0.74), 0)
+    XCTAssertEqual(Motion.touchLoad(step: 4, time: 1), 0)
+    XCTAssertEqual(Motion.touchLift(step: 0, time: 0), 22)
+    XCTAssertEqual(Motion.touchLift(step: 0, time: 0.31), 0)
+    XCTAssertEqual(Motion.touchLift(step: 4, time: 0.74), 0)
+    XCTAssertEqual(Motion.touchLift(step: 4, time: 1), 28, accuracy: 1e-12)
+    XCTAssertEqual(Motion.deflection(179, load: 0.5), 14.5)
+    XCTAssertEqual(Motion.deflection(237, load: 0.5), 14.5 / exp(1), accuracy: 1e-12)
+    XCTAssertEqual(Motion.pressure(sample: 0), 0)
+    XCTAssertEqual(Motion.pressure(sample: 41), 42)
+    XCTAssertEqual(Motion.pressure(sample: 255), 42)
+    XCTAssertFalse(Motion.spike(sample: 27))
+    XCTAssertTrue(Motion.spike(sample: 33))
+    XCTAssertTrue(Motion.spike(sample: 34))
+    XCTAssertFalse(Motion.spike(sample: 35))
+    XCTAssertTrue(Motion.spike(sample: 93))
+    XCTAssertEqual(Motion.relativeFluid(0.5), -16)
+    XCTAssertEqual(Motion.relativeFluid(1), 0, accuracy: 1e-12)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.headHeading(phase) + Motion.gazeCounterRotation(phase), 0)
+      XCTAssertEqual(Motion.touchLoad(step: 3, time: phase), 0.91)
+      XCTAssertTrue((-16...0).contains(Motion.relativeFluid(phase)))
+    }
+    XCTAssertTrue(Motion(courseID: "VESTIBULAR_BALANCE", chapter: 0, fraction: 0).balance)
+    XCTAssertFalse(Motion(courseID: "TOUCH_SIGNAL", chapter: 0, fraction: 0).balance)
+    XCTAssertEqual(Motion(courseID: "TOUCH_SIGNAL", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "VESTIBULAR_BALANCE", chapter: 20, fraction: .infinity).fraction, 0)
+    for route in [Motion.canal, Motion.lateralCanal, Motion.posteriorCanal, Motion.touchNerve] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testOcularTransferLimbalMigrationAndRelayDelay() throws {
+    typealias Motion = GalaxySSIHealthAtlasOcularMotion
+    XCTAssertEqual(Motion.transfer(0, returnToRod: false), 172)
+    XCTAssertEqual(Motion.transfer(1, returnToRod: false), 238)
+    XCTAssertEqual(Motion.transfer(0, returnToRod: true), 238)
+    XCTAssertEqual(Motion.transfer(1, returnToRod: true), 172)
+    XCTAssertEqual(Motion.transfer(0.5, returnToRod: false), 205)
+    XCTAssertEqual(Motion.limbalRadius(0), 104)
+    XCTAssertEqual(Motion.limbalRadius(0.5), 66)
+    XCTAssertEqual(Motion.limbalRadius(1), 28)
+    XCTAssertEqual(Motion.limbalRadius(.nan), 104)
+    XCTAssertEqual(Motion.relayFraction(0.08, index: 1), 0)
+    XCTAssertEqual(Motion.relayFraction(0.5, index: 2), 0.4216, accuracy: 1e-12)
+    XCTAssertEqual(Motion.relayFraction(.infinity, index: 0), 0)
+    XCTAssertEqual(Motion.relayFraction(1, index: 8), 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      XCTAssertEqual(Motion.transfer(phase, returnToRod: true) + Motion.transfer(phase, returnToRod: false), 410)
+      XCTAssertTrue((28...104).contains(Motion.limbalRadius(phase)))
+      XCTAssertGreaterThanOrEqual(Motion.relayFraction(phase, index: 0), Motion.relayFraction(phase, index: 2))
+    }
+    for index in 0...2 { XCTAssertEqual(Motion.relayFraction(1, index: index), 1) }
+    XCTAssertEqual(Motion(courseID: "RPE_VISUAL_CYCLE", chapter: 0, fraction: 0).course, .visualCycle)
+    XCTAssertEqual(Motion(courseID: "DIM_LIGHT_RELAY", chapter: 0, fraction: 0).course, .dimRelay)
+    XCTAssertEqual(Motion(courseID: "CORNEAL_SURFACE_RENEWAL", chapter: 0, fraction: 0).course, .cornea)
+    XCTAssertEqual(Motion(courseID: "RPE_VISUAL_CYCLE", chapter: -1, fraction: .nan).chapter, 0)
+    XCTAssertEqual(Motion(courseID: "DIM_LIGHT_RELAY", chapter: 20, fraction: .infinity).fraction, 0)
+  }
+  func testAirwaySettlingSurfaceTravelAndCiliaryWave() throws {
+    typealias Motion = GalaxySSIHealthAtlasAirwayMotion
+    XCTAssertEqual(Motion.surfaceTravel(step: 2, fraction: 1), 0)
+    XCTAssertEqual(Motion.surfaceTravel(step: 3, fraction: 1), 0.84)
+    XCTAssertEqual(Motion.surfaceTravel(step: 4, fraction: 0), 0.84)
+    XCTAssertEqual(Motion.surfaceTravel(step: 4, fraction: 1), 1)
+    XCTAssertEqual(Motion.surfaceTravel(step: 3, fraction: .nan), 0)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 0, index: 2), 0)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 0.5, index: 2), 0.45, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fall(step: 0, fraction: 1, index: 2), 1)
+    XCTAssertEqual(Motion.fall(step: 1, fraction: 0, index: 2), 1)
+    XCTAssertEqual(Motion.secretion(0, index: -1), 0)
+    XCTAssertEqual(Motion.secretion(0.5, index: 1), 0.3036, accuracy: 1e-12)
+    XCTAssertEqual(Motion.secretion(1, index: -1), 1)
+    XCTAssertEqual(Motion.ciliaryBeat(step: 1, fraction: 0.5, column: 0, fiber: 0), 2)
+    XCTAssertEqual(Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 0, fiber: 0), 13, accuracy: 1e-12)
+    XCTAssertNotEqual(Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 0, fiber: 0),
+      Motion.ciliaryBeat(step: 2, fraction: 0.125, column: 1, fiber: 0))
+    for route in [Motion.clearance, Motion.toEsophagus] {
+      XCTAssertEqual(route.commands.count, 2)
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+    XCTAssertEqual(Motion.clearance.commands.last?.points.last, Motion.toEsophagus.start)
+  }
+  func testEndothelialExchangeTravelAndLymphCollection() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndothelialMotion
+    XCTAssertEqual(Motion.travel(0.08), 0)
+    XCTAssertEqual(Motion.travel(0.41), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(0.74), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(0.5, delay: 1), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(.nan), 0)
+    XCTAssertEqual(Motion.lymphRoutes.count, 3)
+    for i in 0..<3 {
+      XCTAssertEqual(Motion.lymphRoutes[i].start.x, Motion.waterTissueX(i))
+      XCTAssertEqual(Motion.lymphRoutes[i].start.y, Motion.waterTissueY(i))
+      XCTAssertEqual(Motion.lymphRoutes[i].commands.last?.points.last?.y, 287 - 2 * Double(i))
+      XCTAssertLessThanOrEqual(Motion.travel(0.5, delay: i), Motion.travel(0.5))
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(Motion.lymphRoutes[i], position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+      }
+    }
+  }
+  func testPlateletAdhesionRecruitmentMorphAndFibrin() throws {
+    typealias Motion = GalaxySSIHealthAtlasPlateletMotion
+    XCTAssertEqual(Motion.attached(step: 0, phase: 1), 0)
+    XCTAssertEqual(Motion.attached(step: 1, phase: 0.41), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.attached(step: 2, phase: 0), 1)
+    XCTAssertEqual(Motion.active(step: 1, phase: 1), 0)
+    XCTAssertEqual(Motion.active(step: 2, phase: 0.29), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.joined(step: 3, phase: 0.3, delay: 0.3), 0)
+    XCTAssertEqual(Motion.joined(step: 3, phase: 0.62, delay: 0.3), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.joined(step: 4, phase: 0, delay: 0.3), 1)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 0), Motion.anchor.from)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 1), Motion.anchor.to)
+    XCTAssertEqual(Motion.pose(Motion.anchor, fraction: 0.5), Motion.Pose(x: 135, y: 193, angle: -2))
+    let resting = Motion.outline(activation: 0), active = Motion.outline(activation: 1)
+    XCTAssertEqual(resting.count, 14); XCTAssertEqual(active.count, 14)
+    XCTAssertEqual(resting[0].y, -7, accuracy: 1e-12)
+    XCTAssertEqual(active[0].y, -16, accuracy: 1e-12)
+    XCTAssertEqual(hypot(active[1].x / 10, active[1].y / 8), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.outline(activation: .nan), resting)
+    XCTAssertEqual(Motion.recruits.map(\.delay), [0, 0.1, 0.2, 0.3])
+    XCTAssertEqual(Motion.strands.count, 5)
+    for i in Motion.strands.indices {
+      XCTAssertEqual(Motion.strandFraction(1, index: i), 1)
+      XCTAssertTrue(Motion.strands[i].commands.allSatisfy { $0.fits(width: 360, height: 360) })
+    }
+    XCTAssertGreaterThan(Motion.strandFraction(0, index: 0), 0)
+    XCTAssertEqual(Motion.strandFraction(0, index: 4), 0)
+  }
+  func testCartilageContactSmoothingAndShoulderFlow() throws {
+    typealias Motion = GalaxySSIHealthAtlasCartilageMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 1).depth, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 0).travel, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).depth, 7)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).pressure, 1)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).depth, 21)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).travel, 37)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).pressure, 0.17, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).depth, 17)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).travel, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).depth, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).depth, 0)
+    XCTAssertEqual(Motion.faceY(180, depth: 21), 205)
+    XCTAssertEqual(Motion.matrixY(180, depth: 21, fraction: 1), Motion.baseY(180))
+    XCTAssertEqual(Motion.matrixY(180, depth: 21, fraction: 0), Motion.faceY(180, depth: 21))
+    for depth in [0.1, 7.0, 17, 21] {
+      XCTAssertEqual(Motion.faceY(32, depth: depth), Motion.faceY(32, depth: 0))
+      for side in [-1, 1] {
+        let route = Motion.flowRoute(side: side, depth: depth)
+        let exit = 180 + Double(side) * 110
+        XCTAssertEqual(route.commands.first?.points.last?.y, Motion.faceY(exit, depth: depth) - 8)
+        XCTAssertTrue(route.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+      }
+      let edge = min(3, depth * 0.5), x = 180 + sqrt(depth / 0.0029)
+      XCTAssertEqual(Motion.faceY(x, depth: depth), Motion.faceY(x, depth: 0) + edge / 4, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion.flowAlpha(0.875, returning: true), 127)
+    XCTAssertEqual(Motion.flowAlpha(1, returning: true), 0)
+    XCTAssertEqual(Motion.flowAlpha(1, returning: false), 255)
+    XCTAssertEqual(Motion.flowFraction(0, index: 0), 0.04)
+    XCTAssertEqual(Motion.flowFraction(0, index: 1), 0.5, accuracy: 1e-12)
+  }
+  func testSmoothMuscleChapterContinuityAndOpenTubeEnds() {
+    typealias Motion = GalaxySSIHealthAtlasSmoothMuscleMotion
+    XCTAssertEqual(Motion.positions, [58, 99, 102, 137, 239, 309])
+    for step in 0..<4 {
+      let a = Motion(step: step, fraction: 1), b = Motion(step: step + 1, fraction: 0)
+      XCTAssertEqual(a.center, b.center); XCTAssertEqual(a.opening, b.opening)
+      XCTAssertEqual(a.squeeze, b.squeeze); XCTAssertEqual(a.fullness, b.fullness)
+      XCTAssertEqual(a.stretch, b.stretch); XCTAssertEqual(a.heightScale, b.heightScale)
+      for x in stride(from: 16.0, through: 344, by: 2) { XCTAssertEqual(a.radius(x), b.radius(x)) }
+    }
+    XCTAssertEqual(Motion.bump(0, width: 34), 1)
+    XCTAssertEqual(Motion.bump(34, width: 34), 0)
+    XCTAssertEqual(Motion.bump(-17, width: 34), 0.5)
+    XCTAssertEqual(Motion.bump(.nan, width: 34), 0)
+    for step in 0...4 {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let frame = Motion(step: step, fraction: phase)
+        XCTAssertEqual(frame.radius(16), 28); XCTAssertEqual(frame.radius(344), 28)
+        XCTAssertEqual(frame.behind, frame.center - 48); XCTAssertEqual(frame.ahead, frame.center + 44)
+        XCTAssertEqual(frame.stretch * frame.heightScale, 1.18 + 0.025 * frame.fullness, accuracy: 1e-12)
+        for x in stride(from: 16.0, through: 344, by: 2) { XCTAssertGreaterThan(frame.radius(x), 0) }
+      }
+    }
+    XCTAssertEqual(Motion(step: -1, fraction: .nan).center, 58)
+    XCTAssertEqual(Motion(step: 100, fraction: 1).center, 309)
+  }
+  func testTendonLoadContinuityFixedInsertionAndCollagenUncrimping() {
+    typealias Motion = GalaxySSIHealthAtlasTendonMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 1).load, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).load, 0.28)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).load, 0.82, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).load, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).load, 0)
+    for step in 0..<4 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).load, Motion(step: step + 1, fraction: 0).load, accuracy: 1e-12)
+    }
+    let rest = Motion(step: 0, fraction: 0), loaded = Motion(step: 3, fraction: 1)
+    XCTAssertEqual(rest.join, 148); XCTAssertEqual(loaded.join, 133)
+    XCTAssertEqual(rest.crimp, 10); XCTAssertEqual(loaded.crimp, 1.2, accuracy: 1e-12)
+    XCTAssertEqual(rest.first + rest.halfWave * 8, 304)
+    XCTAssertEqual(loaded.first + loaded.halfWave * 8, 304)
+    XCTAssertEqual(loaded.narrow, 2); XCTAssertEqual(loaded.bulge, 5)
+    XCTAssertEqual(loaded.arrowLength, 53); XCTAssertEqual(loaded.arrowAlpha, 255)
+    XCTAssertEqual(rest.arrowAlpha, 0)
+    XCTAssertEqual(Motion.focusAlpha(0.5), 220)
+    XCTAssertEqual(Motion.focusAlpha(0.25), 110)
+    XCTAssertEqual(Motion.focusAlpha(0), 0); XCTAssertEqual(Motion.focusAlpha(1), 0)
+    XCTAssertEqual(Motion.focusAlpha(.nan), 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).load, 0)
+  }
+  func testSurfactantReleaseSpreadAndBreathWidth() throws {
+    typealias Motion = GalaxySSIHealthAtlasSurfactantMotion
+    XCTAssertEqual(Motion.width(step: 2, fraction: 1), 0.89)
+    XCTAssertEqual(Motion.width(step: 3, fraction: 0), Motion.width(step: 2, fraction: 1))
+    XCTAssertEqual(Motion.width(step: 3, fraction: 1), 1.07, accuracy: 1e-12)
+    XCTAssertEqual(Motion.width(step: 4, fraction: 0), Motion.width(step: 3, fraction: 1))
+    XCTAssertEqual(Motion.width(step: 4, fraction: 1), 0.89)
+    XCTAssertEqual(Motion.approach(0.24), 0.5)
+    XCTAssertEqual(Motion.approach(0.48), 1)
+    XCTAssertEqual(Motion.release(0.48), 0)
+    XCTAssertEqual(Motion.release(0.74), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.release(1), 1)
+    XCTAssertEqual(Motion.spread(0.2, side: -1), 0.35)
+    XCTAssertEqual(Motion.spread(1, side: -1), 0.03, accuracy: 1e-12)
+    XCTAssertEqual(Motion.spread(1, side: 1), 0.95, accuracy: 1e-12)
+    XCTAssertEqual(Motion.stretch(180, center: 180, width: 1.07), 180)
+    XCTAssertEqual(Motion.width(step: 3, fraction: .nan), 0.89)
+    XCTAssertEqual(Motion.filmTrack.commands.count, 4)
+    XCTAssertEqual(Motion.filmTrack.start, .init(x: 28, y: 233))
+    for phase in [0.0, 0.03, 0.35, 0.77, 0.95, 1.0] {
+      let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(Motion.filmTrack, position: phase, width: 360, height: 360))
+      XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+    }
+  }
+  func testAbsorptionSeparateCargoRoutesAndNormalBasedBrushGeometry() throws {
+    typealias Motion = GalaxySSIHealthAtlasAbsorptionMotion
+    let routes = [Motion.bloodRoute, Motion.lipidIntake, Motion.lymphRoute, Motion.cellSolutes, Motion.cellLipids, Motion.cellExport]
+    XCTAssertEqual(routes.map(\.cargo), [.solute, .lipid, .chylomicron, .solute, .lipid, .chylomicron])
+    XCTAssertEqual(Motion.outline.commands.count, 6)
+    for route in routes.map(\.path) + [Motion.outline] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+        XCTAssertTrue((0...360).contains(sample.point.x) && (0...360).contains(sample.point.y))
+        XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10)
+      }
+    }
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 3), 0.47, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fraction(0, index: 1, count: 3), 0.04 + 0.86 / 3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.fraction(1, index: 0, count: 1), 0.04)
+    XCTAssertEqual(Motion.fraction(.nan, index: 0, count: 1), 0.04)
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 0), 0)
+    let features = GalaxySSIHealthAtlasAbsorptionShapes.features
+    var microMoves = 0, boundaryMoves = 0, nucleiClosed = 0
+    features.microvilli.cgPath.applyWithBlock { if $0.pointee.type == .moveToPoint { microMoves += 1 } }
+    features.cellBoundaries.cgPath.applyWithBlock { if $0.pointee.type == .moveToPoint { boundaryMoves += 1 } }
+    features.nuclei.cgPath.applyWithBlock { if $0.pointee.type == .closeSubpath { nucleiClosed += 1 } }
+    XCTAssertEqual(microMoves, 121); XCTAssertEqual(boundaryMoves, 31); XCTAssertEqual(nucleiClosed, 30)
+  }
+  func testKneeSharedPosesAndRotatingAttachmentCoordinates() {
+    typealias Motion = GalaxySSIHealthAtlasKneeMotion
+    XCTAssertEqual(Motion.poses.count, 6)
+    for step in 0..<4 {
+      let from = Motion.at(step: step, fraction: 1), to = Motion.at(step: step + 1, fraction: 0)
+      XCTAssertEqual(from.bend, to.bend, accuracy: 1e-12)
+      XCTAssertEqual(from.extensor, to.extensor, accuracy: 1e-12)
+      XCTAssertEqual(from.flexor, to.flexor, accuracy: 1e-12)
+    }
+    let last = Motion.at(step: 4, fraction: 1), first = Motion.at(step: 0, fraction: 0)
+    XCTAssertEqual(last.bend, first.bend, accuracy: 1e-12)
+    XCTAssertEqual(last.extensor, first.extensor, accuracy: 1e-12)
+    XCTAssertEqual(last.flexor, first.flexor, accuracy: 1e-12)
+    XCTAssertEqual(Motion.local(-23, 32, angle: 0), .init(x: 155, y: 224))
+    XCTAssertEqual(Motion.at(step: -1, fraction: .nan).bend, 0.12)
+    XCTAssertEqual(Motion.at(step: 100, fraction: 0).bend, 0.18)
+    for step in 0...4 {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let pose = Motion.at(step: step, fraction: t), angle = -58 * pose.bend
+        for point in [Motion.local(-23, 32, angle: angle), Motion.local(24, 24, angle: angle), Motion.local(0, 100, angle: angle)] {
+          XCTAssertTrue(point.fits(width: 360, height: 360))
+        }
+        let shin = Motion.local(0, 100, angle: angle)
+        XCTAssertEqual(hypot(shin.x - 178, shin.y - 192), 100, accuracy: 1e-10)
+      }
+    }
+  }
+  func testCardiacExcitationBranchTimingAndCellRecovery() throws {
+    typealias Motion = GalaxySSIHealthAtlasCardiacSignalMotion
+    XCTAssertEqual(Motion.routes.count, 5)
+    XCTAssertEqual(Motion.progress(step: 0, fraction: 0.5, route: 0), 0.5)
+    XCTAssertEqual(Motion.progress(step: 0, fraction: 0.5, route: 1), 0.5)
+    XCTAssertNil(Motion.progress(step: 0, fraction: 0.5, route: 2))
+    XCTAssertNil(Motion.progress(step: 1, fraction: 0.5, route: 2))
+    XCTAssertEqual(try XCTUnwrap(Motion.progress(step: 2, fraction: 0.28, route: 2)), 0.5, accuracy: 1e-12)
+    XCTAssertNil(Motion.progress(step: 2, fraction: 0.55, route: 3))
+    XCTAssertEqual(Motion.progress(step: 2, fraction: 0.56, route: 3), 0)
+    XCTAssertEqual(try XCTUnwrap(Motion.progress(step: 2, fraction: 0.78, route: 4)), 0.5, accuracy: 1e-12)
+    XCTAssertNil(Motion.progress(step: 2, fraction: 1, route: 5))
+    XCTAssertEqual(Motion.shortening(step: 2, fraction: 1), 0)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: 0.5), 0.5)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: 1), Motion.shortening(step: 4, fraction: 0))
+    XCTAssertEqual(Motion.shortening(step: 4, fraction: 1), 0)
+    XCTAssertEqual(Motion.shortening(step: 3, fraction: .nan), 0)
+    XCTAssertEqual(Motion.routes[1].commands.last?.points.last, Motion.routes[2].start)
+    for index in 3...4 { XCTAssertEqual(Motion.routes[2].commands.last?.points.last, Motion.routes[index].start) }
+    for route in Motion.routes {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+      }
+    }
+  }
+  func testRedCellOxygenPlasmaHandoffAndTissueDiffusion() {
+    typealias Motion = GalaxySSIHealthAtlasRedCellMotion
+    XCTAssertEqual(Motion.ease(0.5), 0.5)
+    XCTAssertEqual(Motion.ease(.nan), 0)
+    XCTAssertEqual(Motion.peripheralFlow(1, diffuse: false), Motion.peripheralFlow(0, diffuse: true))
+    XCTAssertEqual(Motion.cellX(1, diffuse: false), Motion.cellX(0, diffuse: true))
+    XCTAssertEqual(Motion.cellX(0, diffuse: false), 137)
+    XCTAssertEqual(Motion.cellX(1, diffuse: true), 195)
+    for index in 0...2 {
+      let end = Motion.peripheralOxygen(1, index: index, diffuse: false)
+      let start = Motion.peripheralOxygen(0, index: index, diffuse: true)
+      XCTAssertEqual(end, start)
+      XCTAssertEqual(end.x, Double(146 + 20 * index))
+      XCTAssertEqual(end.y, Double(173 + 3 * (index % 2)))
+      let tissue = Motion.peripheralOxygen(1, index: index, diffuse: true)
+      XCTAssertEqual(tissue, .init(x: Double(86 + 94 * index), y: 268))
+      let lung = Motion.lungOxygen(1, index: index)
+      XCTAssertEqual(lung, .init(x: Double(180 + 10 * index), y: Double(208 - 4 * (index % 2))))
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertTrue(Motion.peripheralOxygen(t, index: index, diffuse: true).fits(width: 360, height: 360))
+        XCTAssertTrue(Motion.peripheralOxygen(t, index: index, diffuse: false).fits(width: 360, height: 360))
+      }
+    }
+  }
+  func testSalivaTracksStreamingAndDirectionalIonExchange() throws {
+    typealias Motion = GalaxySSIHealthAtlasSalivaMotion
+    XCTAssertEqual(Motion.streamFraction(0.5, index: 0, count: 4, end: 1), 0.5)
+    XCTAssertEqual(Motion.streamFraction(0.5, index: 2, count: 4, end: 1), 0)
+    XCTAssertEqual(Motion.streamFraction(0, index: 1, count: 3, end: 0.88), 0.88 / 3, accuracy: 1e-12)
+    XCTAssertEqual(Motion.streamFraction(.nan, index: 0, count: 4, end: 1), 0)
+    XCTAssertEqual(Motion.streamFraction(1, index: 0, count: 0, end: 1), 0)
+    XCTAssertEqual(Motion.ductX(0, index: 0), 173)
+    XCTAssertEqual(Motion.ductX(1, index: 0), 173)
+    XCTAssertEqual(Motion.sodium(0), .init(x: 209, y: 262))
+    XCTAssertEqual(Motion.sodium(1), .init(x: 220, y: 232))
+    XCTAssertEqual(Motion.potassium(0), .init(x: 284, y: 300))
+    XCTAssertEqual(Motion.potassium(1), .init(x: 273, y: 270))
+    XCTAssertEqual(Motion.cheekTrack.commands.first?.points, Motion.mouthTrack.commands.first?.points)
+    XCTAssertEqual(Motion.mouthTrack.commands.count, 2)
+    for route in [Motion.cheekTrack, Motion.mouthTrack, Motion.fluidTrack, Motion.proteinTrack] {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: phase, width: 360, height: 360))
+      }
+    }
+    for index in 0...6 {
+      XCTAssertTrue((173...325).contains(Motion.ductX(0.5, index: index)))
+    }
+  }
+  func testVenousValveHandoffCompressionAndFlowFade() {
+    typealias Motion = GalaxySSIHealthAtlasVenousMotion
+    XCTAssertEqual(Motion(step: 1, fraction: 1).squeeze, 0.82)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).squeeze, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).squeeze, 0)
+    for (step, time) in [(1, 0.32), (4, 0.29)] {
+      let state = Motion(step: step, fraction: time)
+      XCTAssertEqual(state.proximalOpen, 0); XCTAssertEqual(state.distalOpen, 0)
+    }
+    XCTAssertEqual(Motion(step: 1, fraction: 0.86).proximalOpen, 1)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.62).distalOpen, 1)
+    for step in 0...4 {
+      for t in stride(from: 0.0, through: 1, by: 0.01) {
+        let frame = Motion(step: step, fraction: t)
+        XCTAssertEqual(frame.proximalOpen * frame.distalOpen, 0)
+        XCTAssertTrue((0...1).contains(frame.squeeze))
+      }
+    }
+    XCTAssertEqual(Motion.ringAlpha(0.5), 213)
+    XCTAssertEqual(Motion.ringAlpha(0), 0); XCTAssertEqual(Motion.ringAlpha(1), 0)
+    XCTAssertEqual(Motion.ringAlpha(.nan), 0)
+    let packet = Motion.flow(0.25, index: 0, from: 210, to: 82)
+    XCTAssertEqual(packet.y, 146); XCTAssertEqual(packet.alpha, 255)
+    XCTAssertEqual(Motion.flow(0, index: 0, from: 210, to: 82).alpha, 0)
+    XCTAssertEqual(Motion.flow(0.25, index: 0, from: 210, to: 82, strength: 0.5).alpha, 127)
+    func waists(_ squeeze: Double) -> [CGFloat] {
+      var points: [CGFloat] = []
+      GalaxySSIHealthAtlasVenousShapes.lumen(squeeze).cgPath.applyWithBlock { pointer in
+        let element = pointer.pointee
+        if element.type == .addCurveToPoint && element.points[2].y == 181 { points.append(element.points[2].x) }
+      }
+      return points.sorted()
+    }
+    XCTAssertEqual(waists(0), [211, 249]); XCTAssertEqual(waists(1), [219, 241])
+  }
+  func testHairCycleRegressionRestSheddingAndReplacement() {
+    typealias Motion = GalaxySSIHealthAtlasHairMotion
+    XCTAssertEqual(Motion.axis(132), 173)
+    XCTAssertEqual(Motion.axis(183), 182.69, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).tip, 74)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.5).matrix, 0)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).bulb, 201)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).root, 183)
+    let resting = Motion(step: 3, fraction: 0)
+    for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let state = Motion(step: 3, fraction: phase)
+      XCTAssertEqual(state.bulb, resting.bulb); XCTAssertEqual(state.root, resting.root)
+      XCTAssertEqual(state.tip, resting.tip); XCTAssertEqual(state.matrix, 0)
+    }
+    let early = Motion(step: 4, fraction: 0.45)
+    XCTAssertEqual(early.renew, 0)
+    let released = Motion(step: 4, fraction: 0.56)
+    XCTAssertEqual(released.lift, 65)
+    XCTAssertEqual(released.drift, 22.35, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.8).opacity, 0)
+    let renewed = Motion(step: 4, fraction: 1), growing = Motion(step: 0, fraction: 0)
+    XCTAssertEqual(renewed.bulb, growing.bulb)
+    XCTAssertEqual(renewed.matrix, growing.matrix)
+    XCTAssertEqual(renewed.replacementRoot, growing.root)
+    XCTAssertEqual(renewed.replacementTip, growing.tip)
+    XCTAssertEqual(Motion(step: 2, fraction: .nan).bulb, 282)
+  }
+  func testUrineChannelNormalsReservoirAndPulseClipping() throws {
+    typealias Motion = GalaxySSIHealthAtlasUrineMotion
+    typealias Shapes = GalaxySSIHealthAtlasUrineShapes
+    for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+      let front = Motion.front(t), pinch = front - 0.16
+      XCTAssertEqual(Motion.ureterRadius(pinch, time: t), 3, accuracy: 1e-12)
+      XCTAssertEqual(Motion.ureterRadius(front, time: t), 16, accuracy: 1e-12)
+    }
+    let filled = Motion.Reservoir(time: 1, emptying: false), emptyStart = Motion.Reservoir(time: 0, emptying: true)
+    XCTAssertEqual(filled.half, emptyStart.half); XCTAssertEqual(filled.dome, emptyStart.dome); XCTAssertEqual(filled.level, emptyStart.level)
+    XCTAssertEqual(filled.half, 113); XCTAssertEqual(filled.dome, 72); XCTAssertEqual(filled.level, 111)
+    XCTAssertEqual(filled.outletRadius(0.43), 0.35, accuracy: 1e-12)
+    let flowing = Motion.Reservoir(time: 0.5, emptying: true)
+    XCTAssertEqual(flowing.open, 1); XCTAssertEqual(flowing.outletRadius(0.43), 7)
+    XCTAssertEqual(Motion.Reservoir(time: 1, emptying: true).open, 0)
+    XCTAssertNil(Motion.pulseInterval(front: -0.1, length: 0.2))
+    XCTAssertNil(Motion.pulseInterval(front: 1.5, length: 0.2))
+    XCTAssertNil(Motion.pulseInterval(front: 0.1, length: 0.2, from: 0.13))
+    XCTAssertNil(Motion.pulseInterval(front: .nan, length: 0.2))
+    let clip = try XCTUnwrap(Motion.pulseInterval(front: 1.1, length: 0.2))
+    XCTAssertEqual(clip.start, 0.9, accuracy: 1e-12); XCTAssertEqual(clip.end, 1)
+    for optional in [Shapes.ureterChannel, Shapes.tunnelChannel, Shapes.outletChannel] {
+      let channel = try XCTUnwrap(optional)
+      XCTAssertEqual(channel.samples.count, 65)
+      for sample in channel.samples { XCTAssertEqual(hypot(sample.direction.dx, sample.direction.dy), 1, accuracy: 1e-10) }
+    }
+    let outlet = try XCTUnwrap(Shapes.outletChannel)
+    XCTAssertEqual(outlet.samples.first?.point, CGPoint(x: 180, y: 252))
+    XCTAssertEqual(outlet.samples.last?.point, CGPoint(x: 180, y: 324))
+  }
+  func testPleuralBreathContinuityAndSheetAttachedTicks() {
+    typealias Motion = GalaxySSIHealthAtlasPleuraMotion
+    for step in 0..<4 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).breath, Motion(step: step + 1, fraction: 0).breath, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion(step: 0, fraction: 0.5).breath, 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).breath, 1)
+    XCTAssertEqual(Motion(step: 3, fraction: 0.5).breath, 0.28, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).breath, 0)
+    XCTAssertEqual(Motion(step: 1, fraction: .nan).breath, 0)
+    for step in 0...4 {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let frame = Motion(step: step, fraction: t)
+        XCTAssertTrue((0...1).contains(frame.breath))
+        XCTAssertEqual(frame.widen, 1 + 0.11 * frame.breath)
+        for i in 0...4 {
+          XCTAssertEqual(frame.lungTick(i) - frame.wallTick(i), 26 * frame.breath, accuracy: 1e-10)
+        }
+      }
+    }
+  }
+  func testCalciumFeedbackStrengthCargoFadeAndResponseRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasCalciumMotion
+    XCTAssertEqual(Motion.State(step: 0, fraction: 0).calcium, 1)
+    XCTAssertEqual(Motion.State(step: 0, fraction: 1).calcium, 0.34, accuracy: 1e-12)
+    XCTAssertEqual(Motion.State(step: 1, fraction: 0).hormone, 0.24)
+    XCTAssertEqual(Motion.State(step: 1, fraction: 1).hormone, 1)
+    XCTAssertEqual(Motion.State(step: 4, fraction: 1).calcium, 1)
+    XCTAssertEqual(Motion.State(step: 4, fraction: 1).hormone, 0.2, accuracy: 1e-12)
+    XCTAssertEqual(Motion.presence(0.34, index: 0, count: 7), 1)
+    XCTAssertEqual(Motion.presence(0.34, index: 2, count: 7), 0.38, accuracy: 1e-12)
+    XCTAssertEqual(Motion.presence(0.34, index: 3, count: 7), 0)
+    XCTAssertEqual(Motion.flowAlpha(0.5, index: 0, count: 5), 255)
+    XCTAssertEqual(Motion.flowAlpha(0, index: 0, count: 5), 0)
+    XCTAssertEqual(Motion.flowAlpha(0.5, index: 4, count: 5, strength: 0.2), 0)
+    XCTAssertEqual(Motion.wrap(.nan), 0)
+    XCTAssertEqual(Motion.fraction(1, index: 0, count: 5), 0)
+    XCTAssertEqual(Motion.fraction(0.5, index: 0, count: 0), 0)
+    XCTAssertEqual(GalaxySSIHealthAtlasCalciumShapes.villusDots.count, 40)
+    for route in [Motion.neckBlood, Motion.release, Motion.tubule, Motion.renalBlood, Motion.retention,
+      Motion.activeVitaminD, Motion.villus, Motion.villusBlood, Motion.uptake, Motion.intestinalSignal] {
+      for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(route, position: t, width: 360, height: 360))
+      }
+    }
+  }
+  func testMammaryOpenDuctSqueezeStorageAndFiniteFlow() throws {
+    typealias Motion = GalaxySSIHealthAtlasMammaryMotion
+    XCTAssertEqual(Motion(step: 0, fraction: 0).amount, 0.14)
+    XCTAssertEqual(Motion(step: 1, fraction: 1).amount, Motion(step: 2, fraction: 0).amount)
+    XCTAssertEqual(Motion(step: 2, fraction: 1).amount, 1)
+    XCTAssertEqual(Motion(step: 3, fraction: 0.32).squeeze, 0)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).radius, 73)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).radius, Motion(step: 4, fraction: 0).radius)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).radius, 88)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).amount, 0.35, accuracy: 1e-12)
+    XCTAssertEqual(Motion.point(88, 0), .init(x: 226, y: 177))
+    XCTAssertEqual(Motion.flow(0, index: 0), .init(x: 193, y: 170.5))
+    XCTAssertNil(Motion.flow(0, index: 1))
+    XCTAssertNil(Motion.flow(1, index: 0))
+    XCTAssertNotNil(Motion.flow(1, index: 5))
+    XCTAssertEqual(Motion(step: 3, fraction: 1).signal(1, index: 0).radius, 0)
+    for step in 0...4 {
+      let frame = Motion(step: step, fraction: 0.5)
+      for i in 0...18 {
+        if let dot = frame.milkDot(i) {
+          XCTAssertGreaterThanOrEqual(abs(dot.point.y - 177), 11)
+          XCTAssertGreaterThan(dot.radius, 0)
+          XCTAssertTrue(dot.point.fits(width: 360, height: 360))
+        }
+      }
+      let outline = GalaxySSIHealthAtlasMammaryInk.outline(frame.radius).cgPath
+      XCTAssertEqual(outline.currentPoint, CGPoint(x: 333, y: 153))
+      var closes = 0
+      outline.applyWithBlock { if $0.pointee.type == .closeSubpath { closes += 1 } }
+      XCTAssertEqual(closes, 0)
+    }
+  }
+  func testCerebellarRepeatsReducedDeviationAndFixedArmLengths() throws {
+    typealias Motion = GalaxySSIHealthAtlasCerebellumMotion
+    for step in 0..<4 {
+      XCTAssertEqual(Motion.reachProgress(chapter: step, phase: 1), Motion.reachProgress(chapter: step + 1, phase: 0), accuracy: 1e-12)
+    }
+    for (time, expected) in [(0.0, 1.0), (0.18, 0), (0.48, 1), (0.66, 0), (1.0, 1)] {
+      XCTAssertEqual(Motion.reachProgress(chapter: 4, phase: time), expected, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.laterDeviation(0.17), 1)
+    XCTAssertEqual(Motion.laterDeviation(0.18), 0.67)
+    XCTAssertEqual(Motion.laterDeviation(0.66), 0.32)
+    XCTAssertEqual(Motion.point(0.5, deviation: 1).y - Motion.point(0.5, deviation: 0).y, 22, accuracy: 1e-12)
+    XCTAssertEqual(Motion.point(0, deviation: 1), .init(x: 212, y: 187))
+    XCTAssertEqual(Motion.point(1, deviation: 0.32).x, 318)
+    XCTAssertEqual(Motion.point(1, deviation: 0.32).y, 162, accuracy: 1e-12)
+    for step in 0...4 {
+      for time in stride(from: 0.0, through: 1, by: 0.01) {
+        let progress = Motion.reachProgress(chapter: step, phase: time)
+        let finger = Motion.point(progress, deviation: step == 4 ? Motion.laterDeviation(time) : 1)
+        let arm = try XCTUnwrap(Motion.arm(finger))
+        XCTAssertEqual(hypot(arm.elbow.x - 164, arm.elbow.y - 243), 81, accuracy: 1e-9)
+        XCTAssertEqual(hypot(finger.x - arm.elbow.x, finger.y - arm.elbow.y), 98, accuracy: 1e-9)
+        XCTAssertTrue(arm.upperAngle.isFinite && arm.lowerAngle.isFinite)
+      }
+    }
+    XCTAssertNil(Motion.arm(.init(x: 164, y: 243)))
+    XCTAssertNil(Motion.cueTravel(0.17, delay: 0.18))
+    XCTAssertEqual(Motion.cueTravel(0.18, delay: 0.18), 0)
+    XCTAssertEqual(Motion.cueTravel(1, delay: 0.29), 1)
+    XCTAssertEqual(Motion.reachProgress(chapter: 1, phase: .nan), 0)
+  }
+  func testMelaninEnvelopeCoreHandoffAndSupranuclearCap() throws {
+    typealias Motion = GalaxySSIHealthAtlasMelaninMotion
+    XCTAssertEqual(Motion.cells.count, 16); XCTAssertEqual(Motion.storage.count, 7)
+    XCTAssertEqual(Motion.arrivals.count, 3); XCTAssertEqual(Motion.capTracks.count, 5)
+    XCTAssertEqual(Motion.storageAmount(0.42, index: 6), 0.22, accuracy: 1e-12)
+    XCTAssertEqual(Motion.storageAmount(1, index: 6), 1)
+    XCTAssertEqual(Motion.mainFraction(1, index: 2), 0.69, accuracy: 1e-12)
+    XCTAssertEqual(Motion.sideFraction(1, branch: 2), 0.84)
+    if case .envelope(let f) = Motion.transfer(0.12, index: 0) { XCTAssertTrue((0.99...1).contains(f)) }
+    else { XCTFail("Cargo must retain its envelope before transfer") }
+    if case .core(let f) = Motion.transfer(0.13, index: 0) { XCTAssertGreaterThan(f, 0) }
+    else { XCTFail("Recipient transfer uses a pigment core") }
+    for index in 0...2 {
+      if case .core(let f) = Motion.transfer(1, index: index) { XCTAssertEqual(f, 1) }
+      else { XCTFail("Transfer should complete") }
+      XCTAssertEqual(Motion.transferTracks[index].start, .init(x: 197, y: 200))
+      XCTAssertEqual(Motion.transferTracks[index].commands.last?.points.last, Motion.arrivals[index])
+    }
+    XCTAssertEqual(Motion.uv(1, index: 0).alpha, 40)
+    XCTAssertEqual(Motion.uv(1, index: 1).alpha, 40)
+    XCTAssertEqual(Motion.uv(1, index: 2).alpha, 170)
+    XCTAssertEqual(Motion.uv(1, index: 2).endY, 205)
+    XCTAssertGreaterThan(Motion.progress(166, start: 161, end: 175), 0)
+    for track in Motion.branches + Motion.transferTracks + Motion.capTracks {
+      for phase in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        XCTAssertNotNil(GalaxySSIHealthAtlasFunctionPath.sample(track, position: phase, width: 360, height: 360))
+      }
+    }
+  }
+  func testLarynxSharedGapAndRecoveryTiming() {
+    typealias Motion = GalaxySSIHealthAtlasLarynxMotion
+    for step in 0...4 {
+      for sample in 0...300 {
+        let frame = Motion(step: step, fraction: Double(sample) / 300)
+        XCTAssertTrue(frame.gap.isFinite)
+        XCTAssertGreaterThanOrEqual(frame.gap, 1 - 1e-10)
+        XCTAssertLessThanOrEqual(frame.gap, 43 + 1e-10)
+        XCTAssertGreaterThanOrEqual(frame.above, 0)
+        XCTAssertLessThanOrEqual(frame.above, 1)
+      }
+    }
+    for step in 0...3 {
+      XCTAssertEqual(Motion(step: step, fraction: 1).gap, Motion(step: step + 1, fraction: 0).gap, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion(step: 3, fraction: 0).gap, 1, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 3, fraction: 1.0 / 6).gap, 12, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.4).vibration, 0, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.4).breath, 0, accuracy: 1e-10)
+    XCTAssertGreaterThan(Motion(step: 4, fraction: 0.7).breath, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 1).gap, 36, accuracy: 1e-10)
+    XCTAssertEqual(Motion.unit(-0.25), 0.75, accuracy: 1e-10)
+    XCTAssertEqual(Motion(step: 2, fraction: .nan).gap, 4)
+  }
+
+  func testLarynxFlowAndAcousticFrontsStayInsideSourceLumen() {
+    typealias Motion = GalaxySSIHealthAtlasLarynxMotion
+    for up in [true, false] {
+      XCTAssertNil(Motion.airflow(travel: 0, index: 0, up: up, below: 1, above: 1))
+      for sample in 0...300 {
+        for index in 0...4 {
+          guard let flow = Motion.airflow(travel: Double(sample) / 300, index: index, up: up, below: 1, above: 0.5) else { continue }
+          XCTAssertTrue((175...185).contains(flow.x))
+          XCTAssertTrue((249...337).contains(flow.y))
+          XCTAssertTrue((0...255).contains(flow.alpha))
+          XCTAssertEqual(flow.direction, up ? -1 : 1)
+        }
+      }
+    }
+    for sample in 0...300 {
+      for index in 0...1 {
+        let pulse = Motion.acoustic(cycle: Double(sample) / 100, index: index, strength: 1)
+        XCTAssertTrue((249...270).contains(pulse.y))
+        XCTAssertTrue((4...28).contains(pulse.halfWidth))
+        XCTAssertTrue((0...255).contains(pulse.alpha))
+      }
+    }
+  }
+
+  func testAstrocyteTransferTimingAndRouteHandoffs() throws {
+    typealias Motion = GalaxySSIHealthAtlasAstrocyteMotion
+    for index in 0...2 {
+      XCTAssertEqual(Motion.signal(0, index: index), 0)
+      XCTAssertEqual(Motion.signal(1, index: index), 1)
+      XCTAssertEqual(Motion.uptake(0, index: index), 0)
+      XCTAssertEqual(Motion.uptake(1, index: index), 1)
+      XCTAssertEqual(Motion.conversion(0, index: index), 0)
+      XCTAssertEqual(Motion.conversion(1, index: index), 1)
+      XCTAssertEqual(Motion.recycle(0, index: index), 0)
+      XCTAssertEqual(Motion.recycle(1, index: index), 1)
+      XCTAssertEqual(Motion.buffer(0, index: index), 0)
+      XCTAssertEqual(Motion.buffer(1, index: index), 1)
+      let uptakeEnd = try XCTUnwrap(Motion.uptakeRoutes[index].commands.last?.points.last)
+      let conversionEnd = try XCTUnwrap(Motion.conversionRoutes[index].commands.last?.points.last)
+      let signalEnd = try XCTUnwrap(Motion.signalRoutes[index].commands[0].points.last)
+      let returnEnd = try XCTUnwrap(Motion.returnRoutes[index].commands.last?.points.last)
+      XCTAssertEqual(Motion.uptakeRoutes[index].start, signalEnd)
+      XCTAssertEqual(uptakeEnd, Motion.conversionRoutes[index].start)
+      XCTAssertEqual(conversionEnd, Motion.returnRoutes[index].start)
+      XCTAssertEqual(returnEnd, .init(x: 125, y: 91))
+    }
+    XCTAssertEqual(Motion.travel(0.5, start: 0.25, duration: 0.5), 0.5, accuracy: 1e-12)
+    XCTAssertEqual(Motion.travel(.nan, start: 0.25, duration: 0.5), 0)
+    XCTAssertLessThan(Motion.signal(0.4, index: 1), Motion.signal(0.4, index: 0))
+    XCTAssertLessThan(Motion.conversion(0.3, index: 0), 0.58)
+    XCTAssertGreaterThan(Motion.conversion(0.5, index: 0), 0.58)
+    XCTAssertEqual(Motion.bufferRoutes.count, 3)
+  }
+
+  func testSplenicPassingCellFollowsSlitRatherThanUniformScaling() {
+    typealias Motion = GalaxySSIHealthAtlasSplenicMotion
+    XCTAssertEqual(Motion.pinch(207), 1)
+    XCTAssertEqual(Motion.pinch(166), 0)
+    XCTAssertEqual(Motion.pinch(248), 0)
+    XCTAssertEqual(Motion.centerHeight(207), 1.9, accuracy: 1e-12)
+    XCTAssertEqual(Motion.centerHeight(128), 5.5, accuracy: 1e-12)
+    for sample in 0...200 {
+      let x = 166 + 82 * Double(sample) / 200, points = Motion.passingPoints(x)
+      XCTAssertEqual(points.count, 64)
+      for point in points {
+        XCTAssertTrue(point.x.isFinite && point.y.isFinite)
+        XCTAssertLessThanOrEqual(abs(point.x), 33 + 1e-10)
+        XCTAssertLessThanOrEqual(abs(point.y), 13 + 1e-10)
+        if (Motion.wallLeft...Motion.wallRight).contains(x + point.x) {
+          XCTAssertLessThanOrEqual(abs(point.y), 5 + 1e-10)
+        }
+      }
+    }
+    XCTAssertLessThan(Motion.retainedX + 22 * 0.96, Motion.wallLeft)
+  }
+
+  func testSplenicCaptureAndIronRecoveryMatchStageBoundaries() {
+    typealias Motion = GalaxySSIHealthAtlasSplenicMotion
+    let start = Motion.capture(0), end = Motion.capture(1)
+    XCTAssertEqual(start.x, Motion.retainedX)
+    XCTAssertEqual(start.y, Motion.slitY)
+    XCTAssertEqual(start.scale, 0.96)
+    XCTAssertEqual(start.extensionAmount, 0)
+    XCTAssertEqual(end.x, 109)
+    XCTAssertEqual(end.y, 259)
+    XCTAssertEqual(end.scale, 0.85, accuracy: 1e-12)
+    XCTAssertEqual(end.extensionAmount, 0, accuracy: 1e-12)
+    XCTAssertEqual(end.sweep, 360, accuracy: 1e-12)
+    XCTAssertGreaterThan(Motion.capture(0.5).extensionAmount, 0.9)
+    for index in 0...2 {
+      XCTAssertEqual(Motion.reuse(0, index: index).size, 0)
+      XCTAssertEqual(Motion.reuse(1, index: index).size, 1)
+      XCTAssertEqual(Motion.reuse(1, index: index).fraction, 1 - 0.1 * Double(index), accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.wallSegments, [139,164,172,203,217,264,278,313])
+  }
+
+  func testThymusPositiveSelectionKeepsContactSignalAndColorTimingSeparate() {
+    typealias Motion = GalaxySSIHealthAtlasThymusMotion
+    let start = Motion.positive(0), contact = Motion.positive(0.55)
+    XCTAssertEqual(start.x, 119); XCTAssertEqual(start.y, 126)
+    XCTAssertEqual(start.signal, 0); XCTAssertFalse(start.selected)
+    XCTAssertEqual(contact.x, 146); XCTAssertEqual(contact.y, 117)
+    XCTAssertGreaterThan(contact.signal, 0); XCTAssertFalse(contact.selected)
+    XCTAssertEqual(Motion.positive(0.47).signal, 0)
+    XCTAssertFalse(Motion.positive(0.719).selected)
+    XCTAssertTrue(Motion.positive(0.72).selected)
+    XCTAssertEqual(Motion.positive(0.8).signal, 1)
+    XCTAssertEqual(Motion.travel(0), 0.025)
+    XCTAssertEqual(Motion.travel(1), 0.925, accuracy: 1e-12)
+  }
+
+  func testThymusNegativeSelectionFadesOnlyReactiveCellAndKeepsRouteAnchors() throws {
+    typealias Motion = GalaxySSIHealthAtlasThymusMotion
+    let contact = Motion.negative(0.46), removed = Motion.negative(0.89)
+    XCTAssertEqual(contact.x, 194); XCTAssertEqual(contact.y, 192)
+    XCTAssertEqual(contact.removal, 0); XCTAssertEqual(contact.alpha, 255)
+    XCTAssertEqual(contact.radius, 8.5)
+    XCTAssertEqual(removed.removal, 1); XCTAssertEqual(removed.alpha, 0)
+    XCTAssertEqual(removed.debrisAlpha, 0); XCTAssertEqual(removed.radius, 5.5)
+    for sample in 0...200 {
+      let frame = Motion.negative(Double(sample) / 200)
+      XCTAssertTrue((0...255).contains(frame.alpha))
+      XCTAssertTrue((0...185).contains(frame.debrisAlpha))
+      XCTAssertTrue((5.5...8.5).contains(frame.radius))
+    }
+    XCTAssertEqual(Motion.enter.start, .init(x: 68, y: 285))
+    XCTAssertEqual(try XCTUnwrap(Motion.enter.commands.last?.points.last), .init(x: 119, y: 167))
+    XCTAssertEqual(Motion.migrate.start, .init(x: 141, y: 121))
+    XCTAssertEqual(try XCTUnwrap(Motion.migrate.commands.last?.points.last), .init(x: 200, y: 186))
+    XCTAssertEqual(Motion.leave.start, .init(x: 196, y: 218))
+    XCTAssertEqual(try XCTUnwrap(Motion.leave.commands.last?.points.last), .init(x: 296, y: 291))
+  }
+
+  func testBrainstemRespiratoryTimingKeepsExpirationAndNextBurstSeparate() {
+    typealias Motion = GalaxySSIHealthAtlasBrainstemMotion
+    XCTAssertEqual(Motion(step: 3, fraction: 0).expansion, 0)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).expansion, Motion(step: 4, fraction: 0).expansion)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.79).expansion, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.8).burst, 0)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.905).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 0.25).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 1, fraction: 0.5).burst, 0, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.13).burst, 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion(step: 2, fraction: 0.27).burst, 0)
+    XCTAssertEqual(Motion.diaphragmCenter(0), 276); XCTAssertEqual(Motion.diaphragmCenter(1), 286)
+    XCTAssertEqual(Motion(step: 3, fraction: .nan).expansion, 0)
+    for step in 0...4 {
+      for sample in 0...200 {
+        let frame = Motion(step: step, fraction: Double(sample) / 200)
+        XCTAssertTrue((0...1).contains(frame.expansion))
+        XCTAssertTrue((0...1).contains(frame.burst))
+      }
+    }
+  }
+
+  func testBrainstemMotorBranchesAndAirflowUseSourceRoutes() throws {
+    typealias Motion = GalaxySSIHealthAtlasBrainstemMotion
+    XCTAssertNotNil(Motion.motor(0.1).descending); XCTAssertNil(Motion.motor(0.1).branch)
+    XCTAssertNil(Motion.motor(0.5).descending); XCTAssertNotNil(Motion.motor(0.5).branch)
+    XCTAssertEqual(try XCTUnwrap(Motion.motor(0.91).branch), 1, accuracy: 1e-12)
+    let junction = try XCTUnwrap(Motion.descending.commands.last?.points.last)
+    XCTAssertEqual(junction, Motion.leftNerve.start); XCTAssertEqual(junction, Motion.rightNerve.start)
+    XCTAssertEqual(Motion.airRoute.start, .init(x: 112, y: 95))
+    XCTAssertEqual(try XCTUnwrap(Motion.airRoute.commands.last?.points.last), .init(x: 175, y: 191))
+    for inward in [true, false] {
+      XCTAssertNil(Motion.airflow(0, index: 0, inward: inward))
+      for sample in 0...200 {
+        for index in 0...2 {
+          guard let flow = Motion.airflow(Double(sample) / 200, index: index, inward: inward) else { continue }
+          XCTAssertTrue((0...1).contains(flow.tail)); XCTAssertTrue((0...1).contains(flow.head))
+          if inward { XCTAssertLessThan(flow.tail, flow.head) } else { XCTAssertGreaterThan(flow.tail, flow.head) }
+        }
+      }
+    }
+    XCTAssertEqual(Motion.network.count, 10); XCTAssertEqual(Motion.connections.count, 14)
+    XCTAssertTrue(Motion.connections.allSatisfy { (0..<5).contains($0) })
+  }
+
+  func testFibroblastFiberTemplatesAndArrangementRetainEveryControlPoint() {
+    typealias Motion = GalaxySSIHealthAtlasFibroblastMotion
+    XCTAssertEqual(Motion.scaffold.count, 11); XCTAssertEqual(Motion.outgoing.count, 4)
+    for shapes in Motion.outgoing {
+      XCTAssertEqual(shapes.from.interpolated(to: shapes.to, fraction: 0), shapes.from)
+      XCTAssertEqual(shapes.from.interpolated(to: shapes.to, fraction: 1), shapes.to)
+      let midpoint = shapes.from.interpolated(to: shapes.to, fraction: 0.5)
+      XCTAssertEqual(midpoint.start.x, (shapes.from.start.x + shapes.to.start.x) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.control1.y, (shapes.from.control1.y + shapes.to.control1.y) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.control2.x, (shapes.from.control2.x + shapes.to.control2.x) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.end.y, (shapes.from.end.y + shapes.to.end.y) / 2, accuracy: 1e-12)
+      XCTAssertEqual(midpoint.route.commands.count, 1)
+      XCTAssertEqual(midpoint.route.commands[0].points, [midpoint.control1,midpoint.control2,midpoint.end])
+    }
+    XCTAssertEqual(Motion.olderFiber.start, .init(x: 62, y: 181))
+    XCTAssertEqual(Motion.renewedFiber.end, .init(x: 133, y: 170))
+  }
+
+  func testFibroblastGrowthRepairCueAndTurnoverKeepIndependentWindows() {
+    typealias Motion = GalaxySSIHealthAtlasFibroblastMotion
+    for index in 0...3 {
+      XCTAssertEqual(Motion.growth(step: 2, t: 0, index: index), 0)
+      XCTAssertEqual(Motion.growth(step: 2, t: 1, index: index), 1)
+      XCTAssertEqual(Motion.growth(step: 3, t: 0, index: index), 1)
+    }
+    XCTAssertLessThan(Motion.growth(step: 2, t: 0.3, index: 2), Motion.growth(step: 2, t: 0.3, index: 0))
+    XCTAssertEqual(Motion.arrangement(step: 2, t: 1), 0)
+    XCTAssertEqual(Motion.arrangement(step: 3, t: 0), 0)
+    XCTAssertEqual(Motion.arrangement(step: 3, t: 1), 1)
+    XCTAssertEqual(Motion.turnover(step: 3, t: 1), 0)
+    XCTAssertEqual(Motion.turnover(step: 4, t: 0.06), 0)
+    XCTAssertEqual(Motion.turnover(step: 4, t: 0.92), 1)
+    XCTAssertEqual(Motion.focus(0.75), 1)
+    XCTAssertEqual(Motion.focus(1), 0)
+    XCTAssertNil(Motion.repairCue(.nan, index: 0))
+    for index in 0...1 {
+      XCTAssertNil(Motion.repairCue(0, index: index))
+      XCTAssertNil(Motion.repairCue(1, index: index))
+      for sample in 0...200 {
+        guard let cue = Motion.repairCue(Double(sample) / 200, index: index) else { continue }
+        XCTAssertTrue((7...47).contains(cue.radius)); XCTAssertTrue((0...185).contains(cue.alpha))
+      }
+    }
+  }
+
+  func testArterialWaveAndFlowHaveDifferentStageMotions() throws {
+    typealias Motion = GalaxySSIHealthAtlasArterialMotion
+    XCTAssertNil(Motion.front(step: 0, t: 0.5)); XCTAssertNil(Motion.flowTravel(step: 0, t: 0.5))
+    XCTAssertEqual(Motion.expansion(step: 0, t: 1, location: 0.24), 0)
+    XCTAssertEqual(Motion.expansion(step: 1, t: 1, location: 0.24), 0.88)
+    XCTAssertEqual(try XCTUnwrap(Motion.front(step: 2, t: 0)), 0.06)
+    XCTAssertEqual(try XCTUnwrap(Motion.front(step: 2, t: 1)), 0.94, accuracy: 1e-12)
+    XCTAssertEqual(Motion.expansion(step: 3, t: 0, location: 0.24), 0.8)
+    XCTAssertEqual(Motion.expansion(step: 3, t: 1, location: 0.24), 0)
+    XCTAssertEqual(Motion.expansion(step: 4, t: 0.5, location: 0.24), 0.82, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flowTravel(step: 3, t: 1)), 0.31, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flowTravel(step: 4, t: 1)), 0.57)
+    for sample in 0...200 {
+      let t = Double(sample) / 200, front = try XCTUnwrap(Motion.front(step: 2, t: t))
+      XCTAssertEqual(Motion.expansion(step: 2, t: t, location: front), 0.89, accuracy: 1e-12)
+      XCTAssertEqual(Motion.expansion(step: 2, t: t, location: front < 0.5 ? 1 : 0), 0.22, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.expansion(step: 1, t: .nan, location: 0.24), 0)
+  }
+
+  func testArterialLayerSamplingSymmetryAndFlowBounds() {
+    typealias Motion = GalaxySSIHealthAtlasArterialMotion
+    for step in 0...4 {
+      for t in [0.0,0.25,0.5,0.75,1] {
+        for offset in [0.0,3,11,16] {
+          let layer = Motion.layer(step: step, t: t, offset: offset)
+          XCTAssertEqual(layer.count, 50)
+          XCTAssertEqual(layer[0].x, 28); XCTAssertEqual(layer[24].x, 332)
+          XCTAssertEqual(layer[25].x, 332); XCTAssertEqual(layer[49].x, 28)
+          for index in 0...24 {
+            XCTAssertEqual(layer[index].x, layer[49 - index].x)
+            XCTAssertEqual(layer[index].y + layer[49 - index].y, 506, accuracy: 1e-10)
+          }
+        }
+        XCTAssertEqual(Motion.lamella(step: step, t: t, offset: 6, side: -1).count, 25)
+        if let distance = Motion.flowTravel(step: step, t: t) {
+          for index in 0...3 {
+            let point = Motion.flow(distance: distance, index: index)
+            XCTAssertGreaterThanOrEqual(point.x, Motion.xAt(0.05) - 1e-10)
+            XCTAssertLessThanOrEqual(point.x, Motion.xAt(0.95) + 1e-10)
+            XCTAssertEqual(point.y, index % 2 == 0 ? 248 : 259)
+          }
+        }
+      }
+    }
+    XCTAssertEqual(Motion.layerLines, [0,6,9,16])
+    XCTAssertEqual(Motion.branches.count, 3)
+  }
+
+  func testChondrocyteHydrationCompressionAndMappedAnchorsStayCoupled() {
+    typealias Motion = GalaxySSIHealthAtlasChondrocyteMotion
+    XCTAssertEqual(Motion(step: 2, fraction: 1).hydration, 0.18)
+    XCTAssertEqual(Motion(step: 3, fraction: 0).hydration, 0.18)
+    XCTAssertEqual(Motion(step: 3, fraction: 1).hydration, 1)
+    let compressed = Motion(step: 4, fraction: 0.36), recovered = Motion(step: 4, fraction: 0.96)
+    XCTAssertEqual(compressed.squeeze, 1); XCTAssertEqual(compressed.scaleY, 0.81)
+    XCTAssertEqual(compressed.hydration, 1); XCTAssertEqual(compressed.washAlpha, 48)
+    XCTAssertEqual(recovered.squeeze, 0); XCTAssertEqual(recovered.scaleY, 1)
+    XCTAssertEqual(Motion.mappedY(177, scale: compressed.scaleY), 177)
+    for y in [108.0,148,158,201,215] {
+      XCTAssertEqual(Motion.mappedY(y, scale: compressed.scaleY) - 177, (y - 177) * 0.81, accuracy: 1e-10)
+      XCTAssertEqual(Motion.mappedY(y, scale: recovered.scaleY), y, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion(step: 4, fraction: 0.15).compressionAlpha, 215)
+    XCTAssertEqual(Motion(step: 4, fraction: 0.65).compressionAlpha, 0)
+    for side in [-1.0,1] {
+      let initial = Motion(step: 3, fraction: 0).water(index: 0, side: side)
+      let hydrated = Motion(step: 3, fraction: 1).water(index: 0, side: side)
+      XCTAssertEqual(initial.alpha, 60); XCTAssertEqual(hydrated.alpha, 192)
+      XCTAssertEqual(initial.x - hydrated.x, side * 40, accuracy: 1e-10)
+      XCTAssertEqual(compressed.water(index: 0, side: side).x, initial.x)
+      XCTAssertEqual(recovered.water(index: 0, side: side).x, hydrated.x)
+      XCTAssertEqual(hydrated.length, 12)
+    }
+  }
+
+  func testChondrocyteSourceTransportsJoinFibersAndEndAtDeposits() throws {
+    typealias Geometry = GalaxySSIHealthAtlasChondrocyteGeometry
+    typealias Motion = GalaxySSIHealthAtlasChondrocyteMotion
+    XCTAssertEqual(Geometry.fibrils.count, 19); XCTAssertEqual(Geometry.neighbors.count, 4)
+    XCTAssertEqual(Geometry.focusContours.count, 4); XCTAssertEqual(Geometry.deposits.count, 3)
+    for index in 0...1 {
+      let end = try XCTUnwrap(Geometry.collagenRoutes[index].commands[0].points.last)
+      XCTAssertEqual(end, Geometry.collagenJoins[index].start)
+      XCTAssertEqual(Motion.collagenRide(0, index: index), 0)
+      XCTAssertEqual(Motion.collagenRide(1, index: index), 1)
+      XCTAssertEqual(Motion.collagenGrowth(0, index: index), 0)
+      XCTAssertEqual(Motion.collagenGrowth(1, index: index), 1)
+    }
+    for (index, deposit) in Geometry.deposits.enumerated() {
+      let end = try XCTUnwrap(deposit.route.commands[0].points.last)
+      XCTAssertEqual(end, .init(x: deposit.x, y: deposit.y))
+      XCTAssertEqual(Motion.deposit(0, index: index), 0)
+      XCTAssertEqual(Motion.deposit(1, index: index), 1)
+    }
+    for index in 0...3 {
+      XCTAssertEqual(Motion.zoneHead(0, index: index), 0)
+      XCTAssertEqual(Motion.zoneHead(1, index: index), 1.34)
+    }
+  }
+
+  func testAdrenalPoreAndReleaseKeepSourceTemporalOrder() {
+    typealias Motion = GalaxySSIHealthAtlasAdrenalMotion
+    XCTAssertTrue(Motion.locator(0).outer); XCTAssertEqual(Motion.locator(0).end, 0)
+    XCTAssertFalse(Motion.locator(0.47).outer); XCTAssertEqual(Motion.locator(0.47).end, 0)
+    XCTAssertEqual(Motion.locator(1).end, 1)
+    XCTAssertEqual(Motion.approach(0.46), 1); XCTAssertEqual(Motion.pore(0.46), 0)
+    XCTAssertEqual(Motion.pore(0.58), 1, accuracy: 1e-12)
+    XCTAssertEqual(Motion.pore(.nan), 0)
+    for index in 0...5 {
+      let before = Motion.released(0.46, index: index), after = Motion.released(1, index: index)
+      XCTAssertEqual(before.y, 206); XCTAssertEqual(before.alpha, 1)
+      XCTAssertEqual(after.x, 184 + (Double(index) - 2.5) * 6.3, accuracy: 1e-10)
+      XCTAssertEqual(after.y, 261 + 5 * Double(index % 3), accuracy: 1e-10)
+      XCTAssertEqual(after.alpha, 0.58, accuracy: 1e-12)
+    }
+    XCTAssertEqual(Motion.alpha(0), 0); XCTAssertEqual(Motion.alpha(1), 255)
+    XCTAssertEqual(Motion.alpha(0.58), 147)
+  }
+
+  func testAdrenalNeuralAndCirculatingParticlesKeepWindowsAndBackgroundLevel() throws {
+    typealias Motion = GalaxySSIHealthAtlasAdrenalMotion
+    typealias Geometry = GalaxySSIHealthAtlasAdrenalGeometry
+    XCTAssertEqual(try XCTUnwrap(Motion.pulse(0, index: 0)), 0)
+    XCTAssertNil(Motion.pulse(0, index: 1))
+    XCTAssertEqual(try XCTUnwrap(Motion.pulse(0.68, index: 0)), 1)
+    XCTAssertNil(Motion.crossing(0.53, index: 0))
+    XCTAssertEqual(try XCTUnwrap(Motion.crossing(0.54, index: 0)), 0)
+    XCTAssertNotNil(Motion.circulation(0, index: 0)); XCTAssertNil(Motion.circulation(0, index: 2))
+    XCTAssertNil(Motion.circulation(1, index: 0))
+    for index in 0...9 {
+      let resting = Motion.resting(1, index: index)
+      XCTAssertEqual(resting.alpha, index < 2 ? 1 : 0)
+    }
+    for sample in 0...200 {
+      let t = Double(sample) / 200
+      for index in 0...7 {
+        if let particle = Motion.circulation(t, index: index) {
+          XCTAssertTrue((0...1).contains(particle.phase)); XCTAssertTrue((0...1).contains(particle.alpha))
+        }
+      }
+      for index in 0...4 {
+        let blood = Motion.blood(phase: 0.74 * t, index: index)
+        XCTAssertTrue((0..<1).contains(blood.phase)); XCTAssertTrue((0...1).contains(blood.alpha))
+      }
+    }
+    XCTAssertEqual(try XCTUnwrap(Geometry.cortexRoute.commands.last?.points.last), Geometry.cortexRoute.start)
+    XCTAssertEqual(try XCTUnwrap(Geometry.medullaRoute.commands.last?.points.last), Geometry.medullaRoute.start)
+    XCTAssertEqual(try XCTUnwrap(Geometry.entryTrackRoute.commands.last?.points.last), .init(x: 327, y: 211))
+    XCTAssertEqual(try XCTUnwrap(Geometry.recoveryCurveRoute.commands.last?.points.last), .init(x: 313, y: 280))
+  }
+
+  func testGastricAcidSourceRampsKeepIndependentWindows() {
+    typealias Motion = GalaxySSIHealthAtlasGastricAcidMotion
+    let ramps: [((Double) -> Double, Double, Double)] = [
+      (Motion.locate,0.04,0.82), (Motion.histamine,0.02,0.43), (Motion.recruit,0.26,0.92),
+      (Motion.exchange,0.10,0.86), (Motion.chloride,0.04,0.64), (Motion.lumen,0.18,0.98), (Motion.feedback,0.06,0.70)
+    ]
+    for (ramp, start, end) in ramps {
+      XCTAssertEqual(ramp(start), 0); XCTAssertEqual(ramp(end), 1)
+      XCTAssertEqual(ramp((start + end) / 2), 0.5, accuracy: 1e-12)
+      XCTAssertEqual(ramp(.nan), 0)
+      var last = 0.0
+      for sample in 0...200 {
+        let value = ramp(Double(sample) / 200)
+        XCTAssertGreaterThanOrEqual(value, last); XCTAssertTrue((0...1).contains(value))
+        last = value
+      }
+    }
+    XCTAssertEqual(Motion.histamine(0.43), 1)
+    XCTAssertLessThan(Motion.recruit(0.43), 1)
+    XCTAssertEqual(Motion.output(0.32), 1)
+    XCTAssertEqual(Motion.output(0.93), 0.26, accuracy: 1e-12)
+    XCTAssertEqual(Motion.output(1), 0.26, accuracy: 1e-12)
+  }
+
+  func testGastricAcidLumenParticlesKeepWindowAndRouteEndpoints() throws {
+    typealias Motion = GalaxySSIHealthAtlasGastricAcidMotion
+    typealias Geometry = GalaxySSIHealthAtlasGastricAcidGeometry
+    for index in 0...3 { XCTAssertNil(Motion.flow(0, index: index)) }
+    XCTAssertNil(Motion.flow(1, index: 0)); XCTAssertNil(Motion.flow(1, index: 1))
+    XCTAssertEqual(try XCTUnwrap(Motion.flow(1, index: 2)), 0.86, accuracy: 1e-12)
+    XCTAssertEqual(try XCTUnwrap(Motion.flow(1, index: 3)), 0.71, accuracy: 1e-12)
+    for sample in 0...200 {
+      for index in 0...3 {
+        guard let fraction = Motion.flow(Double(sample) / 200, index: index) else { continue }
+        XCTAssertGreaterThan(fraction, 0.01); XCTAssertLessThan(fraction, 0.98)
+      }
+    }
+    XCTAssertEqual(Geometry.locatorTrack.start, .init(x: 109, y: 151))
+    XCTAssertEqual(try XCTUnwrap(Geometry.locatorTrack.commands.last?.points.last), .init(x: 269, y: 179))
+    XCTAssertEqual(Geometry.secretionTrack.start, .init(x: 219, y: 166))
+    XCTAssertEqual(try XCTUnwrap(Geometry.secretionTrack.commands.last?.points.last), .init(x: 306, y: 91))
+  }
+
+  func testMarrowRenewalAndMaturationKeepDistinctMorphologyWindows() {
+    typealias Motion = GalaxySSIHealthAtlasMarrowMotion
+    let initial = Motion.renewal(0), separated = Motion.renewal(1)
+    XCTAssertTrue(initial.shared); XCTAssertEqual(initial.distance, 0)
+    XCTAssertEqual(initial.radius, 34); XCTAssertEqual(initial.right, 108)
+    XCTAssertFalse(separated.shared); XCTAssertEqual(separated.distance, 132)
+    XCTAssertEqual(separated.radius, 28); XCTAssertEqual(separated.right, 240)
+    XCTAssertTrue(Motion.Renewal(separation: 17.0 / 36 - 1e-8).shared)
+    XCTAssertFalse(Motion.Renewal(separation: 17.0 / 36 + 1e-8).shared)
+    for sample in 0...200 {
+      let frame = Motion.renewal(Double(sample) / 200)
+      XCTAssertGreaterThanOrEqual(frame.neck, 2)
+      XCTAssertLessThanOrEqual(frame.bend, frame.radius * 0.55 + 1e-10)
+    }
+    let before = Motion.maturation(0), after = Motion.maturation(1)
+    XCTAssertEqual(before.radius, 24); XCTAssertEqual(before.nucleusRadius, 12)
+    XCTAssertEqual(before.nucleusX, 176); XCTAssertEqual(before.nucleusY, 169)
+    XCTAssertEqual(after.x, 173); XCTAssertEqual(after.radius, 20)
+    XCTAssertEqual(after.nucleusX, 205); XCTAssertEqual(after.nucleusY, 182)
+    XCTAssertEqual(after.nucleusRadius, 7); XCTAssertEqual(after.extrude, 1)
+    XCTAssertEqual(Motion.maturation(0.44).radius, 20)
+    XCTAssertLessThan(Motion.maturation(0.44).extrude, 1)
+  }
+
+  func testMarrowLumenAndDelayedReleaseKeepSourceBoundaries() {
+    typealias Motion = GalaxySSIHealthAtlasMarrowMotion
+    XCTAssertEqual(Motion.lumenPoints.count, 164)
+    XCTAssertEqual(Motion.lumenPoints[0].x, 18); XCTAssertEqual(Motion.lumenPoints[81].x, 342)
+    XCTAssertEqual(Motion.lumenPoints[82].x, 342); XCTAssertEqual(Motion.lumenPoints[163].x, 18)
+    for index in 0...81 {
+      let upper = Motion.lumenPoints[index], lower = Motion.lumenPoints[163 - index]
+      XCTAssertEqual(upper.x, lower.x)
+      XCTAssertEqual(lower.y - upper.y, 52, accuracy: 1e-10)
+      XCTAssertEqual(upper.y + lower.y, 2 * Motion.vesselY(upper.x), accuracy: 1e-10)
+    }
+    let initial = Motion.release(0, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    let crossing = Motion.release(0.345, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    let released = Motion.release(1, fromX: 156, fromY: 165, entryX: 179, endX: 330)
+    XCTAssertEqual(initial.x, 156); XCTAssertEqual(initial.y, 165)
+    XCTAssertEqual(crossing.scaleX, 0.72, accuracy: 1e-12)
+    XCTAssertEqual(crossing.scaleY, 1.16, accuracy: 1e-12)
+    XCTAssertEqual(released.x, 330); XCTAssertEqual(released.y, Motion.vesselY(330) - 4, accuracy: 1e-10)
+    XCTAssertEqual(released.scaleX, 1); XCTAssertEqual(released.scaleY, 1)
+    let delayed = Motion.release(-0.28 / 0.72, fromX: 137, fromY: 175, entryX: 157, endX: 265)
+    XCTAssertEqual(delayed.x, 137); XCTAssertEqual(delayed.y, 175)
+    XCTAssertEqual(GalaxySSIHealthAtlasMarrowGeometry.marrowCells.count, 28)
+    XCTAssertEqual(Motion.bloodX(flow: 1.15, index: 0), 8 + 344 * (1.15 * 0.55), accuracy: 1e-10)
+  }
+
+  func testCoronaryIntegratedTimeAndCompressionRemainContinuous() {
+    typealias Motion = GalaxySSIHealthAtlasCoronaryMotion
+    XCTAssertEqual(Motion.wallTime(step: 1, t: 1), Motion.wallTime(step: 2, t: 0))
+    XCTAssertEqual(Motion.wallTime(step: 2, t: 1), 1.68, accuracy: 1e-12)
+    XCTAssertEqual(Motion.wallTime(step: 2, t: 1), Motion.wallTime(step: 3, t: 0), accuracy: 1e-12)
+    XCTAssertEqual(Motion.wallTime(step: 3, t: 1), 2.36, accuracy: 1e-12)
+    XCTAssertEqual(Motion.squeeze(step: 2, t: 1), Motion.squeeze(step: 3, t: 0))
+    XCTAssertEqual(Motion.crowding(1), 0.43, accuracy: 1e-12)
+    XCTAssertEqual(Motion.leftFlow(1), 0.42, accuracy: 1e-12)
+    let epsilon = 1e-5
+    func speed(_ step: Int, _ t: Double) -> Double {
+      (Motion.wallTime(step: step, t: t + epsilon) - Motion.wallTime(step: step, t: t - epsilon)) / (2 * epsilon)
+    }
+    XCTAssertEqual(speed(2, 0.25), 0.9, accuracy: 1e-8)
+    XCTAssertEqual(speed(3, 0.25), 0.46, accuracy: 1e-8)
+  }
+
+  func testCoronaryStreamsWrapNegativeTimeAndFadeBeforeSpanMapping() throws {
+    typealias Motion = GalaxySSIHealthAtlasCoronaryMotion
+    let returning = try XCTUnwrap(Motion.stream(time: -0.15, speed: 1.38, index: 0, count: 3, strength: 1, span: 1, length: 100))
+    XCTAssertEqual(returning.position, 0.793, accuracy: 1e-12)
+    XCTAssertEqual(returning.size, 5.8); XCTAssertEqual(returning.alpha, 255)
+    let short = try XCTUnwrap(Motion.stream(time: 0.95, speed: 1, index: 0, count: 1, strength: 0.45, span: 0.55, length: 10))
+    XCTAssertEqual(short.position, 0.5225, accuracy: 1e-12)
+    XCTAssertEqual(short.size, 1.9, accuracy: 1e-12); XCTAssertEqual(short.alpha, 45)
+    XCTAssertNil(Motion.stream(time: .nan, speed: 1, index: 0, count: 1, strength: 1, span: 1, length: 100))
+    XCTAssertNil(Motion.stream(time: .greatestFiniteMagnitude, speed: 2, index: 0, count: 1, strength: 1, span: 1, length: 100))
+  }
+
+  func testCoronarySourceTracksHaveCachedLengthsAndBranchAnchors() throws {
+    typealias Routes = GalaxySSIHealthAtlasCoronaryRoutes
+    let tracks = [Routes.rightCoronary,Routes.rightBranch,Routes.leftMain,Routes.descending,Routes.circumflex,Routes.diagonal,
+      Routes.anteriorVein,Routes.cardiacVein,Routes.tributary,Routes.coronarySinus,Routes.arteriole,Routes.venule] + Routes.ostialFlows + Routes.capillaries
+    XCTAssertEqual(tracks.count, 17)
+    for track in tracks {
+      XCTAssertGreaterThan(try XCTUnwrap(track.length), 0)
+      XCTAssertFalse(track.path.isEmpty)
+      XCTAssertTrue(track.route.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+    }
+    let bifurcation = try XCTUnwrap(Routes.leftMain.route.commands.last?.points.last)
+    XCTAssertEqual(bifurcation, Routes.descending.route.start); XCTAssertEqual(bifurcation, Routes.circumflex.route.start)
+    XCTAssertEqual(try XCTUnwrap(Routes.cardiacVein.route.commands.last?.points.last), Routes.coronarySinus.route.start)
+    for track in Routes.capillaries {
+      XCTAssertEqual(track.route.start, .init(x: 121, y: 290))
+      XCTAssertEqual(try XCTUnwrap(track.route.commands.last?.points.last), .init(x: 248, y: 290))
+    }
+  }
+
+  func testPodocyteStageEasingAndContinuousBasementSampling() {
+    typealias Motion = GalaxySSIHealthAtlasPodocyteMotion
+    XCTAssertEqual(Motion.progress(step: 0, t: 0.5), 0.5)
+    XCTAssertEqual(Motion.progress(step: 1, t: 0.5), 0.25)
+    XCTAssertEqual(Motion.progress(step: 2, t: 0.5), 0.75)
+    XCTAssertEqual(Motion.progress(step: 3, t: 0.08), 0)
+    XCTAssertEqual(Motion.progress(step: 3, t: 0.92), 1)
+    XCTAssertEqual(Motion.progress(step: 4, t: 0.5), 0.5)
+    for step in 0...4 {
+      XCTAssertEqual(Motion.progress(step: step, t: 0), 0)
+      XCTAssertEqual(Motion.progress(step: step, t: 1), 1)
+    }
+    let strip = Motion.strip(top: Motion.wallY, bottom: Motion.footY)
+    XCTAssertEqual(strip.count, 222)
+    for index in 0...110 {
+      XCTAssertEqual(strip[index].x, strip[221 - index].x)
+      XCTAssertEqual(strip[221 - index].y - strip[index].y, 13, accuracy: 1e-10)
+    }
+    XCTAssertEqual(Motion.endothelialSegments.count, 9)
+    for index in 0..<8 {
+      XCTAssertEqual(Motion.endothelialSegments[index].right, Motion.fenestrae[index] - 3.5)
+      XCTAssertEqual(Motion.endothelialSegments[index + 1].left, Motion.fenestrae[index] + 3.5)
+    }
+    XCTAssertEqual(Motion.strip(top: Motion.endoY, bottom: Motion.wallY, left: 24, right: 39.5).count, 16)
+    XCTAssertEqual(Motion.wallY(134), 173)
+    XCTAssertEqual(Motion.footY(134), 186)
+  }
+
+  func testPodocyteFiltrateRoutesCrossSourcePoresAndSlits() throws {
+    typealias Motion = GalaxySSIHealthAtlasPodocyteMotion
+    typealias Geometry = GalaxySSIHealthAtlasPodocyteGeometry
+    let routes: [(GalaxySSIHealthAtlasSectionLesson.Route, Double, Double, Double)] = [
+      (Geometry.leftFlow,43,53,33), (Geometry.rightFlow,221.5,215,234)
+    ]
+    for (route, pore, slit, exit) in routes {
+      XCTAssertEqual(route.commands.count, 4)
+      XCTAssertEqual(route.start, .init(x: pore, y: Motion.wallY(pore) - 29))
+      XCTAssertEqual(try XCTUnwrap(route.commands[0].points.last), .init(x: pore, y: Motion.wallY(pore) - 1))
+      XCTAssertEqual(try XCTUnwrap(route.commands[1].points.last), .init(x: slit, y: Motion.footY(slit) - 1))
+      XCTAssertEqual(try XCTUnwrap(route.commands[2].points.last), .init(x: slit, y: Motion.footY(slit) + 9))
+      XCTAssertEqual(try XCTUnwrap(route.commands[3].points.last), .init(x: exit, y: 293))
+    }
+    XCTAssertEqual(Geometry.tuftFlow.commands.count, 8)
+    for sample in 0...200 {
+      let f = Double(sample) / 200
+      for index in 0...2 {
+        XCTAssertTrue((11..<257).contains(Motion.bloodX(f, index: index)))
+        let phases = Motion.filtrate(f, index: index)
+        XCTAssertTrue((0..<1).contains(phases.p)); XCTAssertTrue((0..<1).contains(phases.q))
+      }
+      for index in 0...3 { XCTAssertTrue((17..<251).contains(Motion.proteinX(f, index: index))) }
+    }
+    XCTAssertEqual(Motion.filtrate(0, index: 0).p, 0)
+    XCTAssertEqual(Motion.filtrate(0, index: 0).q, 0.16)
+  }
+
+  func testEndometriumFunctionalSurfaceErodesWithoutRemovingBasalStroma() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndometriumMotion
+    let regrowth = Motion.Frame(step: 1, fraction: 0), proliferated = Motion.Frame(step: 1, fraction: 1)
+    let secretory = Motion.Frame(step: 2, fraction: 1), shedding = Motion.Frame(step: 3, fraction: 0)
+    let repaired = Motion.Frame(step: 4, fraction: 1)
+    XCTAssertEqual(regrowth.top, 244); XCTAssertEqual(proliferated.top, 161)
+    XCTAssertEqual(secretory.top, 149); XCTAssertEqual(secretory.secretory, 1)
+    XCTAssertEqual(shedding.top, 149); XCTAssertEqual(try XCTUnwrap(shedding.erosion), 0)
+    XCTAssertEqual(repaired.top, 244); XCTAssertNil(repaired.erosion)
+    for index in 0...40 {
+      let x = 106 + 148 * Double(index) / 40
+      let intact = Motion.surface(x, top: secretory.top, erosion: nil)
+      XCTAssertEqual(Motion.surface(x, top: shedding.top, erosion: 0), intact, accuracy: 1e-10)
+      XCTAssertEqual(Motion.surface(x, top: shedding.top, erosion: 1), 244, accuracy: 1e-10)
+      XCTAssertGreaterThanOrEqual(Motion.surface(x, top: shedding.top, erosion: 0.5), intact - 1e-10)
+      XCTAssertLessThanOrEqual(Motion.surface(x, top: shedding.top, erosion: 0.5), 244)
+    }
+    let basal = (0...40).compactMap { Motion.stroma(repaired, index: $0) }
+    XCTAssertEqual(basal.count, 14)
+    XCTAssertTrue(basal.allSatisfy { $0.inBase && (248...276).contains($0.y) && $0.rx == 3.2 && $0.ry == 1.1 })
+  }
+
+  func testEndometriumGlandsKeepTheirBasalEndsAndSecretionWindows() throws {
+    typealias Motion = GalaxySSIHealthAtlasEndometriumMotion
+    typealias Geometry = GalaxySSIHealthAtlasEndometriumGeometry
+    let frame = Motion.Frame(step: 2, fraction: 1)
+    for (index, x) in Motion.glandSites.enumerated() {
+      let top = Motion.surface(x, top: frame.top, erosion: nil)
+      let gland = Geometry.channel(x: x, top: top, bend: frame.secretory, index: index)
+      XCTAssertEqual(gland.commands.count, 4)
+      XCTAssertEqual(gland.start, .init(x: x, y: top - 4))
+      XCTAssertEqual(try XCTUnwrap(gland.commands.last?.points.last), .init(x: x + 2, y: 272))
+      XCTAssertTrue(gland.commands.allSatisfy { $0.fits(width: 360, height: 360) })
+      XCTAssertEqual(Geometry.channel(x: x, top: 244, bend: 0, index: index).commands.count, 1)
+      XCTAssertEqual(Motion.repairRadius(0, index: index), 3)
+      XCTAssertEqual(Motion.repairRadius(1, index: index), 27)
+      for particle in 0...2 {
+        XCTAssertNil(Motion.secretion(0, gland: index, particle: particle))
+        let final = try XCTUnwrap(Motion.secretion(1, gland: index, particle: particle))
+        XCTAssertEqual(final.fraction, 0, accuracy: 1e-12); XCTAssertEqual(final.radius, 2.4)
+      }
+    }
+    for index in 0...3 {
+      XCTAssertNil(Motion.fragment(0, index: index)); XCTAssertNil(Motion.fragment(1, index: index))
+      for sample in 0...200 {
+        guard let fragment = Motion.fragment(Double(sample) / 200, index: index) else { continue }
+        XCTAssertTrue((0...215).contains(fragment.alpha))
+        XCTAssertTrue((122...200).contains(fragment.x)); XCTAssertTrue((131...174).contains(fragment.y))
+      }
+    }
+  }
+
+  func testHeartbeatHasFiveDistinctStagesAndSharedValveAnchors() throws {
+    typealias Stage = GalaxySSIHealthAtlasBeatStage
+    typealias Motion = GalaxySSIHealthAtlasBeatMotion
+    typealias Valve = GalaxySSIHealthAtlasHeartSection.Valve
+    XCTAssertEqual(Stage.allCases.count, 5)
+    XCTAssertEqual(Stage.filling.ventricularNarrowing(0), 1)
+    XCTAssertEqual(Stage.filling.ventricularNarrowing(1), 0.16, accuracy: 0.000001)
+    XCTAssertEqual(Stage.atrialSqueeze.ventricularNarrowing(0), 0.16)
+    XCTAssertEqual(Stage.atrialSqueeze.ventricularNarrowing(1), 0)
+    XCTAssertEqual(Stage.pressureRise.ventricularNarrowing(0.5), 0)
+    XCTAssertEqual(Stage.ejection.ventricularNarrowing(0), 0)
+    XCTAssertEqual(Stage.ejection.ventricularNarrowing(1), 1)
+    XCTAssertEqual(Stage.relaxation.ventricularNarrowing(0.5), 1)
+    for valve in Valve.allCases {
+      XCTAssertEqual(Stage.filling.valveOpenness(valve, fraction: 0.5), valve.openAt(0) == true ? 1 : 0)
+      XCTAssertEqual(Stage.ejection.valveOpenness(valve, fraction: 0.5), valve.openAt(2) == true ? 1 : 0)
+      XCTAssertEqual(Stage.pressureRise.valveOpenness(valve, fraction: 0.5), 0)
+      XCTAssertEqual(Stage.relaxation.valveOpenness(valve, fraction: 0.5), 0)
+      XCTAssertEqual(Stage.ejection.valveOpenness(valve, fraction: 1), 0)
+    }
+    let closing = Motion(chapter: 2, fraction: 0)
+    XCTAssertEqual(closing.emphasis(.mitral), 21); XCTAssertEqual(closing.emphasis(.aortic), 0)
+    let relaxing = Motion(chapter: 4, fraction: 0)
+    XCTAssertEqual(relaxing.emphasis(.aortic), 21); XCTAssertEqual(relaxing.emphasis(.mitral), 0)
+    let ejection = Motion(chapter: 3, fraction: 1)
+    XCTAssertEqual(ejection.warpedX(450, y: 1052), 501.3, accuracy: 0.000001)
+    XCTAssertEqual(ejection.warpedY(1052), 988)
+    let atrial = Motion(chapter: 1, fraction: 0.5)
+    XCTAssertEqual(atrial.meshPoint(x: 426, y: 500).y, 500 + 27 * (1 - 27.0 / 132) * 0.55, accuracy: 0.000001)
+    XCTAssertEqual(atrial.mesh, Motion(chapter: 1, fraction: 0.5).mesh)
+    XCTAssertNotEqual(atrial.mesh, Motion(chapter: 1, fraction: 0.1).mesh)
+    XCTAssertEqual(Motion(chapter: 0, fraction: .nan), Motion(chapter: 0, fraction: 0))
+    XCTAssertTrue(Motion.streamPositions(0).isEmpty); XCTAssertTrue(Motion.streamPositions(.nan).isEmpty)
+    XCTAssertTrue(Motion.streamPositions(0.5).allSatisfy { $0 > 0 && $0 < 1 })
+    for route in [GalaxySSIHealthAtlasHeartbeatView.rightFill, GalaxySSIHealthAtlasHeartbeatView.leftFill,
+      GalaxySSIHealthAtlasHeartbeatView.rightOut, GalaxySSIHealthAtlasHeartbeatView.leftOutFront,
+      GalaxySSIHealthAtlasHeartbeatView.leftOutArch, GalaxySSIHealthAtlasHeartbeatView.shortToRight, GalaxySSIHealthAtlasHeartbeatView.shortToLeft] {
+      XCTAssertTrue(route.fits(width: 1254, height: 1254))
+      XCTAssertNotNil(GalaxySSIHealthAtlasSectionLessonView.flow(route, fraction: 0.5, width: 1254, height: 1254))
+    }
+  }
+
+  func testImageMeshPreservesBitmapTopologyAndAffineFallback() throws {
+    typealias Mesh = GalaxySSIHealthAtlasImageMesh
+    let indices = Mesh.indices(columns: 24, rows: 24)
+    XCTAssertEqual(indices.count, 3456); XCTAssertEqual(Array(indices.prefix(6)), [0,25,26,0,26,1])
+    XCTAssertEqual(Array(indices.suffix(6)), [598,623,624,598,624,599])
+    XCTAssertEqual(indices.max(), 624)
+    let source = Mesh.sourcePoints(columns: 24, rows: 24, size: CGSize(width: 1254, height: 1254))
+    XCTAssertEqual(source.count, 625); XCTAssertEqual(source.last, CGPoint(x: 1254, y: 1254))
+    XCTAssertEqual(GalaxySSIHealthAtlasBeatMotion(chapter: 2, fraction: 0.5).mesh, source)
+    XCTAssertTrue(Mesh.indices(columns: 0, rows: 24).isEmpty)
+    let from = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 1, y: 1)]
+    let to = [CGPoint(x: 1, y: 2), CGPoint(x: 3, y: 2), CGPoint(x: 3, y: 5)]
+    let transform = try XCTUnwrap(Mesh.transform(source: from, destination: to))
+    for (s, d) in zip(from, to) { XCTAssertEqual(s.applying(transform), d) }
+    XCTAssertNil(Mesh.transform(source: [.zero,.zero,.zero], destination: to))
+  }
+
   func testTransportCellPlatesKeepLocalFeaturesAndExplicitSubtypeCaptions() throws {
     let bundle = Bundle(for: GalaxySSIStore.self), atlas = try completeCatalogue()
     let pack = try XCTUnwrap(GalaxySSIHealthAtlas.TransportCellPack.read(bundle: bundle))
@@ -1101,7 +3039,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(Array(atlas.entries.dropFirst(ganglionIndex + 1).prefix(2).map(\.id)), GalaxySSIHealthAtlas.SensoryPack.relayIDs)
     for plate in pack.plates {
       let owner = try XCTUnwrap(plate.owner)
-      XCTAssertEqual(atlas.plate(for: owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.plate(for: owner)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: owner)?.asset ?? plate.asset)
       XCTAssertTrue(GalaxySSIHealthAtlas.trustedPlateSource(plate.source))
       for feature in plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
@@ -1165,7 +3104,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       XCTAssertNotNil(UIImage(named: picture.asset, in: bundle, compatibleWith: nil))
     }
     for plate in pack.plates {
-      XCTAssertEqual(atlas.plate(for: plate.owner)?.asset, plate.asset)
+      XCTAssertEqual(atlas.plate(for: plate.owner)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: plate.owner)?.asset ?? plate.asset)
       for feature in plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
         guard case .feature = plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected local explanation") }
@@ -1251,8 +3191,13 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     for (index, id) in GalaxySSIHealthAtlas.GutPack.owners.enumerated() {
       let entry = try XCTUnwrap(atlas.entry(id)), lesson = try XCTUnwrap(GalaxySSIHealthAtlasSectionLesson.forEntry(id))
       XCTAssertEqual(entry.mechanism, id); XCTAssertEqual(atlas.model(entry).kind, "alimentary-organ")
+      let painted = GalaxySSIHealthAtlas.GutPack.paintedAssets[id]
+      XCTAssertEqual(lesson.artHeight, painted == nil ? 280 : 360)
+      XCTAssertEqual(lesson.plate.aspectRatio, painted == nil ? 360.0 / 280 : 1)
+      if let painted { XCTAssertEqual(lesson.plate.asset, painted) }
       XCTAssertEqual(entry.related, lesson.plate.markers.map(\.id))
-      XCTAssertEqual(atlas.plate(for: id)?.asset, lesson.plate.asset)
+      XCTAssertEqual(atlas.plate(for: id)?.asset,
+        GalaxySSIHealthAtlas.FunctionStructurePack.plate(for: id)?.asset ?? lesson.plate.asset)
       for feature in lesson.plate.annotations {
         XCTAssertNil(atlas.entry(feature.id))
         guard case .feature = lesson.plate.labelTarget(feature.id, in: atlas) else { return XCTFail("Expected feature") }
@@ -1286,7 +3231,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertNil(GalaxySSIHealthAtlasSectionLesson.forEntry("cell-enterocyte"))
   }
 
-  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredNineteenHotspots() throws {
+  func testEditorialArtworkRetainsResolutionTransparencyAndAllOneHundredTwentyOneHotspots() throws {
     let atlas = try completeCatalogue(), bundle = Bundle(for: GalaxySSIStore.self)
     let frames: [(String?, Int, Int)] = [(nil, 1024, 1536), ("heart", 1086, 1448),
       ("lungs", 1254, 1254), ("liver", 1254, 1254), ("kidneys", 1254, 1254),
@@ -1300,7 +3245,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       ("cell-eosinophil", 1254, 1254), ("cell-basophil", 1254, 1254),
       ("cell-monocyte", 1254, 1254), ("cell-dendritic-cell", 1254, 1254), ("cell-plasma-cell", 1254, 1254),
       ("cell-t-cell", 1254, 1254), ("cell-b-cell", 1254, 1254), ("cell-natural-killer-cell", 1254, 1254),
-      ("cell-megakaryocyte", 1254, 1254), ("fragment-platelet", 1254, 1254)]
+      ("cell-megakaryocyte", 1254, 1254), ("fragment-platelet", 1254, 1254), ("teeth", 1254, 1254), ("jejunum", 1254, 1254)]
     let samples: [String: [CGPoint]] = [
       "pancreas": [CGPoint(x: 0.90, y: 0.72), CGPoint(x: 0.62, y: 0.30)],
       "urinary": [CGPoint(x: 0.50, y: 0.50), CGPoint(x: 0.66, y: 0.53)],
@@ -1331,7 +3276,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       let plate = try XCTUnwrap(atlas.plate(for: owner, viewKey: key))
       plates.append((plate, key == "skeletal-posterior" ? 887 : 1024, key == "skeletal-posterior" ? 1774 : 1536))
     }
-    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 43)
+    XCTAssertEqual(Set(plates.map { $0.0.asset }).count, 45)
     var count = 0
     for (plate, width, height) in plates {
       let image = try XCTUnwrap(UIImage(named: plate.asset, in: bundle, compatibleWith: nil)?.cgImage)
@@ -1404,7 +3349,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(try alpha(image, Int(sample[1].x * CGFloat(width)), Int(sample[1].y * CGFloat(height))), 200)
       }
     }
-    XCTAssertEqual(count, 119)
+    XCTAssertEqual(count, 121)
     XCTAssertTrue(try XCTUnwrap(atlas.plate(for: nil)).markers.contains { $0.id == "lungs" })
   }
 
