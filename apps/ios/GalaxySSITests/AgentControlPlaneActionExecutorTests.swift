@@ -109,6 +109,11 @@ extension GalaxySSIStoreTests {
     failed.response?.taskStatus = "failed"
     failed.response?.success = false
     XCTAssertEqual(AgentNativeConnectorContinuation.settle(uncertain, record: failed)?.metadata["effect_outcome_unknown"], "true")
+    var overdue = fixture.result
+    overdue.metadata["native_connector_observation_overdue"] = "true"
+    XCTAssertNil(AgentNativeConnectorContinuation.settle(overdue, record: failed)?.metadata["effect_outcome_unknown"])
+    XCTAssertEqual(AgentNativeConnectorContinuation.settle(overdue, record: failed)?.metadata["remote_task_status"], "failed")
+    XCTAssertNil(AgentNativeConnectorContinuation.settle(overdue, record: failed)?.metadata["non_retriable"])
     for field in ["owner", "agent", "source", "contact", "conversation", "turn", "task", "generation", "pending"] {
       var foreign = record
       switch field {

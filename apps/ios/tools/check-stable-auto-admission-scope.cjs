@@ -248,6 +248,25 @@ for (const token of ['result.metadata["connector_disposition"] == "response"',
   'applyLocalNativeAction(action: fallback']) assert(asyncFailure.includes(token));
 assert(asyncFailure.indexOf('store.commitOwnedAgentTaskState(expected: previous, updated: task)') < asyncFailure.indexOf('applyLocalNativeAction(action: fallback'));
 assert(waitHost.includes('if continueFailedNativeConnector(action: executed, result: settled'));
+const observation = services.slice(services.indexOf('  private func preserveNativeConnectorObservation('),
+  services.indexOf('  private func markQueuedConnectorUnknown('));
+for (const token of ['record.state == .pending', 'task.sessionId == record.conversationId',
+  'pendingResult(action)?.metadata["control_plane_run_id"] == record.ownerRunId',
+  'waiting.parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint',
+  'AgentNativeConnectorContinuation.waitingAction(', 'record.correlates(dispatch.response(',
+  'observed.metadata["native_connector_observation_overdue"] = "true"',
+  'store.commitOwnedAgentTaskState(expected: task, updated: updated)']) assert(observation.includes(token));
+for (const forbidden of ['connectorResponseBus.publish', 'markQueuedConnectorUnknown(dispatch)',
+  'updated.phase =', '"non_retriable"', '"effect_outcome_unknown"', 'retire(']) assert(!observation.includes(forbidden));
+const managedSweep = services.slice(services.indexOf('  private func sweepManagedDesktopReply('),
+  services.indexOf('  private func persistRecoveredManagedDesktopResult('));
+assert(managedSweep.includes('if let reason = record.expiryReason(now: now),\n       !preserveNativeConnectorObservation(source) {'));
+assert(managedSweep.indexOf('!preserveNativeConnectorObservation(source)') < managedSweep.indexOf('connectorResponseBus.publish(response)'));
+const journalQueries = services.slice(services.indexOf('  private func journalBackedDesktopRecoveryQueries('),
+  services.indexOf('  private func commitJournalBackedDesktopResult('));
+assert(journalQueries.includes('preserveNativeConnectorObservation(managed) else { continue }'));
+assert(journalQueries.includes('desktopReplyRecovery.request(record.binding, online: true, now: now)'));
+assert(dispatchTests.includes('overdue.metadata["native_connector_observation_overdue"] = "true"'));
 const dispatchHost = services.slice(services.indexOf('  private func executeLocalNativeAction('),
   services.indexOf('  private func refreshAutomaticConnectorAction('));
 assert(dispatchHost.indexOf('observedConnectorDispatch(action: original)') < dispatchHost.indexOf('refreshAutomaticConnectorAction('));
@@ -346,8 +365,8 @@ const disposition = file => {
   if (file.endsWith('MobileNativeAgentExecution.kt')) return 'Primary branch snapshot and parallel/synchronous pre-dispatch refresh retain exact context. Committed owned terminal failures stage validated fallback before normal confirmation/dispatch; active timeout/deferred observation remains incomplete';
   if (file.endsWith('MainActivityAgentPage.kt')) return 'Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance';
   if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto metadata propagates through actual native/control-plane results; manual/false flags dominate. Synchronous and committed known-terminal asynchronous fallback use fresh admission and owned trails; run/source/task identities share the effect-attempt key';
-  if (file.endsWith('AgentConnectorHandoffRecovery.kt')) return 'Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete';
-  if (file.endsWith('MobileNativeAgent.kt')) return 'Existing real Desktop recovery recomputes alternative rankings within paired/verified same-Desktop eligibility and retains original retry budget. Generic timeout observer/candidate callback remains unwired; journal transport does not gain Codex replay';
+  if (file.endsWith('AgentConnectorHandoffRecovery.kt')) return 'Fresh fallback refuses unobserved remote timeout outcomes. Native managed query expiry preserves pending original ownership and passive observation instead of synthetic failure; generic pre-timeout/deferred discovery remains incomplete';
+  if (file.endsWith('MobileNativeAgent.kt')) return 'Existing Desktop recovery uses fresh paired/verified same-Desktop ranking and original retry budget. Exact native waits retain legacy/journal status/result queries across observation expiry without synthetic failure. Generic timeout/candidate callback remains unwired; no journal Codex replay';
   if (file.endsWith('MobileNativeAgentRuntimeTiming.kt')) return 'Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete';
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };

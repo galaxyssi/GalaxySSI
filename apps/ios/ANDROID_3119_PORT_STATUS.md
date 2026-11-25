@@ -90,6 +90,12 @@ Control-plane run IDs now use the existing owned effect-attempt key, as remote s
 
 ## Still Incomplete
 
+### Native Managed Observation Deadline
+
+The existing managed Desktop sweep synthesized a failed response when status/result queries expired. That is not proof the original external task failed and could incorrectly trigger native Auto fallback. Exact saved native waits now bypass this synthetic terminal response and retirement. Preserve the pending owner and native wait, record a separate observation-overdue marker through guarded task save, and keep existing rate-limited status/result queries available on legacy and journal transports. A save failure still cannot authorize a synthetic terminal response. Other managed consumers retain their previous behavior.
+
+Query expiry does not set effect-outcome/non-retriable flags or change the task phase. A later authenticated owned terminal failure may therefore enter the normal fallback policy; actual post-dispatch transport uncertainty retains its separate stronger protections. Native fixture source distinguishes overdue observation from an unknown external effect. This reuses existing passive Desktop observation, not a new generic local/cloud timeout observer, replay, protocol or successful network/restart acceptance claim.
+
 ### Failed Connector Receipt Tracking
 
 The real control-plane transport no longer ignores errors registering an already dispatched connector's managed response ledger and live interceptor. Validate positive source identity, matching action ID, valid generation and nonblank normalized conversation/turn/task before treating a receipt as waiting. Malformed receipts and tracking failures produce a failed, explicitly unverified/unknown, non-retriable result under the original action ID. Preserve routing/manual/scope metadata and attribute the failure to local transport rather than provider health. Replayed adapter starts see the cached unknown result, not a second delegate call.

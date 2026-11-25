@@ -22,7 +22,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorHandoffRecovery.kt",
       "sha256": "c1fb7bfbbf7f6fbf45bfc4404ddae4f1be6f075227e808637ec8b575e62121de",
-      "disposition": "Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete"
+      "disposition": "Fresh fallback refuses unobserved remote timeout outcomes. Native managed query expiry preserves pending original ownership and passive observation instead of synthetic failure; generic pre-timeout/deferred discovery remains incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelSelectionSettings.kt",
@@ -57,7 +57,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
       "sha256": "6152841da29de9c420c56c509343fce30777142d47fd58c148ba62240224be85",
-      "disposition": "Existing real Desktop recovery recomputes alternative rankings within paired/verified same-Desktop eligibility and retains original retry budget. Generic timeout observer/candidate callback remains unwired; journal transport does not gain Codex replay"
+      "disposition": "Existing Desktop recovery uses fresh paired/verified same-Desktop ranking and original retry budget. Exact native waits retain legacy/journal status/result queries across observation expiry without synthetic failure. Generic timeout/candidate callback remains unwired; no journal Codex replay"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
