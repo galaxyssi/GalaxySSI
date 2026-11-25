@@ -6,11 +6,12 @@ struct GalaxySSIHealthAtlasCompactTabs<Option: Hashable>: View {
   let title: (Option) -> String
   let key: (Option) -> String
   let identifier: String
+  var allowsReselect = false
   @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 14
   var body: some View {
     HStack(alignment: .top, spacing: 0) {
       ForEach(options, id: \.self) { option in
-        Button { selection = option } label: {
+        Button { if selection != option || allowsReselect { selection = option } } label: {
           VStack(spacing: 0) {
             ZStack {
               ForEach(options, id: \.self) { candidate in

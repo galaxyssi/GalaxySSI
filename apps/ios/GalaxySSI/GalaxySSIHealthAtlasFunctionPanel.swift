@@ -7,6 +7,8 @@ struct GalaxySSIHealthAtlasFunctionPanel: View {
   let previewPresented: Bool
   @Binding var selection: GalaxySSIHealthAtlasFunctionSelection
   let onPhase: (String, Double) -> Void
+  var navigationID = ""
+  var relatedActions: (GalaxySSIHealthAtlasFunctionCatalogue.Story) -> [GalaxySSIHealthAtlasRelatedAction] = { _ in [] }
   private var choices: [GalaxySSIHealthAtlasFunctionCatalogue.Story] {
     catalogue.choices(for: entryID).filter { GalaxySSIHealthAtlasFunctionRendering.implemented.contains($0.id) }
   }
@@ -27,7 +29,7 @@ struct GalaxySSIHealthAtlasFunctionPanel: View {
           previewPresented: previewPresented,
           showTitle: !(2...3).contains(choices.count) ||
             GalaxySSIHealthAtlasFunctionText.get(story.choiceTitle, language) != GalaxySSIHealthAtlasFunctionText.get(story.title, language),
-          playbackID: "function|" + entryID + "|" + story.id,
+          playbackID: "function|" + entryID + "|" + story.id + "|" + navigationID, related: relatedActions(story),
           onPhase: { onPhase(story.id, $0) }) { position in
             GalaxySSIHealthAtlasFunctionArtwork(story: story, phase: position, language: language)
           }.id(entryID + "|" + story.id)

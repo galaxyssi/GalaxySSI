@@ -14,7 +14,7 @@ assert(handoff.includes("aging: selection.aging, function: function, inlineModel
 assert(handoff.includes('if let function { prompt += "\\n" + function.lines(for: entry.id, language: language).joined(separator: "\\n") }'));
 assert(handoff.indexOf("let function: GalaxySSIHealthAtlasFunctionContext?")<handoff.indexOf("#if GALAXYSSI_ATLAS_AGENT_CONTEXT"));
 assert(handoff.includes("selection: selectionSnapshot?() ?? selection"));
-assert(local("GalaxySSIHealthAtlasDetail").includes("selectionSnapshot: { state.functionSnapshot(entry) }"));
+assert(local("GalaxySSIHealthAtlasDetail").includes("selectionSnapshot: { state.functionSnapshot(entry, depth: depth) }"));
 const data=JSON.parse(fs.readFileSync(path.join(root,"apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasFunctionStories.dataset/content.json")));
 const texts=language=>{
  const file=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI",language+".lproj/AtlasFunction.strings"),"utf8"),map=new Map();

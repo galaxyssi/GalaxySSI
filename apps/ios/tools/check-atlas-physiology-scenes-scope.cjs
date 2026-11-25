@@ -18,7 +18,7 @@ requireTokens(android('HealthAtlasSceneFrame'), ['require(texts.isNotEmpty())', 
 requireTokens(source('SceneFrame'), ['clipShape(RoundedRectangle(cornerRadius: 8))', 'content().padding(inset)', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)', 'fixedSize(horizontal: false, vertical: true)', 'min(values.count - 1, max(0, selected))']);
 requireTokens(source('FunctionScene'), ['GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-function-frame", ground:', 'GalaxySSIHealthAtlasReservedCaption(values: labels', 'values: story.chapters.map { t($0.caption) }']);
 assert.equal(source("FunctionScene").replace(/^  @Environment.*private var colorScheme\n/m, "").split('  var body:')[0], prior('FunctionScene').split('  var body:')[0]);
-assert.equal(source('FunctionPlayer'), prior('FunctionPlayer'));
+assert.equal(source("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1], prior("FunctionPlayer").split('}.accessibilityIdentifier("atlas-function-player")')[1]);
 const panel = source('SimulationPanel'), processStages = source('ProcessStages');
 requireTokens(android('HealthAtlasSimulationPanel'), ['HealthAtlasProcessView(activity, mechanism, showLabels = !inline)', 'HealthAtlasSceneFrame(activity, "atlas-simulation-frame")', 'scene.reserveCaption(caption', 'tag = "atlas-simulation-references"', '"atlas-simulation-references-toggle"']);
 requireTokens(panel, ['@State private var referencesExpanded = false', 'GalaxySSIHealthAtlasSceneFrame(identifier: "atlas-simulation-frame", inset: 8)', 'GalaxySSIHealthAtlasReservedCaption(values: stageCaptions', 'compact: inline', 'if germline != nil { stageCaption }', 'if germline == nil && !retinal && endocrine == nil { stageCaption }', 'if !inline && (hasDiagram || hasCloseup) { playbackControls }', 'if inline || (!hasDiagram && !hasCloseup) { playbackControls }', 'DisclosureGroup(isExpanded: $referencesExpanded)', '"atlas-simulation-references-toggle"', '"atlas-simulation-progress"', 'private var referenceNotes:', '"atlas-source-physiology"']);
@@ -37,7 +37,13 @@ assert(inlineDetail.includes('simulationPanel')); assert(!inlineDetail.includes(
 const lifecycle = text => text.split('.onReceive(timer)')[1].split('.onDisappear { pause() }')[0];
 assert.equal(lifecycle(panel), lifecycle(priorBody));
 assert.equal(panel.split('  private var quantitative:')[1], priorBody.split('  private var quantitative:')[1], 'Numerical invocation, all controls, reset, pause and parameter handlers stay exact');
-for (const name of ['State', 'FunctionArtwork', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'Research', 'GasExchange', 'Circulation', 'EndocrinePathView', 'RetinaPathView', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['FunctionArtwork', 'ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'GasExchange', 'Circulation', 'EndocrinePathView', 'RetinaPathView', 'SectionLessonView', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+// #4444 changes navigation/related menu only, not the player clock, cache sanitizers or personal metric renderer.
+const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-function-player")')[1];
+assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
+const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
+assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
+assert.equal(source("Research").replace(/^    \.background\(GalaxySSIHealthAtlasRestoredDetailLink.*\n/m, ""), prior("Research"));
 // #4443 adds one immutable reference overlay, not new selection/cache semantics.
 assert.equal(source("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1], prior("FunctionCatalogue").split("struct GalaxySSIHealthAtlasFunctionSelection:")[1]);
 for (const [name, field] of [['Germline', 'showsDetails'], ['BloodDefenseView', 'showsDetails'], ['ImmuneLink', 'showsDetails'], ['PancreaticPanel', 'showsScope']]) requireTokens(source(name), ['var ' + field + ' = true', 'if ' + field]);

@@ -30,7 +30,7 @@ for(const token of ["choices.count > 3","picker.pickerStyle(.menu)","GalaxySSIHe
 assert(state.includes("private var liveFunctionPhases"));assert(!state.includes("@Published var liveFunctionPhases"));
 assert(state.includes("functionSelection?.sanitize"));assert(state.includes("functionSnapshot"));
 const detail=local("GalaxySSIHealthAtlasDetail");
-assert(detail.includes("selectionSnapshot: { state.functionSnapshot(entry) }"));assert(detail.includes("GalaxySSIHealthAtlasFunctionPanel"));
+assert(detail.includes("selectionSnapshot: { state.functionSnapshot(entry, depth: depth) }"));assert(detail.includes("GalaxySSIHealthAtlasFunctionPanel"));
 const registry=local("GalaxySSIHealthAtlasFunctionArtwork");
 // This script audits frozen #4384 content; the regional runtime audit verifies the full union.
 assert(registry.includes("static let implemented = baseline.union(regional)"));

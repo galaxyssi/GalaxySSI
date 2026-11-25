@@ -33,17 +33,23 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   @Published var entries: [String: Selection] = [:]
   @Published var previewPresented = false
   @Published var wholeFocus = "heart"
+  @Published var lessonNavigation = GalaxySSIHealthAtlasLessonNavigation()
+  @Published var restoredDetailChildren: [String: GalaxySSIHealthAtlasLessonNavigation.Location] = [:]
+  var lessonReturnScroll: [String: Double] = [:]
   let playback = GalaxySSIHealthAtlasPlayback()
   private var liveFunctionPhases: [String: [String: Double]] = [:]
 
-  func recordFunctionPhase(entryID: String, storyID: String, phase: Double) {
+  func recordFunctionPhase(entryID: String, storyID: String, phase: Double, depth: Int? = nil) {
+    if let depth, !lessonNavigation.path.contains(.init(entryID: entryID, depth: depth)) { return }
     guard let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get(),
       catalogue.routes[entryID]?.contains(storyID) == true else { return }
-    liveFunctionPhases[entryID, default: [:]][storyID] = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(phase)
+    liveFunctionPhases[functionPhaseKey(entryID, depth: depth), default: [:]][storyID] = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(phase)
   }
-  func functionSnapshot(_ entry: GalaxySSIHealthAtlas.Entry) -> Selection {
-    var value = binding(entry).wrappedValue
-    guard let phases = liveFunctionPhases[entry.id], !phases.isEmpty,
+  private func functionPhaseKey(_ id: String, depth: Int?) -> String { depth.map { "\($0)|" + id } ?? id }
+  func functionSnapshot(_ entry: GalaxySSIHealthAtlas.Entry, depth: Int? = nil) -> Selection {
+    var value = depth.map { detailBinding(entry, depth: $0).wrappedValue } ?? binding(entry).wrappedValue
+    if let depth, lessonNavigation.returns[functionPhaseKey(entry.id, depth: depth)] != nil { return value }
+    guard let phases = liveFunctionPhases[functionPhaseKey(entry.id, depth: depth)], !phases.isEmpty,
       let catalogue = try? GalaxySSIHealthAtlasFunctionCatalogue.bundled.get() else { return value }
     var function = value.functionSelection ?? .init()
     for (storyID, phase) in phases { function.save(phase, storyID: storyID, entryID: entry.id, catalogue: catalogue) }
@@ -156,6 +162,7 @@ struct GalaxySSIHealthAtlasView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @StateObject private var state = GalaxySSIHealthAtlasState()
   @SceneStorage("galaxyssi.health.atlas.public-selection.v1") private var saved = "{}"
+  @SceneStorage("galaxyssi.health.atlas.lesson-navigation.v1") private var savedNavigation = ""
   @SceneStorage("galaxyssi.health.atlas.whole-focus.v1") private var savedWholeFocus = "heart"
   @State private var atlas: GalaxySSIHealthAtlas?
   @SceneStorage("galaxyssi.health.atlas.query.v1") private var query = ""
@@ -179,6 +186,7 @@ struct GalaxySSIHealthAtlasView: View {
             GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: nil, state: state, records: records, depth: 0)
             if let focus = state.wholeEntry(in: atlas) {
               GalaxySSIHealthAtlasWholeBodyActions(atlas: atlas, entry: focus, language: language) { tab, trend in
+                state.clearLessonNavigation()
                 state.openWholeBody(focus, tab: tab, showTrend: trend)
                 quickTarget = focus.id
               }
@@ -235,14 +243,16 @@ struct GalaxySSIHealthAtlasView: View {
           selection: .init()).padding(.horizontal)
       }
     }
-    .background(NavigationLink(isActive: Binding(get: { quickTarget != nil }, set: { if !$0 { quickTarget = nil } })) {
+    .background(NavigationLink(isActive: Binding(get: { quickTarget != nil }, set: { if !$0 { quickTarget = nil; state.clearLessonNavigation() } })) {
       if let atlas, let quickTarget, let entry = atlas.entry(quickTarget) {
-        GalaxySSIHealthAtlasDetail(atlas: atlas, entry: entry, state: state, records: records, depth: 1)
+        GalaxySSIHealthAtlasDetail(atlas: atlas, entry: entry, state: state, records: records,
+          depth: state.lessonNavigation.path.first.flatMap { $0.entryID == entry.id ? $0.depth : nil } ?? 1)
       }
     } label: { EmptyView() }.hidden())
     .galaxySSIHealthTheme()
-    .onAppear { if atlas == nil { load() } }
+    .onAppear { if atlas == nil { load() } else if quickTarget == nil { state.clearLessonNavigation() } }
     .onChange(of: state.serialized) { saved = $0 }
+    .onChange(of: state.lessonNavigationSerialized) { savedNavigation = $0 }
     .onChange(of: state.wholeFocus) { savedWholeFocus = $0 }
     .onChange(of: kind) { _ in system = ""; limit = 24 }
     .onChange(of: system) { _ in limit = 24 }
@@ -261,6 +271,8 @@ struct GalaxySSIHealthAtlasView: View {
       if !system.isEmpty, content.entry(system)?.kind != .system { system = "" }
       query = String(query.prefix(100))
       state.restore(saved, atlas: content)
+      state.restoreLessonNavigation(savedNavigation, atlas: content)
+      quickTarget = state.lessonNavigation.path.first?.entryID
       state.wholeFocus = content.entry(savedWholeFocus)?.id ?? "heart"
       atlas = content
     }

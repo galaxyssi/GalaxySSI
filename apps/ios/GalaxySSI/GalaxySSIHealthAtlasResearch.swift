@@ -45,6 +45,7 @@ struct GalaxySSIHealthAtlasResearch: View {
       }.padding()
     }
     .navigationTitle(title).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
+    .background(GalaxySSIHealthAtlasRestoredDetailLink(atlas: atlas, entry: entry, state: state, records: records, depth: depth))
     .environmentObject(state.playback)
     .safeAreaInset(edge: .bottom) {
       GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,

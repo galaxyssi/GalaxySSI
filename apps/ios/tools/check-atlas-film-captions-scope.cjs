@@ -46,7 +46,13 @@ assert.equal(normalizeVisibility(vision.split('  private func relay(')[1]), norm
 requireTokens(source('RodCatalogue'), ['story.id == "VISION"', 'https://pubmed.ncbi.nlm.nih.gov/2578616/', 'story.references + [reference]', 'routes: routes, entryPhases: entryPhases']);
 requireTokens(source('FunctionCatalogue'), ['revision: Int = 4443', 'original.rodPhototransduction()', '== 324']);
 assert.equal(source('FunctionCatalogue').split('struct GalaxySSIHealthAtlasFunctionSelection:')[1], prior('FunctionCatalogue').split('struct GalaxySSIHealthAtlasFunctionSelection:')[1]);
-for (const name of ['FunctionPlayer', 'ChapterClock', 'SimulationPanel', 'State', 'Detail', 'Research', 'Physiology', 'AgentContext', 'AgentHandoff', 'ProcessStages', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['ChapterClock', 'SimulationPanel', 'Physiology', 'AgentContext', 'AgentHandoff', 'ProcessStages', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+// #4444 changes navigation/related menu only, not the player clock, cache sanitizers or personal metric renderer.
+const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-function-player")')[1];
+assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
+const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
+assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
+assert.equal(source("Research").replace(/^    \.background\(GalaxySSIHealthAtlasRestoredDetailLink.*\n/m, ""), prior("Research"));
 for (const locale of ['en', 'zh-Hans']) {
   const table = read('apps/ios/GalaxySSI/' + locale + '.lproj/AtlasFilmCaptions.strings');
   assert.equal([...table.matchAll(/^"health_atlas_/gm)].length, 10);

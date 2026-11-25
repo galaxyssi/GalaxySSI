@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4444,
+    "mergeCommit": "556cd2c8e452fea8a299e80fc44e03471a7d14ca"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "f94504c528586f4cee9f0d77b385fc1ab5e9324e83aa0f58384ca59be8bacdcf",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "sourceSHA256": "9fd2502eec13e562672ac2aed03d456b60f355e9ebdcf7db8cba451d060ea6da",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-related-menu-scope.cjs"
+      ],
+      "note": "HealthAtlasFunctionStoryDeviceTest.kt: original real-popup interaction, same-organ recreation/return, cross-entry flows, chapter-relative animation sampling and clock diagnostics reviewed as source references only. Added native state/archive fixtures, not executed. No moving pixels, native timing, screenshots or recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasGuidedFunctionDeviceTest.kt",
+      "sourceSHA256": "fa056e2675f87a1f905be874cd6ee6cb916a91af7a30f2562c645a5f9dfd33e4",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-related-menu-scope.cjs"
+      ],
+      "note": "HealthAtlasGuidedFunctionDeviceTest.kt: original real-popup interaction, same-organ recreation/return, cross-entry flows, chapter-relative animation sampling and clock diagnostics reviewed as source references only. Added native state/archive fixtures, not executed. No moving pixels, native timing, screenshots or recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRelatedLessonTestNavigation.kt",
+      "sourceSHA256": "a34d7b4b8b3475c8eaa131ae6d17ac42c927138e49a4f433c0949bd321ef143c",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-related-menu-scope.cjs"
+      ],
+      "note": "HealthAtlasRelatedLessonTestNavigation.kt: original real-popup interaction, same-organ recreation/return, cross-entry flows, chapter-relative animation sampling and clock diagnostics reviewed as source references only. Added native state/archive fixtures, not executed. No moving pixels, native timing, screenshots or recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "sourceSHA256": "3631dcc6e3adf17e254730d6e5fd605979a6fcc67fda5f4139b291a9b0bbf088",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift",
+        "apps/ios/tools/check-atlas-related-menu-scope.cjs"
+      ],
+      "note": "HealthAtlasTissueContextDeviceTest.kt: original real-popup interaction, same-organ recreation/return, cross-entry flows, chapter-relative animation sampling and clock diagnostics reviewed as source references only. Added native state/archive fixtures, not executed. No moving pixels, native timing, screenshots or recreation acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionPlayer.kt",
+      "sourceSHA256": "03db0795ad297c2d9ea86565151f13026f7ffe4057c19d6e647b974b57d9d95c",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlayer.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPlaybackMenu.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionRelatedRow.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLessonNavigation.swift"
+      ],
+      "note": "Menu-only related actions after sheet dismissal; contextual origin course/phase/scroll snapshots, inactive-parent and late-child write isolation, independent destination course progress and entry-scoped numerical settings. Bounded public navigation archive validates entries/courses/path/schema/size and reuses existing sanitizers. Reconstruct detail links in ordinary, research and standalone containers. Retapping current tabs is a no-op; highlighted Function still exits standalone. Native gestures, timing and recreation remain unexecuted."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthBodyAtlasActivity.kt",
+      "sourceSHA256": "99335d46aa4e96499710b767f4b3c84e9ef6098c6c486fd16d67778ca0402af0",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDetail.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLessonNavigation.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRestoredDetailLink.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCompactTabs.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasStandaloneModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasResearch.swift"
+      ],
+      "note": "Menu-only related actions after sheet dismissal; contextual origin course/phase/scroll snapshots, inactive-parent and late-child write isolation, independent destination course progress and entry-scoped numerical settings. Bounded public navigation archive validates entries/courses/path/schema/size and reuses existing sanitizers. Reconstruct detail links in ordinary, research and standalone containers. Retapping current tabs is a no-op; highlighted Function still exits standalone. Native gestures, timing and recreation remain unexecuted."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_strings.xml",
+      "sourceSHA256": "a8d4a0129b9c22ba0e1608e05fd8960b0e15b8b9b500f8ee985538519d25f51b",
+      "kind": "exact-resource-delta-with-neutral-format",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasRelatedAnimations.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasRelatedAnimations.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact translated heading pair plus an explicitly pinned placeholder/punctuation-only neutral format shared in both tables. The format is not marked translatable=false in Android; do not call it a translated pair or source-declared non-translatable name. Two entries per locale."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_strings.xml",
+      "sourceSHA256": "4dc2974bfe3fd4a30139c2f9b4cef70834b838876860c76256f18b978e6357ec",
+      "kind": "exact-resource-delta-with-neutral-format",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasRelatedAnimations.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasRelatedAnimations.strings",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift",
+        "apps/ios/tools/import-body-atlas-regional-text.cjs",
+        "apps/ios/GalaxySSI.xcodeproj/project.pbxproj"
+      ],
+      "note": "One exact translated heading pair plus an explicitly pinned placeholder/punctuation-only neutral format shared in both tables. The format is not marked translatable=false in Android; do not call it a translated pair or source-declared non-translatable name. Two entries per locale."
+    }
+  ]
+}

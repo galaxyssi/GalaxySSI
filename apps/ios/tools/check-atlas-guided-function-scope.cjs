@@ -34,7 +34,7 @@ for (const token of ["var modelsExpanded: Bool?", "entry.kind == .system || entr
   assert(state.includes(token), token);
 for (const token of ["GalaxySSIHealthAtlasState.detailTabs", "DisclosureGroup(isExpanded:", "selection.wrappedValue.modelsExpanded = expanded",
   'state.playback.claim("models-disclosure|" + entry.id)', '"atlas-inline-models"', '"atlas-function-principle-toggle"',
-  '"atlas-function-principle"', 'Text(t("inline_models"))', "inline: usesInlineModels", ".environmentObject(state.playback)", "state.functionSnapshot(entry)"])
+  '"atlas-function-principle"', 'Text(t("inline_models"))', "inline: usesInlineModels", ".environmentObject(state.playback)", "state.functionSnapshot(entry, depth: depth)"])
   assert(detail.includes(token), token);
 assert(source("Research").includes(".environmentObject(state.playback)"));
 for (const token of ["var inline = false", "chapters: model.stages.count", "if !inline {", "clock.resume(now); inlineClock = clock",

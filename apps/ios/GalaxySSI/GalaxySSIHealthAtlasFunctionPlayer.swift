@@ -10,6 +10,7 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
   let artwork: (Double) -> Artwork
   let showTitle: Bool
   let playbackID: String
+  let related: [GalaxySSIHealthAtlasRelatedAction]
   @EnvironmentObject private var playback: GalaxySSIHealthAtlasPlayback
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,10 +20,11 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
   private let timer = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
   init(story: GalaxySSIHealthAtlasFunctionCatalogue.Story, language: String, phase: Binding<Double>,
        previewPresented: Bool, showTitle: Bool = true, playbackID: String,
-       onPhase: @escaping (Double) -> Void, @ViewBuilder artwork: @escaping (Double) -> Artwork) {
+       related: [GalaxySSIHealthAtlasRelatedAction] = [], onPhase: @escaping (Double) -> Void, @ViewBuilder artwork: @escaping (Double) -> Artwork) {
     self.story = story; self.language = language; _phase = phase; self.previewPresented = previewPresented
     self.onPhase = onPhase; self.artwork = artwork
     self.showTitle = showTitle; self.playbackID = playbackID
+    self.related = related
     _clock = State(initialValue: .init(chapters: story.chapters.count, phase: phase.wrappedValue))
     _position = State(initialValue: GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(phase.wrappedValue))
   }
@@ -44,7 +46,7 @@ struct GalaxySSIHealthAtlasFunctionPlayer<Artwork: View>: View {
         control("forward.step", "next_step") { skip(1) }
         Spacer()
         GalaxySSIHealthAtlasFunctionPlaybackMenu(story: story, language: language, phase: position,
-          seek: { stop(); setPosition($0); commit() }, pause: pause)
+          seek: { stop(); setPosition($0); commit() }, pause: pause, related: related)
       }.disabled(previewPresented).accessibilityIdentifier("atlas-function-controls")
     }.accessibilityIdentifier("atlas-function-player")
       .onAppear { onPhase(position) }

@@ -18,7 +18,11 @@ struct GalaxySSIHealthAtlasDetail: View {
     })
   }
 
-  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var location: GalaxySSIHealthAtlasLessonNavigation.Location { .init(entryID: entry.id, depth: depth) }
+  private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
+  private var relatedDestination: Binding<Bool> {
+    Binding(get: { state.lessonNavigation.returns[location.key] != nil }, set: { if !$0 { state.closeRelatedLesson(location) } })
+  }
   private var research: Binding<Bool> {
     Binding(get: { selection.wrappedValue.tab != .simulation && selection.wrappedValue.researchPresented == true }, set: { open in
       if !open { state.closeResearch(entry) }
@@ -35,7 +39,7 @@ struct GalaxySSIHealthAtlasDetail: View {
   var body: some View {
     VStack(spacing: 0) {
       GalaxySSIHealthAtlasCompactTabs(options: GalaxySSIHealthAtlasState.detailTabs,
-        selection: Binding(get: { currentTab }, set: { state.playback.pause(); selection.wrappedValue.tab = $0 }),
+        selection: Binding(get: { currentTab }, set: { _ = state.selectDetailTab(entry, depth: depth, tab: $0) }),
         title: { t($0.rawValue) }, key: { $0.rawValue }, identifier: "atlas-detail-tabs")
         .onChange(of: selection.wrappedValue.tab) { tab in
           if tab != .values { selection.wrappedValue.revealTrend = false }
@@ -49,16 +53,9 @@ struct GalaxySSIHealthAtlasDetail: View {
             if currentTab == .function, hasFunctionPlayer, let catalogue = functionCatalogue {
               GalaxySSIHealthAtlasFunctionPanel(catalogue: catalogue, entryID: entry.id, language: language,
                 previewPresented: state.previewPresented, selection: functionSelection,
-                onPhase: { state.recordFunctionPhase(entryID: entry.id, storyID: $0, phase: $1) })
+                onPhase: { state.recordFunctionPhase(entryID: entry.id, storyID: $0, phase: $1, depth: depth) },
+                navigationID: location.key, relatedActions: relatedActions)
               numericalModelButton
-              if let story = functionSelection.wrappedValue.current(entryID: entry.id, catalogue: catalogue) {
-                ForEach(Array(story.related.enumerated()), id: \.offset) { _, related in
-                  if let target = atlas.entry(related.entryID), let lesson = catalogue.story(related.storyID) {
-                    GalaxySSIHealthAtlasFunctionRelatedRow(atlas: atlas, catalogue: catalogue, target: target, story: lesson,
-                      state: state, records: records, depth: depth, language: language)
-                  }
-                }
-              }
             }
             if currentTab == .function && !hasFunctionPlayer {
               GalaxySSIHealthAtlasArtwork(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
@@ -102,8 +99,8 @@ struct GalaxySSIHealthAtlasDetail: View {
     .navigationTitle(name).navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       if selection.wrappedValue.tab != .values {
-        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry),
-          selectionSnapshot: { state.functionSnapshot(entry) }, onPreviewStateChange: {
+        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry, depth: depth),
+          selectionSnapshot: { state.functionSnapshot(entry, depth: depth) }, onPreviewStateChange: {
             if $0 { state.playback.pause() }
             state.previewPresented = $0
           })
@@ -116,13 +113,36 @@ struct GalaxySSIHealthAtlasDetail: View {
     .background(NavigationLink(isActive: standalone) {
       GalaxySSIHealthAtlasStandaloneModels(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
     } label: { EmptyView() }.hidden())
+    .background(NavigationLink(isActive: relatedDestination) {
+      if let saved = state.lessonNavigation.returns[location.key], let target = atlas.entry(saved.targetID) {
+        GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1)
+      }
+    } label: { EmptyView() }.hidden())
+    .background(GalaxySSIHealthAtlasRestoredDetailLink(atlas: atlas, entry: entry, state: state, records: records, depth: depth,
+      enabled: selection.wrappedValue.researchPresented != true && selection.wrappedValue.tab != .simulation))
     .galaxySSIHealthTheme()
     .environmentObject(state.playback)
     .onAppear {
-      if selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
+      state.recordDetail(entry, depth: depth)
+      if let offset = state.lessonReturnScroll.removeValue(forKey: location.key) ?? state.lessonNavigation.returns[location.key]?.scroll {
+        scrollMemory.restore(offset)
+      } else if selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
     }
     .onChange(of: selection.wrappedValue.researchPresented) { open in
       if open != true, selection.wrappedValue.tab == .function, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
+    }
+  }
+  private func relatedActions(_ story: GalaxySSIHealthAtlasFunctionCatalogue.Story) -> [GalaxySSIHealthAtlasRelatedAction] {
+    guard depth < 32, let catalogue = functionCatalogue else { return [] }
+    return story.related.compactMap { related in
+      guard let target = atlas.entry(related.entryID), let lesson = catalogue.story(related.storyID),
+        catalogue.routes[target.id]?.contains(lesson.id) == true else { return nil }
+      let label = String(format: t("related_lesson_label"), GalaxySSIHealthAtlasText.get(target.name, language),
+        GalaxySSIHealthAtlasFunctionText.get(lesson.title, language))
+      return GalaxySSIHealthAtlasRelatedAction(id: target.id + "|" + lesson.id, label: label, open: {
+        _ = state.openRelatedLesson(origin: entry, depth: depth, related: related, scroll: scrollMemory.offset,
+          atlas: atlas, catalogue: catalogue)
+      })
     }
   }
   @ViewBuilder private var numericalModelButton: some View {

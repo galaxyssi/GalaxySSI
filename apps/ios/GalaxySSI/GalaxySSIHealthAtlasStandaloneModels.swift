@@ -17,7 +17,7 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
     VStack(spacing: 0) {
       GalaxySSIHealthAtlasCompactTabs(options: GalaxySSIHealthAtlasState.detailTabs,
         selection: Binding(get: { .function }, set: { state.closeStandaloneModel(entry, destination: $0) }),
-        title: { t($0.rawValue) }, key: { $0.rawValue }, identifier: "atlas-standalone-tabs")
+        title: { t($0.rawValue) }, key: { $0.rawValue }, identifier: "atlas-standalone-tabs", allowsReselect: true)
       ScrollView {
         VStack(alignment: .leading, spacing: 18) {
           GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
@@ -48,6 +48,8 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
       .background(NavigationLink(isActive: research) {
         GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
       } label: { EmptyView() }.hidden())
+      .background(GalaxySSIHealthAtlasRestoredDetailLink(atlas: atlas, entry: entry, state: state, records: records, depth: depth,
+        enabled: selection.wrappedValue.researchPresented != true))
       .onAppear { if let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) } }
       .onChange(of: selection.wrappedValue.researchPresented) {
         if $0 != true, let offset = selection.wrappedValue.researchReturnScroll { scrollMemory.restore(offset) }
