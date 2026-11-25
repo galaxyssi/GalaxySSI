@@ -31,6 +31,7 @@
 "galaxyssi.health.discussion.title" = "私密健康讨论";
 "galaxyssi.health.discussion.more" = "显示更早消息";
 "galaxyssi.health.discussion.unanswered" = "没有已保存的回复";
+"galaxyssi.health.discussion.interrupted_control" = "此回复包含未执行的 Agent 指令。问题和回复已私密保留，未执行指令，也未重新发送。";
 "galaxyssi.health.discussion.online_permission" = "允许经确认的在线健康提问";
 "galaxyssi.health.discussion.provider" = "服务商与模型";
 "galaxyssi.health.discussion.select_provider" = "选择模型";

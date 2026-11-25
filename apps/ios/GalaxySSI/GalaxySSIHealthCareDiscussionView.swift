@@ -56,7 +56,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
         ForEach(thread.turns.suffix(limit)) { turn in
           VStack(alignment: .leading, spacing: 8) {
             Text(turn.question).font(.body.weight(.semibold))
-            if let answer = turn.answer { Text(answer).textSelection(.enabled) }
+            if turn.hasInterruptedReply { Text(interruptedText).foregroundColor(.secondary) }
+            else if let answer = turn.retainedAnswer { Text(answer).textSelection(.enabled) }
             else if turn.proposalID != nil { Text(t("plan_retained", "Draft available in Health plans")) }
             else if turn.questionsRetained == true { Text(q("retained", "Questions are available in Personal Health.")) }
             else if turn.answerDraftStaged == true { Text(q("draft_staged", "Clarification answer draft created")) }
@@ -115,7 +116,8 @@ struct GalaxySSIHealthCareDiscussionView: View {
                 ForEach(previous.turns) { turn in
                   VStack(alignment: .leading, spacing: 4) {
                     Text(turn.question).font(.body.weight(.semibold))
-                    if let answer = turn.answer { Text(answer).textSelection(.enabled) }
+                    if turn.hasInterruptedReply { Text(interruptedText).foregroundColor(.secondary) }
+                    else if let answer = turn.retainedAnswer { Text(answer).textSelection(.enabled) }
                   }
                 }
               } label: {
@@ -379,6 +381,10 @@ struct GalaxySSIHealthCareDiscussionView: View {
     selectedSources = []; allowsHistory = false
     includesQuestions = false; asksQuestions = false; allowsAnswerDraft = false; includesFeedbackHistory = false
   }
+  private var interruptedText: String {
+    t("interrupted_control", "This reply contains unexecuted Agent instructions. The question and reply were retained privately. Nothing was executed or resent.")
+  }
+
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.discussion." + key, fallback: fallback, language: language)
   }

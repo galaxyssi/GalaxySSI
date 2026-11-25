@@ -242,6 +242,13 @@ enum AgentModelPlanParser {
     return requirements
   }
 
+  // Classification only: a reply-shaped ActionPlan is not evidence of execution.
+  static func containsUnexecutedControlReply(_ raw: String) -> Bool {
+    if AgentPublicProgressPolicy.isInternal(raw) { return true }
+    guard raw.utf8.count <= 32_768, let json = extractJson(raw) else { return false }
+    return json["actions"]?.arrayValue != nil
+  }
+
   static func permitsPhoneExecutionSite(_ raw: String) -> Bool {
     guard let json = extractJson(raw, exact: true) else { return false }
     guard let site = json["execution_location"] else { return true }

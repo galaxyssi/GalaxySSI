@@ -1073,7 +1073,7 @@ struct GalaxySSIHealthRecords {
           turn.feedbackHistoryAllowed != true,
           turn.answerDraftSourceDigest == digest, turn.questionContextIncluded == true,
           turn.questionSnapshotVersion == page.ledgerVersion, Draft.digest(turn.question) == digest,
-          turn.answer == nil, turn.proposalID == nil else { throw Failure.stale }
+          turn.answer == nil, !turn.hasInterruptedReply, turn.proposalID == nil else { throw Failure.stale }
     var drafts = archive.localCareAnswerDrafts ?? [:]
     var items = drafts[key] ?? []
     if let prior = items.first(where: { $0.thread == thread.id && $0.turn == turn.id && $0.question == row.id }) {
@@ -1165,7 +1165,7 @@ struct GalaxySSIHealthRecords {
     let key = approval.concernID.uuidString
     guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
           thread.turns[index].questionsRequested == true, thread.turns[index].questionsRetained != true,
-          thread.turns[index].answer == nil, thread.turns[index].proposalID == nil,
+          thread.turns[index].answer == nil, !thread.turns[index].hasInterruptedReply, thread.turns[index].proposalID == nil,
           let concern = archive.localCare?.current[approval.metric.rawValue] else { throw Failure.stale }
     var ledgers = archive.localCareQuestions ?? [:]
     var ledger = ledgers[key] ?? .init()
@@ -1669,7 +1669,7 @@ struct GalaxySSIHealthRecords {
     }) ?? plans.last(where: { $0.proposal.state != .dismissed })
     let checkpoint = ledger.checkpoints?[key]
     var sources: [GalaxySSIHealthCareEvidence.Receipt] = []
-    for turn in turns.reversed() where (turn.answer != nil || turn.proposalID != nil) &&
+    for turn in turns.reversed() where !turn.hasInterruptedReply && (turn.retainedAnswer != nil || turn.proposalID != nil) &&
         (turn.automaticResearchCompleted == true || checkpoint?.turn == turn.id) {
       for receipt in archive.localCareEvidence?[turn.id.uuidString] ?? [] {
         if Handoff.reusable(receipt, turn: turn.id, owner: owner, authorization: authorization, job: job) {
@@ -1680,7 +1680,7 @@ struct GalaxySSIHealthRecords {
       if sources.count == 8 { break }
     }
     return Handoff.make(job: job, authorization: authorization, basis: basis, prior: checkpoint,
-      hasEarlierResult: turns.contains { $0.answer != nil || $0.proposalID != nil }, plan: plan,
+      hasEarlierResult: turns.contains { !$0.hasInterruptedReply && ($0.retainedAnswer != nil || $0.proposalID != nil) }, plan: plan,
       recordedPlan: plans.last?.proposal.state, actionCount: actions.count, historicalSources: sources,
       essentialContextMissing: concern.assessment.signals.contains(.glucoseContext),
       priorityWarning: concern.bloodPressureWarning != nil,
@@ -1788,6 +1788,7 @@ struct GalaxySSIHealthRecords {
       try validateLocalCareResearch(approval, archive: archive, concern: concern, state: .dispatched, now: now)
     }
     guard thread.turns.last?.id == approval.id, thread.turns.last?.answer == nil,
+          thread.turns.last?.hasInterruptedReply == false,
           (thread.turns.last?.relatedMeasurements ?? [:]) == approval.relatedMeasurements,
           thread.turns.last?.proposalID == nil ||
             (approval.requiresStructuredReview && thread.turns.last?.proposalID == approval.id),
@@ -1888,9 +1889,30 @@ struct GalaxySSIHealthRecords {
     var thread = try checkedDiscussion(approval, archive: archive, now: now)
     guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
           thread.turns[index].answer == nil,
+          thread.turns[index].question == approval.question,
+          thread.turns[index].destination == approval.destinationDigest,
+          (thread.turns[index].relatedMeasurements ?? [:]) == approval.relatedMeasurements,
           thread.turns[index].proposalID == nil || (approval.requiresStructuredReview && thread.turns[index].proposalID == approval.id),
           thread.turns[index].questionsRequested != true,
           thread.turns[index].planRequested != true || approval.requiresStructuredReview else { throw Failure.stale }
+    if let retained = thread.turns[index].interruptedReply {
+      guard retained == answer else { throw Failure.stale }
+      return
+    }
+    try validateLocalCareDiscussionTurn(approval, now: now)
+    if AgentModelPlanParser.containsUnexecutedControlReply(answer) {
+      if approval.research != nil {
+        let key = approval.concernID.uuidString
+        guard var ledger = archive.localCareResearch, let job = ledger.jobs[key] else { throw Failure.stale }
+        try ledger.transition(job, concern: approval.concernID, to: .interrupted,
+          process: GalaxySSIHealthCareResearch.process)
+        archive.localCareResearch = ledger
+      }
+      thread.turns[index].interruptedReply = answer
+      archive.localCareDiscussions?[approval.concernID.uuidString] = thread
+      try persist(archive)
+      return
+    }
     if approval.research != nil {
       let concern = try currentDiscussionConcern(id: approval.concernID, metric: approval.metric, archive: archive, now: now)
       thread.turns[index].automaticResearchCompleted = try completeLocalCareResearch(approval, concern: concern, archive: &archive, now: now)
@@ -1916,7 +1938,8 @@ struct GalaxySSIHealthRecords {
     guard archive.localCareModelReviews?[approval.id] == nil else { throw Failure.stale }
     if approval.requiresStructuredReview { try validateLocalCareDiscussionTurn(approval, now: now) }
     guard let index = thread.turns.indices.last, thread.turns[index].id == approval.id,
-          thread.turns[index].answer == nil, thread.turns[index].proposalID == nil, thread.turns[index].planRequested == true,
+          thread.turns[index].answer == nil, !thread.turns[index].hasInterruptedReply,
+          thread.turns[index].proposalID == nil, thread.turns[index].planRequested == true,
           let concern = archive.localCare?.current[approval.metric.rawValue] else { throw Failure.stale }
     guard let evidence = archive.localCareEvidence?[key], !evidence.isEmpty, evidence == approval.evidence,
           evidence.allSatisfy({ $0.valid(for: approval, now: now) }) else { throw Failure.permission }
