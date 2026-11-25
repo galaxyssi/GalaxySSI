@@ -82,7 +82,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTranscriptStore.kt",
       "sha256": "9be4931d766d91db0c5efdfed720b8084c563695200ead2fb7ef31e16b07b615",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Adapted changed metadata access: session metrics reuse one conversation lookup, and the indexed primary/draft lookup no longer falls back through full conversation enumeration for a legacy or unknown ID. Only the matching legacy contact history is synthesized using unchanged list rules. Existing initial planning already uses that scoped metadata/history path. No transcript storage migration; native/latency acceptance and broader context indexing remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidencePack.kt",

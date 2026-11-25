@@ -191,6 +191,66 @@ extension AgentRuntimePackCatalogEntry {
 
 @MainActor
 final class GalaxySSIStoreTests: XCTestCase {
+  func testScopedSessionLookupRetainsArchivedAndDraftMetadata() throws {
+    let store = makeStore()
+    let archived = AgentConversation(id: "archived-metrics", title: "Archived", createdAt: 1, updatedAt: 2,
+      summary: "Retained summary", status: .archived, privateMode: true,
+      inputTokens: 123, outputTokens: 45, costMicros: 678, trackingPaused: true)
+    XCTAssertTrue(store.agentConversationDatabase.upsert(archived))
+    XCTAssertEqual(store.agentSession(id: "  archived-metrics  "), archived)
+    let metrics = store.agentSessionMetrics("archived-metrics")
+    XCTAssertEqual(metrics.inputTokens, 123)
+    XCTAssertEqual(metrics.outputTokens, 45)
+    XCTAssertEqual(metrics.costMicros, 678)
+    XCTAssertEqual(metrics.messageCount, 0)
+    let draft = AgentConversation(id: "draft-metrics", title: "Draft", createdAt: 3, updatedAt: 4,
+      inputTokens: 11, outputTokens: 12, costMicros: 13)
+    XCTAssertTrue(store.agentConversationDatabase.saveDraft(draft))
+    XCTAssertEqual(store.agentSession(id: draft.id), draft)
+    let draftMetrics = store.agentSessionMetrics(draft.id)
+    XCTAssertEqual(draftMetrics.inputTokens, 11)
+    XCTAssertEqual(draftMetrics.outputTokens, 12)
+    XCTAssertEqual(draftMetrics.costMicros, 13)
+  }
+
+  func testScopedLegacySessionLookupMatchesListSynthesisAndDialogueActivity() throws {
+    let store = makeStore()
+    let id = store.defaultAgentConversationId(for: "hermes")
+    _ = store.agentConversationDatabase.delete(id)
+    let first = ChatMessage(contactId: "hermes", content: "Question", isMine: true,
+      createdAt: Date(timeIntervalSince1970: 1), conversationId: id, turnId: "legacy")
+    let answer = ChatMessage(contactId: "hermes", content: "Answer", isMine: false,
+      createdAt: Date(timeIntervalSince1970: 2), conversationId: id, turnId: "legacy")
+    let system = ChatMessage(contactId: "hermes", content: "Internal", isMine: false, isSystem: true,
+      createdAt: Date(timeIntervalSince1970: 3), conversationId: id)
+    XCTAssertTrue(store.chatHistoryDatabase.upsertAll([first, answer, system]))
+    let scoped = try XCTUnwrap(store.agentSession(id: id))
+    XCTAssertEqual(scoped.createdAt, 1_000)
+    XCTAssertEqual(scoped.updatedAt, 3_000)
+    XCTAssertEqual(scoped.latestDialogueAt, 2_000)
+    XCTAssertEqual(scoped, store.agentSessions(includeArchived: true).first { $0.id == id })
+    let metrics = store.agentSessionMetrics(id)
+    XCTAssertEqual(metrics.messageCount, 3)
+    XCTAssertEqual(metrics.turnCount, 1)
+    XCTAssertEqual(metrics.lastResponseLatencyMillis, 1_000)
+    XCTAssertEqual(metrics.inputTokens, 0)
+  }
+
+  func testScopedUnknownSessionDoesNotBorrowActiveSessionMetadataOrHistory() throws {
+    let store = makeStore()
+    let active = store.createAgentSession(title: "Other conversation")
+    XCTAssertTrue(store.recordAgentSessionUsage(id: active.id, inputTokens: 99, outputTokens: 88, costMicros: 77))
+    XCTAssertNil(store.agentSession(id: "missing-scoped-session"))
+    XCTAssertNil(store.agentSession(id: "   "))
+    let metrics = store.agentSessionMetrics("missing-scoped-session")
+    XCTAssertEqual(metrics.messageCount, 0)
+    XCTAssertEqual(metrics.turnCount, 0)
+    XCTAssertEqual(metrics.inputTokens, 0)
+    XCTAssertEqual(metrics.outputTokens, 0)
+    XCTAssertEqual(metrics.costMicros, 0)
+    XCTAssertEqual(store.agentSession(id: active.id)?.inputTokens, 99)
+  }
+
   @MainActor
   func testExhaustedPeerProjectionOnlyUpdatesMatchingPendingOutgoingHistory() throws {
     let store = makeStore()
