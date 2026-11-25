@@ -38,6 +38,7 @@ enum AgentIOSURLSessionWebError: Error {
   case sourceVerificationRequired
   case invalidSearchResponse
   case unsupportedImageEngine
+  case unsupportedSearchEngine
   case invalidMethod
   case invalidTimeout
   case invalidLimit
@@ -394,6 +395,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
          (!verticalIds.isEmpty && verticalIds != ["image"]) {
         throw AgentIOSURLSessionWebError.unsupportedImageEngine
       }
+      guard AgentIOSWebSearchEnginePolicy.accepts(Array(engineIds)) else {
+        throw AgentIOSURLSessionWebError.unsupportedSearchEngine
+      }
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
       let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
       let routing = AgentIOSWebIntelligenceQueryRouting.select(
@@ -408,6 +412,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         maxResults: maxResults,
         routing: routing,
         imageSearch: imageSearch,
+        requestedEngineIds: engineIds,
         fanout: Int(input["engine_fanout"]?.intValue ?? 6)
       )
       let accumulator = AgentIOSWebSearchAccumulator()
@@ -1152,6 +1157,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     maxResults: Int,
     routing: AgentIOSWebIntelligenceSourceSelection,
     imageSearch: Bool,
+    requestedEngineIds: Set<String>,
     fanout: Int
   ) throws -> [AgentIOSWebSearchEndpoint] {
     if imageSearch {
@@ -1224,6 +1230,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         provider: provider,
         url: try validatedPublicHTTPSURL(url.absoluteString)
       )
+    }
+    if !requestedEngineIds.isEmpty {
+      endpoints = endpoints.filter { requestedEngineIds.contains($0.provider) }
     }
     return Array(endpoints.prefix(min(max(fanout, 1), 32)))
   }
@@ -1687,6 +1696,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return failure("invalid_engine_response", "Image search did not return readable public result data")
     case .unsupportedImageEngine:
       return failure("unsupported_image_engine", "The requested image engine is not available on iOS; no alternative engine was substituted")
+    case .unsupportedSearchEngine:
+      return failure("unsupported_search_engine", "The requested search engine is not available on iOS; no alternative engine was substituted")
     case .invalidMethod:
       return failure("invalid_method", "HTTP method must be GET or HEAD")
     case .invalidTimeout:

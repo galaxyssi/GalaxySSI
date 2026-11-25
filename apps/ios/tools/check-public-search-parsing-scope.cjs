@@ -30,10 +30,30 @@ for (const token of ['JSONSerialization.jsonObject', 'rows.prefix(100)', 'seen.i
   'imageSearchURL(row["oriPicUrl"]) ?? imageSearchURL(row["picUrl"])',
   '"retrieval_status": .string("search_result_not_downloaded")', 'media["original_url"] = .string(original)']) assert(parser.includes(token));
 const intelligence = read(swift('AgentIOSURLSessionWebIntelligenceProvider'));
-for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch',
+for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty',
   'item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue',
   'result["images"] = .array(images)', 'evidence["images"] = .array(images)',
   'result["unavailable_sources"] = unavailable']) assert(intelligence.includes(token));
+const budget = read(swift('AgentIOSWebExecutionBudget'));
+for (const token of ['systemUptime * 1_000', 'subtractingReportingOverflow(started)',
+  'min(remainingMillis, parent.remainingTimeMillis, timeoutMillis)', 'hardDeadlineEpochMillis: deadline',
+  'parent.isCancellationRequested || isCancelled() || self.expired',
+  'self == .fast ? 6_000 : (self == .deep ? 35_000 : 15_000)']) assert(budget.includes(token));
+const research = intelligence.slice(intelligence.indexOf('  private func research('), intelligence.indexOf('  private func readableFetchResult('));
+for (const token of ['AgentIOSWebSearchEnginePolicy.accepts(globalEngines + rawPlanEngines + queryPlan.flatMap(\\.engines))',
+  'let budget = AgentIOSWebExecutionBudget(', 'min(budget.remainingMillis, invocation.remainingTimeMillis)',
+  '"status": .string("skipped_budget")', 'search(input: searchInput, invocation: child',
+  'AgentIOSWebEvidenceReader(uptimeMillis: uptimeMillis)', 'results: remaining > 0 ? searchResults : []',
+  'timeoutMillis: min(pageReadTimeout, remaining)', 'let childInvocation = try budget.invocation(',
+  'else if executedQueries.count < queryPlan.count { status = "partial" }',
+  'researchMetadata["shared_budget_exhausted"]']) assert(research.includes(token), token);
+assert(research.indexOf('AgentIOSWebSearchEnginePolicy.accepts(') < research.indexOf('for (index, item) in queryPlan.enumerated()'));
+assert(provider.includes('endpoints = endpoints.filter { requestedEngineIds.contains($0.provider) }'));
+assert(provider.includes('throw AgentIOSURLSessionWebError.unsupportedSearchEngine'));
+const budgetTests = read('apps/ios/GalaxySSITests/AgentIOSWebIntelligenceNativeToolTests.swift');
+for (const name of ['testResearchBudgetKeepsEvidenceAndSkipsUnstartedQueriesAndPages',
+  'testResearchValidatesLaterEngineBeforeAnyEarlierSearch', 'testSearchProfilesSupplyDefaultsButPreserveExplicitLimits',
+  'testMonotonicResearchBudgetCapsProgressAwareChildDeadline']) assert(budgetTests.includes('func ' + name + '('));
 const planning = read(swift('CloudModelAgentPlanningProvider'));
 assert(planning.includes('if call.name == "web_image_search" {'));
 assert(planning.includes('"verticals": .array([.string("image")])'));
@@ -73,6 +93,7 @@ for (const name of ['testRendererHealthUsesSharedCooldownWithoutExtendingRejecte
   'testRendererPreflightUsesCompletedResolutionWithoutNetwork']) assert(lifecycleTests.includes('func ' + name + '('));
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const token of ['AgentIOSPublicSearchParser.swift in Sources', 'SwiftSoup in Frameworks',
+  'AgentIOSWebExecutionBudget.swift in Sources',
   'productName = SwiftSoup;', 'repositoryURL = "https://github.com/scinfu/SwiftSoup";', 'version = 2.6.0;']) assert(project.includes(token));
 const pins = JSON.parse(read('apps/ios/GalaxySSI.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'));
 const pin = pins.pins.find(p => p.identity === 'swiftsoup');
@@ -90,7 +111,9 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: actual iOS search provider now returns excerpts and unavailable-source codes; remaining ranking/cache/maintenance behavior not ported by this increment';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete';
+  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete';
+  if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research budget and nonextendable child invocations connected to actual search/page calls. Full model-round/tool-lane watchdog and immediate cancellation of already-running transport remain incomplete; no runtime acceptance';
   if (file.endsWith('/AgentWebRendererHealth.kt')) return 'Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed';
   if (file.endsWith('/AgentIsolatedWebViewRenderer.kt')) return 'iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance';
   if (file.endsWith('/AgentIsolatedWebRenderService.kt')) return 'Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee';
@@ -99,7 +122,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image parsing and evidence integration; native renderer cooldown, bounded DNS/startup and cleanup adaptation. Other image engines/relevance, maintenance/index atomicity, model-loop budgets and native/performance recovery acceptance remain incomplete.',
+  scope: 'Public web/Sogou image evidence, renderer cooldown/bounded preflight/cleanup, monotonic research query/page budget, full-plan engine validation and truthful partial coverage. Other image engines/relevance, maintenance/index atomicity, full model-round budgets and native/performance acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

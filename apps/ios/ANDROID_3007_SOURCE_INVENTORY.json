@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image parsing and evidence integration; native renderer cooldown, bounded DNS/startup and cleanup adaptation. Other image engines/relevance, maintenance/index atomicity, model-loop budgets and native/performance recovery acceptance remain incomplete.",
+  "scope": "Public web/Sogou image evidence, renderer cooldown/bounded preflight/cleanup, monotonic research query/page budget, full-plan engine validation and truthful partial coverage. Other image engines/relevance, maintenance/index atomicity, full model-round budgets and native/performance acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -97,17 +97,17 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebExecutionBudget.kt",
       "sha256": "966c859abfbfea1be4b0f9104b8bb630d0515cb55e7874c3a0e3f1e6955759a5",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Monotonic research budget and nonextendable child invocations connected to actual search/page calls. Full model-round/tool-lane watchdog and immediate cancellation of already-running transport remain incomplete; no runtime acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: actual iOS search provider now returns excerpts and unavailable-source codes; remaining ranking/cache/maintenance behavior not ported by this increment"
+      "disposition": "Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

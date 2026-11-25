@@ -47,15 +47,18 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
   var webMediaProvider: AgentIOSWebMediaToolProviding
   var cacheStore: AgentIOSWebIntelligenceCacheStore
   var nowMillis: () -> Int64
+  var uptimeMillis: () -> Int64
 
   init(
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     cacheStore: AgentIOSWebIntelligenceCacheStore = .shared,
-    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    uptimeMillis: @escaping () -> Int64 = { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
   ) {
     self.webMediaProvider = webMediaProvider
     self.cacheStore = cacheStore
     self.nowMillis = nowMillis
+    self.uptimeMillis = uptimeMillis
   }
 
   func availability(operation: AgentIOSWebIntelligenceOperation) -> AgentNativeToolAvailability {
@@ -301,6 +304,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     guard !query.isEmpty else {
       return failure("invalid_query", "Web intelligence search requires a non-empty query")
     }
+    guard let profile = AgentIOSWebSearchProfile(rawValue: (input["profile"]?.stringValue ?? "balanced").lowercased()) else {
+      return failure("invalid_profile", "Unsupported web search profile")
+    }
     let limit = int(
       input,
       "limit",
@@ -310,8 +316,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     )
     let imageSearch = (input["verticals"]?.arrayValue ?? []).contains(.string("image")) ||
       (input["engines"]?.arrayValue ?? []).contains(where: { $0.stringValue?.hasSuffix("_image") == true })
-    // Text-document cache entries cannot satisfy image evidence or preserve image identity.
-    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch
+    let requestedEngines = stringArray(input["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines)
+    guard AgentIOSWebSearchEnginePolicy.accepts(requestedEngines) else {
+      return failure(imageSearch ? "unsupported_image_engine" : "unsupported_search_engine",
+        "The requested search engine is unavailable on iOS; no alternative was substituted")
+    }
+    // Text cache entries lack image identity and explicit search-engine provenance.
+    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty
     let cachedDocuments = useCache
       ? cacheStore.search(query: query, limit: limit, allowStale: false)
       : []
@@ -330,8 +341,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var webSearchInput: AgentMcpJSONObject = [
       "query": .string(query),
       "max_results": .int(Int64(limit)),
-      "timeout_ms": .int(webMediaTimeout(input, invocation: invocation)),
-      "profile": input["profile"] ?? .string("balanced")
+      "timeout_ms": .int(min(input["timeout_ms"]?.intValue ?? profile.timeoutMillis, invocation.remainingTimeMillis)),
+      "profile": .string(profile.rawValue),
+      "engine_fanout": .int(Int64(profile.fanout))
     ]
     ["engine_fanout", "engines", "verticals", "categories"].forEach { key in
       if let value = input[key] { webSearchInput[key] = value }
@@ -849,6 +861,17 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       allowedVerticals: Set(AgentIOSWebIntelligenceNativeToolCatalog.webVerticals)
     )
     let globalEngines = stringArray(input["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines)
+    let rawPlanEngines = (input["query_plan"]?.arrayValue ?? []).flatMap {
+      stringArray($0.objectValue?["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines)
+    }
+    guard AgentIOSWebSearchEnginePolicy.accepts(globalEngines + rawPlanEngines + queryPlan.flatMap(\.engines)) else {
+      return failure("unsupported_search_engine", "The research plan contains an unavailable iOS search engine; nothing was searched")
+    }
+    guard let profile = AgentIOSWebSearchProfile(rawValue: (input["profile"]?.stringValue ?? "balanced").lowercased()) else {
+      return failure("invalid_profile", "Unsupported web research profile")
+    }
+    let budget = AgentIOSWebExecutionBudget(durationMillis: int64(input, "timeout_ms",
+      defaultValue: 30_000, minimum: 2_000, maximum: 60_000), now: uptimeMillis)
     let globalVerticals = stringArray(
       input["verticals"],
       maximum: AgentIOSWebIntelligenceNativeToolCatalog.webVerticals.count
@@ -867,14 +890,44 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard !invocation.isCancellationRequested else {
         return failure("cancelled", "Web intelligence research was cancelled", retryable: true)
       }
+      let remaining = min(budget.remainingMillis, invocation.remainingTimeMillis)
+      if remaining < 1_000 {
+        let receipt: AgentMcpJSONObject = ["source_id": .string("research-query-\(index + 1)"),
+          "status": .string("skipped_budget"), "result_count": .int(0),
+          "error_code": .string("insufficient_shared_web_budget"), "retryable": .bool(false)]
+        resultGroups.append([])
+        evidenceGroups.append([])
+        receiptGroups.append([receipt])
+        allReceipts.append(receipt)
+        continue
+      }
       var searchInput = input
       searchInput.removeValue(forKey: "query_plan")
       searchInput["query"] = .string(item.query)
       searchInput["limit"] = .int(Int64(evidenceLimit))
+      searchInput["profile"] = .string(profile.rawValue)
+      searchInput["timeout_ms"] = .int(min(profile.timeoutMillis, remaining))
+      searchInput["engine_fanout"] = input["engine_fanout"] ?? .int(Int64(profile.fanout))
       searchInput["engines"] = .array((item.engines.isEmpty ? globalEngines : item.engines).map(AgentMcpJSONValue.string))
       searchInput["verticals"] = .array((item.verticals.isEmpty ? Set(globalVerticals) : item.verticals).sorted().map(AgentMcpJSONValue.string))
       searchInput["categories"] = .array((item.categories.isEmpty ? Set(globalCategories) : item.categories).sorted().map(AgentMcpJSONValue.string))
-      let searched = search(input: searchInput, invocation: invocation, operation: operation)
+      let child: AgentNativeToolInvocation
+      do {
+        child = try budget.invocation(parent: invocation, input: searchInput,
+          timeoutMillis: min(profile.timeoutMillis, remaining), nowMillis: nowMillis)
+      } catch AgentNativeToolInvocationError.cancelled {
+        return failure("cancelled", "Web intelligence research was cancelled", retryable: true)
+      } catch {
+        let receipt: AgentMcpJSONObject = ["source_id": .string("research-query-\(index + 1)"),
+          "status": .string("skipped_budget"), "result_count": .int(0),
+          "error_code": .string("shared_web_budget_exhausted"), "retryable": .bool(false)]
+        resultGroups.append([])
+        evidenceGroups.append([])
+        receiptGroups.append([receipt])
+        allReceipts.append(receipt)
+        continue
+      }
+      let searched = search(input: searchInput, invocation: child, operation: operation)
       executedQueries.append(.string(item.query))
       guard searched.isSuccess else {
         let receipt: AgentMcpJSONObject = [
@@ -917,26 +970,19 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let searchEvidence = AgentIOSWebResearchPlanCodec.roundRobinResults(evidenceGroups)
     let pageReads: AgentIOSWebEvidenceReadBatch
     do {
-      pageReads = try AgentIOSWebEvidenceReader().read(
-        results: searchResults,
+      let remaining = min(budget.remainingMillis, invocation.remainingTimeMillis)
+      pageReads = try AgentIOSWebEvidenceReader(uptimeMillis: uptimeMillis).read(
+        results: remaining > 0 ? searchResults : [],
         evidenceLimit: evidenceLimit,
         parallelism: pageReadParallelism,
         perHostParallelism: perHostParallelism,
-        timeoutMillis: min(pageReadTimeout, invocation.remainingTimeMillis),
+        timeoutMillis: min(pageReadTimeout, remaining),
         earlyComplete: earlyComplete,
         isCancellationRequested: { invocation.isCancellationRequested },
         checkpoint: { try invocation.checkpoint() }
       ) { url, requestTimeout, isCancelled in
-        let childInvocation = AgentNativeToolInvocation(
-          descriptor: invocation.descriptor,
-          input: ["url": .string(url)],
-          context: invocation.context,
-          startedAtEpochMillis: self.nowMillis(),
-          deadlineEpochMillis: min(invocation.deadlineEpochMillis, self.nowMillis() + requestTimeout),
-          nowMillis: self.nowMillis,
-          cancellationRequested: { invocation.isCancellationRequested || isCancelled() },
-          progressReporter: { _, _ in }
-        )
+        let childInvocation = try budget.invocation(parent: invocation, input: ["url": .string(url)],
+          timeoutMillis: requestTimeout, nowMillis: self.nowMillis, isCancelled: isCancelled)
         var fetchInput = input
         fetchInput["url"] = .string(url)
         fetchInput["max_bytes"] = .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes)
@@ -1028,9 +1074,11 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       )
     }
     let requiredDocuments = min(evidenceLimit, searchResults.count)
-    let status = pageReads.sufficient || (requiredDocuments > 0 && pageReads.documents.count >= requiredDocuments)
-      ? "completed"
-      : (pageReads.documents.isEmpty && searchResults.isEmpty ? "failed" : "partial")
+    let status: String
+    if pageReads.documents.isEmpty && searchResults.isEmpty { status = "failed" }
+    else if executedQueries.count < queryPlan.count { status = "partial" }
+    else { status = pageReads.sufficient || (requiredDocuments > 0 && pageReads.documents.count >= requiredDocuments)
+      ? "completed" : "partial" }
     var output = baseOutput(operation: operation, invocation: invocation, status: status)
     output["request_id"] = .string(requestId(invocation, operation: operation))
     output["query"] = .string(query)
@@ -1061,6 +1109,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     researchMetadata["autonomous"] = .bool(autonomous)
     researchMetadata["query_plan_source"] = .string(input["query_plan"]?.arrayValue == nil ? "primary_query_only" : "model_supplied")
     researchMetadata["queries_executed"] = .int(Int64(executedQueries.count))
+    researchMetadata["shared_budget_exhausted"] = .bool(budget.expired || invocation.remainingTimeMillis == 0)
+    researchMetadata["shared_budget_remaining_ms"] = .int(min(budget.remainingMillis, invocation.remainingTimeMillis))
     researchMetadata["page_read_parallelism"] = .int(Int64(pageReadParallelism))
     researchMetadata["page_read_per_host"] = .int(Int64(perHostParallelism))
     researchMetadata["page_read_candidates"] = .int(Int64(pageReads.candidateCount))

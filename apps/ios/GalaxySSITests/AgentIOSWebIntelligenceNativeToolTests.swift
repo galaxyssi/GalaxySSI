@@ -2,6 +2,82 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testResearchBudgetKeepsEvidenceAndSkipsUnstartedQueriesAndPages() throws {
+    let media = BudgetWebMediaFixture()
+    media.spentPerSearch = 2_000
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media,
+      nowMillis: { 1000 }, uptimeMillis: { media.uptime })
+    let result = try invokeWebBudgetFixture(provider: provider,
+      input: ["query": .string("Galaxy research"), "query_plan": .array([.string("Galaxy first"), .string("Galaxy second")]),
+        "timeout_ms": .int(2000)])
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(media.inputs.count, 1)
+    XCTAssertEqual(result.output["status"], .string("partial"))
+    XCTAssertEqual(result.output["results"]?.arrayValue?.count, 1)
+    XCTAssertEqual(result.output["documents"]?.arrayValue?.count, 0)
+    XCTAssertEqual(result.output["metadata"]?.objectValue?["queries_executed"], .int(1))
+    XCTAssertEqual(result.output["metadata"]?.objectValue?["shared_budget_exhausted"], .bool(true))
+    XCTAssertTrue(result.output["receipts"]?.arrayValue?.contains {
+      $0.objectValue?["status"] == .string("skipped_budget")
+    } == true)
+  }
+
+  func testResearchValidatesLaterEngineBeforeAnyEarlierSearch() throws {
+    let media = BudgetWebMediaFixture()
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media)
+    let result = try invokeWebBudgetFixture(provider: provider,
+      input: ["query": .string("Galaxy"), "query_plan": .array([
+        .object(["query": .string("First"), "engines": .array([.string("bing")])]),
+        .object(["query": .string("Second"), "engines": .array([.string("missing_engine")])])])])
+    XCTAssertEqual(result.error?.code, "unsupported_search_engine")
+    XCTAssertTrue(media.inputs.isEmpty)
+  }
+
+  func testSearchProfilesSupplyDefaultsButPreserveExplicitLimits() throws {
+    let media = BudgetWebMediaFixture()
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, nowMillis: { 1000 })
+    _ = try invokeWebBudgetFixture(provider: provider, tool: AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "profile": .string("fast")])
+    XCTAssertEqual(media.inputs.last?["timeout_ms"], .int(6000))
+    XCTAssertEqual(media.inputs.last?["engine_fanout"], .int(6))
+    _ = try invokeWebBudgetFixture(provider: provider, tool: AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy"), "profile": .string("deep"), "timeout_ms": .int(8500), "engine_fanout": .int(4)])
+    XCTAssertEqual(media.inputs.last?["timeout_ms"], .int(8500))
+    XCTAssertEqual(media.inputs.last?["engine_fanout"], .int(4))
+  }
+
+  func testMonotonicResearchBudgetCapsProgressAwareChildDeadline() throws {
+    var monotonic: Int64 = 0
+    var wall: Int64 = 1000
+    let budget = AgentIOSWebExecutionBudget(durationMillis: 2000, now: { monotonic })
+    let provider = AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: BudgetWebMediaFixture())
+    var descriptor = try XCTUnwrap(AgentIOSWebIntelligenceNativeToolCatalog.definitions(provider: provider).first?.descriptor)
+    descriptor.timeoutPolicy = .progressAware
+    descriptor.timeoutMillis = 10_000
+    let parent = AgentNativeToolInvocation(descriptor: descriptor, input: [:],
+      context: AgentNativeToolInvocationContext(invocationId: "budget-child"),
+      startedAtEpochMillis: 1000, deadlineEpochMillis: 11000, nowMillis: { wall },
+      cancellationRequested: { false }, progressReporter: { _, _ in })
+    let child = try budget.invocation(parent: parent, input: [:], timeoutMillis: 8000, nowMillis: { wall })
+    wall = 1500
+    try child.checkpoint()
+    XCTAssertEqual(child.deadlineEpochMillis, 3000)
+    monotonic = 2000
+    XCTAssertTrue(budget.expired)
+    XCTAssertTrue(child.isCancellationRequested)
+    XCTAssertThrowsError(try budget.invocation(parent: parent, input: [:], timeoutMillis: 8000, nowMillis: { wall }))
+  }
+
+  private func invokeWebBudgetFixture(provider: AgentIOSURLSessionWebIntelligenceProvider,
+    tool: String = AgentIOSWebIntelligenceNativeToolCatalog.research, input: AgentMcpJSONObject) throws -> AgentNativeToolExecutionResult {
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+    return registry.invoke(tool, input: input, context: AgentNativeToolInvocationContext(invocationId: "research-budget",
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent]),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+  }
+
   func testAgentIOSWebIntelligenceNativeToolCatalogAndExecutorUsesProviderBoundaries() throws {
     final class FakeWebIntelligenceProvider: AgentIOSWebIntelligenceToolProviding {
       var implementationId = "fake.ios.web_intelligence"
@@ -357,4 +433,20 @@ extension GalaxySSIStoreTests {
     )
   }
 
+}
+
+private final class BudgetWebMediaFixture: AgentIOSWebMediaToolProviding {
+  var implementationId = "fixture.web-budget"
+  var inputs: [AgentMcpJSONObject] = []
+  var uptime: Int64 = 0
+  var spentPerSearch: Int64 = 0
+  func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability { .available }
+  func invoke(operation: AgentIOSWebMediaOperation, input: AgentMcpJSONObject,
+              invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    inputs.append(input)
+    uptime += spentPerSearch
+    return .success(output: ["results": .array([.object(["title": .string("Galaxy evidence"),
+      "url": .string("https://source.example/article"), "snippet": .string("Galaxy research evidence")])])],
+      metadata: ["provider": .string("fixture")])
+  }
 }
