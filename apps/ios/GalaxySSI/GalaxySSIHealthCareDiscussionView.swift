@@ -56,12 +56,16 @@ struct GalaxySSIHealthCareDiscussionView: View {
         ForEach(thread.turns.suffix(limit)) { turn in
           VStack(alignment: .leading, spacing: 8) {
             Text(turn.question).font(.body.weight(.semibold))
+            completedProcessingStatus(turn.execution)
             if turn.hasInterruptedReply { Text(interruptedText).foregroundColor(.secondary) }
+            else if turn.execution?.state == .interrupted { Text(requestInterruptedText).foregroundColor(.secondary) }
             else if let answer = turn.retainedAnswer { Text(answer).textSelection(.enabled) }
             else if turn.proposalID != nil { Text(t("plan_retained", "Draft available in Health plans")) }
             else if turn.questionsRetained == true { Text(q("retained", "Questions are available in Personal Health.")) }
             else if turn.answerDraftStaged == true { Text(q("draft_staged", "Clarification answer draft created")) }
-            else if active?.id == turn.id { ProgressView() }
+            else if let active, active.id == turn.id {
+              processingStatus(startedAt: turn.execution?.startedAt ?? active.reviewedAt)
+            }
             else { Text(t("unanswered", "No saved reply")).foregroundColor(.secondary) }
           }
         }
@@ -108,7 +112,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
               (proposesPlan && !asksQuestions && selectedSources.isEmpty))
         }
         if readingTask != nil { ProgressView(t("reading_sources", "Reading public sources")) }
-        if busy { Button(t("stop", "Cancel request"), role: .cancel) { clearRequest() } }
+        if busy { Button(t("stop", "Cancel request"), role: .cancel) { cancelRequest() } }
         if !archived.isEmpty {
           Section(scopeText("archived", "Earlier private discussions")) {
             ForEach(archived.prefix(archiveLimit)) { previous in
@@ -116,7 +120,9 @@ struct GalaxySSIHealthCareDiscussionView: View {
                 ForEach(previous.turns) { turn in
                   VStack(alignment: .leading, spacing: 4) {
                     Text(turn.question).font(.body.weight(.semibold))
+                    completedProcessingStatus(turn.execution)
                     if turn.hasInterruptedReply { Text(interruptedText).foregroundColor(.secondary) }
+                    else if turn.execution?.state == .interrupted { Text(requestInterruptedText).foregroundColor(.secondary) }
                     else if let answer = turn.retainedAnswer { Text(answer).textSelection(.enabled) }
                   }
                 }
@@ -223,11 +229,26 @@ struct GalaxySSIHealthCareDiscussionView: View {
     guard canRead else { clearSensitive(); return }
     do {
       if open { _ = try records.openLocalCareDiscussion(id: concernID, metric: metric) }
-      let archive = try records.load()
+      var archive = try records.load()
       guard archive.localCareAllowed == true, let concern = archive.localCare?.current[metric.rawValue],
             concern.id == concernID, concern.stage != .paused, concern.stage != .closed,
             concern.assessment.record != nil else { throw GalaxySSIHealthRecords.Failure.permission }
-      let next = archive.localCareDiscussions?[concernID.uuidString]
+      var next = archive.localCareDiscussions?[concernID.uuidString]
+      if open, active == nil, task == nil, let execution = next?.turns.last?.execution,
+         execution.state == .prepared || execution.state == .dispatched || execution.state == .received {
+        do {
+          if execution.state == .received, currentRoute(execution.approval) != nil {
+            try records.applySavedLocalCareDiscussionReply(execution.approval)
+          } else {
+            try records.interruptLocalCareDiscussionExecution(execution.approval)
+          }
+        } catch {
+          try? records.interruptLocalCareDiscussionExecution(execution.approval)
+          failed = true
+        }
+        archive = try records.load()
+        next = archive.localCareDiscussions?[concernID.uuidString]
+      }
       if thread != nil, thread?.id != next?.id {
         clearRequest(); question = ""; allowsHistory = false; includesQuestions = false; asksQuestions = false
         allowsAnswerDraft = false; includesFeedbackHistory = false; limit = 20
@@ -280,7 +301,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           let model = review.model, contact.selectedCloudModel == model,
           GalaxySSIHealthCareDiscussion.endpoint(for: model) == review.endpoint,
           let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key),
-          SHA256.hash(data: Data(key.utf8)) == review.credentialDigest,
+          Data(SHA256.hash(data: Data(key.utf8))) == review.credentialDigest,
           !coordinator.healthDisclosureStore.blockedDestinationIds().contains(contact.id)
     else { return nil }
     return (contact, key)
@@ -312,7 +333,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         textSummary: .init(characters: sentPayload.count, kinds: [.messageText, .systemInstructions, .toolOutput]))
       guard ticket.allowed else { failed = true; return }
       do {
-        try records.beginLocalCareDiscussionTurn(review)
+        try records.beginLocalCareDiscussionTurn(review, persistExecution: true)
       } catch {
         AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
           failureReason: "health_discussion_approval_changed")
@@ -335,7 +356,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
         }
         do {
           guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
-          try records.validateLocalCareDiscussionTurn(review)
+          try records.dispatchLocalCareDiscussionTurn(review)
           var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
           if !review.allowsAnswerDraft && (review.history != nil || review.questions != nil || review.feedbackCursor != nil) {
@@ -344,31 +365,27 @@ struct GalaxySSIHealthCareDiscussionView: View {
                 active?.id == review.id ? currentRoute(review)?.0 : nil
               })
           }
+          try records.retainLocalCareDiscussionResponse(review, response: bytes)
           guard active?.id == review.id, !Task.isCancelled, currentRoute(review) != nil else { return }
           active = nil
           defer { task = nil }
-          if review.allowsAnswerDraft {
-            let draft = try GalaxySSIHealthCareAnswerDraft.argumentsIfPresent(bytes, style: style)
-            if let draft {
-              try records.stageLocalCareAnswerDraft(review, arguments: draft)
-            } else {
-              let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: style)
-              try records.finishLocalCareDiscussionTurn(review, answer: answer)
-            }
-          } else if review.asksQuestions {
-            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: style,
-              toolName: GalaxySSIHealthCareQuestions.tool)
-            try records.saveLocalCareQuestionProposals(review, arguments: arguments)
-          } else if review.proposesPlan {
-            let arguments = try GalaxySSIHealthCarePlan.arguments(bytes, style: style)
-            try records.saveLocalCarePlan(review, arguments: arguments)
-          } else {
-            let answer = try GalaxySSIHealthFollowUpTransport.output(bytes, style: style)
-            try records.finishLocalCareDiscussionTurn(review, answer: answer)
+          try records.applySavedLocalCareDiscussionReply(review)
+        } catch {
+          if !Task.isCancelled {
+            try? records.interruptLocalCareDiscussionExecution(review)
+            failed = true
           }
-        } catch { if !Task.isCancelled { failed = true } }
+        }
       }
     } catch { failed = true }
+  }
+
+  private func cancelRequest() {
+    if let active {
+      do { try records.interruptLocalCareDiscussionExecution(active) }
+      catch { failed = true }
+    }
+    clearRequest()
   }
 
   private func clearRequest() {
@@ -383,6 +400,30 @@ struct GalaxySSIHealthCareDiscussionView: View {
   }
   private var interruptedText: String {
     t("interrupted_control", "This reply contains unexecuted Agent instructions. The question and reply were retained privately. Nothing was executed or resent.")
+  }
+
+  private var requestInterruptedText: String {
+    t("request_interrupted", "This request was interrupted. It has not been resent.")
+  }
+
+  private func processingStatus(startedAt: Date) -> some View {
+    TimelineView(.periodic(from: Date(), by: 1)) { context in
+      HStack(spacing: 8) {
+        ProgressView()
+        Text(String(format: t("processing_seconds", "Working for %d s"),
+          Int32(min(86_400, max(0, context.date.timeIntervalSince(startedAt))))))
+          .foregroundColor(.secondary).monospacedDigit()
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func completedProcessingStatus(_ execution: GalaxySSIHealthCareDiscussionRecovery.Execution?) -> some View {
+    if let execution, execution.state == .applied, let receivedAt = execution.receivedAt {
+      Text(String(format: t("processed_seconds", "Worked for %d s"),
+        Int32(min(86_400, max(0, receivedAt.timeIntervalSince(execution.startedAt))))))
+        .font(.footnote).foregroundColor(.secondary).monospacedDigit()
+    }
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

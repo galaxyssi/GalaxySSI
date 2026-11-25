@@ -73,7 +73,7 @@ enum GalaxySSIHealthCareQuestions {
     }
   }
 
-  struct Page {
+  struct Page: Codable, Equatable {
     let rows: [Row]
     let basis: String
     let ledgerVersion: String
@@ -94,13 +94,14 @@ enum GalaxySSIHealthCareQuestions {
     }
   }
 
-  struct Cursor {
+  struct Cursor: Codable, Equatable {
     let after: UUID
-    private let token = UUID()
+    private let token: UUID
 
     init?(_ page: Page, remaining: Int) {
       guard let after = page.next, remaining > 0 else { return nil }
       self.after = after
+      self.token = UUID()
     }
 
     func arguments(turn: UUID) -> AgentMcpJSONObject {

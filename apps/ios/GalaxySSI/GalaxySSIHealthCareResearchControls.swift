@@ -269,7 +269,7 @@ struct GalaxySSIHealthCareResearchControls: View {
         effort: paired.connector.reasoningEffort) == paired
     }
     guard let (model, key) = route(approval.destinationID) else { return false }
-    return model == approval.model && SHA256.hash(data: Data(key.utf8)) == approval.credentialDigest
+    return model == approval.model && Data(SHA256.hash(data: Data(key.utf8))) == approval.credentialDigest
   }
 
   private func reload() {

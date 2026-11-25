@@ -62,7 +62,7 @@ enum GalaxySSIHealthVisitJournalRead {
       return .init(id: id, owner: owner, threadID: conversation, priorTurnID: prior, concernID: binding.concern,
         metric: metric, concernRevision: binding.revision, carePermission: binding.localPermission, onlinePermission: online,
         destinationID: contactID, destinationDigest: binding.destination,
-        destination: .cloud(model: model, endpoint: endpoint, credential: credential),
+        destination: .cloud(model: model, endpoint: endpoint, credential: Data(credential)),
         question: question, payload: payload, reviewedAt: reviewedAt)
     }
   }
