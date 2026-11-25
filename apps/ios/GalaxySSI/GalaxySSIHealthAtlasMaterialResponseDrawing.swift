@@ -6,6 +6,28 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func retinalLightLayer(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let start = 123.0, end = 123 + 22 * model.input(1)
+    let intensity = model.result / model.kind.bounds.upperBound
+    let tint = UInt32((72 + model.input(0) * 150).rounded())
+    if end > start {
+      rectangle(start, 33, end, 119, (tint << 24) | 0x577D91, radius: 5)
+      line(start, 33, start, 119, Self.blue, 1.6); line(end, 33, end, 119, Self.blue, 1.6)
+    }
+    let beam: UInt32 = 0xAC712D, strength = UInt32((56 + intensity * 199).rounded())
+    for y in [62.0, 76, 90] {
+      arrow(24, y, start - 8, y, beam, 2.8)
+      line(start, y, end, y, (UInt32(124) << 24) | 0xB88143, 1.4)
+      arrow(end + 4, y, 316, y, (strength << 24) | 0xAC712D, 1 + 1.8 * intensity)
+    }
+    if end - start > 18 && model.companionValue > 0 {
+      let x = (start + end) / 2, radius = 4 + 6 * (1 - intensity)
+      oval(x - radius, 105 - radius, x + radius, 105 + radius, 0xB98749)
+    }
+    label("retinal_light_attenuation_incident", 69, 22, 121)
+    label("retinal_light_attenuation_transmitted", 264, 22, 137)
+    label("retinal_light_attenuation_layer", 170, 147, 234)
+  }
   func enamelSection(_ model: GalaxySSIHealthAtlasPhysiology) {
     let x = 94.0, y = 70.0, exterior = 9.5 * model.input(1)
     let interior = exterior - 9.5 * model.input(0)

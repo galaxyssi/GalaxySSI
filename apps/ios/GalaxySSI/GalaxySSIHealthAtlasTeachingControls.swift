@@ -203,6 +203,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .mucusFilmThickness:
       return [control("mucus-film-volume", "volume", 4...24, 12, "u\u{00b3}", digits: 0),
         control("mucus-film-area", "area", 2...12, 6, "u\u{00b2}", digits: 0)]
+    case .pleuralSlide:
+      return [control("pleural-slide-speed", "speed", 0...24, 8, "mm/s", digits: 0),
+        control("pleural-slide-thickness", "thickness", 2...16, 8, "mm", scale: 10, digits: 1)]
+    case .retinalLightAttenuation:
+      return [control("retinal-light-attenuation-coefficient", "coefficient", 1...10, 5, "1/a.u.", scale: 10, digits: 1),
+        control("retinal-light-attenuation-path-length", "path_length", 0...40, 20, "a.u.", scale: 10, digits: 1)]
+    case .gametePathDistance:
+      return [control("gamete-path-distance-sperm-shift", "sperm_shift", 0...8, 4, "PU", digits: 0),
+        control("gamete-path-distance-oocyte-shift", "oocyte_shift", 0...6, 2, "PU", digits: 0)]
+    case .testisTubuleSection:
+      return [control("testis-tubule-section-radius", "radius", 40...80, 60, "u", scale: 10, digits: 1),
+        control("testis-tubule-section-thickness", "thickness", 10...30, 20, "u", scale: 10, digits: 1)]
+    case .uterineLiningArea:
+      return [control("uterine-lining-radius", "radius", 10...40, 20, "LU", scale: 10, digits: 1),
+        control("uterine-lining-length", "length", 20...80, 40, "LU", scale: 10, digits: 1)]
+    case .vulvarFoldOverlap:
+      return [control("vulvar-fold-overlap-angle", "angle", 0...90, 60, "\u{00b0}", digits: 0),
+        control("vulvar-fold-overlap-length", "length", 25...100, 75, "", scale: 100)]
+    case .capillarySupportSurface:
+      return [control("capillary-support-surface-radius", "radius", 2...8, 4, "\u{00b5}m", digits: 0),
+        control("capillary-support-surface-length", "length", 10...60, 30, "\u{00b5}m", digits: 0)]
+    case .marrowRenewal:
+      return [control("marrow-renewal-added", "added", 0...12, 5, "", digits: 0),
+        control("marrow-renewal-left", "left", 0...12, 3, "", digits: 0)]
+    case .ependymalBeatPhase:
+      return [control("ependymal-beat-phase-frequency", "frequency", 2...8, 5, "cycles/interval", scale: 4),
+        control("ependymal-beat-phase-offset", "offset", 0...8, 5, "intervals", scale: 4)]
     }
   }
 }

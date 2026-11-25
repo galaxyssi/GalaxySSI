@@ -1,0 +1,390 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4412,
+    "mergeCommit": "c704a171da9336535ab659d65e6c6af0a4ebd9ba"
+  },
+  "models": [
+    {
+      "id": "pleuralSlide",
+      "inputs": [
+        {
+          "key": "pleural-slide-speed",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_pleural_slide_speed",
+          "unit": "mm/s",
+          "digits": 0
+        },
+        {
+          "key": "pleural-slide-thickness",
+          "minimum": 2,
+          "maximum": 16,
+          "initial": 8,
+          "scale": 10,
+          "label": "health_atlas_pleural_slide_thickness",
+          "unit": "mm",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "s⁻¹",
+      "minimum": 0,
+      "maximum": 120,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/22-2-the-lungs",
+        "https://openstax.org/books/university-physics-volume-1/pages/14-7-viscosity-and-turbulence"
+      ],
+      "title": "health_atlas_pleural_slide_title",
+      "scope": "health_atlas_pleural_slide_scope",
+      "formula": "health_atlas_pleural_slide_formula",
+      "companionTitle": "health_atlas_pleural_slide_stress",
+      "entryIDs": [
+        "pleura"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "retinalLightAttenuation",
+      "inputs": [
+        {
+          "key": "retinal-light-attenuation-coefficient",
+          "minimum": 1,
+          "maximum": 10,
+          "initial": 5,
+          "scale": 10,
+          "label": "health_atlas_retinal_light_attenuation_coefficient",
+          "unit": "1/a.u.",
+          "digits": 1
+        },
+        {
+          "key": "retinal-light-attenuation-path-length",
+          "minimum": 0,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_retinal_light_attenuation_path_length",
+          "unit": "a.u.",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "a.u.",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.webvision.pitt.edu/book/part-i-foundations/how-the-retina-works/",
+        "https://goldbook.iupac.org/terms/view/B00626/pdf"
+      ],
+      "title": "health_atlas_retinal_light_attenuation_title",
+      "scope": "health_atlas_retinal_light_attenuation_scope",
+      "formula": "health_atlas_retinal_light_attenuation_formula",
+      "companionTitle": "health_atlas_retinal_light_attenuation_companion",
+      "entryIDs": [
+        "cell-cone-photoreceptor",
+        "cell-retinal-pigment-epithelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "gametePathDistance",
+      "inputs": [
+        {
+          "key": "gamete-path-distance-sperm-shift",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_gamete_path_distance_sperm_shift",
+          "unit": "PU",
+          "digits": 0
+        },
+        {
+          "key": "gamete-path-distance-oocyte-shift",
+          "minimum": 0,
+          "maximum": 6,
+          "initial": 2,
+          "scale": 1,
+          "label": "health_atlas_gamete_path_distance_oocyte_shift",
+          "unit": "PU",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "PU",
+      "minimum": 2,
+      "maximum": 16,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+        "https://openstax.org/books/university-physics-volume-1/pages/3-1-position-displacement-and-average-velocity"
+      ],
+      "title": "health_atlas_gamete_path_distance_title",
+      "scope": "health_atlas_gamete_path_distance_scope",
+      "formula": "health_atlas_gamete_path_distance_formula",
+      "companionTitle": "health_atlas_gamete_path_distance_companion",
+      "entryIDs": [
+        "cell-spermatozoon",
+        "cell-oocyte-or-ovum"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "testisTubuleSection",
+      "inputs": [
+        {
+          "key": "testis-tubule-section-radius",
+          "minimum": 40,
+          "maximum": 80,
+          "initial": 60,
+          "scale": 10,
+          "label": "health_atlas_testis_tubule_section_radius",
+          "unit": "u",
+          "digits": 1
+        },
+        {
+          "key": "testis-tubule-section-thickness",
+          "minimum": 10,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_testis_tubule_section_thickness",
+          "unit": "u",
+          "digits": 1
+        }
+      ],
+      "axis": 1,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://www.histologyguide.com/slideview/MH-178a-testis/19-slide-1.html",
+        "https://ocw.mit.edu/courses/18-01-single-variable-calculus-fall-2005/c08b62b60d20c5151c369bc284280c54_lecture_19.pdf"
+      ],
+      "title": "health_atlas_testis_tubule_section_title",
+      "scope": "health_atlas_testis_tubule_section_scope",
+      "formula": "health_atlas_testis_tubule_section_formula",
+      "companionTitle": "health_atlas_testis_tubule_section_companion",
+      "entryIDs": [
+        "testes",
+        "cell-sertoli-cell",
+        "cell-leydig-cell",
+        "cell-spermatogonium",
+        "cell-spermatocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "uterineLiningArea",
+      "inputs": [
+        {
+          "key": "uterine-lining-radius",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_uterine_lining_area_radius",
+          "unit": "LU",
+          "digits": 1
+        },
+        {
+          "key": "uterine-lining-length",
+          "minimum": 20,
+          "maximum": 80,
+          "initial": 40,
+          "scale": 10,
+          "label": "health_atlas_uterine_lining_area_length",
+          "unit": "LU",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "LU²",
+      "minimum": 0,
+      "maximum": 210,
+      "sources": [
+        "https://histology.oit.duke.edu/NormalBody/FemaleRepro/FemaleRepro.html",
+        "https://openstax.org/books/prealgebra/pages/9-6-solve-geometry-applications-volume-and-surface-area"
+      ],
+      "title": "health_atlas_uterine_lining_area_title",
+      "scope": "health_atlas_uterine_lining_area_scope",
+      "formula": "health_atlas_uterine_lining_area_formula",
+      "companionTitle": "health_atlas_uterine_lining_area_companion",
+      "entryIDs": [
+        "uterus",
+        "cervix",
+        "cell-endometrial-epithelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "vulvarFoldOverlap",
+      "inputs": [
+        {
+          "key": "vulvar-fold-overlap-angle",
+          "minimum": 0,
+          "maximum": 90,
+          "initial": 60,
+          "scale": 1,
+          "label": "health_atlas_vulvar_fold_overlap_angle",
+          "unit": "°",
+          "digits": 0
+        },
+        {
+          "key": "vulvar-fold-overlap-length",
+          "minimum": 25,
+          "maximum": 100,
+          "initial": 75,
+          "scale": 100,
+          "label": "health_atlas_vulvar_fold_overlap_length",
+          "unit": "",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "%",
+      "minimum": 0,
+      "maximum": 100,
+      "sources": [
+        "https://openstax.org/books/biology/pages/43-3-human-reproductive-anatomy-and-gametogenesis",
+        "https://openstax.org/books/university-physics-volume-1/pages/2-2-coordinate-systems-and-components-of-a-vector"
+      ],
+      "title": "health_atlas_vulvar_fold_overlap_title",
+      "scope": "health_atlas_vulvar_fold_overlap_scope",
+      "formula": "health_atlas_vulvar_fold_overlap_formula",
+      "companionTitle": "health_atlas_vulvar_fold_overlap_companion",
+      "entryIDs": [
+        "vulva",
+        "labia-majora",
+        "labia-minora"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "capillarySupportSurface",
+      "inputs": [
+        {
+          "key": "capillary-support-surface-radius",
+          "minimum": 2,
+          "maximum": 8,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_capillary_support_surface_radius",
+          "unit": "µm",
+          "digits": 0
+        },
+        {
+          "key": "capillary-support-surface-length",
+          "minimum": 10,
+          "maximum": 60,
+          "initial": 30,
+          "scale": 1,
+          "label": "health_atlas_capillary_support_surface_length",
+          "unit": "µm",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "µm²",
+      "minimum": 0,
+      "maximum": 3015.928947446201,
+      "sources": [
+        "https://pubmed.ncbi.nlm.nih.gov/29298435/",
+        "https://pubmed.ncbi.nlm.nih.gov/12682087/"
+      ],
+      "title": "health_atlas_capillary_support_surface_title",
+      "scope": "health_atlas_capillary_support_surface_scope",
+      "formula": "health_atlas_capillary_support_surface_formula",
+      "companionTitle": "health_atlas_capillary_support_surface_companion",
+      "entryIDs": [
+        "cell-pericyte",
+        "cell-mesangial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "marrowRenewal",
+      "inputs": [
+        {
+          "key": "marrow-renewal-added",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 5,
+          "scale": 1,
+          "label": "health_atlas_marrow_renewal_added",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "marrow-renewal-left",
+          "minimum": 0,
+          "maximum": 12,
+          "initial": 3,
+          "scale": 1,
+          "label": "health_atlas_marrow_renewal_left",
+          "unit": "",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "",
+      "minimum": -12,
+      "maximum": 12,
+      "sources": [
+        "https://www.cancer.gov/publications/dictionaries/cancer-terms/def/hematopoietic-stem-cell",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-2-production-of-the-formed-elements"
+      ],
+      "title": "health_atlas_marrow_renewal_title",
+      "scope": "health_atlas_marrow_renewal_scope",
+      "formula": "health_atlas_marrow_renewal_formula",
+      "companionTitle": "health_atlas_marrow_renewal_companion",
+      "entryIDs": [
+        "bone-marrow",
+        "cell-hematopoietic-stem-cell"
+      ],
+      "digits": 0
+    },
+    {
+      "id": "ependymalBeatPhase",
+      "inputs": [
+        {
+          "key": "ependymal-beat-phase-frequency",
+          "minimum": 2,
+          "maximum": 8,
+          "initial": 5,
+          "scale": 4,
+          "label": "health_atlas_ependymal_beat_phase_frequency",
+          "unit": "cycles/interval",
+          "digits": 2
+        },
+        {
+          "key": "ependymal-beat-phase-offset",
+          "minimum": 0,
+          "maximum": 8,
+          "initial": 5,
+          "scale": 4,
+          "label": "health_atlas_ependymal_beat_phase_offset",
+          "unit": "intervals",
+          "digits": 2
+        }
+      ],
+      "axis": 1,
+      "unit": "cycles",
+      "minimum": 0,
+      "maximum": 4,
+      "sources": [
+        "https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html",
+        "https://pubmed.ncbi.nlm.nih.gov/27387952/"
+      ],
+      "title": "health_atlas_ependymal_beat_phase_title",
+      "scope": "health_atlas_ependymal_beat_phase_scope",
+      "formula": "health_atlas_ependymal_beat_phase_formula",
+      "companionTitle": "health_atlas_ependymal_beat_phase_wrapped",
+      "entryIDs": [
+        "cell-ependymal-cell"
+      ],
+      "digits": 2
+    }
+  ]
+}
