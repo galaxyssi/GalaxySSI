@@ -5,6 +5,73 @@ import SwiftUI
 
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
+  func testCrossBridgeCycleUsesBindingStrokeAtpDetachmentAndRecovery() {
+    typealias Motion = GalaxySSIHealthAtlasMovementMotion
+    XCTAssertEqual((0...3).map { Motion.crossBridge((Double($0) + 0.5) / 4) }, [.bind, .pull, .detach, .reset])
+    XCTAssertEqual(Motion.crossBridge(1), .reset)
+    XCTAssertEqual(Motion.crossBridge(-2), .bind)
+    XCTAssertEqual(Motion.crossBridge(.nan), .bind)
+    XCTAssertEqual(Motion.crossBridge(2), .reset)
+    XCTAssertEqual(Motion.actinLength, 80)
+    XCTAssertEqual(Motion.myosinLength, 122)
+    XCTAssertLessThan(Motion.sarcomereHalfWidth(1), Motion.sarcomereHalfWidth(0))
+    let binding = Motion.bridgePose(0.125), pulling = Motion.bridgePose(0.375)
+    let detaching = Motion.bridgePose(0.625), recovering = Motion.bridgePose(0.875)
+    XCTAssertEqual(binding.tip, CGPoint(x: 117, y: 273.5))
+    XCTAssertEqual(pulling.tip, CGPoint(x: 128, y: 267))
+    XCTAssertEqual(detaching.tip, CGPoint(x: 139, y: 273.5))
+    XCTAssertEqual(recovering.tip, CGPoint(x: 128, y: 280))
+    XCTAssertEqual(binding.actinOffset, 0)
+    XCTAssertEqual(pulling.actinOffset, 11)
+    XCTAssertEqual(detaching.actinOffset, 22)
+    XCTAssertEqual(recovering.actinOffset, 22)
+    for boundary in [0.25, 0.5, 0.75] {
+      let before = Motion.bridgePose(boundary - 1e-8), after = Motion.bridgePose(boundary)
+      XCTAssertEqual(before.tip.x, after.tip.x, accuracy: 1e-6)
+      XCTAssertEqual(before.tip.y, after.tip.y, accuracy: 1e-6)
+    }
+  }
+
+  func testBetaCellDepolarizationFollowsPotassiumClosureAndIsMonotonic() {
+    typealias Motion = GalaxySSIHealthAtlasInsulinMotion
+    XCTAssertEqual(Motion.relativeDepolarization(0.18), 0)
+    XCTAssertLessThan(Motion.potassiumOpen(0.18), Motion.potassiumOpen(0))
+    for index in 1...100 {
+      let t = Double(index) / 100, previous = Double(index - 1) / 100
+      XCTAssertLessThanOrEqual(Motion.potassiumOpen(t), Motion.potassiumOpen(previous))
+      XCTAssertGreaterThanOrEqual(Motion.relativeDepolarization(t), Motion.relativeDepolarization(previous))
+    }
+    XCTAssertEqual(Motion.potassiumOpen(1), 0)
+    XCTAssertEqual(Motion.relativeDepolarization(1), 1)
+    XCTAssertEqual(Motion.relativeDepolarization(.nan), 0)
+    XCTAssertEqual(Motion.relativeDepolarization(-1), 0)
+    XCTAssertEqual(Motion.relativeDepolarization(2), 1)
+  }
+
+  func testIntestinalGlucoseAndSodiumTracksCrossTheirNativeTransporters() throws {
+    typealias Motion = GalaxySSIHealthAtlasAbsorptionMotion
+    let tracks = [Motion.glucoseTrack, Motion.sodiumTrack]
+    let starts = [CGPoint(x: 240, y: 89), CGPoint(x: 271, y: 89)]
+    let ends = [CGPoint(x: 251, y: 260), CGPoint(x: 307, y: 252)]
+    for index in tracks.indices {
+      let track = tracks[index]
+      XCTAssertEqual(track.start.x, Double(starts[index].x))
+      XCTAssertEqual(track.start.y, Double(starts[index].y))
+      XCTAssertEqual(track.commands.last?.kind, .line)
+      let end = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(track, position: 1, width: 360, height: 360))
+      XCTAssertEqual(end.point.x, ends[index].x, accuracy: 1e-6)
+      XCTAssertEqual(end.point.y, ends[index].y, accuracy: 1e-6)
+      let first = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(track, position: 0.18, width: 360, height: 360))
+      let second = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(track, position: 0.42, width: 360, height: 360))
+      XCTAssertNotEqual(first.point, second.point)
+      for position in stride(from: 0.0, through: 1, by: 0.05) {
+        let sample = try XCTUnwrap(GalaxySSIHealthAtlasFunctionPath.sample(track, position: position, width: 360, height: 360))
+        XCTAssertTrue((204...348).contains(sample.point.x))
+        XCTAssertTrue((73...270).contains(sample.point.y))
+      }
+    }
+  }
+
   func testPressureTraceRespectsValvesAndReplaysContinuously() {
     typealias Trace = GalaxySSIHealthAtlasBeatPressureTrace
     let stages = GalaxySSIHealthAtlasBeatStage.allCases

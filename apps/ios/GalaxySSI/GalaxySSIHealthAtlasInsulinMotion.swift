@@ -14,6 +14,7 @@ struct GalaxySSIHealthAtlasInsulinMotion {
   }
   private static func ease(_ t: Double) -> Double { t * t * (3 - 2 * t) }
   static func potassiumOpen(_ t: Double) -> Double { 1 - ease(interval(t, 0.04, 0.68)) }
+  static func relativeDepolarization(_ t: Double) -> Double { ease(interval(t, 0.19, 0.85)) }
   static func calciumOpen(_ t: Double) -> Double { ease(interval(t, 0.04, 0.34)) }
   static func approach(_ t: Double) -> Double { ease(interval(t, 0, fusionStart)) }
   static func aperture(_ t: Double) -> Double { ease(interval(t, fusionStart, 0.72)) }

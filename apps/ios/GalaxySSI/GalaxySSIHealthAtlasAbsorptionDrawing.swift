@@ -6,8 +6,13 @@ private typealias AbsorptionShapes = GalaxySSIHealthAtlasAbsorptionShapes
 extension GalaxySSIHealthAtlasIllustratedDrawing {
   func absorptionScene(step: Int, t: Double) {
     absorptionVillus(highlight: step == 1, progress: step == 0 ? t : nil)
+    if step == 2 {
+      absorptionFlow(AbsorptionMotion.bloodRoute, t)
+      glucoseTransport(t)
+      return
+    }
     absorptionInset(progress: step == 1 ? t : nil)
-    if step == 2 || step == 4 {
+    if step == 4 {
       absorptionFlow(AbsorptionMotion.bloodRoute, t); absorptionFlow(AbsorptionMotion.cellSolutes, t)
       absorptionLegend(.solute, 26, 107, 144, "absorption_story_label_solutes")
     }

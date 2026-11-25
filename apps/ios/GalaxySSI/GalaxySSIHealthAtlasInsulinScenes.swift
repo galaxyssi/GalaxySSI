@@ -31,7 +31,8 @@ extension GalaxySSIHealthAtlasInsulinDrawing {
     label(250, 61, open >= 0.4 ? "k_open" : "k_closed")
     for p in motion.potassiumParticles { particle(p.x, p.y, Self.potassium, 4) }
     for i in 0...3 { particle(238 + 51 * Motion.wrap(t * 1.2 + Double(i) / 4), Double(202 + i * 10), Self.energy, 3) }
-    label(243, 275, "energy")
+    label(243, 264, "energy")
+    potassiumTrace(t)
   }
   private func calciumGate(_ motion: Motion) {
     cellCutaway(146, gate: 182)

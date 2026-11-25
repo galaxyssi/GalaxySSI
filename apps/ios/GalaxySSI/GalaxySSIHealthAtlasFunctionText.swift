@@ -9,7 +9,8 @@ enum GalaxySSIHealthAtlasFunctionText {
       let complete = localized.localizedString(forKey: key, value: regional, table: "AtlasComplete")
       let guided = localized.localizedString(forKey: key, value: complete, table: "AtlasGuidedFunction")
       let scenes = localized.localizedString(forKey: key, value: guided, table: "AtlasSynchronizedLessons")
-      return localized.localizedString(forKey: key, value: scenes, table: "AtlasMechanismCloseups")
+      let closeups = localized.localizedString(forKey: key, value: scenes, table: "AtlasMechanismCloseups")
+      return localized.localizedString(forKey: key, value: closeups, table: "AtlasCellularCloseups")
     }
     let english = value("en", fallback: GalaxySSIHealthAtlasText.get(key, "en"))
     return value(LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en", fallback: english)
