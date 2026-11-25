@@ -60,11 +60,13 @@ struct GalaxySSIHealthAtlasResearch: View {
       }
       Divider()
       Text(t("drug_models")).font(.headline)
-      Picker(t("drug_models"), selection: drugState.mode) {
-        Text(t("drug_single")).tag(GalaxySSIHealthAtlasDrugState.Mode.single)
-        Text(t("drug_two")).tag(GalaxySSIHealthAtlasDrugState.Mode.two)
-      }.pickerStyle(.segmented)
-      if drugState.wrappedValue.mode == .two {
+      GalaxySSIHealthAtlasModelTabs(options: [t("drug_single"), t("drug_two"), t("compare_title")], selected: Binding(
+        get: { drugState.wrappedValue.mode.rawValue }, set: { value in
+          if let mode = GalaxySSIHealthAtlasDrugState.Mode(rawValue: value) { drugState.wrappedValue.mode = mode }
+        }), identifier: "atlas-drug-model")
+      if drugState.wrappedValue.mode == .comparison {
+        GalaxySSIHealthAtlasComparisonPanel(model: drugState.comparison, language: language)
+      } else if drugState.wrappedValue.mode == .two {
         GalaxySSIHealthAtlasDistributionPanel(model: drugState.distribution, language: language)
       } else {
       Text(t("elimination_assumptions")).font(.footnote)

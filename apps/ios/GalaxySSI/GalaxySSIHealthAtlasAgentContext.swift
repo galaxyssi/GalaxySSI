@@ -123,7 +123,9 @@ enum GalaxySSIHealthAtlasAgentContext {
       lines += [t("physiology"), t("teaching_note"), anatomy.source.absoluteString]
     case .drugs:
       lines.append(t("drugs"))
-      if let drugs, drugs.mode == .two {
+      if let drugs, drugs.mode == .comparison {
+        lines.append(GalaxySSIHealthAtlasComparisonText.context(drugs.comparison, locale: locale, text: t))
+      } else if let drugs, drugs.mode == .two {
         lines += [t("drug_models"), drugs.distribution.context(locale: locale, text: t)]
       } else {
         let values = elimination ?? Elimination(halfLife: 4, elapsed: 8)!

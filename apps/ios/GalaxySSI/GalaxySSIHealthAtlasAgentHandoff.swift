@@ -155,7 +155,10 @@ enum GalaxySSIHealthAtlasQuestion {
           prompt += "\n" + t(cardiac ? "stroke_volume" : "tidal") + ": \(Int(selection.simulation.second)) mL"
         } else if !hasAssociatedPhysiology { prompt += "\n" + t("qualitative_note") }
       case .drugs:
-        if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .two {
+        if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .comparison {
+          prompt += "\n" + GalaxySSIHealthAtlasComparisonText.context(drugs.comparison,
+            locale: GalaxySSILocalization.interfaceLocale(language: language), text: t)
+        } else if let drugs = GalaxySSIHealthAtlasDrugState.restore(selection.drugInputs), drugs.mode == .two {
           prompt += "\n" + t("drug_models") + "\n" +
             drugs.distribution.context(locale: GalaxySSILocalization.interfaceLocale(language: language), text: t)
         } else {

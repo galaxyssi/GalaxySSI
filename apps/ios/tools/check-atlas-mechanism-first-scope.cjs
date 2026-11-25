@@ -34,7 +34,9 @@ const mechanismAt = panel.indexOf("GalaxySSIHealthAtlasCirculationView(");
 const afterAt = panel.indexOf('quantitative.accessibilityIdentifier("atlas-quantitative-after-art")');
 assert(beforeAt < mechanismAt && mechanismAt < afterAt);
 assert(research.includes("}, mechanismFirst: true)"));
-assert.equal(research, prior("Research").replace("            })\n        case .drugs:", "            }, mechanismFirst: true)\n        case .drugs:"));
+const expectedResearch = prior("Research").replace("            })\n        case .drugs:", "            }, mechanismFirst: true)\n        case .drugs:");
+assert.equal(research.split("        case .drugs:")[0], expectedResearch.split("        case .drugs:")[0]);
+assert.equal(research.split("  private var aging:")[1], expectedResearch.split("  private var aging:")[1]);
 assert(!source("Detail").includes("mechanismFirst:"));
 assert.equal(state, prior("State").replace("decoded.count <= 300", "decoded.count <= max(300, atlas.entries.count)"));
 for (const token of ["text.utf8.count <= 256_000", "entries = decoded.filter { atlas.entry($0.key) != nil }", "entries[id]?.simulation.sanitize(id)",
@@ -44,7 +46,14 @@ for (const token of ["testResearchMechanismFirstPolicyRetainsStandaloneOrderingA
   "XCTAssertTrue(research.quantitativeAfterArt", "XCTAssertEqual(normal.quantitativeAfterArt, expectedAfter", "XCTAssertEqual(binding.wrappedValue, saved",
   "restored.restore(state.serialized, atlas: atlas)", "XCTAssertEqual(restored.binding(heart).wrappedValue, before)"]) assert(tests.includes(token), token);
 const edited = git(["diff", "--name-only", base, "--", "apps/ios/GalaxySSI"]).toString().trim().split(/\r?\n/).filter(Boolean);
-assert.deepEqual(new Set(edited), new Set([swift("SimulationPanel"), swift("Research"), swift("State")]));
+const owned = new Set([swift("SimulationPanel"), swift("Research"), swift("State")]);
+// Later explicit per-file port dispositions account for cumulative work, not #4420 behavior.
+const laterTargets = new Set(fs.readdirSync(path.join(root, "apps/ios")).flatMap(name => {
+  const match = name.match(/^ANDROID_(\d+)_PORT_COVERAGE\.json$/);
+  return match && Number(match[1]) > 4420 ? JSON.parse(read("apps/ios/" + name)).files.flatMap(file => file.ios ?? []) : [];
+}));
+assert(edited.every(file => owned.has(file) || laterTargets.has(file)), "Unattributed later iOS change");
+assert([...owned].every(file => edited.includes(file)));
 const files = inventory.files.map(file => {
   let kind, ios, note;
   if (file.path.endsWith("HealthAtlasSimulationPanel.kt")) {

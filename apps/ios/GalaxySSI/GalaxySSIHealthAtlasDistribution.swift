@@ -65,14 +65,23 @@ struct GalaxySSIHealthAtlasDistribution: Equatable, Sendable {
 }
 
 struct GalaxySSIHealthAtlasDrugState: Equatable, Sendable {
-  enum Mode: Int, CaseIterable, Sendable { case single, two }
+  enum Mode: Int, CaseIterable, Sendable { case single, two, comparison }
   var mode = Mode.single
   var distribution = GalaxySSIHealthAtlasDistribution.standard
-  var encoded: [Int] { [mode.rawValue, distribution.outward, distribution.returning, distribution.elimination, distribution.quarterHours] }
+  var comparison = GalaxySSIHealthAtlasModelComparison.standard
+  var encoded: [Int] { [mode.rawValue, distribution.outward, distribution.returning, distribution.elimination,
+    distribution.quarterHours, comparison.scenario.rawValue, comparison.quarterHours] }
   static func restore(_ values: [Int]?) -> Self? {
-    guard let values, values.count == 5, let mode = Mode(rawValue: values[0]),
+    guard let values, values.count == 5 || values.count == 7, let mode = Mode(rawValue: values[0]),
+      values.count == 7 || mode != .comparison,
       let distribution = GalaxySSIHealthAtlasDistribution(outward: values[1], returning: values[2],
         elimination: values[3], quarterHours: values[4]) else { return nil }
-    return Self(mode: mode, distribution: distribution)
+    let comparison: GalaxySSIHealthAtlasModelComparison
+    if values.count == 7 {
+      guard let scenario = GalaxySSIHealthAtlasModelComparison.Scenario(rawValue: values[5]),
+        let restored = GalaxySSIHealthAtlasModelComparison(scenario: scenario, quarterHours: values[6]) else { return nil }
+      comparison = restored
+    } else { comparison = .standard }
+    return Self(mode: mode, distribution: distribution, comparison: comparison)
   }
 }
