@@ -4,6 +4,85 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeDatabaseTests: XCTestCase {
+  func testNativeEventUsesExactRustLittleEndianRecord() throws {
+    let event = AgentKnowledgeNativeEvent(sequence: 42, previous: 7,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: false)
+    let data = try AgentKnowledgeNativeWire.event(event)
+    let expected = Data("GSE1".utf8) + wireNumber(42) + wireNumber(7) +
+      Data(repeating: 0xaa, count: 32) + Data(repeating: 0xbb, count: 32) + wireNumber(3) + Data([0])
+    XCTAssertEqual(data, expected)
+    XCTAssertEqual(data.count, 93)
+    var invalid = event
+    invalid.previous = 42
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+    invalid = event
+    invalid.key = String(repeating: "A", count: 64)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+    invalid = event
+    invalid.chunks = -1
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+  }
+
+  func testNativeCheckpointDecodesCommittedAndPendingProgress() throws {
+    let epoch = try AgentKnowledgeNativeWire.epoch("00010203-0405-0607-0809-0a0b0c0d0e0f")
+    XCTAssertEqual(epoch, Data((0..<16).map(UInt8.init)))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.epoch("invalid"))
+    let last = AgentKnowledgeNativeEvent(sequence: 42, previous: 7,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: false)
+    var next = last
+    next.sequence = 43
+    next.previous = 42
+    let data = Data("GSC1".utf8) + epoch + Data([1]) + (try AgentKnowledgeNativeWire.event(last)).dropFirst(4) +
+      Data([1]) + (try AgentKnowledgeNativeWire.event(next)).dropFirst(4) + wireNumber(1)
+    XCTAssertEqual(data.count, 208)
+    let decoded = try AgentKnowledgeNativeWire.checkpoint(data)
+    XCTAssertEqual(decoded.epoch, "000102030405060708090a0b0c0d0e0f")
+    XCTAssertEqual(decoded.last, last)
+    XCTAssertEqual(decoded.pending?.event, next)
+    XCTAssertEqual(decoded.pending?.next, 1)
+    XCTAssertEqual(decoded.sequence, 42)
+    var invalid = data
+    invalid.replaceSubrange((invalid.count - 8)..<invalid.count, with: wireNumber(3))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(invalid))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(data + Data([0])))
+    for end in 0..<data.count { XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(Data(data.prefix(end)))) }
+  }
+
+  func testNativeCheckpointRejectsInvalidFlagsAndRemovedPendingEvents() throws {
+    let prefix = Data("GSC1".utf8) + Data(repeating: 0, count: 16)
+    XCTAssertEqual(try AgentKnowledgeNativeWire.checkpoint(prefix + Data([0, 0])).sequence, 0)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(prefix + Data([2, 0])))
+    let removed = AgentKnowledgeNativeEvent(sequence: 1, previous: 0,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: true)
+    let pending = prefix + Data([0, 1]) + (try AgentKnowledgeNativeWire.event(removed)).dropFirst(4) + wireNumber(0)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(pending))
+  }
+
+  func testNativeMatchesValidateCountsBoundsAndFiniteScores() throws {
+    let prefix = Data("GSM1".utf8) + Data([1, 0, 0, 0]) + Data("GSN1".utf8) +
+      Data(repeating: 0xaa, count: 32) + Data(repeating: 0xbb, count: 32)
+    let data = prefix + wireNumber(42) + wireNumber(2) + wireNumber(4) + wireNumber(9) + Data([0, 0, 0, 63])
+    let matched = try XCTUnwrap(AgentKnowledgeNativeWire.matches(data).first)
+    XCTAssertEqual(matched.sequence, 42)
+    XCTAssertEqual(matched.ordinal, 2)
+    XCTAssertEqual(matched.startUTF16, 4)
+    XCTAssertEqual(matched.endUTF16, 9)
+    XCTAssertEqual(matched.similarity, 0.5)
+    XCTAssertEqual(matched.key, String(repeating: "a", count: 64))
+    XCTAssertEqual(try AgentKnowledgeNativeWire.matches(Data("GSM1".utf8) + Data([0, 0, 0, 0])), [])
+    var invalid = data
+    invalid.replaceSubrange((data.count - 4)..<data.count, with: [0, 0, 192, 127])
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(invalid))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(prefix + wireNumber(42) + wireNumber(2) + wireNumber(9) + wireNumber(4) + Data([0, 0, 0, 63])))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(data + Data([0])))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(Data("GSM1".utf8) + Data([1, 1, 0, 0])))
+    for end in 0..<data.count { XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(Data(data.prefix(end)))) }
+  }
+
+  private func wireNumber(_ value: UInt64) -> Data {
+    Data((0..<8).map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) })
+  }
+
   func testPublishedVectorReplayUsesBoundedOrdinalPagesAndResumesAfterReopen() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }

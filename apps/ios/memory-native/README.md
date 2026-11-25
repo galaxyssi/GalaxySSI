@@ -32,18 +32,28 @@ records are zeroized. No Rust allocation crosses the C ownership boundary.
 
 ## Integration Status
 
-These are bridge sources, not a shipped framework. No native compilation or
-device test has been run. Still required before activation:
+Xcode now builds this dynamic framework with `tools/build-knowledge-native.cjs`,
+links it, and embeds it using CodeSignOnCopy. The script installs pinned Rust
+1.97.1 through an already-installed rustup, builds locked release dependencies
+for device arm64 or simulator arm64/x86_64, sets iOS 15.0, restricts exports to
+`exports.txt`, and checks exports for SQLite leakage. Missing tooling/binaries
+fail the build; no empty stub or disabled native mode is supplied. The developer
+machine/CI must have rustup, Node.js and Xcode command-line tools available.
 
-- Build an iOS 15+ signed dynamic framework for device and simulator, hiding the
-  bundled SQLite symbols so they cannot interpose on the App's system SQLite.
-- Restrict the exported symbol list to the documented C ABI and embed/sign the
-  framework in the Xcode target; fail release builds if the library is missing.
-- Add Swift protocol decoding, protected files/Keychain ownership, and lifecycle
-  cancellation, then consume published-event replay pages in bounded slices.
+Swift source imports the module directly, decodes bounded little-endian records,
+and makes synchronous borrowed-buffer calls. It handles opaque-handle retirement
+and clears owned temporary configuration/vector/result buffers. This does not
+replace the existing semantic search by itself.
+
+No native compilation, dependency resolution or device test has been run. Still
+required before activation:
+
+- Verify the framework build, C/Swift ABI layout, module discovery, architecture
+  slices, export isolation, signing and installation with Xcode.
+- Add protected files/Keychain ownership and App lifecycle cancellation, then
+  consume published-event replay pages in bounded slices.
 - Handle legacy-vector reindex/bootstrap, interrupted progress and feed freshness
   before replacing the existing in-memory USearch path.
 
-Do not silently load an empty stub, fall back to whole-corpus JSON, or claim
-native activation from header/source checks alone. Existing App retrieval is
-unchanged by adding this crate until the framework and production consumer exist.
+Do not claim native activation from source checks alone. Existing App retrieval
+remains USearch until the production replay/query consumer is implemented.
