@@ -6,6 +6,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
   private let clock: () -> Int64
   private let lock: NSRecursiveLock
   private let writeFile: (Data, URL) throws -> Void
+  private let readFile: (URL) throws -> Data
   private static let gatesLock = NSLock()
   private static var fileGates: [String: NSRecursiveLock] = [:]
 
@@ -25,6 +26,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
     clock: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
+    readFile: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) },
     writeFile: @escaping (Data, URL) throws -> Void = {
       try $0.write(to: $1, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
@@ -33,6 +35,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
     self.fileManager = fileManager
     self.clock = clock
     self.writeFile = writeFile
+    self.readFile = readFile
     lock = Self.gate(for: fileURL)
   }
 
@@ -161,7 +164,7 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
   private func loadStore() throws -> InMemoryAgentWorkspaceStore {
     guard fileURL.isFileURL else { throw CocoaError(.fileReadUnsupportedScheme) }
     let data: Data
-    do { data = try Data(contentsOf: fileURL) }
+    do { data = try readFile(fileURL) }
     catch let error as CocoaError where error.code == .fileReadNoSuchFile {
       return InMemoryAgentWorkspaceStore(clock: clock)
     }

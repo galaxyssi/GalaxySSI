@@ -122,7 +122,7 @@ final class GalaxySSIHealthCareDiscussionRecoveryTests: XCTestCase {
 }
 
 @MainActor
-private final class HealthDiscussionRecoveryFixture {
+final class HealthDiscussionRecoveryFixture {
   let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   let secrets = InMemorySecretStore()
   let records: GalaxySSIHealthRecords
@@ -158,5 +158,8 @@ private final class HealthDiscussionRecoveryFixture {
       "message": ["content": text]]]])
   }
 
-  deinit { try? FileManager.default.removeItem(at: file) }
+  deinit {
+    try? FileManager.default.removeItem(at: file)
+    try? FileManager.default.removeItem(at: file.appendingPathExtension("care-tasks"))
+  }
 }
