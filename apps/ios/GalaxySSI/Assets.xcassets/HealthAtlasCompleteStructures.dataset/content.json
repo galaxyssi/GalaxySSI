@@ -1,0 +1,3958 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4388,
+    "mergeCommit": "6581110ec5c048edebf63821dee839b4818fe663"
+  },
+  "plates": [
+    {
+      "id": "atlas-detail-fibula",
+      "owner": "fibula",
+      "viewLabel": "health_atlas_fibula_section_view",
+      "markers": [
+        {
+          "id": "tibia",
+          "x": 0.40833333134651184,
+          "y": 0.41428571939468384
+        },
+        {
+          "id": "foot-bones",
+          "x": 0.4333333373069763,
+          "y": 0.8714285492897034
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-4-bones-of-the-lower-limb",
+      "viewKey": "atlas-detail-fibula",
+      "selectorLabel": "health_atlas_fibula_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "fibula-head",
+            "x": 0.6000000238418579,
+            "y": 0.22499999403953552
+          },
+          "title": "health_atlas_fibula_section_head",
+          "explanation": "health_atlas_fibula_section_head_detail"
+        },
+        {
+          "marker": {
+            "id": "fibula-shaft",
+            "x": 0.5722222328186035,
+            "y": 0.5
+          },
+          "title": "health_atlas_fibula_section_shaft",
+          "explanation": "health_atlas_fibula_section_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "fibula-membrane",
+            "x": 0.5222222208976746,
+            "y": 0.4178571403026581
+          },
+          "title": "health_atlas_fibula_section_membrane",
+          "explanation": "health_atlas_fibula_section_membrane_detail"
+        },
+        {
+          "marker": {
+            "id": "fibula-malleolus",
+            "x": 0.5861111283302307,
+            "y": 0.8107143044471741
+          },
+          "title": "health_atlas_fibula_section_malleolus",
+          "explanation": "health_atlas_fibula_section_malleolus_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalFibulaSection",
+      "entryIDs": [
+        "fibula",
+        "tibia",
+        "foot-bones"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_fibula_section.xml"
+    },
+    {
+      "id": "atlas-detail-clavicle",
+      "owner": "clavicle",
+      "viewLabel": "health_atlas_clavicle_section_view",
+      "markers": [
+        {
+          "id": "sternum",
+          "x": 0.1666666716337204,
+          "y": 0.5107142925262451
+        },
+        {
+          "id": "scapula",
+          "x": 0.8055555820465088,
+          "y": 0.5892857313156128
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-1-the-pectoral-girdle",
+      "viewKey": "atlas-detail-clavicle",
+      "selectorLabel": "health_atlas_clavicle_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "clavicle-sternal",
+            "x": 0.2916666567325592,
+            "y": 0.37142857909202576
+          },
+          "title": "health_atlas_clavicle_section_sternal",
+          "explanation": "health_atlas_clavicle_section_sternal_detail"
+        },
+        {
+          "marker": {
+            "id": "clavicle-shaft",
+            "x": 0.4833333194255829,
+            "y": 0.43214285373687744
+          },
+          "title": "health_atlas_clavicle_section_shaft",
+          "explanation": "health_atlas_clavicle_section_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "clavicle-acromial",
+            "x": 0.75,
+            "y": 0.4107142984867096
+          },
+          "title": "health_atlas_clavicle_section_acromial",
+          "explanation": "health_atlas_clavicle_section_acromial_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalClavicleSection",
+      "entryIDs": [
+        "clavicle",
+        "sternum",
+        "scapula"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_clavicle_section.xml"
+    },
+    {
+      "id": "atlas-detail-mammary-glands",
+      "owner": "mammary-glands",
+      "viewLabel": "health_atlas_mammary_section_view",
+      "markers": [
+        {
+          "id": "cell-mammary-luminal-cell",
+          "x": 0.7083333134651184,
+          "y": 0.3678571283817291
+        },
+        {
+          "id": "cell-myoepithelial-cell",
+          "x": 0.8888888955116272,
+          "y": 0.574999988079071
+        }
+      ],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC1571528/",
+      "viewKey": "atlas-detail-mammary-glands",
+      "selectorLabel": "health_atlas_mammary_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "mammary-lobule",
+            "x": 0.1944444477558136,
+            "y": 0.4285714328289032
+          },
+          "title": "health_atlas_mammary_section_lobule",
+          "explanation": "health_atlas_mammary_section_lobule_detail"
+        },
+        {
+          "marker": {
+            "id": "mammary-duct",
+            "x": 0.33888888359069824,
+            "y": 0.6142857074737549
+          },
+          "title": "health_atlas_mammary_section_duct",
+          "explanation": "health_atlas_mammary_section_duct_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMammaryGlandSection",
+      "entryIDs": [
+        "mammary-glands",
+        "cell-mammary-luminal-cell",
+        "cell-myoepithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_mammary_gland_section.xml"
+    },
+    {
+      "id": "atlas-detail-soleus",
+      "owner": "soleus",
+      "viewLabel": "health_atlas_soleus_section_view",
+      "markers": [
+        {
+          "id": "tendons",
+          "x": 0.5111111402511597,
+          "y": 0.8035714030265808
+        }
+      ],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/32783229/",
+      "viewKey": "atlas-detail-soleus",
+      "selectorLabel": "health_atlas_soleus_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "soleus-arch",
+            "x": 0.4444444477558136,
+            "y": 0.3321428596973419
+          },
+          "title": "health_atlas_soleus_section_arch",
+          "explanation": "health_atlas_soleus_section_arch_detail"
+        },
+        {
+          "marker": {
+            "id": "soleus-fibers",
+            "x": 0.5666666626930237,
+            "y": 0.4571428596973419
+          },
+          "title": "health_atlas_soleus_section_belly",
+          "explanation": "health_atlas_soleus_section_belly_detail"
+        },
+        {
+          "marker": {
+            "id": "soleus-aponeurosis",
+            "x": 0.5055555701255798,
+            "y": 0.5892857313156128
+          },
+          "title": "health_atlas_soleus_section_sheet",
+          "explanation": "health_atlas_soleus_section_sheet_detail"
+        },
+        {
+          "marker": {
+            "id": "soleus-calcaneus",
+            "x": 0.5638889074325562,
+            "y": 0.9071428775787354
+          },
+          "title": "health_atlas_soleus_section_heel",
+          "explanation": "health_atlas_soleus_section_heel_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalSoleusSection",
+      "entryIDs": [
+        "soleus",
+        "tendons"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_soleus_section.xml"
+    },
+    {
+      "id": "atlas-detail-rectus-abdominis",
+      "owner": "rectus-abdominis",
+      "viewLabel": "health_atlas_rectus_flexion_story_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-4-axial-muscles-of-the-abdominal-wall-and-thorax",
+      "viewKey": "atlas-detail-rectus-abdominis",
+      "selectorLabel": "health_atlas_rectus_flexion_story_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "rectus-costal",
+            "x": 0.550000011920929,
+            "y": 0.28214284777641296
+          },
+          "title": "health_atlas_rectus_flexion_story_costal",
+          "explanation": "health_atlas_rectus_flexion_story_plate_costal_detail"
+        },
+        {
+          "marker": {
+            "id": "rectus-belly",
+            "x": 0.4305555522441864,
+            "y": 0.4749999940395355
+          },
+          "title": "health_atlas_rectus_flexion_story_belly",
+          "explanation": "health_atlas_rectus_flexion_story_plate_belly_detail"
+        },
+        {
+          "marker": {
+            "id": "rectus-linea-alba",
+            "x": 0.5,
+            "y": 0.625
+          },
+          "title": "health_atlas_rectus_flexion_story_plate_linea",
+          "explanation": "health_atlas_rectus_flexion_story_plate_linea_detail"
+        },
+        {
+          "marker": {
+            "id": "rectus-tendinous-intersection",
+            "x": 0.5611110925674438,
+            "y": 0.5321428775787354
+          },
+          "title": "health_atlas_rectus_flexion_story_plate_intersection",
+          "explanation": "health_atlas_rectus_flexion_story_plate_intersection_detail"
+        },
+        {
+          "marker": {
+            "id": "rectus-pubic-crest",
+            "x": 0.5027777552604675,
+            "y": 0.875
+          },
+          "title": "health_atlas_rectus_flexion_story_pubis",
+          "explanation": "health_atlas_rectus_flexion_story_plate_pubis_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMuscleRectusAbdominis",
+      "entryIDs": [
+        "rectus-abdominis"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_muscle_rectus_abdominis.xml"
+    },
+    {
+      "id": "atlas-detail-oblique-abdominal-muscles",
+      "owner": "oblique-abdominal-muscles",
+      "viewLabel": "health_atlas_oblique_rotation_story_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-4-axial-muscles-of-the-abdominal-wall-and-thorax",
+      "viewKey": "atlas-detail-oblique-abdominal-muscles",
+      "selectorLabel": "health_atlas_oblique_rotation_story_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "oblique-external",
+            "x": 0.33888888359069824,
+            "y": 0.5428571701049805
+          },
+          "title": "health_atlas_oblique_rotation_story_plate_external",
+          "explanation": "health_atlas_oblique_rotation_story_plate_external_detail"
+        },
+        {
+          "marker": {
+            "id": "oblique-internal",
+            "x": 0.6583333611488342,
+            "y": 0.5785714387893677
+          },
+          "title": "health_atlas_oblique_rotation_story_plate_internal",
+          "explanation": "health_atlas_oblique_rotation_story_plate_internal_detail"
+        },
+        {
+          "marker": {
+            "id": "oblique-lower-ribs",
+            "x": 0.6694444417953491,
+            "y": 0.3321428596973419
+          },
+          "title": "health_atlas_oblique_rotation_story_plate_ribs",
+          "explanation": "health_atlas_oblique_rotation_story_plate_ribs_detail"
+        },
+        {
+          "marker": {
+            "id": "oblique-iliac-crest",
+            "x": 0.6805555820465088,
+            "y": 0.7357142567634583
+          },
+          "title": "health_atlas_oblique_rotation_story_plate_crest",
+          "explanation": "health_atlas_oblique_rotation_story_plate_crest_detail"
+        },
+        {
+          "marker": {
+            "id": "oblique-linea-alba",
+            "x": 0.5,
+            "y": 0.6285714507102966
+          },
+          "title": "health_atlas_oblique_rotation_story_plate_linea",
+          "explanation": "health_atlas_oblique_rotation_story_plate_linea_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMuscleAbdominalObliques",
+      "entryIDs": [
+        "oblique-abdominal-muscles"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_muscle_abdominal_obliques.xml"
+    },
+    {
+      "id": "atlas-detail-erector-spinae",
+      "owner": "erector-spinae",
+      "viewLabel": "health_atlas_erector_spinae_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/11-3-axial-muscles-of-the-head-neck-and-back",
+      "viewKey": "atlas-detail-erector-spinae",
+      "selectorLabel": "health_atlas_erector_spinae_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "erector-spinae-spinalis",
+            "x": 0.5333333611488342,
+            "y": 0.2857142984867096
+          },
+          "title": "health_atlas_erector_spinae_plate_spinalis",
+          "explanation": "health_atlas_erector_spinae_plate_spinalis_detail"
+        },
+        {
+          "marker": {
+            "id": "erector-spinae-longissimus",
+            "x": 0.4277777671813965,
+            "y": 0.4535714387893677
+          },
+          "title": "health_atlas_erector_spinae_plate_longissimus",
+          "explanation": "health_atlas_erector_spinae_plate_longissimus_detail"
+        },
+        {
+          "marker": {
+            "id": "erector-spinae-iliocostalis",
+            "x": 0.6194444298744202,
+            "y": 0.550000011920929
+          },
+          "title": "health_atlas_erector_spinae_plate_iliocostalis",
+          "explanation": "health_atlas_erector_spinae_plate_iliocostalis_detail"
+        },
+        {
+          "marker": {
+            "id": "erector-spinae-midline",
+            "x": 0.5,
+            "y": 0.6357142925262451
+          },
+          "title": "health_atlas_erector_spinae_plate_midline",
+          "explanation": "health_atlas_erector_spinae_plate_midline_detail"
+        },
+        {
+          "marker": {
+            "id": "erector-spinae-origin",
+            "x": 0.4749999940395355,
+            "y": 0.7785714268684387
+          },
+          "title": "health_atlas_erector_spinae_plate_origin",
+          "explanation": "health_atlas_erector_spinae_plate_origin_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalErectorSpinaePlate",
+      "entryIDs": [
+        "erector-spinae"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_erector_spinae_plate.xml"
+    },
+    {
+      "id": "atlas-detail-appendix",
+      "owner": "appendix",
+      "viewLabel": "health_atlas_appendix_plate_caption",
+      "markers": [],
+      "source": "https://histology.leeds.ac.uk/home/digestive/appendix/",
+      "viewKey": "atlas-detail-appendix",
+      "selectorLabel": "health_atlas_appendix_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "appendix-cecal-attachment",
+            "x": 0.25555557012557983,
+            "y": 0.4714285731315613
+          },
+          "title": "health_atlas_appendix_plate_cecal_attachment",
+          "explanation": "health_atlas_appendix_plate_cecal_attachment_detail"
+        },
+        {
+          "marker": {
+            "id": "appendix-blind-tip",
+            "x": 0.21388888359069824,
+            "y": 0.8035714030265808
+          },
+          "title": "health_atlas_appendix_plate_blind_tip",
+          "explanation": "health_atlas_appendix_plate_blind_tip_detail"
+        },
+        {
+          "marker": {
+            "id": "appendix-lumen",
+            "x": 0.6555555462837219,
+            "y": 0.6178571581840515
+          },
+          "title": "health_atlas_appendix_plate_lumen",
+          "explanation": "health_atlas_appendix_plate_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "appendix-lymphoid-follicle",
+            "x": 0.6888889074325562,
+            "y": 0.7214285731315613
+          },
+          "title": "health_atlas_appendix_plate_lymphoid_follicle",
+          "explanation": "health_atlas_appendix_plate_lymphoid_follicle_detail"
+        },
+        {
+          "marker": {
+            "id": "appendix-muscularis-externa",
+            "x": 0.8583333492279053,
+            "y": 0.7285714149475098
+          },
+          "title": "health_atlas_appendix_plate_muscularis_externa",
+          "explanation": "health_atlas_appendix_plate_muscularis_externa_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalAppendixPlate",
+      "entryIDs": [
+        "appendix"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_appendix_plate.xml"
+    },
+    {
+      "id": "autonomic-outflows",
+      "owner": "autonomic-nerves",
+      "viewLabel": "health_atlas_autonomic_outflows_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/15-1-divisions-of-the-autonomic-nervous-system",
+      "viewKey": "autonomic-outflows",
+      "selectorLabel": null,
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "autonomic-thoracolumbar-outflow",
+            "x": 0.4611110985279083,
+            "y": 0.49642857909202576
+          },
+          "title": "health_atlas_autonomic_outflows_thoracolumbar",
+          "explanation": "health_atlas_autonomic_outflows_thoracolumbar_detail"
+        },
+        {
+          "marker": {
+            "id": "autonomic-sympathetic-chain",
+            "x": 0.3305555582046509,
+            "y": 0.4178571403026581
+          },
+          "title": "health_atlas_autonomic_outflows_chain",
+          "explanation": "health_atlas_autonomic_outflows_chain_detail"
+        },
+        {
+          "marker": {
+            "id": "autonomic-cranial-outflow",
+            "x": 0.6222222447395325,
+            "y": 0.20000000298023224
+          },
+          "title": "health_atlas_autonomic_outflows_cranial",
+          "explanation": "health_atlas_autonomic_outflows_cranial_detail"
+        },
+        {
+          "marker": {
+            "id": "autonomic-sacral-outflow",
+            "x": 0.4749999940395355,
+            "y": 0.7821428775787354
+          },
+          "title": "health_atlas_autonomic_outflows_sacral",
+          "explanation": "health_atlas_autonomic_outflows_sacral_detail"
+        },
+        {
+          "marker": {
+            "id": "autonomic-terminal-ganglion",
+            "x": 0.800000011920929,
+            "y": 0.625
+          },
+          "title": "health_atlas_autonomic_outflows_terminal",
+          "explanation": "health_atlas_autonomic_outflows_terminal_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalAutonomicOutflows",
+      "entryIDs": [
+        "autonomic-nerves"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_autonomic_outflows.xml"
+    },
+    {
+      "id": "ligaments-knee-cruciates",
+      "owner": "ligaments",
+      "viewLabel": "health_atlas_ligaments_plate_caption",
+      "markers": [
+        {
+          "id": "tibia",
+          "x": 0.644444465637207,
+          "y": 0.7571428418159485
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/9-6-anatomy-of-selected-synovial-joints",
+      "viewKey": "ligaments-knee-cruciates",
+      "selectorLabel": "health_atlas_ligaments_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "ligaments-acl-femoral-footprint",
+            "x": 0.44999998807907104,
+            "y": 0.37142857909202576
+          },
+          "title": "health_atlas_ligaments_plate_acl_femur",
+          "explanation": "health_atlas_ligaments_plate_acl_femur_detail"
+        },
+        {
+          "marker": {
+            "id": "ligaments-acl-tibial-footprint",
+            "x": 0.5305555462837219,
+            "y": 0.6607142686843872
+          },
+          "title": "health_atlas_ligaments_plate_acl_tibia",
+          "explanation": "health_atlas_ligaments_plate_acl_tibia_detail"
+        },
+        {
+          "marker": {
+            "id": "ligaments-pcl-femoral-footprint",
+            "x": 0.574999988079071,
+            "y": 0.3857142925262451
+          },
+          "title": "health_atlas_ligaments_plate_pcl_femur",
+          "explanation": "health_atlas_ligaments_plate_pcl_femur_detail"
+        },
+        {
+          "marker": {
+            "id": "ligaments-pcl-tibial-footprint",
+            "x": 0.45277777314186096,
+            "y": 0.5535714030265808
+          },
+          "title": "health_atlas_ligaments_plate_pcl_tibia",
+          "explanation": "health_atlas_ligaments_plate_pcl_tibia_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalLigamentsPlate",
+      "entryIDs": [
+        "ligaments",
+        "tibia"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_ligaments_plate.xml"
+    },
+    {
+      "id": "placenta-section",
+      "owner": "placenta",
+      "viewLabel": "health_atlas_placenta_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-2-embryonic-development",
+      "viewKey": "placenta-section",
+      "selectorLabel": "health_atlas_placenta_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "placenta-umbilical-cord",
+            "x": 0.5694444179534912,
+            "y": 0.12142857164144516
+          },
+          "title": "health_atlas_placenta_plate_cord",
+          "explanation": "health_atlas_placenta_plate_cord_detail"
+        },
+        {
+          "marker": {
+            "id": "placenta-chorionic-plate",
+            "x": 0.7722222208976746,
+            "y": 0.37142857909202576
+          },
+          "title": "health_atlas_placenta_plate_chorionic_plate",
+          "explanation": "health_atlas_placenta_plate_chorionic_plate_detail"
+        },
+        {
+          "marker": {
+            "id": "placenta-terminal-villus",
+            "x": 0.5944444537162781,
+            "y": 0.6000000238418579
+          },
+          "title": "health_atlas_placenta_plate_terminal_villus",
+          "explanation": "health_atlas_placenta_plate_terminal_villus_detail"
+        },
+        {
+          "marker": {
+            "id": "placenta-intervillous-space",
+            "x": 0.7083333134651184,
+            "y": 0.6785714030265808
+          },
+          "title": "health_atlas_placenta_plate_intervillous",
+          "explanation": "health_atlas_placenta_plate_intervillous_detail"
+        },
+        {
+          "marker": {
+            "id": "placenta-spiral-artery",
+            "x": 0.31111112236976624,
+            "y": 0.8214285969734192
+          },
+          "title": "health_atlas_placenta_plate_spiral_artery",
+          "explanation": "health_atlas_placenta_plate_spiral_artery_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalPlacentaPlate",
+      "entryIDs": [
+        "placenta"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_placenta_plate.xml"
+    },
+    {
+      "id": "atlas-detail-hair",
+      "owner": "hair",
+      "viewLabel": "health_atlas_hair_shaft_view",
+      "markers": [
+        {
+          "id": "hair-follicles",
+          "x": 0.2527777850627899,
+          "y": 0.7892857193946838
+        }
+      ],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC12272604/",
+      "viewKey": "atlas-detail-hair",
+      "selectorLabel": "health_atlas_hair_shaft_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "hair-shaft-cuticle",
+            "x": 0.8666666746139526,
+            "y": 0.6535714268684387
+          },
+          "title": "health_atlas_hair_shaft_cuticle",
+          "explanation": "health_atlas_hair_shaft_cuticle_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-shaft-cortex",
+            "x": 0.7666666507720947,
+            "y": 0.5857142806053162
+          },
+          "title": "health_atlas_hair_shaft_cortex",
+          "explanation": "health_atlas_hair_shaft_cortex_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-shaft-medulla",
+            "x": 0.7027778029441833,
+            "y": 0.4821428656578064
+          },
+          "title": "health_atlas_hair_shaft_medulla",
+          "explanation": "health_atlas_hair_shaft_medulla_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalHairShaftSection",
+      "entryIDs": [
+        "hair",
+        "hair-follicles"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_hair_shaft_section.xml"
+    },
+    {
+      "id": "atlas-detail-limb-bones",
+      "owner": "limb-bones",
+      "viewLabel": "health_atlas_limb_bones_overview_view",
+      "markers": [
+        {
+          "id": "humerus",
+          "x": 0.2777777910232544,
+          "y": 0.3035714328289032
+        },
+        {
+          "id": "radius",
+          "x": 0.2611111104488373,
+          "y": 0.6142857074737549
+        },
+        {
+          "id": "hand-bones",
+          "x": 0.28611111640930176,
+          "y": 0.824999988079071
+        },
+        {
+          "id": "femur",
+          "x": 0.7083333134651184,
+          "y": 0.3821428716182709
+        },
+        {
+          "id": "tibia",
+          "x": 0.6777777671813965,
+          "y": 0.7214285731315613
+        },
+        {
+          "id": "foot-bones",
+          "x": 0.7166666388511658,
+          "y": 0.9035714268684387
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-introduction",
+      "viewKey": "atlas-detail-limb-bones",
+      "selectorLabel": "health_atlas_limb_bones_overview_view",
+      "splitCallouts": true,
+      "features": [],
+      "asset": "HealthAtlasRegionalLimbBonesOverview",
+      "entryIDs": [
+        "limb-bones",
+        "humerus",
+        "radius",
+        "hand-bones",
+        "femur",
+        "tibia",
+        "foot-bones"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_limb_bones_overview.xml"
+    },
+    {
+      "id": "atlas-detail-cranial-nerves",
+      "owner": "cranial-nerves",
+      "viewLabel": "health_atlas_cranial_attach_view",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9431917/",
+      "viewKey": "atlas-detail-cranial-nerves",
+      "selectorLabel": "health_atlas_cranial_attach_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "cranial-olfactory-attachment",
+            "x": 0.33888888359069824,
+            "y": 0.1785714328289032
+          },
+          "title": "health_atlas_cranial_attach_one",
+          "explanation": "health_atlas_cranial_attach_one_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-optic-attachment",
+            "x": 0.5527777671813965,
+            "y": 0.3035714328289032
+          },
+          "title": "health_atlas_cranial_attach_two",
+          "explanation": "health_atlas_cranial_attach_two_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-midbrain-attachment",
+            "x": 0.3861111104488373,
+            "y": 0.41428571939468384
+          },
+          "title": "health_atlas_cranial_attach_mid",
+          "explanation": "health_atlas_cranial_attach_mid_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-trigeminal-attachment",
+            "x": 0.644444465637207,
+            "y": 0.5
+          },
+          "title": "health_atlas_cranial_attach_pons",
+          "explanation": "health_atlas_cranial_attach_pons_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-pontomedullary-attachment",
+            "x": 0.6305555701255798,
+            "y": 0.625
+          },
+          "title": "health_atlas_cranial_attach_border",
+          "explanation": "health_atlas_cranial_attach_border_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-medullary-attachment",
+            "x": 0.39722222089767456,
+            "y": 0.6928571462631226
+          },
+          "title": "health_atlas_cranial_attach_lower",
+          "explanation": "health_atlas_cranial_attach_lower_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-accessory-attachment",
+            "x": 0.6027777791023254,
+            "y": 0.7928571701049805
+          },
+          "title": "health_atlas_cranial_attach_accessory",
+          "explanation": "health_atlas_cranial_attach_accessory_detail"
+        },
+        {
+          "marker": {
+            "id": "cranial-hypoglossal-attachment",
+            "x": 0.4583333432674408,
+            "y": 0.7178571224212646
+          },
+          "title": "health_atlas_cranial_attach_tongue",
+          "explanation": "health_atlas_cranial_attach_tongue_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCranialNerveMap",
+      "entryIDs": [
+        "cranial-nerves"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cranial_nerve_map.xml"
+    },
+    {
+      "id": "atlas-detail-radius",
+      "owner": "radius",
+      "viewLabel": "health_atlas_radius_section_view",
+      "markers": [
+        {
+          "id": "ulna",
+          "x": 0.5972222089767456,
+          "y": 0.46071428060531616
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-2-bones-of-the-upper-limb",
+      "viewKey": "atlas-detail-radius",
+      "selectorLabel": "health_atlas_radius_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "radius-head",
+            "x": 0.4305555522441864,
+            "y": 0.20357142388820648
+          },
+          "title": "health_atlas_radius_section_head",
+          "explanation": "health_atlas_radius_section_head_detail"
+        },
+        {
+          "marker": {
+            "id": "radius-shaft",
+            "x": 0.4194444417953491,
+            "y": 0.46785715222358704
+          },
+          "title": "health_atlas_radius_section_shaft",
+          "explanation": "health_atlas_radius_section_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "radius-wrist",
+            "x": 0.3916666805744171,
+            "y": 0.7857142686843872
+          },
+          "title": "health_atlas_radius_section_wrist",
+          "explanation": "health_atlas_radius_section_wrist_detail"
+        },
+        {
+          "marker": {
+            "id": "radius-styloid",
+            "x": 0.3222222328186035,
+            "y": 0.8428571224212646
+          },
+          "title": "health_atlas_radius_section_styloid",
+          "explanation": "health_atlas_radius_section_styloid_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalRadiusSection",
+      "entryIDs": [
+        "radius",
+        "ulna"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_radius_section.xml"
+    },
+    {
+      "id": "atlas-detail-olfactory-mucosa",
+      "owner": "olfactory-mucosa",
+      "viewLabel": "health_atlas_olfactory_mucosa_view",
+      "markers": [
+        {
+          "id": "cell-olfactory-receptor-neuron",
+          "x": 0.36944442987442017,
+          "y": 0.4821428656578064
+        }
+      ],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9232960/",
+      "viewKey": "atlas-detail-olfactory-mucosa",
+      "selectorLabel": "health_atlas_olfactory_mucosa_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "olfactory-mucus",
+            "x": 0.2750000059604645,
+            "y": 0.25
+          },
+          "title": "health_atlas_olfactory_mucosa_mucus",
+          "explanation": "health_atlas_olfactory_mucosa_mucus_detail"
+        },
+        {
+          "marker": {
+            "id": "olfactory-cilia",
+            "x": 0.6472222208976746,
+            "y": 0.3321428596973419
+          },
+          "title": "health_atlas_olfactory_mucosa_cilia",
+          "explanation": "health_atlas_olfactory_mucosa_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "olfactory-support",
+            "x": 0.5694444179534912,
+            "y": 0.43214285373687744
+          },
+          "title": "health_atlas_olfactory_mucosa_support",
+          "explanation": "health_atlas_olfactory_mucosa_support_detail"
+        },
+        {
+          "marker": {
+            "id": "olfactory-gland",
+            "x": 0.8194444179534912,
+            "y": 0.7071428298950195
+          },
+          "title": "health_atlas_olfactory_mucosa_gland",
+          "explanation": "health_atlas_olfactory_mucosa_gland_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalOlfactoryMucosaSection",
+      "entryIDs": [
+        "olfactory-mucosa",
+        "cell-olfactory-receptor-neuron"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_olfactory_mucosa_section.xml"
+    },
+    {
+      "id": "atlas-detail-deltoid",
+      "owner": "deltoid",
+      "viewLabel": "health_atlas_shoulder_plate_deltoid_view",
+      "markers": [
+        {
+          "id": "scapula",
+          "x": 0.4027777910232544,
+          "y": 0.49642857909202576
+        }
+      ],
+      "source": "https://temple.manifoldapp.org/read/hands-on-anatomy-c6538f97-bc62-44ae-96ff-0f1f97d6c977/section/9967a151-8e94-450d-90e8-c84aad0aca9f",
+      "viewKey": "atlas-detail-deltoid",
+      "selectorLabel": "health_atlas_shoulder_plate_deltoid_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "deltoid-spinal",
+            "x": 0.4833333194255829,
+            "y": 0.4000000059604645
+          },
+          "title": "health_atlas_deltoid_story_spinal",
+          "explanation": "health_atlas_shoulder_plate_spinal_detail"
+        },
+        {
+          "marker": {
+            "id": "deltoid-acromial",
+            "x": 0.574999988079071,
+            "y": 0.38928571343421936
+          },
+          "title": "health_atlas_deltoid_story_acromial",
+          "explanation": "health_atlas_shoulder_plate_acromial_detail"
+        },
+        {
+          "marker": {
+            "id": "deltoid-clavicular",
+            "x": 0.6499999761581421,
+            "y": 0.3857142925262451
+          },
+          "title": "health_atlas_deltoid_story_clavicular",
+          "explanation": "health_atlas_shoulder_plate_clavicular_detail"
+        },
+        {
+          "marker": {
+            "id": "deltoid-tuberosity",
+            "x": 0.6194444298744202,
+            "y": 0.6928571462631226
+          },
+          "title": "health_atlas_deltoid_story_tuberosity",
+          "explanation": "health_atlas_shoulder_plate_tuberosity_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMuscleDeltoid",
+      "entryIDs": [
+        "deltoid",
+        "scapula"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_muscle_deltoid.xml"
+    },
+    {
+      "id": "atlas-detail-trapezius",
+      "owner": "trapezius",
+      "viewLabel": "health_atlas_shoulder_plate_scapular_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology/pages/11-5-muscles-of-the-pectoral-girdle-and-upper-limbs",
+      "viewKey": "atlas-detail-trapezius",
+      "selectorLabel": "health_atlas_shoulder_plate_scapular_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "trapezius-upper",
+            "x": 0.36666667461395264,
+            "y": 0.20000000298023224
+          },
+          "title": "health_atlas_scapular_rotation_story_upper",
+          "explanation": "health_atlas_shoulder_plate_upper_detail"
+        },
+        {
+          "marker": {
+            "id": "trapezius-middle",
+            "x": 0.4027777910232544,
+            "y": 0.3464285731315613
+          },
+          "title": "health_atlas_scapular_rotation_story_middle",
+          "explanation": "health_atlas_shoulder_plate_middle_detail"
+        },
+        {
+          "marker": {
+            "id": "trapezius-lower",
+            "x": 0.35555556416511536,
+            "y": 0.5928571224212646
+          },
+          "title": "health_atlas_scapular_rotation_story_lower",
+          "explanation": "health_atlas_shoulder_plate_lower_detail"
+        },
+        {
+          "marker": {
+            "id": "trapezius-serratus",
+            "x": 0.7222222089767456,
+            "y": 0.699999988079071
+          },
+          "title": "health_atlas_scapular_rotation_story_serratus",
+          "explanation": "health_atlas_shoulder_plate_serratus_detail"
+        },
+        {
+          "marker": {
+            "id": "trapezius-inferior-angle",
+            "x": 0.5388888716697693,
+            "y": 0.75
+          },
+          "title": "health_atlas_scapular_rotation_story_inferior_angle",
+          "explanation": "health_atlas_shoulder_plate_inferior_angle_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMuscleTrapezius",
+      "entryIDs": [
+        "trapezius"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_muscle_trapezius.xml"
+    },
+    {
+      "id": "atlas-detail-cell-microglia",
+      "owner": "cell-microglia",
+      "viewLabel": "health_atlas_microglia_story_plate_caption",
+      "markers": [],
+      "source": "https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html",
+      "viewKey": "atlas-detail-cell-microglia",
+      "selectorLabel": "health_atlas_microglia_story_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "microglia-body",
+            "x": 0.49444442987442017,
+            "y": 0.5607143044471741
+          },
+          "title": "health_atlas_microglia_story_feature_soma",
+          "explanation": "health_atlas_microglia_story_feature_soma_detail"
+        },
+        {
+          "marker": {
+            "id": "microglia-nucleus",
+            "x": 0.41111111640930176,
+            "y": 0.5071428418159485
+          },
+          "title": "health_atlas_microglia_story_feature_nucleus",
+          "explanation": "health_atlas_microglia_story_feature_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "microglia-fork",
+            "x": 0.5611110925674438,
+            "y": 0.3678571283817291
+          },
+          "title": "health_atlas_microglia_story_feature_fork",
+          "explanation": "health_atlas_microglia_story_feature_fork_detail"
+        },
+        {
+          "marker": {
+            "id": "microglia-surveillance",
+            "x": 0.7472222447395325,
+            "y": 0.28214284777641296
+          },
+          "title": "health_atlas_microglia_story_feature_tip",
+          "explanation": "health_atlas_microglia_story_feature_tip_detail"
+        },
+        {
+          "marker": {
+            "id": "microglia-neighbor",
+            "x": 0.17777778208255768,
+            "y": 0.2785714268684387
+          },
+          "title": "health_atlas_microglia_story_feature_neighbor",
+          "explanation": "health_atlas_microglia_story_feature_neighbor_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalMicrogliaPlate",
+      "entryIDs": [
+        "cell-microglia"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_microglia_plate.xml"
+    },
+    {
+      "id": "atlas-detail-cell-ependymal-cell",
+      "owner": "cell-ependymal-cell",
+      "viewLabel": "health_atlas_ependymal_story_plate_caption",
+      "markers": [],
+      "source": "https://nba.uth.tmc.edu/neuroscience/m/s1/chapter08.html",
+      "viewKey": "atlas-detail-cell-ependymal-cell",
+      "selectorLabel": "health_atlas_ependymal_story_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "ependymal-lumen",
+            "x": 0.5694444179534912,
+            "y": 0.18571428954601288
+          },
+          "title": "health_atlas_ependymal_story_feature_lumen",
+          "explanation": "health_atlas_ependymal_story_feature_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "ependymal-cilia",
+            "x": 0.4000000059604645,
+            "y": 0.3464285731315613
+          },
+          "title": "health_atlas_ependymal_story_feature_cilia",
+          "explanation": "health_atlas_ependymal_story_feature_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "ependymal-ciliary-bases",
+            "x": 0.5583333373069763,
+            "y": 0.4642857015132904
+          },
+          "title": "health_atlas_ependymal_story_feature_bases",
+          "explanation": "health_atlas_ependymal_story_feature_bases_detail"
+        },
+        {
+          "marker": {
+            "id": "ependymal-lining",
+            "x": 0.6388888955116272,
+            "y": 0.6000000238418579
+          },
+          "title": "health_atlas_ependymal_story_feature_lining",
+          "explanation": "health_atlas_ependymal_story_feature_lining_detail"
+        },
+        {
+          "marker": {
+            "id": "ependymal-underlying-tissue",
+            "x": 0.769444465637207,
+            "y": 0.8035714030265808
+          },
+          "title": "health_atlas_ependymal_story_feature_tissue",
+          "explanation": "health_atlas_ependymal_story_feature_tissue_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalEpendymalPlate",
+      "entryIDs": [
+        "cell-ependymal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_ependymal_plate.xml"
+    },
+    {
+      "id": "atlas-detail-ribs",
+      "owner": "ribs",
+      "viewLabel": "health_atlas_ribs_attachments_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-4-the-thoracic-cage",
+      "viewKey": "atlas-detail-ribs",
+      "selectorLabel": "health_atlas_ribs_attachments_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "ribs-posterior-joint",
+            "x": 0.5416666865348816,
+            "y": 0.15000000596046448
+          },
+          "title": "health_atlas_ribs_attachments_plate_posterior_joint",
+          "explanation": "health_atlas_ribs_attachments_plate_posterior_joint_detail"
+        },
+        {
+          "marker": {
+            "id": "ribs-shaft",
+            "x": 0.21666666865348816,
+            "y": 0.5464285612106323
+          },
+          "title": "health_atlas_ribs_attachments_plate_shaft",
+          "explanation": "health_atlas_ribs_attachments_plate_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "ribs-direct-cartilage",
+            "x": 0.4305555522441864,
+            "y": 0.3928571343421936
+          },
+          "title": "health_atlas_ribs_attachments_plate_direct_cartilage",
+          "explanation": "health_atlas_ribs_attachments_plate_direct_cartilage_detail"
+        },
+        {
+          "marker": {
+            "id": "ribs-costal-arch",
+            "x": 0.699999988079071,
+            "y": 0.7392857074737549
+          },
+          "title": "health_atlas_ribs_attachments_plate_costal_arch",
+          "explanation": "health_atlas_ribs_attachments_plate_costal_arch_detail"
+        },
+        {
+          "marker": {
+            "id": "ribs-floating-tip",
+            "x": 0.3444444537162781,
+            "y": 0.8892857432365417
+          },
+          "title": "health_atlas_ribs_attachments_plate_floating_tip",
+          "explanation": "health_atlas_ribs_attachments_plate_floating_tip_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalRibsAttachmentsPlate",
+      "entryIDs": [
+        "ribs"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_ribs_attachments_plate.xml"
+    },
+    {
+      "id": "cartilage-overview",
+      "owner": "cartilage",
+      "viewLabel": "health_atlas_cartilage_overview_plate_caption",
+      "markers": [
+        {
+          "id": "tissue-hyaline-cartilage",
+          "x": 0.7444444298744202,
+          "y": 0.40714284777641296
+        },
+        {
+          "id": "cell-chondrocyte",
+          "x": 0.6527777910232544,
+          "y": 0.38928571343421936
+        }
+      ],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/24455780/",
+      "viewKey": "cartilage-overview",
+      "selectorLabel": "health_atlas_cartilage_overview_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "cartilage-articular-surface",
+            "x": 0.41111111640930176,
+            "y": 0.24285714328289032
+          },
+          "title": "health_atlas_cartilage_overview_plate_surface",
+          "explanation": "health_atlas_cartilage_overview_plate_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "cartilage-chondrocytes",
+            "x": 0.3194444477558136,
+            "y": 0.4357142746448517
+          },
+          "title": "health_atlas_cartilage_overview_plate_chondrocytes",
+          "explanation": "health_atlas_cartilage_overview_plate_chondrocytes_detail"
+        },
+        {
+          "marker": {
+            "id": "cartilage-matrix",
+            "x": 0.6027777791023254,
+            "y": 0.44999998807907104
+          },
+          "title": "health_atlas_cartilage_overview_plate_matrix",
+          "explanation": "health_atlas_cartilage_overview_plate_matrix_detail"
+        },
+        {
+          "marker": {
+            "id": "cartilage-calcified-zone",
+            "x": 0.6416666507720947,
+            "y": 0.6071428656578064
+          },
+          "title": "health_atlas_cartilage_overview_plate_calcified",
+          "explanation": "health_atlas_cartilage_overview_plate_calcified_detail"
+        },
+        {
+          "marker": {
+            "id": "cartilage-subchondral-bone",
+            "x": 0.42222222685813904,
+            "y": 0.6964285969734192
+          },
+          "title": "health_atlas_cartilage_overview_plate_bone",
+          "explanation": "health_atlas_cartilage_overview_plate_bone_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCartilageOverviewPlate",
+      "entryIDs": [
+        "cartilage",
+        "tissue-hyaline-cartilage",
+        "cell-chondrocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cartilage_overview_plate.xml"
+    },
+    {
+      "id": "synovial-joint-section",
+      "owner": "joints",
+      "viewLabel": "health_atlas_synovial_joint_plate_caption",
+      "markers": [
+        {
+          "id": "tissue-hyaline-cartilage",
+          "x": 0.3638888895511627,
+          "y": 0.44285714626312256
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/9-4-synovial-joints",
+      "viewKey": "synovial-joint-section",
+      "selectorLabel": "health_atlas_synovial_joint_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "synovial-joint-capsule",
+            "x": 0.23333333432674408,
+            "y": 0.43214285373687744
+          },
+          "title": "health_atlas_synovial_joint_plate_capsule",
+          "explanation": "health_atlas_synovial_joint_plate_capsule_detail"
+        },
+        {
+          "marker": {
+            "id": "synovial-joint-lining",
+            "x": 0.7166666388511658,
+            "y": 0.5607143044471741
+          },
+          "title": "health_atlas_synovial_joint_plate_lining",
+          "explanation": "health_atlas_synovial_joint_plate_lining_detail"
+        },
+        {
+          "marker": {
+            "id": "synovial-joint-cavity",
+            "x": 0.4972222149372101,
+            "y": 0.5249999761581421
+          },
+          "title": "health_atlas_synovial_joint_plate_cavity",
+          "explanation": "health_atlas_synovial_joint_plate_cavity_detail"
+        },
+        {
+          "marker": {
+            "id": "synovial-joint-articular-surfaces",
+            "x": 0.5944444537162781,
+            "y": 0.5464285612106323
+          },
+          "title": "health_atlas_synovial_joint_plate_surfaces",
+          "explanation": "health_atlas_synovial_joint_plate_surfaces_detail"
+        },
+        {
+          "marker": {
+            "id": "synovial-joint-capsule-attachment",
+            "x": 0.32499998807907104,
+            "y": 0.7071428298950195
+          },
+          "title": "health_atlas_synovial_joint_plate_attachment",
+          "explanation": "health_atlas_synovial_joint_plate_attachment_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalSynovialJointPlate",
+      "entryIDs": [
+        "joints",
+        "tissue-hyaline-cartilage"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_synovial_joint_plate.xml"
+    },
+    {
+      "id": "atlas-detail-pineal-gland",
+      "owner": "pineal-gland",
+      "viewLabel": "health_atlas_pineal_plate_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3675249/",
+      "viewKey": "atlas-detail-pineal-gland",
+      "selectorLabel": "health_atlas_pineal_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "pineal-plate-body",
+            "x": 0.6916666626930237,
+            "y": 0.5214285850524902
+          },
+          "title": "health_atlas_pineal_plate_body",
+          "explanation": "health_atlas_pineal_plate_body_detail"
+        },
+        {
+          "marker": {
+            "id": "pineal-third-ventricle",
+            "x": 0.38333332538604736,
+            "y": 0.5
+          },
+          "title": "health_atlas_pineal_plate_third_ventricle",
+          "explanation": "health_atlas_pineal_plate_third_ventricle_detail"
+        },
+        {
+          "marker": {
+            "id": "pineal-recess",
+            "x": 0.6277777552604675,
+            "y": 0.5107142925262451
+          },
+          "title": "health_atlas_pineal_plate_recess",
+          "explanation": "health_atlas_pineal_plate_recess_detail"
+        },
+        {
+          "marker": {
+            "id": "pineal-choroid-plexus",
+            "x": 0.4583333432674408,
+            "y": 0.3928571343421936
+          },
+          "title": "health_atlas_pineal_plate_choroid_plexus",
+          "explanation": "health_atlas_pineal_plate_choroid_plexus_detail"
+        },
+        {
+          "marker": {
+            "id": "pineal-superior-colliculus",
+            "x": 0.6666666865348816,
+            "y": 0.5821428298950195
+          },
+          "title": "health_atlas_pineal_plate_superior_colliculus",
+          "explanation": "health_atlas_pineal_plate_superior_colliculus_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalPinealPlate",
+      "entryIDs": [
+        "pineal-gland"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_pineal_plate.xml"
+    },
+    {
+      "id": "atlas-detail-biliary-tract",
+      "owner": "biliary-tract",
+      "viewLabel": "health_atlas_biliary_tract_plate_caption",
+      "markers": [],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK459246/",
+      "viewKey": "atlas-detail-biliary-tract",
+      "selectorLabel": "health_atlas_biliary_tract_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "biliary-common-hepatic-duct",
+            "x": 0.5388888716697693,
+            "y": 0.3642857074737549
+          },
+          "title": "health_atlas_biliary_tract_plate_common_hepatic_duct",
+          "explanation": "health_atlas_biliary_tract_plate_common_hepatic_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "biliary-cystic-duct",
+            "x": 0.42500001192092896,
+            "y": 0.4285714328289032
+          },
+          "title": "health_atlas_biliary_tract_plate_cystic_duct",
+          "explanation": "health_atlas_biliary_tract_plate_cystic_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "biliary-common-bile-duct",
+            "x": 0.6166666746139526,
+            "y": 0.5964285731315613
+          },
+          "title": "health_atlas_biliary_tract_plate_common_bile_duct",
+          "explanation": "health_atlas_biliary_tract_plate_common_bile_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "biliary-duodenal-wall",
+            "x": 0.8277778029441833,
+            "y": 0.7250000238418579
+          },
+          "title": "health_atlas_biliary_tract_plate_duodenal_wall",
+          "explanation": "health_atlas_biliary_tract_plate_duodenal_wall_detail"
+        },
+        {
+          "marker": {
+            "id": "biliary-major-papilla",
+            "x": 0.7472222447395325,
+            "y": 0.699999988079071
+          },
+          "title": "health_atlas_biliary_tract_plate_major_papilla",
+          "explanation": "health_atlas_biliary_tract_plate_major_papilla_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalBiliaryTractPlate",
+      "entryIDs": [
+        "biliary-tract"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_biliary_tract_plate.xml"
+    },
+    {
+      "id": "atlas-detail-blood-vessels",
+      "owner": "blood-vessels",
+      "viewLabel": "health_atlas_vessel_comparison_caption",
+      "markers": [
+        {
+          "id": "arteries",
+          "x": 0.23055554926395416,
+          "y": 0.5214285850524902
+        },
+        {
+          "id": "veins",
+          "x": 0.5527777671813965,
+          "y": 0.4892857074737549
+        },
+        {
+          "id": "capillaries",
+          "x": 0.8333333134651184,
+          "y": 0.5107142925262451
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-1-structure-and-function-of-blood-vessels",
+      "viewKey": "atlas-detail-blood-vessels",
+      "selectorLabel": "health_atlas_vessel_comparison_caption",
+      "splitCallouts": true,
+      "features": [],
+      "asset": "HealthAtlasRegionalVesselComparisonPlate",
+      "entryIDs": [
+        "blood-vessels",
+        "arteries",
+        "veins",
+        "capillaries"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_vessel_comparison_plate.xml"
+    },
+    {
+      "id": "atlas-detail-arteries",
+      "owner": "arteries",
+      "viewLabel": "health_atlas_artery_layers_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-1-structure-and-function-of-blood-vessels",
+      "viewKey": "atlas-detail-arteries",
+      "selectorLabel": "health_atlas_artery_layers_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "artery-outer-layer",
+            "x": 0.3305555582046509,
+            "y": 0.6392857432365417
+          },
+          "title": "health_atlas_artery_layers_adventitia",
+          "explanation": "health_atlas_artery_layers_adventitia_detail"
+        },
+        {
+          "marker": {
+            "id": "artery-middle-layer",
+            "x": 0.7583333253860474,
+            "y": 0.32499998807907104
+          },
+          "title": "health_atlas_artery_layers_media",
+          "explanation": "health_atlas_artery_layers_media_detail"
+        },
+        {
+          "marker": {
+            "id": "artery-inner-layer",
+            "x": 0.7166666388511658,
+            "y": 0.3821428716182709
+          },
+          "title": "health_atlas_artery_layers_intima",
+          "explanation": "health_atlas_artery_layers_intima_detail"
+        },
+        {
+          "marker": {
+            "id": "artery-lumen",
+            "x": 0.5861111283302307,
+            "y": 0.5357142686843872
+          },
+          "title": "health_atlas_artery_layers_lumen",
+          "explanation": "health_atlas_artery_layers_lumen_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalArteryLayersPlate",
+      "entryIDs": [
+        "arteries"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_artery_layers_plate.xml"
+    },
+    {
+      "id": "atlas-detail-blood",
+      "owner": "blood",
+      "viewLabel": "health_atlas_whole_blood_caption",
+      "markers": [
+        {
+          "id": "cell-erythrocyte",
+          "x": 0.3777777850627899,
+          "y": 0.6535714268684387
+        },
+        {
+          "id": "cell-neutrophil",
+          "x": 0.5888888835906982,
+          "y": 0.46071428060531616
+        },
+        {
+          "id": "fragment-platelet",
+          "x": 0.6333333253860474,
+          "y": 0.6892856955528259
+        }
+      ],
+      "source": "https://www.hematology.org/resources/patients/blood-basics",
+      "viewKey": "atlas-detail-blood",
+      "selectorLabel": "health_atlas_whole_blood_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "whole-blood-plasma",
+            "x": 0.28333333134651184,
+            "y": 0.47857141494750977
+          },
+          "title": "health_atlas_whole_blood_plasma",
+          "explanation": "health_atlas_whole_blood_plasma_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalWholeBloodPlate",
+      "entryIDs": [
+        "blood",
+        "cell-erythrocyte",
+        "cell-neutrophil",
+        "fragment-platelet"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_whole_blood_plate.xml"
+    },
+    {
+      "id": "atlas-detail-hypothalamus",
+      "owner": "hypothalamus",
+      "viewLabel": "health_atlas_hypothalamus_plate_scope",
+      "markers": [
+        {
+          "id": "pituitary-gland",
+          "x": 0.5472221970558167,
+          "y": 0.8035714030265808
+        }
+      ],
+      "source": "https://www.ncbi.nlm.nih.gov/books/NBK279126/",
+      "viewKey": "atlas-detail-hypothalamus",
+      "selectorLabel": "health_atlas_hypothalamus_plate_scope",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "hypothalamus-region",
+            "x": 0.46666666865348816,
+            "y": 0.5107142925262451
+          },
+          "title": "health_atlas_hypothalamus_plate_region",
+          "explanation": "health_atlas_hypothalamus_plate_region_detail"
+        },
+        {
+          "marker": {
+            "id": "hypothalamus-thalamus",
+            "x": 0.5944444537162781,
+            "y": 0.39642858505249023
+          },
+          "title": "health_atlas_hypothalamus_plate_thalamus",
+          "explanation": "health_atlas_hypothalamus_plate_thalamus_detail"
+        },
+        {
+          "marker": {
+            "id": "hypothalamus-optic-chiasm",
+            "x": 0.36666667461395264,
+            "y": 0.5928571224212646
+          },
+          "title": "health_atlas_hypothalamus_plate_optic_chiasm",
+          "explanation": "health_atlas_hypothalamus_plate_optic_chiasm_detail"
+        },
+        {
+          "marker": {
+            "id": "hypothalamus-infundibulum",
+            "x": 0.5138888955116272,
+            "y": 0.6892856955528259
+          },
+          "title": "health_atlas_hypothalamus_plate_infundibulum",
+          "explanation": "health_atlas_hypothalamus_plate_infundibulum_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalHypothalamusPlate",
+      "entryIDs": [
+        "hypothalamus",
+        "pituitary-gland"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_hypothalamus_plate.xml"
+    },
+    {
+      "id": "atlas-detail-bronchioles",
+      "owner": "bronchioles",
+      "viewLabel": "health_atlas_bronchioles_plate_caption",
+      "markers": [],
+      "source": "https://histology.oit.duke.edu/NormalBody/Respiratory/Respiratory.html",
+      "viewKey": "atlas-detail-bronchioles",
+      "selectorLabel": "health_atlas_bronchioles_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "bronchioles-terminal-branch",
+            "x": 0.46666666865348816,
+            "y": 0.24285714328289032
+          },
+          "title": "health_atlas_bronchioles_plate_terminal_branch",
+          "explanation": "health_atlas_bronchioles_plate_terminal_branch_detail"
+        },
+        {
+          "marker": {
+            "id": "bronchioles-epithelium",
+            "x": 0.5916666388511658,
+            "y": 0.6107142567634583
+          },
+          "title": "health_atlas_bronchioles_plate_epithelium",
+          "explanation": "health_atlas_bronchioles_plate_epithelium_detail"
+        },
+        {
+          "marker": {
+            "id": "bronchioles-lumen",
+            "x": 0.6805555820465088,
+            "y": 0.699999988079071
+          },
+          "title": "health_atlas_bronchioles_plate_lumen",
+          "explanation": "health_atlas_bronchioles_plate_lumen_detail"
+        },
+        {
+          "marker": {
+            "id": "bronchioles-elastic-fibers",
+            "x": 0.4611110985279083,
+            "y": 0.7214285731315613
+          },
+          "title": "health_atlas_bronchioles_plate_elastic_fibers",
+          "explanation": "health_atlas_bronchioles_plate_elastic_fibers_detail"
+        },
+        {
+          "marker": {
+            "id": "bronchioles-smooth-muscle",
+            "x": 0.7944444417953491,
+            "y": 0.8071428537368774
+          },
+          "title": "health_atlas_bronchioles_plate_smooth_muscle",
+          "explanation": "health_atlas_bronchioles_plate_smooth_muscle_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalBronchiolesPlate",
+      "entryIDs": [
+        "bronchioles"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_bronchioles_plate.xml"
+    },
+    {
+      "id": "atlas-detail-taste-buds",
+      "owner": "taste-buds",
+      "viewLabel": "health_atlas_taste_buds_plate_caption",
+      "markers": [
+        {
+          "id": "cell-taste-receptor-cell",
+          "x": 0.46388888359069824,
+          "y": 0.5071428418159485
+        }
+      ],
+      "source": "https://openstax.org/books/introduction-behavioral-neuroscience/pages/8-2-the-gustatory-system",
+      "viewKey": "atlas-detail-taste-buds",
+      "selectorLabel": "health_atlas_taste_buds_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "taste-pore",
+            "x": 0.5083333253860474,
+            "y": 0.25
+          },
+          "title": "health_atlas_taste_buds_plate_pore",
+          "explanation": "health_atlas_taste_buds_plate_pore_detail"
+        },
+        {
+          "marker": {
+            "id": "taste-microvilli",
+            "x": 0.5249999761581421,
+            "y": 0.2142857164144516
+          },
+          "title": "health_atlas_taste_buds_plate_microvilli",
+          "explanation": "health_atlas_taste_buds_plate_microvilli_detail"
+        },
+        {
+          "marker": {
+            "id": "taste-sensory-cell",
+            "x": 0.5638889074325562,
+            "y": 0.4714285731315613
+          },
+          "title": "health_atlas_taste_buds_plate_sensory_cell",
+          "explanation": "health_atlas_taste_buds_plate_sensory_cell_detail"
+        },
+        {
+          "marker": {
+            "id": "taste-supporting-cell",
+            "x": 0.3472222089767456,
+            "y": 0.5392857193946838
+          },
+          "title": "health_atlas_taste_buds_plate_supporting_cell",
+          "explanation": "health_atlas_taste_buds_plate_supporting_cell_detail"
+        },
+        {
+          "marker": {
+            "id": "taste-afferent-contact",
+            "x": 0.574999988079071,
+            "y": 0.6285714507102966
+          },
+          "title": "health_atlas_taste_buds_plate_afferent",
+          "explanation": "health_atlas_taste_buds_plate_afferent_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalTasteBudsPlate",
+      "entryIDs": [
+        "taste-buds",
+        "cell-taste-receptor-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_taste_buds_plate.xml"
+    },
+    {
+      "id": "atlas-detail-paranasal-sinuses",
+      "owner": "paranasal-sinuses",
+      "viewLabel": "health_atlas_sinus_plate_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7944018/",
+      "viewKey": "atlas-detail-paranasal-sinuses",
+      "selectorLabel": "health_atlas_sinus_plate_caption",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "sinus-frontal",
+            "x": 0.4277777671813965,
+            "y": 0.18571428954601288
+          },
+          "title": "health_atlas_sinus_plate_frontal",
+          "explanation": "health_atlas_sinus_plate_frontal_detail"
+        },
+        {
+          "marker": {
+            "id": "sinus-ethmoid",
+            "x": 0.6083333492279053,
+            "y": 0.3928571343421936
+          },
+          "title": "health_atlas_sinus_plate_ethmoid",
+          "explanation": "health_atlas_sinus_plate_ethmoid_detail"
+        },
+        {
+          "marker": {
+            "id": "sinus-maxillary",
+            "x": 0.2666666805744171,
+            "y": 0.6285714507102966
+          },
+          "title": "health_atlas_sinus_plate_maxillary",
+          "explanation": "health_atlas_sinus_plate_maxillary_detail"
+        },
+        {
+          "marker": {
+            "id": "sinus-nasal-cavity",
+            "x": 0.44999998807907104,
+            "y": 0.7749999761581421
+          },
+          "title": "health_atlas_sinus_plate_nasal_cavity",
+          "explanation": "health_atlas_sinus_plate_nasal_cavity_detail"
+        },
+        {
+          "marker": {
+            "id": "sinus-inferior-conchae",
+            "x": 0.5722222328186035,
+            "y": 0.675000011920929
+          },
+          "title": "health_atlas_sinus_plate_inferior_conchae",
+          "explanation": "health_atlas_sinus_plate_inferior_conchae_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalSinusPlate",
+      "entryIDs": [
+        "paranasal-sinuses"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sinus_plate.xml"
+    },
+    {
+      "id": "atlas-detail-pleura",
+      "owner": "pleura",
+      "viewLabel": "health_atlas_pleura_section_view",
+      "markers": [
+        {
+          "id": "lungs",
+          "x": 0.23055554926395416,
+          "y": 0.5464285612106323
+        }
+      ],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/5693173/",
+      "viewKey": "atlas-detail-pleura",
+      "selectorLabel": "health_atlas_pleura_section_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "visceral-pleura",
+            "x": 0.6083333492279053,
+            "y": 0.375
+          },
+          "title": "health_atlas_pleura_section_visceral",
+          "explanation": "health_atlas_pleura_section_visceral_detail"
+        },
+        {
+          "marker": {
+            "id": "pleural-fluid-film",
+            "x": 0.6583333611488342,
+            "y": 0.49642857909202576
+          },
+          "title": "health_atlas_pleura_section_fluid",
+          "explanation": "health_atlas_pleura_section_fluid_detail"
+        },
+        {
+          "marker": {
+            "id": "parietal-pleura",
+            "x": 0.7055555582046509,
+            "y": 0.6357142925262451
+          },
+          "title": "health_atlas_pleura_section_parietal",
+          "explanation": "health_atlas_pleura_section_parietal_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalPleuraSection",
+      "entryIDs": [
+        "pleura",
+        "lungs"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_pleura_section.xml"
+    },
+    {
+      "id": "atlas-detail-cell-mast-cell",
+      "owner": "cell-mast-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-6-diseases-associated-with-depressed-or-overactive-immune-responses",
+      "viewKey": "atlas-detail-cell-mast-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "mast-granules",
+            "x": 0.5694444179534912,
+            "y": 0.49642857909202576
+          },
+          "title": "health_atlas_context_mast_granules",
+          "explanation": "health_atlas_context_mast_granules_detail"
+        },
+        {
+          "marker": {
+            "id": "mast-resident",
+            "x": 0.41111111640930176,
+            "y": 0.6321428418159485
+          },
+          "title": "health_atlas_context_mast_resident",
+          "explanation": "health_atlas_context_mast_resident_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellMast",
+      "entryIDs": [
+        "cell-mast-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_mast.xml"
+    },
+    {
+      "id": "atlas-detail-cell-hematopoietic-stem-cell",
+      "owner": "cell-hematopoietic-stem-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/18-2-production-of-the-formed-elements",
+      "viewKey": "atlas-detail-cell-hematopoietic-stem-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "hsc-body",
+            "x": 0.4555555582046509,
+            "y": 0.4464285671710968
+          },
+          "title": "health_atlas_context_hsc_body",
+          "explanation": "health_atlas_context_hsc_body_detail"
+        },
+        {
+          "marker": {
+            "id": "hsc-niche",
+            "x": 0.48055556416511536,
+            "y": 0.6857143044471741
+          },
+          "title": "health_atlas_context_hsc_niche",
+          "explanation": "health_atlas_context_hsc_niche_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellHematopoietic",
+      "entryIDs": [
+        "cell-hematopoietic-stem-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hematopoietic.xml"
+    },
+    {
+      "id": "atlas-detail-cell-helper-t-cell",
+      "owner": "cell-helper-t-cell",
+      "viewLabel": "health_atlas_context_role_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "viewKey": "atlas-detail-cell-helper-t-cell",
+      "selectorLabel": "health_atlas_context_role_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "helper-recognition",
+            "x": 0.5083333253860474,
+            "y": 0.4357142746448517
+          },
+          "title": "health_atlas_context_helper_recognition",
+          "explanation": "health_atlas_context_helper_recognition_detail"
+        },
+        {
+          "marker": {
+            "id": "helper-coordination",
+            "x": 0.574999988079071,
+            "y": 0.574999988079071
+          },
+          "title": "health_atlas_context_helper_coordination",
+          "explanation": "health_atlas_context_helper_coordination_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellHelperT",
+      "entryIDs": [
+        "cell-helper-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_helper_t.xml"
+    },
+    {
+      "id": "atlas-detail-cell-cytotoxic-t-cell",
+      "owner": "cell-cytotoxic-t-cell",
+      "viewLabel": "health_atlas_context_role_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "viewKey": "atlas-detail-cell-cytotoxic-t-cell",
+      "selectorLabel": "health_atlas_context_role_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "cytotoxic-interface",
+            "x": 0.5361111164093018,
+            "y": 0.4749999940395355
+          },
+          "title": "health_atlas_context_cytotoxic_interface",
+          "explanation": "health_atlas_context_cytotoxic_interface_detail"
+        },
+        {
+          "marker": {
+            "id": "cytotoxic-granules",
+            "x": 0.4722222089767456,
+            "y": 0.5285714268684387
+          },
+          "title": "health_atlas_context_cytotoxic_granules",
+          "explanation": "health_atlas_context_cytotoxic_granules_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellCytotoxicT",
+      "entryIDs": [
+        "cell-cytotoxic-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_cytotoxic_t.xml"
+    },
+    {
+      "id": "atlas-detail-cell-regulatory-t-cell",
+      "owner": "cell-regulatory-t-cell",
+      "viewLabel": "health_atlas_context_role_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-3-the-adaptive-immune-response-t-lymphocytes-and-their-functional-types",
+      "viewKey": "atlas-detail-cell-regulatory-t-cell",
+      "selectorLabel": "health_atlas_context_role_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "regulatory-contact",
+            "x": 0.5222222208976746,
+            "y": 0.5
+          },
+          "title": "health_atlas_context_regulatory_contact",
+          "explanation": "health_atlas_context_regulatory_contact_detail"
+        },
+        {
+          "marker": {
+            "id": "regulatory-neighbor",
+            "x": 0.7250000238418579,
+            "y": 0.49642857909202576
+          },
+          "title": "health_atlas_context_regulatory_neighbor",
+          "explanation": "health_atlas_context_regulatory_neighbor_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellRegulatoryT",
+      "entryIDs": [
+        "cell-regulatory-t-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_regulatory_t.xml"
+    },
+    {
+      "id": "atlas-detail-cell-pericyte",
+      "owner": "cell-pericyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/16166562/",
+      "viewKey": "atlas-detail-cell-pericyte",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "pericyte-outer",
+            "x": 0.5111111402511597,
+            "y": 0.3142857253551483
+          },
+          "title": "health_atlas_context_pericyte_outer",
+          "explanation": "health_atlas_context_pericyte_outer_detail"
+        },
+        {
+          "marker": {
+            "id": "pericyte-wrap",
+            "x": 0.6305555701255798,
+            "y": 0.625
+          },
+          "title": "health_atlas_context_pericyte_wrap",
+          "explanation": "health_atlas_context_pericyte_wrap_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellPericyte",
+      "entryIDs": [
+        "cell-pericyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_pericyte.xml"
+    },
+    {
+      "id": "atlas-detail-cell-lymphatic-endothelial-cell",
+      "owner": "cell-lymphatic-endothelial-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems",
+      "viewKey": "atlas-detail-cell-lymphatic-endothelial-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "lymph-flap",
+            "x": 0.4833333194255829,
+            "y": 0.4107142984867096
+          },
+          "title": "health_atlas_context_lymph_flap",
+          "explanation": "health_atlas_context_lymph_flap_detail"
+        },
+        {
+          "marker": {
+            "id": "lymph-lumen",
+            "x": 0.5388888716697693,
+            "y": 0.550000011920929
+          },
+          "title": "health_atlas_context_lymph_lumen",
+          "explanation": "health_atlas_context_lymph_lumen_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellLymphaticEndothelium",
+      "entryIDs": [
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_lymphatic_endothelium.xml"
+    },
+    {
+      "id": "atlas-detail-cell-sertoli-cell",
+      "owner": "cell-sertoli-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "viewKey": "atlas-detail-cell-sertoli-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "sertoli-germ-support",
+            "x": 0.4888888895511627,
+            "y": 0.44999998807907104
+          },
+          "title": "health_atlas_context_sertoli_germ_support",
+          "explanation": "health_atlas_context_sertoli_germ_support_detail"
+        },
+        {
+          "marker": {
+            "id": "sertoli-junction",
+            "x": 0.3638888895511627,
+            "y": 0.6785714030265808
+          },
+          "title": "health_atlas_context_sertoli_junction",
+          "explanation": "health_atlas_context_sertoli_junction_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSertoli",
+      "entryIDs": [
+        "cell-sertoli-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sertoli.xml"
+    },
+    {
+      "id": "atlas-detail-cell-spermatogonium",
+      "owner": "cell-spermatogonium",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "viewKey": "atlas-detail-cell-spermatogonium",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "spermatogonia-basal",
+            "x": 0.4722222089767456,
+            "y": 0.7142857313156128
+          },
+          "title": "health_atlas_context_spermatogonia_basal",
+          "explanation": "health_atlas_context_spermatogonia_basal_detail"
+        },
+        {
+          "marker": {
+            "id": "spermatogonia-lamina",
+            "x": 0.5138888955116272,
+            "y": 0.8178571462631226
+          },
+          "title": "health_atlas_context_spermatogonia_lamina",
+          "explanation": "health_atlas_context_spermatogonia_lamina_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSpermatogonium",
+      "entryIDs": [
+        "cell-spermatogonium"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_spermatogonium.xml"
+    },
+    {
+      "id": "atlas-detail-cell-spermatocyte",
+      "owner": "cell-spermatocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "viewKey": "atlas-detail-cell-spermatocyte",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "spermatocyte-primary",
+            "x": 0.5083333253860474,
+            "y": 0.5035714507102966
+          },
+          "title": "health_atlas_context_spermatocyte_primary",
+          "explanation": "health_atlas_context_spermatocyte_primary_detail"
+        },
+        {
+          "marker": {
+            "id": "spermatocyte-bivalent",
+            "x": 0.4833333194255829,
+            "y": 0.48571428656578064
+          },
+          "title": "health_atlas_context_spermatocyte_bivalent",
+          "explanation": "health_atlas_context_spermatocyte_bivalent_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSpermatocyte",
+      "entryIDs": [
+        "cell-spermatocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_spermatocyte.xml"
+    },
+    {
+      "id": "atlas-detail-cell-ciliated-oviduct-cell",
+      "owner": "cell-ciliated-oviduct-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "viewKey": "atlas-detail-cell-ciliated-oviduct-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "oviduct-cilia",
+            "x": 0.5,
+            "y": 0.22499999403953552
+          },
+          "title": "health_atlas_context_oviduct_cilia",
+          "explanation": "health_atlas_context_oviduct_cilia_detail"
+        },
+        {
+          "marker": {
+            "id": "oviduct-fold",
+            "x": 0.5416666865348816,
+            "y": 0.44285714626312256
+          },
+          "title": "health_atlas_context_oviduct_fold",
+          "explanation": "health_atlas_context_oviduct_fold_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellOviductCiliated",
+      "entryIDs": [
+        "cell-ciliated-oviduct-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_oviduct_ciliated.xml"
+    },
+    {
+      "id": "atlas-detail-cell-endometrial-epithelial-cell",
+      "owner": "cell-endometrial-epithelial-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "viewKey": "atlas-detail-cell-endometrial-epithelial-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "endometrium-surface",
+            "x": 0.4000000059604645,
+            "y": 0.2857142984867096
+          },
+          "title": "health_atlas_context_endometrium_surface",
+          "explanation": "health_atlas_context_endometrium_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "endometrium-gland",
+            "x": 0.5666666626930237,
+            "y": 0.5928571224212646
+          },
+          "title": "health_atlas_context_endometrium_gland",
+          "explanation": "health_atlas_context_endometrium_gland_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellEndometrialEpithelium",
+      "entryIDs": [
+        "cell-endometrial-epithelial-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_endometrial_epithelium.xml"
+    },
+    {
+      "id": "atlas-detail-cell-endometrial-stromal-cell",
+      "owner": "cell-endometrial-stromal-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/25141152/",
+      "viewKey": "atlas-detail-cell-endometrial-stromal-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "stroma-fibroblast",
+            "x": 0.4694444537162781,
+            "y": 0.5535714030265808
+          },
+          "title": "health_atlas_context_stroma_fibroblast",
+          "explanation": "health_atlas_context_stroma_fibroblast_detail"
+        },
+        {
+          "marker": {
+            "id": "stroma-matrix",
+            "x": 0.625,
+            "y": 0.6964285969734192
+          },
+          "title": "health_atlas_context_stroma_matrix",
+          "explanation": "health_atlas_context_stroma_matrix_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellEndometrialStroma",
+      "entryIDs": [
+        "cell-endometrial-stromal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_endometrial_stroma.xml"
+    },
+    {
+      "id": "atlas-detail-cell-mammary-luminal-cell",
+      "owner": "cell-mammary-luminal-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-6-lactation",
+      "viewKey": "atlas-detail-cell-mammary-luminal-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "mammary-luminal-apex",
+            "x": 0.5388888716697693,
+            "y": 0.4357142746448517
+          },
+          "title": "health_atlas_context_mammary_luminal_apex",
+          "explanation": "health_atlas_context_mammary_luminal_apex_detail"
+        },
+        {
+          "marker": {
+            "id": "mammary-myo-context",
+            "x": 0.4277777671813965,
+            "y": 0.7285714149475098
+          },
+          "title": "health_atlas_context_mammary_myo_context",
+          "explanation": "health_atlas_context_mammary_myo_context_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellMammaryLuminal",
+      "entryIDs": [
+        "cell-mammary-luminal-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_mammary_luminal.xml"
+    },
+    {
+      "id": "atlas-detail-cell-trophoblast",
+      "owner": "cell-trophoblast",
+      "viewLabel": "health_atlas_context_villus_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/28-2-embryonic-development",
+      "viewKey": "atlas-detail-cell-trophoblast",
+      "selectorLabel": "health_atlas_context_villus_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "trophoblast-syncytium",
+            "x": 0.5305555462837219,
+            "y": 0.28928571939468384
+          },
+          "title": "health_atlas_context_trophoblast_syncytium",
+          "explanation": "health_atlas_context_trophoblast_syncytium_detail"
+        },
+        {
+          "marker": {
+            "id": "trophoblast-villus",
+            "x": 0.5305555462837219,
+            "y": 0.5571428537368774
+          },
+          "title": "health_atlas_context_trophoblast_villus",
+          "explanation": "health_atlas_context_trophoblast_villus_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellTrophoblast",
+      "entryIDs": [
+        "cell-trophoblast"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_trophoblast.xml"
+    },
+    {
+      "id": "atlas-detail-cell-langerhans-cell",
+      "owner": "cell-langerhans-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/23246038/",
+      "viewKey": "atlas-detail-cell-langerhans-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "langerhans-dendrite",
+            "x": 0.5944444537162781,
+            "y": 0.3678571283817291
+          },
+          "title": "health_atlas_context_langerhans_dendrite",
+          "explanation": "health_atlas_context_langerhans_dendrite_detail"
+        },
+        {
+          "marker": {
+            "id": "langerhans-body",
+            "x": 0.47777777910232544,
+            "y": 0.5357142686843872
+          },
+          "title": "health_atlas_context_langerhans_body",
+          "explanation": "health_atlas_context_langerhans_body_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellLangerhans",
+      "entryIDs": [
+        "cell-langerhans-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_langerhans.xml"
+    },
+    {
+      "id": "atlas-detail-cell-sebocyte",
+      "owner": "cell-sebocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "viewKey": "atlas-detail-cell-sebocyte",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "sebocyte-lipid",
+            "x": 0.4555555582046509,
+            "y": 0.5107142925262451
+          },
+          "title": "health_atlas_context_sebocyte_lipid",
+          "explanation": "health_atlas_context_sebocyte_lipid_detail"
+        },
+        {
+          "marker": {
+            "id": "sebocyte-duct",
+            "x": 0.6333333253860474,
+            "y": 0.5392857193946838
+          },
+          "title": "health_atlas_context_sebocyte_duct",
+          "explanation": "health_atlas_context_sebocyte_duct_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSebocyte",
+      "entryIDs": [
+        "cell-sebocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sebocyte.xml"
+    },
+    {
+      "id": "atlas-detail-cell-sweat-gland-secretory-cell",
+      "owner": "cell-sweat-gland-secretory-cell",
+      "viewLabel": "health_atlas_context_eccrine_section_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "viewKey": "atlas-detail-cell-sweat-gland-secretory-cell",
+      "selectorLabel": "health_atlas_context_eccrine_section_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "eccrine-secretory-apex",
+            "x": 0.4888888895511627,
+            "y": 0.41428571939468384
+          },
+          "title": "health_atlas_context_eccrine_secretory_apex",
+          "explanation": "health_atlas_context_eccrine_secretory_apex_detail"
+        },
+        {
+          "marker": {
+            "id": "eccrine-lumen",
+            "x": 0.49444442987442017,
+            "y": 0.5178571343421936
+          },
+          "title": "health_atlas_context_eccrine_lumen",
+          "explanation": "health_atlas_context_eccrine_lumen_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSweatSecretory",
+      "entryIDs": [
+        "cell-sweat-gland-secretory-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sweat_secretory.xml"
+    },
+    {
+      "id": "atlas-detail-cell-hair-matrix-cell",
+      "owner": "cell-hair-matrix-cell",
+      "viewLabel": "health_atlas_context_hair_bulb_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "viewKey": "atlas-detail-cell-hair-matrix-cell",
+      "selectorLabel": "health_atlas_context_hair_bulb_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "hair-matrix-bulb",
+            "x": 0.39444443583488464,
+            "y": 0.5928571224212646
+          },
+          "title": "health_atlas_context_hair_matrix_bulb",
+          "explanation": "health_atlas_context_hair_matrix_bulb_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-papilla-neighbor",
+            "x": 0.5027777552604675,
+            "y": 0.7785714268684387
+          },
+          "title": "health_atlas_context_hair_papilla_neighbor",
+          "explanation": "health_atlas_context_hair_papilla_neighbor_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellHairMatrix",
+      "entryIDs": [
+        "cell-hair-matrix-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hair_matrix.xml"
+    },
+    {
+      "id": "atlas-detail-cell-muscle-satellite-cell",
+      "owner": "cell-muscle-satellite-cell",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-9-development-and-regeneration-of-muscle-tissue",
+      "viewKey": "atlas-detail-cell-muscle-satellite-cell",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "muscle-satellite-body",
+            "x": 0.5083333253860474,
+            "y": 0.4000000059604645
+          },
+          "title": "health_atlas_context_muscle_satellite_body",
+          "explanation": "health_atlas_context_muscle_satellite_body_detail"
+        },
+        {
+          "marker": {
+            "id": "muscle-satellite-fiber",
+            "x": 0.5944444537162781,
+            "y": 0.5714285969734192
+          },
+          "title": "health_atlas_context_muscle_satellite_fiber",
+          "explanation": "health_atlas_context_muscle_satellite_fiber_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellMuscleSatellite",
+      "entryIDs": [
+        "cell-muscle-satellite-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_muscle_satellite.xml"
+    },
+    {
+      "id": "atlas-detail-cell-tenocyte",
+      "owner": "cell-tenocyte",
+      "viewLabel": "health_atlas_cell_morphology",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/24571576/",
+      "viewKey": "atlas-detail-cell-tenocyte",
+      "selectorLabel": "health_atlas_cell_morphology",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "tenocyte-nucleus",
+            "x": 0.47777777910232544,
+            "y": 0.5178571343421936
+          },
+          "title": "health_atlas_context_tenocyte_nucleus",
+          "explanation": "health_atlas_context_tenocyte_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "tenocyte-collagen",
+            "x": 0.6277777552604675,
+            "y": 0.30000001192092896
+          },
+          "title": "health_atlas_context_tenocyte_collagen",
+          "explanation": "health_atlas_context_tenocyte_collagen_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellTenocyte",
+      "entryIDs": [
+        "cell-tenocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_tenocyte.xml"
+    },
+    {
+      "id": "atlas-detail-sweat-glands",
+      "owner": "sweat-glands",
+      "viewLabel": "health_atlas_context_sweat_gland_view",
+      "markers": [
+        {
+          "id": "cell-sweat-gland-secretory-cell",
+          "x": 0.5,
+          "y": 0.800000011920929
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "viewKey": "atlas-detail-sweat-glands",
+      "selectorLabel": "health_atlas_context_sweat_gland_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "sweat-duct",
+            "x": 0.4833333194255829,
+            "y": 0.5214285850524902
+          },
+          "title": "health_atlas_context_sweat_duct",
+          "explanation": "health_atlas_context_sweat_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "sweat-pore",
+            "x": 0.48055556416511536,
+            "y": 0.22142857313156128
+          },
+          "title": "health_atlas_context_sweat_pore",
+          "explanation": "health_atlas_context_sweat_pore_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellSweatGlandSection",
+      "entryIDs": [
+        "sweat-glands",
+        "cell-sweat-gland-secretory-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_sweat_gland_section.xml"
+    },
+    {
+      "id": "atlas-detail-hair-follicles",
+      "owner": "hair-follicles",
+      "viewLabel": "health_atlas_context_hair_follicle_view",
+      "markers": [
+        {
+          "id": "cell-hair-matrix-cell",
+          "x": 0.42500001192092896,
+          "y": 0.7142857313156128
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin",
+      "viewKey": "atlas-detail-hair-follicles",
+      "selectorLabel": "health_atlas_context_hair_follicle_view",
+      "splitCallouts": false,
+      "features": [
+        {
+          "marker": {
+            "id": "hair-section-shaft",
+            "x": 0.5138888955116272,
+            "y": 0.17499999701976776
+          },
+          "title": "health_atlas_context_hair_section_shaft",
+          "explanation": "health_atlas_context_hair_section_shaft_detail"
+        },
+        {
+          "marker": {
+            "id": "hair-section-papilla",
+            "x": 0.4972222149372101,
+            "y": 0.7857142686843872
+          },
+          "title": "health_atlas_context_hair_section_papilla",
+          "explanation": "health_atlas_context_hair_section_papilla_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalCellHairFollicleSection",
+      "entryIDs": [
+        "hair-follicles",
+        "cell-hair-matrix-cell"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_cell_hair_follicle_section.xml"
+    },
+    {
+      "id": "atlas-detail-nails",
+      "owner": "nails",
+      "viewLabel": "health_atlas_context_nail_section",
+      "markers": [],
+      "source": "https://doi.org/10.1002/ar.22660",
+      "viewKey": "atlas-detail-nails",
+      "selectorLabel": "health_atlas_context_nail_section",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "nail-fold",
+            "x": 0.3333333432674408,
+            "y": 0.26428571343421936
+          },
+          "title": "health_atlas_nail_story_label_fold",
+          "explanation": "health_atlas_context_nail_fold_detail"
+        },
+        {
+          "marker": {
+            "id": "nail-matrix",
+            "x": 0.3305555582046509,
+            "y": 0.41428571939468384
+          },
+          "title": "health_atlas_nail_story_label_matrix",
+          "explanation": "health_atlas_context_nail_matrix_detail"
+        },
+        {
+          "marker": {
+            "id": "nail-plate",
+            "x": 0.5638889074325562,
+            "y": 0.3035714328289032
+          },
+          "title": "health_atlas_nail_story_label_plate",
+          "explanation": "health_atlas_context_nail_plate_detail"
+        },
+        {
+          "marker": {
+            "id": "nail-bed",
+            "x": 0.6694444417953491,
+            "y": 0.34285715222358704
+          },
+          "title": "health_atlas_nail_story_label_bed",
+          "explanation": "health_atlas_context_nail_bed_detail"
+        },
+        {
+          "marker": {
+            "id": "nail-free-edge",
+            "x": 0.8388888835906982,
+            "y": 0.3464285731315613
+          },
+          "title": "health_atlas_nail_story_label_edge",
+          "explanation": "health_atlas_context_nail_edge_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalNailSection",
+      "entryIDs": [
+        "nails"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_nail_section.xml"
+    },
+    {
+      "id": "atlas-detail-sebaceous-glands",
+      "owner": "sebaceous-glands",
+      "viewLabel": "health_atlas_context_sebaceous_section",
+      "markers": [
+        {
+          "id": "hair-follicles",
+          "x": 0.3583333194255829,
+          "y": 0.6035714149475098
+        },
+        {
+          "id": "cell-sebocyte",
+          "x": 0.6666666865348816,
+          "y": 0.5607143044471741
+        }
+      ],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/38542083/",
+      "viewKey": "atlas-detail-sebaceous-glands",
+      "selectorLabel": "health_atlas_context_sebaceous_section",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "sebaceous-duct",
+            "x": 0.4416666626930237,
+            "y": 0.43214285373687744
+          },
+          "title": "health_atlas_sebaceous_duct",
+          "explanation": "health_atlas_context_sebaceous_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "sebaceous-lobules",
+            "x": 0.6416666507720947,
+            "y": 0.4035714268684387
+          },
+          "title": "health_atlas_context_sebaceous_lobules",
+          "explanation": "health_atlas_context_sebaceous_lobules_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalSebaceousSection",
+      "entryIDs": [
+        "sebaceous-glands",
+        "hair-follicles",
+        "cell-sebocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_sebaceous_section.xml"
+    },
+    {
+      "id": "vulva-fold-region",
+      "owner": "vulva",
+      "viewLabel": "health_atlas_vulvar_protection_region_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/biology/pages/43-3-human-reproductive-anatomy-and-gametogenesis",
+      "viewKey": "vulva-fold-region",
+      "selectorLabel": "health_atlas_vulvar_protection_region_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "vulva-outer-boundary",
+            "x": 0.2916666567325592,
+            "y": 0.27142858505249023
+          },
+          "title": "health_atlas_vulvar_protection_outer_boundary",
+          "explanation": "health_atlas_vulvar_protection_outer_boundary_detail"
+        },
+        {
+          "marker": {
+            "id": "vulva-outer-folds",
+            "x": 0.36944442987442017,
+            "y": 0.44999998807907104
+          },
+          "title": "health_atlas_vulvar_protection_outer_folds",
+          "explanation": "health_atlas_vulvar_protection_outer_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "vulva-inner-folds",
+            "x": 0.5722222328186035,
+            "y": 0.42500001192092896
+          },
+          "title": "health_atlas_vulvar_protection_inner_folds",
+          "explanation": "health_atlas_vulvar_protection_inner_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "vulva-vestibule",
+            "x": 0.5,
+            "y": 0.5428571701049805
+          },
+          "title": "health_atlas_vulvar_protection_vestibule",
+          "explanation": "health_atlas_vulvar_protection_vestibule_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalVulvarProtectionRegion",
+      "entryIDs": [
+        "vulva"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_vulvar_protection_region.xml"
+    },
+    {
+      "id": "labia-majora-transverse-section",
+      "owner": "labia-majora",
+      "viewLabel": "health_atlas_vulvar_protection_outer_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/biology/pages/43-3-human-reproductive-anatomy-and-gametogenesis",
+      "viewKey": "labia-majora-transverse-section",
+      "selectorLabel": "health_atlas_vulvar_protection_outer_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "labia-majora-skin-surface",
+            "x": 0.31388887763023376,
+            "y": 0.2857142984867096
+          },
+          "title": "health_atlas_vulvar_protection_skin_surface",
+          "explanation": "health_atlas_vulvar_protection_skin_surface_detail"
+        },
+        {
+          "marker": {
+            "id": "labia-majora-fatty-tissue",
+            "x": 0.2805555462837219,
+            "y": 0.5392857193946838
+          },
+          "title": "health_atlas_vulvar_protection_fatty_cushion",
+          "explanation": "health_atlas_vulvar_protection_fatty_cushion_detail"
+        },
+        {
+          "marker": {
+            "id": "labia-majora-vestibule-surface",
+            "x": 0.5,
+            "y": 0.6785714030265808
+          },
+          "title": "health_atlas_vulvar_protection_vestibule_floor",
+          "explanation": "health_atlas_vulvar_protection_vestibule_floor_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalVulvarProtectionOuterSection",
+      "entryIDs": [
+        "labia-majora"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_vulvar_protection_outer_section.xml"
+    },
+    {
+      "id": "labia-minora-vestibule-closeup",
+      "owner": "labia-minora",
+      "viewLabel": "health_atlas_vulvar_protection_inner_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/biology/pages/43-3-human-reproductive-anatomy-and-gametogenesis",
+      "viewKey": "labia-minora-vestibule-closeup",
+      "selectorLabel": "health_atlas_vulvar_protection_inner_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "labia-minora-fold-body",
+            "x": 0.375,
+            "y": 0.4571428596973419
+          },
+          "title": "health_atlas_vulvar_protection_inner_folds",
+          "explanation": "health_atlas_vulvar_protection_inner_folds_detail"
+        },
+        {
+          "marker": {
+            "id": "labia-minora-medial-margin",
+            "x": 0.5805555582046509,
+            "y": 0.4714285731315613
+          },
+          "title": "health_atlas_vulvar_protection_inner_margin",
+          "explanation": "health_atlas_vulvar_protection_inner_margin_detail"
+        },
+        {
+          "marker": {
+            "id": "labia-minora-vestibule",
+            "x": 0.5027777552604675,
+            "y": 0.5464285612106323
+          },
+          "title": "health_atlas_vulvar_protection_vestibule",
+          "explanation": "health_atlas_vulvar_protection_vestibule_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalVulvarProtectionInnerCloseup",
+      "entryIDs": [
+        "labia-minora"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_vulvar_protection_inner_closeup.xml"
+    },
+    {
+      "id": "uterine-wall-cutaway",
+      "owner": "uterus",
+      "viewLabel": "health_atlas_uterocervical_uterus_view",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-2-anatomy-and-physiology-of-the-ovarian-reproductive-system",
+      "viewKey": "uterine-wall-cutaway",
+      "selectorLabel": null,
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "uterine-perimetrium",
+            "x": 0.2916666567325592,
+            "y": 0.2142857164144516
+          },
+          "title": "health_atlas_uterocervical_perimetrium",
+          "explanation": "health_atlas_uterocervical_perimetrium_detail"
+        },
+        {
+          "marker": {
+            "id": "uterine-myometrium",
+            "x": 0.6611111164093018,
+            "y": 0.44285714626312256
+          },
+          "title": "health_atlas_uterocervical_myometrium",
+          "explanation": "health_atlas_uterocervical_myometrium_detail"
+        },
+        {
+          "marker": {
+            "id": "uterine-endometrium",
+            "x": 0.38333332538604736,
+            "y": 0.4107142984867096
+          },
+          "title": "health_atlas_uterocervical_endometrium",
+          "explanation": "health_atlas_uterocervical_endometrium_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalUterocervicalUterineWall",
+      "entryIDs": [
+        "uterus"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_uterocervical_uterine_wall.xml"
+    },
+    {
+      "id": "cervical-canal-cutaway",
+      "owner": "cervix",
+      "viewLabel": "health_atlas_uterocervical_cervix_view",
+      "markers": [],
+      "source": "https://training.seer.cancer.gov/cervical-uterine/anatomy/",
+      "viewKey": "cervical-canal-cutaway",
+      "selectorLabel": null,
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "cervical-internal-os",
+            "x": 0.4861111044883728,
+            "y": 0.2857142984867096
+          },
+          "title": "health_atlas_uterocervical_internal_os",
+          "explanation": "health_atlas_uterocervical_internal_os_detail"
+        },
+        {
+          "marker": {
+            "id": "cervical-canal",
+            "x": 0.5083333253860474,
+            "y": 0.5
+          },
+          "title": "health_atlas_uterocervical_canal",
+          "explanation": "health_atlas_uterocervical_canal_detail"
+        },
+        {
+          "marker": {
+            "id": "cervical-external-os",
+            "x": 0.5027777552604675,
+            "y": 0.7214285731315613
+          },
+          "title": "health_atlas_uterocervical_external_os",
+          "explanation": "health_atlas_uterocervical_external_os_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalUterocervicalCervicalCanal",
+      "entryIDs": [
+        "cervix"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_uterocervical_cervical_canal.xml"
+    },
+    {
+      "id": "bulbourethral-glands-section",
+      "owner": "bulbourethral-glands",
+      "viewLabel": "health_atlas_bulbourethral_glands_plate_caption",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8373982/",
+      "viewKey": "bulbourethral-glands-section",
+      "selectorLabel": "health_atlas_bulbourethral_glands_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "bulbourethral-plate-prostate",
+            "x": 0.39722222089767456,
+            "y": 0.25357142090797424
+          },
+          "title": "health_atlas_accessory_gland_routing_prostate",
+          "explanation": "health_atlas_bulbourethral_glands_plate_prostate_detail"
+        },
+        {
+          "marker": {
+            "id": "bulbourethral-plate-membranous-urethra",
+            "x": 0.5138888955116272,
+            "y": 0.47857141494750977
+          },
+          "title": "health_atlas_accessory_gland_routing_label_membranous",
+          "explanation": "health_atlas_bulbourethral_glands_plate_membranous_detail"
+        },
+        {
+          "marker": {
+            "id": "bulbourethral-plate-gland",
+            "x": 0.3916666805744171,
+            "y": 0.44999998807907104
+          },
+          "title": "health_atlas_accessory_gland_routing_bulbourethral",
+          "explanation": "health_atlas_bulbourethral_glands_plate_gland_detail"
+        },
+        {
+          "marker": {
+            "id": "bulbourethral-plate-duct",
+            "x": 0.5361111164093018,
+            "y": 0.7428571581840515
+          },
+          "title": "health_atlas_accessory_gland_routing_label_long_duct",
+          "explanation": "health_atlas_bulbourethral_glands_plate_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "bulbourethral-plate-proximal-spongy-urethra",
+            "x": 0.6888889074325562,
+            "y": 0.699999988079071
+          },
+          "title": "health_atlas_bulbourethral_glands_plate_destination",
+          "explanation": "health_atlas_bulbourethral_glands_plate_destination_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalBulbourethralGlandsPlate",
+      "entryIDs": [
+        "bulbourethral-glands"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_bulbourethral_glands_plate.xml"
+    },
+    {
+      "id": "penile-urinary-section",
+      "owner": "penis",
+      "viewLabel": "health_atlas_penile_urinary_plate_caption",
+      "markers": [
+        {
+          "id": "bladder",
+          "x": 0.18611110746860504,
+          "y": 0.574999988079071
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "viewKey": "penile-urinary-section",
+      "selectorLabel": "health_atlas_penile_urinary_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "penile-corpora-cavernosa",
+            "x": 0.5916666388511658,
+            "y": 0.2321428507566452
+          },
+          "title": "health_atlas_penile_urinary_cavernosa",
+          "explanation": "health_atlas_penile_urinary_cavernosa_detail"
+        },
+        {
+          "marker": {
+            "id": "penile-corpus-spongiosum",
+            "x": 0.45277777314186096,
+            "y": 0.4000000059604645
+          },
+          "title": "health_atlas_penile_urinary_spongiosum",
+          "explanation": "health_atlas_penile_urinary_spongiosum_detail"
+        },
+        {
+          "marker": {
+            "id": "penile-spongy-urethra",
+            "x": 0.5027777552604675,
+            "y": 0.40714284777641296
+          },
+          "title": "health_atlas_penile_urinary_spongy",
+          "explanation": "health_atlas_penile_urinary_spongy_detail"
+        },
+        {
+          "marker": {
+            "id": "penile-external-meatus",
+            "x": 0.9027777910232544,
+            "y": 0.8142856955528259
+          },
+          "title": "health_atlas_penile_urinary_meatus",
+          "explanation": "health_atlas_penile_urinary_meatus_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalPenileUrinaryPlate",
+      "entryIDs": [
+        "penis",
+        "bladder"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_penile_urinary_plate.xml"
+    },
+    {
+      "id": "scrotal-heat-exchange-section",
+      "owner": "scrotum",
+      "viewLabel": "health_atlas_scrotal_heat_plate_caption",
+      "markers": [
+        {
+          "id": "testes",
+          "x": 0.21944443881511688,
+          "y": 0.6035714149475098
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/27-1-anatomy-and-physiology-of-the-testicular-reproductive-system",
+      "viewKey": "scrotal-heat-exchange-section",
+      "selectorLabel": "health_atlas_scrotal_heat_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "scrotal-dartos",
+            "x": 0.08055555820465088,
+            "y": 0.6892856955528259
+          },
+          "title": "health_atlas_scrotal_heat_dartos",
+          "explanation": "health_atlas_scrotal_heat_dartos_detail"
+        },
+        {
+          "marker": {
+            "id": "scrotal-tunica-vaginalis",
+            "x": 0.4694444537162781,
+            "y": 0.6178571581840515
+          },
+          "title": "health_atlas_scrotal_heat_tunica",
+          "explanation": "health_atlas_scrotal_heat_tunica_detail"
+        },
+        {
+          "marker": {
+            "id": "scrotal-spermatic-cord",
+            "x": 0.6361111402511597,
+            "y": 0.3321428596973419
+          },
+          "title": "health_atlas_scrotal_heat_cord",
+          "explanation": "health_atlas_scrotal_heat_cord_detail"
+        },
+        {
+          "marker": {
+            "id": "scrotal-pampiniform-plexus",
+            "x": 0.8388888835906982,
+            "y": 0.5214285850524902
+          },
+          "title": "health_atlas_scrotal_heat_plexus",
+          "explanation": "health_atlas_scrotal_heat_plexus_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalScrotalHeatPlate",
+      "entryIDs": [
+        "scrotum",
+        "testes"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_scrotal_heat_plate.xml"
+    },
+    {
+      "id": "skull-vault-section",
+      "owner": "skull",
+      "viewLabel": "health_atlas_skull_protection_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/13-3-circulation-and-the-central-nervous-system",
+      "viewKey": "skull-vault-section",
+      "selectorLabel": "health_atlas_skull_protection_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "skull-vault-outer-table",
+            "x": 0.2777777910232544,
+            "y": 0.30714285373687744
+          },
+          "title": "health_atlas_skull_protection_art_outer",
+          "explanation": "health_atlas_skull_protection_plate_outer"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-diploe",
+            "x": 0.5,
+            "y": 0.28928571939468384
+          },
+          "title": "health_atlas_skull_protection_art_diploe",
+          "explanation": "health_atlas_skull_protection_plate_diploe"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-inner-table",
+            "x": 0.7055555582046509,
+            "y": 0.375
+          },
+          "title": "health_atlas_skull_protection_art_inner",
+          "explanation": "health_atlas_skull_protection_plate_inner"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-dura",
+            "x": 0.17777778208255768,
+            "y": 0.4535714387893677
+          },
+          "title": "health_atlas_skull_protection_art_dura",
+          "explanation": "health_atlas_skull_protection_plate_dura"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-arachnoid",
+            "x": 0.7749999761581421,
+            "y": 0.4392857253551483
+          },
+          "title": "health_atlas_skull_protection_art_arachnoid",
+          "explanation": "health_atlas_skull_protection_plate_arachnoid"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-pia",
+            "x": 0.18611110746860504,
+            "y": 0.5535714030265808
+          },
+          "title": "health_atlas_skull_protection_art_pia",
+          "explanation": "health_atlas_skull_protection_plate_pia"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-csf",
+            "x": 0.800000011920929,
+            "y": 0.48571428656578064
+          },
+          "title": "health_atlas_skull_protection_art_csf",
+          "explanation": "health_atlas_skull_protection_plate_csf"
+        },
+        {
+          "marker": {
+            "id": "skull-vault-cortex",
+            "x": 0.4305555522441864,
+            "y": 0.5964285731315613
+          },
+          "title": "health_atlas_skull_protection_art_brain",
+          "explanation": "health_atlas_skull_protection_plate_brain"
+        }
+      ],
+      "asset": "HealthAtlasRegionalSkullVaultSection",
+      "entryIDs": [
+        "skull"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_skull_vault_section.xml"
+    },
+    {
+      "id": "lumbar-motion-segment-section",
+      "owner": "vertebrae",
+      "viewLabel": "health_atlas_vertebral_motion_plate_caption",
+      "markers": [],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/7-3-the-vertebral-column",
+      "viewKey": "lumbar-motion-segment-section",
+      "selectorLabel": "health_atlas_vertebral_motion_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "lumbar-segment-body",
+            "x": 0.3194444477558136,
+            "y": 0.3464285731315613
+          },
+          "title": "health_atlas_vertebral_motion_art_body",
+          "explanation": "health_atlas_vertebral_motion_plate_body"
+        },
+        {
+          "marker": {
+            "id": "lumbar-segment-annulus",
+            "x": 0.22777777910232544,
+            "y": 0.5428571701049805
+          },
+          "title": "health_atlas_vertebral_motion_plate_annulus_title",
+          "explanation": "health_atlas_vertebral_motion_plate_annulus"
+        },
+        {
+          "marker": {
+            "id": "lumbar-segment-nucleus",
+            "x": 0.32777777314186096,
+            "y": 0.5392857193946838
+          },
+          "title": "health_atlas_vertebral_motion_plate_nucleus_title",
+          "explanation": "health_atlas_vertebral_motion_plate_nucleus"
+        },
+        {
+          "marker": {
+            "id": "lumbar-segment-pedicle",
+            "x": 0.5222222208976746,
+            "y": 0.34285715222358704
+          },
+          "title": "health_atlas_vertebral_motion_plate_pedicle_title",
+          "explanation": "health_atlas_vertebral_motion_plate_pedicle"
+        },
+        {
+          "marker": {
+            "id": "lumbar-segment-facet",
+            "x": 0.644444465637207,
+            "y": 0.574999988079071
+          },
+          "title": "health_atlas_vertebral_motion_art_facet",
+          "explanation": "health_atlas_vertebral_motion_plate_facet"
+        },
+        {
+          "marker": {
+            "id": "lumbar-segment-spinous",
+            "x": 0.7777777910232544,
+            "y": 0.3392857015132904
+          },
+          "title": "health_atlas_vertebral_motion_plate_spinous_title",
+          "explanation": "health_atlas_vertebral_motion_plate_spinous"
+        }
+      ],
+      "asset": "HealthAtlasRegionalLumbarMotionSegmentSection",
+      "entryIDs": [
+        "vertebrae"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_lumbar_motion_segment_section.xml"
+    },
+    {
+      "id": "clitoral-cutaway",
+      "owner": "clitoris",
+      "viewLabel": "health_atlas_clitoral_sensory_cutaway",
+      "markers": [],
+      "source": "https://pubmed.ncbi.nlm.nih.gov/15879834/",
+      "viewKey": "clitoral-cutaway",
+      "selectorLabel": null,
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "clitoral-body",
+            "x": 0.4888888895511627,
+            "y": 0.2964285612106323
+          },
+          "title": "health_atlas_clitoral_sensory_body",
+          "explanation": "health_atlas_clitoral_sensory_body_detail"
+        },
+        {
+          "marker": {
+            "id": "clitoral-glans",
+            "x": 0.5027777552604675,
+            "y": 0.4285714328289032
+          },
+          "title": "health_atlas_clitoral_sensory_glans",
+          "explanation": "health_atlas_clitoral_sensory_glans_detail"
+        },
+        {
+          "marker": {
+            "id": "clitoral-crura",
+            "x": 0.2888889014720917,
+            "y": 0.6214285492897034
+          },
+          "title": "health_atlas_clitoral_sensory_crura",
+          "explanation": "health_atlas_clitoral_sensory_crura_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-bulbs",
+            "x": 0.5972222089767456,
+            "y": 0.6678571701049805
+          },
+          "title": "health_atlas_clitoral_sensory_bulbs",
+          "explanation": "health_atlas_clitoral_sensory_bulbs_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalClitoralCutaway",
+      "entryIDs": [
+        "clitoris"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_clitoral_cutaway.xml"
+    },
+    {
+      "id": "greater-vestibular-gland-ducts",
+      "owner": "greater-vestibular-glands",
+      "viewLabel": "health_atlas_vestibular_gland_map",
+      "markers": [],
+      "source": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9544139/",
+      "viewKey": "greater-vestibular-gland-ducts",
+      "selectorLabel": null,
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "vestibular-urethral-opening",
+            "x": 0.5,
+            "y": 0.2928571403026581
+          },
+          "title": "health_atlas_vestibular_gland_urethral",
+          "explanation": "health_atlas_vestibular_gland_urethral_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-glands-paired",
+            "x": 0.2611111104488373,
+            "y": 0.6964285969734192
+          },
+          "title": "health_atlas_vestibular_gland_pair",
+          "explanation": "health_atlas_vestibular_gland_pair_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-gland-duct",
+            "x": 0.6777777671813965,
+            "y": 0.6714285612106323
+          },
+          "title": "health_atlas_vestibular_gland_duct",
+          "explanation": "health_atlas_vestibular_gland_duct_detail"
+        },
+        {
+          "marker": {
+            "id": "vestibular-gland-outlet",
+            "x": 0.4055555462837219,
+            "y": 0.6178571581840515
+          },
+          "title": "health_atlas_vestibular_gland_pores",
+          "explanation": "health_atlas_vestibular_gland_pores_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalGreaterVestibularGlandDucts",
+      "entryIDs": [
+        "greater-vestibular-glands"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_greater_vestibular_gland_ducts.xml"
+    },
+    {
+      "id": "pectoralis-major-cutaway",
+      "owner": "pectoralis-major",
+      "viewLabel": "health_atlas_pectoral_plate_caption",
+      "markers": [],
+      "source": "https://rad.washington.edu/muscle-atlas/pectoralis-major/",
+      "viewKey": "pectoralis-major-cutaway",
+      "selectorLabel": "health_atlas_pectoral_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "pectoral-clavicular-part",
+            "x": 0.48055556416511536,
+            "y": 0.32499998807907104
+          },
+          "title": "health_atlas_pectoral_plate_clavicular",
+          "explanation": "health_atlas_pectoral_plate_clavicular_detail"
+        },
+        {
+          "marker": {
+            "id": "pectoral-sternocostal-part",
+            "x": 0.5416666865348816,
+            "y": 0.5357142686843872
+          },
+          "title": "health_atlas_pectoral_plate_sternocostal",
+          "explanation": "health_atlas_pectoral_plate_sternocostal_detail"
+        },
+        {
+          "marker": {
+            "id": "pectoral-rib-cartilage",
+            "x": 0.3083333373069763,
+            "y": 0.5607143044471741
+          },
+          "title": "health_atlas_pectoral_plate_cartilage",
+          "explanation": "health_atlas_pectoral_plate_cartilage_detail"
+        },
+        {
+          "marker": {
+            "id": "pectoral-humeral-tendon",
+            "x": 0.7416666746139526,
+            "y": 0.4214285612106323
+          },
+          "title": "health_atlas_pectoral_plate_humeral_tendon",
+          "explanation": "health_atlas_pectoral_plate_humeral_tendon_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalPectoralActionCutaway",
+      "entryIDs": [
+        "pectoralis-major"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_pectoral_action_cutaway.xml"
+    },
+    {
+      "id": "latissimus-dorsi-cutaway",
+      "owner": "latissimus-dorsi",
+      "viewLabel": "health_atlas_latissimus_plate_caption",
+      "markers": [],
+      "source": "https://rad.washington.edu/muscle-atlas/latissimus-dorsi/",
+      "viewKey": "latissimus-dorsi-cutaway",
+      "selectorLabel": "health_atlas_latissimus_plate_title",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "latissimus-thoracolumbar-fascia",
+            "x": 0.38055557012557983,
+            "y": 0.7214285731315613
+          },
+          "title": "health_atlas_latissimus_plate_fascia",
+          "explanation": "health_atlas_latissimus_plate_fascia_detail"
+        },
+        {
+          "marker": {
+            "id": "latissimus-iliac-crest",
+            "x": 0.2944444417953491,
+            "y": 0.8642857074737549
+          },
+          "title": "health_atlas_latissimus_plate_crest",
+          "explanation": "health_atlas_latissimus_plate_crest_detail"
+        },
+        {
+          "marker": {
+            "id": "latissimus-muscle-sheet",
+            "x": 0.5416666865348816,
+            "y": 0.6357142925262451
+          },
+          "title": "health_atlas_latissimus_plate_sheet",
+          "explanation": "health_atlas_latissimus_plate_sheet_detail"
+        },
+        {
+          "marker": {
+            "id": "latissimus-humeral-tendon",
+            "x": 0.7277777791023254,
+            "y": 0.37857142090797424
+          },
+          "title": "health_atlas_latissimus_plate_humeral_tendon",
+          "explanation": "health_atlas_latissimus_plate_humeral_tendon_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalLatissimusActionCutaway",
+      "entryIDs": [
+        "latissimus-dorsi"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_latissimus_action_cutaway.xml"
+    },
+    {
+      "id": "pelvic-ring-and-hips",
+      "owner": "pelvis",
+      "viewLabel": "health_atlas_pelvic_ring_view",
+      "markers": [
+        {
+          "id": "vertebrae",
+          "x": 0.5,
+          "y": 0.11071428656578064
+        },
+        {
+          "id": "femur",
+          "x": 0.16944444179534912,
+          "y": 0.8428571224212646
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/8-3-the-pelvic-girdle-and-pelvis",
+      "viewKey": "pelvic-ring-and-hips",
+      "selectorLabel": "health_atlas_pelvic_ring_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "pelvic-ring-sacrum",
+            "x": 0.5,
+            "y": 0.3107142746448517
+          },
+          "title": "health_atlas_pelvic_ring_sacrum",
+          "explanation": "health_atlas_pelvic_ring_sacrum_detail"
+        },
+        {
+          "marker": {
+            "id": "pelvic-ring-sacroiliac",
+            "x": 0.41111111640930176,
+            "y": 0.2678571343421936
+          },
+          "title": "health_atlas_pelvic_ring_joint",
+          "explanation": "health_atlas_pelvic_ring_joint_detail"
+        },
+        {
+          "marker": {
+            "id": "pelvic-ring-acetabulum",
+            "x": 0.7583333253860474,
+            "y": 0.5
+          },
+          "title": "health_atlas_pelvic_ring_socket",
+          "explanation": "health_atlas_pelvic_ring_socket_detail"
+        },
+        {
+          "marker": {
+            "id": "pelvic-ring-symphysis",
+            "x": 0.5,
+            "y": 0.6678571701049805
+          },
+          "title": "health_atlas_pelvic_ring_symphysis",
+          "explanation": "health_atlas_pelvic_ring_symphysis_detail"
+        }
+      ],
+      "asset": "HealthAtlasCompletePelvicRing",
+      "entryIDs": [
+        "pelvis",
+        "vertebrae",
+        "femur"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_pelvic_ring.xml"
+    },
+    {
+      "id": "subcutaneous-lobular-section",
+      "owner": "subcutaneous-tissue",
+      "viewLabel": "health_atlas_subcutaneous_view",
+      "markers": [
+        {
+          "id": "epidermis",
+          "x": 0.19166666269302368,
+          "y": 0.20714285969734192
+        },
+        {
+          "id": "dermis",
+          "x": 0.7722222208976746,
+          "y": 0.3214285671710968
+        },
+        {
+          "id": "cell-adipocyte",
+          "x": 0.6972222328186035,
+          "y": 0.5607143044471741
+        }
+      ],
+      "source": "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-1-layers-of-the-skin",
+      "viewKey": "subcutaneous-lobular-section",
+      "selectorLabel": "health_atlas_subcutaneous_view",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "subcutaneous-lobule",
+            "x": 0.4472222328186035,
+            "y": 0.550000011920929
+          },
+          "title": "health_atlas_subcutaneous_lobule",
+          "explanation": "health_atlas_subcutaneous_lobule_detail"
+        },
+        {
+          "marker": {
+            "id": "subcutaneous-septum",
+            "x": 0.24722221493721008,
+            "y": 0.6178571581840515
+          },
+          "title": "health_atlas_subcutaneous_septa",
+          "explanation": "health_atlas_subcutaneous_septa_detail"
+        },
+        {
+          "marker": {
+            "id": "subcutaneous-deep-fascia",
+            "x": 0.7472222447395325,
+            "y": 0.8071428537368774
+          },
+          "title": "health_atlas_subcutaneous_fascia",
+          "explanation": "health_atlas_subcutaneous_fascia_detail"
+        }
+      ],
+      "asset": "HealthAtlasCompleteSubcutaneousSection",
+      "entryIDs": [
+        "subcutaneous-tissue",
+        "epidermis",
+        "dermis",
+        "cell-adipocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_subcutaneous_section.xml"
+    },
+    {
+      "id": "tenocyte-tendon-longitudinal",
+      "owner": "cell-tenocyte",
+      "viewLabel": "health_atlas_tenocyte_tendon_matrix_plate_caption",
+      "markers": [],
+      "source": "https://doi.org/10.1111/joa.12164",
+      "viewKey": "tenocyte-tendon-longitudinal",
+      "selectorLabel": "health_atlas_tenocyte_tendon_matrix_plate_selector",
+      "splitCallouts": true,
+      "features": [
+        {
+          "marker": {
+            "id": "tenocyte-tendon-matrix-nucleus",
+            "x": 0.25555557012557983,
+            "y": 0.37142857909202576
+          },
+          "title": "health_atlas_tenocyte_tendon_matrix_art_nucleus",
+          "explanation": "health_atlas_tenocyte_tendon_matrix_plate_nucleus_detail"
+        },
+        {
+          "marker": {
+            "id": "tenocyte-tendon-matrix-cell",
+            "x": 0.6527777910232544,
+            "y": 0.5285714268684387
+          },
+          "title": "health_atlas_tenocyte_tendon_matrix_plate_cell",
+          "explanation": "health_atlas_tenocyte_tendon_matrix_plate_cell_detail"
+        },
+        {
+          "marker": {
+            "id": "tenocyte-tendon-matrix-fibers",
+            "x": 0.7333333492279053,
+            "y": 0.6321428418159485
+          },
+          "title": "health_atlas_tenocyte_tendon_matrix_art_fibers",
+          "explanation": "health_atlas_tenocyte_tendon_matrix_plate_fibers_detail"
+        }
+      ],
+      "asset": "HealthAtlasRegionalTenocyteTendonMatrixLongitudinal",
+      "entryIDs": [
+        "cell-tenocyte"
+      ],
+      "aspectRatio": 1.2857142857142858,
+      "drawable": "apps/android/app/src/main/res/drawable/health_atlas_tenocyte_tendon_matrix_longitudinal.xml"
+    }
+  ]
+}

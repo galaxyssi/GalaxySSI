@@ -1,0 +1,879 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4388,
+    "mergeCommit": "6581110ec5c048edebf63821dee839b4818fe663"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-packaging-only": 1,
+    "android-test-reference-not-executed": 5,
+    "dedicated-native-course-renderer": 18,
+    "source-generated-shared-pituitary-geometry": 1,
+    "original-kotlin-catalogue-extraction": 10,
+    "source-matched-shared-crypt-wall": 1,
+    "shared-native-endocrine-drawing-primitives": 1,
+    "complete-catalogue-and-explicit-renderer-dispatch": 1,
+    "original-plate-declaration-extraction-and-runtime-routing": 2,
+    "four-native-immune-courses-and-shared-geometry": 1,
+    "bounded-models-and-material-diagrams": 4,
+    "dedicated-native-load-transfer-renderer": 2,
+    "source-vector-with-correct-quadratics-and-even-odd-holes": 2,
+    "bilingual-resource-delta": 18
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "b9e7977f3430d13be85a4c6616af624650709a8df84671ba3272ac7824314d07",
+      "kind": "android-packaging-only",
+      "ios": [],
+      "checks": [],
+      "note": "Android APK version bump is not an iOS feature; no version change or IPA generated here."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasFunctionStoryDeviceTest.kt",
+      "sourceSHA256": "84d1b81d7fbdb961302fb8bf4ec1d2071d449929c2627e11ee2c3eab3fdcd954",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs",
+        "check-atlas-load-transfer-models.cjs",
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ],
+      "note": "Platform test scaffolding is not copied. Source checks do not establish native rendering, screenshot, navigation, accessibility or persistence acceptance. No XCTest/device run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "031fb12822241f95211433ca9eb55b6a11a15e0d30dcb4d30691bbeb5e94d0ae",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs",
+        "check-atlas-load-transfer-models.cjs",
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ],
+      "note": "Platform test scaffolding is not copied. Source checks do not establish native rendering, screenshot, navigation, accessibility or persistence acceptance. No XCTest/device run performed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "sourceSHA256": "af57641047394051f906d98d8b3d042c977fd540fb23e530a9acc248d161fd2b",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs",
+        "check-atlas-load-transfer-models.cjs",
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ],
+      "note": "Platform test scaffolding is not copied. Source checks do not establish native rendering, screenshot, navigation, accessibility or persistence acceptance. No XCTest/device run performed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAdrenalCortexStoryView.kt",
+      "sourceSHA256": "6ff3ae3fad5701f7d7b0fae7d6d789c55dd8b47f35948a3d888614ff711e81cc",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasEndocrineZoneView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAdrenalCortexDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-endocrine-zone-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAnteriorPituitaryArt.kt",
+      "sourceSHA256": "dd483e12bcea4a10a29ee2364d19587db850235b1cfa06d4191bd1a3a334001a",
+      "kind": "source-generated-shared-pituitary-geometry",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAnteriorPituitaryGeometry.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAnteriorPituitaryDrawing.swift"
+      ],
+      "checks": [
+        "import-atlas-endocrine-geometry.cjs --pituitary --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasAnteriorPituitaryAssignments.kt",
+      "sourceSHA256": "ec019e51207e40f6970089964d9404f4b8627f47488a74793b918e078c9996a7",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCellLesson.kt",
+      "sourceSHA256": "e0b20b3b5a3699841dbecc8ae956d0d3bd8b2eae56372f32c5ea052b574daa89",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCorticotrophStoryView.kt",
+      "sourceSHA256": "223718bd9434f3e18085df6d34290f941f37c9f7d632128da5326563c3332f9f",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCorticotrophView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCorticotrophDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-corticotroph-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasCryptWallArt.kt",
+      "sourceSHA256": "0aeaa31be88a6f8145b77a4acc9ac95da452d4d4018e57a84b7d1cd02edd3998",
+      "kind": "source-matched-shared-crypt-wall",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptWallDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-paneth-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasDistalTubularStoryView.kt",
+      "sourceSHA256": "42d237f2fff3b5159e52e876a9264c5a736a42766c19b1eaeca1ca3c6b7d9ab1",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRenalCellLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDistalTubularDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-renal-cell-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndocrineCellAssignments.kt",
+      "sourceSHA256": "3fe4e8f455bd76dcc9a05a25cec4cfc08535a051ea5f199c88518be93237fa76",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndocrineCellStoryView.kt",
+      "sourceSHA256": "d2d4670d9c76bf96635d90421a77c11dc1295c0ce274174357d1947b968e2bde",
+      "kind": "shared-native-endocrine-drawing-primitives",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasIllustratedDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasAnteriorPituitaryDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-endocrine-zone-source.cjs",
+        "check-atlas-gonadal-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEnteroendocrineSignalStoryView.kt",
+      "sourceSHA256": "ac248e22bfd15148b1fbde291cc98f08d0e812d433d8b393c6fba3352f4f0665",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptSignalDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-crypt-lessons-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasFunctionStory.kt",
+      "sourceSHA256": "6ee5ef99d67fe01f5b157e57a20f61b31a87192ad3f40da4566693cf51a82f45",
+      "kind": "complete-catalogue-and-explicit-renderer-dispatch",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionPanel.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGonadalSupportAssignments.kt",
+      "sourceSHA256": "8579d5f469bf069562d891e8cd0d48e4369101a3ddb14c012cd02b6fd78c6c13",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGonadotrophStoryView.kt",
+      "sourceSHA256": "783f27fe40b467f57acda5d1a2f47a5397cda53657dacd320cb65982b14c4fb6",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasGonadotrophView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasGonadotrophDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-gonadotroph-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalEpithelialAssignments.kt",
+      "sourceSHA256": "c17c891a8563b240d87e4efc133846c602e1464a9638d789e07905f87704dfdd",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasIntestinalStemRenewalStoryView.kt",
+      "sourceSHA256": "3a25348a6edd760b2bb19b0f414c528abbc062ce6f9210cfe6906394278d1660",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptStemDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-crypt-lessons-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLactotrophStoryView.kt",
+      "sourceSHA256": "ab3b77c9f47a9f776ce9eec7cbeab8c86e8b84bdf83b84ffe66cc951892a6a1e",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLactotrophView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLactotrophDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-lactotroph-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLangerhansSentinelAssignment.kt",
+      "sourceSHA256": "4e8b7becc534e9bf3f3c5964925ae1297193b198dcdcecdf64b581f5021ac935",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLangerhansSentinelStoryView.kt",
+      "sourceSHA256": "fb199fdda6ee75f6d96116cc955bb3c520f3208c788bb2e2971f19b9a50047b8",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLangerhansView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLangerhansDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-langerhans-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLeydigEndocrineStoryView.kt",
+      "sourceSHA256": "21e927077f82b7de1e5704be883fb27b77554a8f6d8ba5792b0c8eb9ff0f8ea3",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasGonadalLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLeydigDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-gonadal-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLoadTransferPlates.kt",
+      "sourceSHA256": "896a8617ba1523cfb8f57c82cf44b0d4b32087c80a01332bcd92d072c3706b78",
+      "kind": "original-plate-declaration-extraction-and-runtime-routing",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRegionalStructures.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift"
+      ],
+      "checks": [
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMastAndTCellArt.kt",
+      "sourceSHA256": "d20415db0a75a735bc66b2a76a38473789b0efcd0f2e5553e5acdb24838321b2",
+      "kind": "four-native-immune-courses-and-shared-geometry",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasImmuneDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasImmuneGeometry.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMastGeometry.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMastView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMastDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTCellLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRegulatoryTView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRegulatoryTDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-mast-source.cjs",
+        "check-atlas-regulatory-t-source.cjs",
+        "check-atlas-helper-cytotoxic-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMastAndTCellAssignments.kt",
+      "sourceSHA256": "4d12e7337493d616bfabd81f000e8da01a0303c69852196936f9d93adc89138e",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "sourceSHA256": "0b86b382cdc8422ba69bea8533100c0eb32491a0fb7f0e2e8535f1ef38cb3b67",
+      "kind": "bounded-models-and-material-diagrams",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-models.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMuscleSatelliteRenewalAssignment.kt",
+      "sourceSHA256": "dbfa213da48d3bb650d3d43274966f6e4d2cf9363a288e56274b8e60aee7760d",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMuscleSatelliteRenewalStoryView.kt",
+      "sourceSHA256": "5e8294e4f5c1df7a2723fd619c08e5aedfea318b17da4feebf5cf968422100f7",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSatelliteView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSatelliteDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-satellite-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPancreaticDeltaStoryView.kt",
+      "sourceSHA256": "16d573637dc3f1651a77911df60f9a3c28bd39948359ca2b6090bea2bfda71bd",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasIsletLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasDeltaSignalDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-islet-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPancreaticPpStoryView.kt",
+      "sourceSHA256": "884dadec050562194b92c641e36edbcdbbfab3bfb04d26145af2d7b2647ae8ed",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasIsletLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPPSignalDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-islet-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPanethBarrierStoryView.kt",
+      "sourceSHA256": "2d8b629f78289f76f18f40e6a5cd09b7d9b0ba3580c252d2b9957e8c5f7383f1",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPanethBarrierView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCryptWallDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-paneth-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPelvicRingStoryView.kt",
+      "sourceSHA256": "1f873be2e76d0ac6d1797bd0ec40f32f586af519fe04b415eeb325818c64ceb3",
+      "kind": "dedicated-native-load-transfer-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLoadTransferStoryView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMeshImage.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-art.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPericyteCoverageAssignment.kt",
+      "sourceSHA256": "4efe817731ebf34acc548ecd06a6a4919f3e6ced8c200743cc80964a00d3985c",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPericyteCoverageStoryView.kt",
+      "sourceSHA256": "9f5ef33aefd7a6787244b610f303b6dc49fd4397a4488c9af6c121e21a2dc67b",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPericyteView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPericyteDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-pericyte-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "sourceSHA256": "cc9ba47c61bfd6178df35f224b5188b0f2a0e936db70bf85e3baa402659523f3",
+      "kind": "bounded-models-and-material-diagrams",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-models.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "sourceSHA256": "eebf4f3a97a990ae2843d1d902e8952aeb84fa5d088f709abadda898f5faae92",
+      "kind": "bounded-models-and-material-diagrams",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-models.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyText.kt",
+      "sourceSHA256": "b01e9f7c82e8e4321abc70a7cd26038712d07ad7d0efe226b1ddf3186533ae78",
+      "kind": "bounded-models-and-material-diagrams",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyText.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-models.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRenalBladderCellAssignments.kt",
+      "sourceSHA256": "8cc866488cb3b3278c73b19b9e317dee2bfc50cb0c9d16b509c3838dc4fbcd62",
+      "kind": "original-kotlin-catalogue-extraction",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStories.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionCatalogue.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSomatotrophStoryView.kt",
+      "sourceSHA256": "cfe5af321409b3e573fcf96f678e351c88d64c21a4095c98228acf93c5ad0bfb",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSomatotrophView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasSomatotrophDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-somatotroph-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSubcutaneousStoryView.kt",
+      "sourceSHA256": "7dfeaee9bc48fcbc3cf42aa00889476b4e9736fcec8a8747d08b72138ff242cc",
+      "kind": "dedicated-native-load-transfer-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLoadTransferStoryView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasLoadTransferStoryDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMeshImage.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-art.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThecaCooperationStoryView.kt",
+      "sourceSHA256": "bf5008f5265fed81cb17a96c5c9936e6395d1004ac017a7df34d318a6371b698",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasGonadalLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasThecaDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-gonadal-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasThyroidCalcitoninStoryView.kt",
+      "sourceSHA256": "9bd1479a9127c383b15fbb7bbcbdd9b7ddb0bf564546d0782c39498888300ca6",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasEndocrineZoneView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasCalcitoninDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-endocrine-zone-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasTissueContextPlates.kt",
+      "sourceSHA256": "6f3706f003c6634f1d9c6bdc9634f4512bb5120174b6b22b7ce9424c9a3ffbc0",
+      "kind": "original-plate-declaration-extraction-and-runtime-routing",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteStructures.dataset/content.json",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRegionalStructures.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlas.swift"
+      ],
+      "checks": [
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasUrothelialStoryView.kt",
+      "sourceSHA256": "783b331081807cbeb726c922d6e36cccdf74ba63a9b1b7a1c360228825714c74",
+      "kind": "dedicated-native-course-renderer",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasRenalCellLessonView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasUrothelialDrawing.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasFunctionArtwork.swift"
+      ],
+      "checks": [
+        "check-atlas-renal-cell-source.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_pelvic_ring.xml",
+      "sourceSHA256": "018a69cf358327e3b9e7fff6e9be4269283b14dd86e4da2a7f25f22cd97b5f6d",
+      "kind": "source-vector-with-correct-quadratics-and-even-odd-holes",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompletePelvicRing.imageset/art.pdf"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-art.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/drawable/health_atlas_subcutaneous_section.xml",
+      "sourceSHA256": "391e4785b07e6727374fd2f8215b6916a42cf7dc1d7c330a6574b6fc53f034c7",
+      "kind": "source-vector-with-correct-quadratics-and-even-odd-holes",
+      "ios": [
+        "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasCompleteSubcutaneousSection.imageset/art.pdf"
+      ],
+      "checks": [
+        "check-atlas-load-transfer-art.cjs"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_anterior_pituitary.xml",
+      "sourceSHA256": "fac898b9ad09ed6a0e776c7626d4d31f553d09ff3d1b9f76be38781f170e0a1c",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_capillary_skin_sentinels.xml",
+      "sourceSHA256": "a43aaaf3f1f29bccd5f0620ca7fb7212403e75422318124b9d6ea54a49cc0aa3",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_endocrine_cell_lessons.xml",
+      "sourceSHA256": "49758bbf63517d8a2ee2a0092e34b3865a26ab3bb929ee8aae43cf16856d136f",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_gonadal_support_story.xml",
+      "sourceSHA256": "27b7b38c534e2bf9957dff03728553d7270b4542e9c15aa981d0c90eda836f03",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_intestinal_epithelial_lessons.xml",
+      "sourceSHA256": "035c951974cd799a94afb0fd41ed9a217df3f5b6d9c559c37de3af29cf589230",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_mast_and_t_cell_stories.xml",
+      "sourceSHA256": "29f246378a87a6a94b63eda8976dd981708b8bde47a95e341da10209cb7d3fe6",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_muscle_satellite_renewal.xml",
+      "sourceSHA256": "2aac1e48f707d712a302116e06c55e5f77b6f60e42fcd4aee1c9d438ae72d65a",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_pelvic_subcutaneous.xml",
+      "sourceSHA256": "5581a91279a2fee8ae49415a95d1ce6bb10b325a947e4d3a6e27dd35efd1cc7a",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_renal_bladder_cell_stories.xml",
+      "sourceSHA256": "8a635500d0a7cfa7e4bfb9f5b7dce26b7eb42068dfcac714b4a5051989c67af2",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_anterior_pituitary.xml",
+      "sourceSHA256": "5748992605ce3de6e2425481794115ade26a376f769f1b22ae46580089f04f4a",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_capillary_skin_sentinels.xml",
+      "sourceSHA256": "b998c54d0e01b95e0001d336eaa4bf9f17b2a88b919a36e78b742bd747cb4147",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_endocrine_cell_lessons.xml",
+      "sourceSHA256": "b34d329a5dfbfebefd73ae1dfbe6f240ac7fa0045c0a018b108840a5a353dd1d",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_gonadal_support_story.xml",
+      "sourceSHA256": "80121b79e21af2d45ad9dfcd0eb0bc5f82d94ae97ea6dd974c2ca1ca82743f5c",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_intestinal_epithelial_lessons.xml",
+      "sourceSHA256": "e9c6e692c4bb6e71a7006137c706a12053af89ed3d56896b83622e9ca7145b8f",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_mast_and_t_cell_stories.xml",
+      "sourceSHA256": "8126297f2ccee3e92762066015fafcb80688ad841ff7ae79c0d4f1ea8943f736",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_muscle_satellite_renewal.xml",
+      "sourceSHA256": "f5eeb7c4f7d3c97bedee2a116670e9c91c0bcf47436048a23299a30f1f300915",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_pelvic_subcutaneous.xml",
+      "sourceSHA256": "bd1f629a85d99432820b5a18481b11daedd486398dab6f6ff162e37bcc67db8c",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_renal_bladder_cell_stories.xml",
+      "sourceSHA256": "dd9c8888a4747a415814a7a27bc14b1e32d28563432cd56a8e1bd6373bc030aa",
+      "kind": "bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasComplete.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasComplete.strings"
+      ],
+      "checks": [
+        "import-body-atlas-regional-text.cjs --complete-4388 --check"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasFunctionStoryTest.kt",
+      "sourceSHA256": "1b578f3b71ff254cbf5b50834a5c9514d04c35fac54949a7e96382d28d3529bf",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs",
+        "check-atlas-load-transfer-models.cjs",
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ],
+      "note": "Platform test scaffolding is not copied. Source checks do not establish native rendering, screenshot, navigation, accessibility or persistence acceptance. No XCTest/device run performed."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "sourceSHA256": "4767cc7b1f9607913bf4310babf9396257c0ea7cb2c4d73e36047f3d2a3f5a90",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "checks": [
+        "check-atlas-complete-catalogue.cjs",
+        "check-atlas-load-transfer-models.cjs",
+        "check-atlas-regional-structures.cjs --complete-4388"
+      ],
+      "note": "Platform test scaffolding is not copied. Source checks do not establish native rendering, screenshot, navigation, accessibility or persistence acceptance. No XCTest/device run performed."
+    }
+  ]
+}

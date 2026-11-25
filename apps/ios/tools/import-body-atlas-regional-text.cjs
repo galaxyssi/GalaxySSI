@@ -1,6 +1,8 @@
 // Deterministic Android #4385 resource delta; does not execute the app.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), xml = require("xml-js");
-const root = path.resolve(__dirname, "../../.."), sha = "a81aa85a1c81e41ff19a032eabea1eddcd2371dc";
+const complete = process.argv.includes("--complete-4388");
+const revision = complete ? 4388 : 4385, tableName = complete ? "AtlasComplete" : "AtlasRegional";
+const root = path.resolve(__dirname, "../../.."), sha = complete ? "6581110ec5c048edebf63821dee839b4818fe663" : "a81aa85a1c81e41ff19a032eabea1eddcd2371dc";
 const checking = process.argv.includes("--check");
 const git = args => cp.execFileSync("git", args, {cwd: root, encoding: "utf8", maxBuffer: 16_000_000});
 const files = git(["diff", "--name-status", sha + "^1", sha, "--", "apps/android/app/src/main/res/values", "apps/android/app/src/main/res/values-zh"])
@@ -32,9 +34,9 @@ const keys = table => [...table.keys()].sort();
 if (JSON.stringify(keys(tables.get("en"))) !== JSON.stringify(keys(tables.get("zh-Hans")))) throw Error("Regional bilingual key mismatch");
 for (const [language, table] of tables) {
   const content = keys(table).map(key => JSON.stringify(key) + " = " + JSON.stringify(table.get(key)) + ";").join("\n") + "\n";
-  const destination = path.join(root, "apps/ios/GalaxySSI", language + ".lproj/AtlasRegional.strings");
+  const destination = path.join(root, "apps/ios/GalaxySSI", language + ".lproj/" + tableName + ".strings");
   if (checking) {
     if (fs.readFileSync(destination, "utf8").replace(/\r\n/g, "\n") !== content) throw Error("Regional resource drift: " + language);
   } else fs.writeFileSync(destination, content);
-  console.log(language + ": " + table.size + " Android #4385 resource deltas, no cross-language fallback.");
+  console.log(language + ": " + table.size + " Android #" + revision + " resource deltas, no cross-language fallback.");
 }

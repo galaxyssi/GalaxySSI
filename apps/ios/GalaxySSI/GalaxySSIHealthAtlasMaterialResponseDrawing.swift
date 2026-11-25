@@ -6,6 +6,40 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func pelvicSupport(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let loadX = 170 + 87 * model.input(1) / 100, load = model.input(0)
+    rectangle(61, 70, 279, 84, 0xDDC2A7, radius: 6)
+    line(83, 77, 257, 77, 0x9E826C, 1.4)
+    oval(loadX - 4, 73, loadX + 4, 81, 0x926B55)
+    if load > 0 { arrow(loadX, 63 - 42 * load / 800, loadX, 67, 0x996449, 3.3) }
+    for (x, force, key, tint) in [(83.0, model.companionValue, "pelvis_model_left_support", Self.blue),
+      (257.0, model.result, "pelvis_model_right_support", Self.teal)] {
+      rectangle(x - 26, 121, x + 26, 126, 0xCBDFDB, radius: 2)
+      if force > 0 { arrow(x, 118, x, 121 - (8 + 23 * force / 800), tint, 3) }
+      label(key, x, 147, 130)
+    }
+  }
+  func cushionContact(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let force = model.input(0)
+    for (x, area, pressure, key) in [(85.0, 40.0, model.companionValue, "cushion_model_standard_pad"),
+      (255.0, model.input(1), model.result, "cushion_model_changed_pad")] {
+      let halfWidth = 10 + 49 * area / 90
+      rectangle(x - 63, 82, x + 63, 117, 0xF5DEB1, radius: 7)
+      rectangle(x - 63, 113, x + 63, 124, 0xB3CEC5, radius: 4)
+      for i in 0..<7 {
+        let cx = x - 51 + 17 * Double(i), cy = i % 2 == 0 ? 97.0 : 103.0
+        oval(cx - 7, cy - 7, cx + 7, cy + 7, 0xE5B97D)
+      }
+      rectangle(x - halfWidth, 67, x + halfWidth, 80, 0xB8D6D5, radius: 4)
+      if force > 0 {
+        arrow(x, 56 - 30 * force / 80, x, 63, Self.blue, 2.7)
+        var local = context
+        local.opacity = (60 + 190 * pressure / 80).rounded() / 255
+        Self(context: local, language: language).rectangle(x - halfWidth, 80, x + halfWidth, 85, 0xA96459, radius: 2)
+      }
+      label(key, x, 147, 145)
+    }
+  }
   func calfPump(_ model: GalaxySSIHealthAtlasPhysiology) {
     let stroke = model.input(0), total = stroke * model.input(1)
     let returning = total * model.input(2) / 100
@@ -142,8 +176,9 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
       tip.move(to: CGPoint(x: x2 + 2 * direction, y: y2))
       tip.addLine(to: CGPoint(x: x2 - 6 * direction, y: y2 - 4)); tip.addLine(to: CGPoint(x: x2 - 6 * direction, y: y2 + 4))
     } else {
-      tip.move(to: CGPoint(x: x2, y: y2 + 2))
-      tip.addLine(to: CGPoint(x: x2 - 4, y: y2 - 6)); tip.addLine(to: CGPoint(x: x2 + 4, y: y2 - 6))
+      let direction: Double = y2 >= y1 ? 1 : -1
+      tip.move(to: CGPoint(x: x2, y: y2 + 2 * direction))
+      tip.addLine(to: CGPoint(x: x2 - 4, y: y2 - 6 * direction)); tip.addLine(to: CGPoint(x: x2 + 4, y: y2 - 6 * direction))
     }
     tip.closeSubpath()
     context.fill(tip, with: .color(color(value)))

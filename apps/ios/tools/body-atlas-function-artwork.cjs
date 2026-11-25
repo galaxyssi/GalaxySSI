@@ -1,5 +1,10 @@
 // Dedicated #4384 course art, shared by the importer and PDF/source audit.
 const batches = {
+  "--complete-load-transfer": {name: "load transfer", androidPR: 4388,
+    sha: "6581110ec5c048edebf63821dee839b4818fe663", paths: 23, gradients: 0,
+    groups: true, affineGroups: true, clips: true, normalizeQuadratics: true, preserveFillRules: true,
+    frames: [["pelvic_ring", "HealthAtlasCompletePelvicRing", "art.pdf", 0],
+      ["subcutaneous_section", "HealthAtlasCompleteSubcutaneousSection", "art.pdf", 0]]},
   "--function-gut-lymphoid": {name:"gut lymphoid", paths:26, gradients:8, frames:[
     ["gut_lymphoid_locator","HealthAtlasFunctionGutLymphoidLocator","art.pdf"],
     ["gut_lymphoid_comparison","HealthAtlasFunctionGutLymphoidComparison","art.pdf"]]},

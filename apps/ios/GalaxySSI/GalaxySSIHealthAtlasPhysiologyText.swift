@@ -2,6 +2,13 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let loadKey = ["model_pelvicSupport": "pelvis_model_title", "model_pelvicSupport_scope": "pelvis_model_scope",
+      "model_pelvicSupport_formula": "pelvis_model_formula", "model_cushionContactPressure": "cushion_model_title",
+      "model_cushionContactPressure_scope": "cushion_model_scope", "model_cushionContactPressure_formula": "cushion_model_formula"][key]
+    if let loadKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + loadKey, language) }
+    if key.hasPrefix("pelvis_model_") || key.hasPrefix("cushion_model_") {
+      return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language)
+    }
     let calfKey = ["model_calfPump": "calf_pump_title", "model_calfPump_scope": "calf_pump_scope",
       "model_calfPump_formula": "calf_pump_formula"][key]
     if let calfKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + calfKey, language) }
@@ -96,6 +103,10 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .pelvicSupport || model.kind == .cushionContactPressure {
+      let key = model.kind == .pelvicSupport ? "pelvis_model_left_value" : "cushion_model_reference_value"
+      return String(format: string(key, language: language), number(model.companionValue, language: language))
+    }
     if model.kind == .calfPump {
       return String(format: string("calf_pump_net_stroke", language: language), number(model.companionValue, language: language))
     }

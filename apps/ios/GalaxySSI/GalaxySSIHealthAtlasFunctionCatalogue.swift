@@ -28,9 +28,9 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
   let routes: [String: [String]]
   let entryPhases: [String: [String: Double]]
   static let bundled: Result<Self?, Error> = Result { try read(bundle: .main) }
-  static func read(bundle: Bundle, revision: Int = 4385) throws -> Self? {
-    guard revision == 4384 || revision == 4385 else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
-    let asset = revision == 4384 ? "HealthAtlasFunctionStories" : "HealthAtlasRegionalStories"
+  static func read(bundle: Bundle, revision: Int = 4388) throws -> Self? {
+    guard [4384, 4385, 4388].contains(revision) else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
+    let asset = revision == 4384 ? "HealthAtlasFunctionStories" : revision == 4385 ? "HealthAtlasRegionalStories" : "HealthAtlasCompleteStories"
     guard let data = NSDataAsset(name: asset, bundle: bundle)?.data else { return nil }
     guard data.count <= 1_000_000 else { throw GalaxySSIHealthAtlas.Invalid.catalogue }
     let value = try JSONDecoder().decode(Self.self, from: data)
@@ -51,7 +51,10 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
     let regional = source.androidPR == 4385 && source.mergeCommit == "a81aa85a1c81e41ff19a032eabea1eddcd2371dc" &&
       stories.count == 114 && stories.reduce(0, { $0 + $1.chapters.count }) == 544 && routes.count == 289 &&
       stories.reduce(0, { $0 + $1.references.count }) == 261
-    guard schema == 1, baseline || regional, ids.count == stories.count,
+    let complete = source.androidPR == 4388 && source.mergeCommit == "6581110ec5c048edebf63821dee839b4818fe663" &&
+      stories.count == 138 && stories.reduce(0, { $0 + $1.chapters.count }) == 643 && routes.count == 313 &&
+      stories.reduce(0, { $0 + $1.references.count }) == 320
+    guard schema == 1, baseline || regional || complete, ids.count == stories.count,
       Set(routes.keys) == owners, Set(entryPhases.keys) == owners,
       stories.allSatisfy({ story in
         !story.id.isEmpty && story.id.count <= 80 && story.id.allSatisfy({ $0.isUppercase || $0 == "_" || $0.isNumber }) &&
@@ -78,7 +81,8 @@ struct GalaxySSIHealthAtlasFunctionCatalogue: Decodable {
       "www.niddk.nih.gov", "www.nidcd.nih.gov", "www.nei.nih.gov", "www.ncbi.nlm.nih.gov", "doi.org", "www.nature.com",
       "www.jci.org", "link.springer.com", "pure.amsterdamumc.nl", "journals.plos.org", "www.jstage.jst.go.jp",
       "nba.uth.tmc.edu", "temple.manifoldapp.org", "hdl.handle.net", "histology.leeds.ac.uk", "tales.nmc.unibas.ch",
-      "training.seer.cancer.gov", "www.medcell.org", "sti.bmj.com", "rad.washington.edu"]
+      "training.seer.cancer.gov", "www.medcell.org", "sti.bmj.com", "rad.washington.edu",
+      "www.pnas.org", "histology.oit.duke.edu", "jcp.bmj.com", "www.nichd.nih.gov", "open.umich.edu", "biomedizin.unibas.ch"]
     return url.scheme == "https" && url.host.map(hosts.contains) == true && url.user == nil && url.password == nil && url.port == nil
   }
 }

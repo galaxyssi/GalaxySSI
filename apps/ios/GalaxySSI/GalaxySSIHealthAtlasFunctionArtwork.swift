@@ -7,7 +7,18 @@ enum GalaxySSIHealthAtlasFunctionRendering {
     "UTEROCERVICAL_CONTINUITY", "PENILE_URINARY_ROUTE", "SCROTAL_HEAT_EXCHANGE", "SKULL_PROTECTION", "VERTEBRAL_MOTION",
     "CLITORAL_SENSORY_PATH", "VESTIBULAR_GLAND_SECRETION", "TENOCYTE_TENDON_MATRIX",
     "PECTORAL_HORIZONTAL_ADDUCTION", "LATISSIMUS_EXTENSION_ADDUCTION"]
-  static let implemented = baseline.union(regional)
+  static let loadTransfer: Set<String> = ["PELVIC_LOAD_TRANSFER", "SUBCUTANEOUS_CUSHION"]
+  static let crypt: Set<String> = ["PANETH_CRYPT_BARRIER", "ENTEROENDOCRINE_LUMEN_SIGNAL", "INTESTINAL_STEM_RENEWAL"]
+  static let renalCells: Set<String> = ["DISTAL_TUBULAR_EXCHANGE", "UROTHELIAL_BARRIER_GEOMETRY"]
+  static let isletCells: Set<String> = ["PANCREATIC_DELTA_MODULATION", "PANCREATIC_PP_SIGNAL"]
+  static let endocrineZones: Set<String> = ["THYROID_CALCITONIN", "ADRENAL_CORTEX_OUTPUT"]
+  static let gonadalCells: Set<String> = ["LEYDIG_ENDOCRINE", "THECA_COOPERATION"]
+  static let anteriorPituitary: Set<String> = ["SOMATOTROPH_GROWTH_SIGNAL", "LACTOTROPH_MAMMARY_SIGNAL", "CORTICOTROPH_ADRENAL_SIGNAL", "GONADOTROPH_DUAL_SIGNAL"]
+  static let muralCells: Set<String> = ["PERICYTE_COVERAGE"]
+  static let skinSentinels: Set<String> = ["LANGERHANS_SENTINEL"]
+  static let satelliteCells: Set<String> = ["MUSCLE_SATELLITE_RENEWAL"]
+  static let immuneLessons: Set<String> = ["MAST_CELL_GRANULE_RELEASE", "HELPER_T_COORDINATION", "CYTOTOXIC_T_CONTACT", "REGULATORY_T_MODERATION"]
+  static let implemented = baseline.union(regional).union(loadTransfer).union(crypt).union(renalCells).union(isletCells).union(endocrineZones).union(gonadalCells).union(anteriorPituitary).union(muralCells).union(skinSentinels).union(satelliteCells).union(immuneLessons)
 }
 
 struct GalaxySSIHealthAtlasFunctionArtwork: View {
@@ -16,6 +27,30 @@ struct GalaxySSIHealthAtlasFunctionArtwork: View {
   let language: String
   @ViewBuilder var body: some View {
     switch story.id {
+    case "MAST_CELL_GRANULE_RELEASE": GalaxySSIHealthAtlasMastView(story: story, phase: phase, language: language)
+    case "HELPER_T_COORDINATION": GalaxySSIHealthAtlasTCellLessonView(story: story, phase: phase, language: language, kind: .helper)
+    case "CYTOTOXIC_T_CONTACT": GalaxySSIHealthAtlasTCellLessonView(story: story, phase: phase, language: language, kind: .cytotoxic)
+    case "REGULATORY_T_MODERATION": GalaxySSIHealthAtlasRegulatoryTView(story: story, phase: phase, language: language)
+    case "MUSCLE_SATELLITE_RENEWAL": GalaxySSIHealthAtlasSatelliteView(story: story, phase: phase, language: language)
+    case "LANGERHANS_SENTINEL": GalaxySSIHealthAtlasLangerhansView(story: story, phase: phase, language: language)
+    case "PERICYTE_COVERAGE": GalaxySSIHealthAtlasPericyteView(story: story, phase: phase, language: language)
+    case "GONADOTROPH_DUAL_SIGNAL": GalaxySSIHealthAtlasGonadotrophView(story: story, phase: phase, language: language)
+    case "CORTICOTROPH_ADRENAL_SIGNAL": GalaxySSIHealthAtlasCorticotrophView(story: story, phase: phase, language: language)
+    case "LACTOTROPH_MAMMARY_SIGNAL": GalaxySSIHealthAtlasLactotrophView(story: story, phase: phase, language: language)
+    case "SOMATOTROPH_GROWTH_SIGNAL": GalaxySSIHealthAtlasSomatotrophView(story: story, phase: phase, language: language)
+    case "LEYDIG_ENDOCRINE": GalaxySSIHealthAtlasGonadalLessonView(story: story, phase: phase, language: language, kind: .leydig)
+    case "THECA_COOPERATION": GalaxySSIHealthAtlasGonadalLessonView(story: story, phase: phase, language: language, kind: .theca)
+    case "THYROID_CALCITONIN": GalaxySSIHealthAtlasEndocrineZoneView(story: story, phase: phase, language: language, kind: .calcitonin)
+    case "ADRENAL_CORTEX_OUTPUT": GalaxySSIHealthAtlasEndocrineZoneView(story: story, phase: phase, language: language, kind: .cortex)
+    case "PANCREATIC_DELTA_MODULATION": GalaxySSIHealthAtlasIsletLessonView(story: story, phase: phase, language: language, kind: .delta)
+    case "PANCREATIC_PP_SIGNAL": GalaxySSIHealthAtlasIsletLessonView(story: story, phase: phase, language: language, kind: .pp)
+    case "DISTAL_TUBULAR_EXCHANGE": GalaxySSIHealthAtlasRenalCellLessonView(story: story, phase: phase, language: language, kind: .distal)
+    case "UROTHELIAL_BARRIER_GEOMETRY": GalaxySSIHealthAtlasRenalCellLessonView(story: story, phase: phase, language: language, kind: .urothelial)
+    case "ENTEROENDOCRINE_LUMEN_SIGNAL": GalaxySSIHealthAtlasCryptLessonView(story: story, phase: phase, language: language, kind: .endocrine)
+    case "INTESTINAL_STEM_RENEWAL": GalaxySSIHealthAtlasCryptLessonView(story: story, phase: phase, language: language, kind: .stem)
+    case "PANETH_CRYPT_BARRIER": GalaxySSIHealthAtlasPanethBarrierView(story: story, phase: phase, language: language)
+    case "PELVIC_LOAD_TRANSFER": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: true)
+    case "SUBCUTANEOUS_CUSHION": GalaxySSIHealthAtlasLoadTransferStoryView(story: story, phase: phase, language: language, pelvic: false)
     case "GLUCOSE": GalaxySSIHealthAtlasUptakeView(story: story, phase: phase, language: language)
     case "HEARTBEAT": GalaxySSIHealthAtlasHeartbeatView(story: story, phase: phase, language: language)
     case "BREATHING": GalaxySSIHealthAtlasBreathingView(story: story, phase: phase, language: language)
