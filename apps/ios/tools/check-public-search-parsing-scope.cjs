@@ -60,6 +60,37 @@ assert(planning.includes('"verticals": .array([.string("image")])'));
 assert(planning.includes('try executor.executeTool(call: dispatch, context: context)'));
 const oldProvider = git('show', base + ':' + swift('AgentIOSURLSessionWebMediaProvider'));
 const section = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const pack = read(swift('AgentIOSWebEvidencePack'));
+const oldPack = git('show', base + ':' + swift('AgentIOSWebEvidencePack'));
+assert.equal(section(pack, '  static func canonicalURL(', '  private static func normalizedDocuments('),
+  section(oldPack, '  static func canonicalURL(', '  private static func normalizedDocuments('), 'Citation URL canonicalization unchanged');
+for (const token of ['Dictionary(grouping: documents + results)', '.flatMap(mediaImages)',
+  '.filter { seenImages.insert($0.string("url")).inserted }.prefix(4)',
+  'evidence["media_evidence_level"] = .string("discovered_url_not_visually_verified")',
+  'url.user == nil, url.password == nil', 'for key in ["thumbnail_url", "original_url"]']) assert(pack.includes(token), token);
+const verification = read(swift('AgentIOSWebEvidenceVerification'));
+const oldVerification = git('show', base + ':' + swift('AgentIOSWebEvidenceVerification'));
+assert.equal(section(verification, '  private static func citationSources(', '  static func attach('),
+  section(oldVerification, '  private static func citationSources(', '  static func attach('), 'Source identity/hash/citation-ID gates unchanged');
+assert.equal(section(verification, '  static func verify(', '  static func validateAnswer('),
+  section(oldVerification, '  static func verify(', '  static func validateAnswer('), 'Manifest and conflict verification kernel unchanged');
+for (const token of ['sourceIDs.contains(item.string("citation_id") + "\\n" + item.string("url"))',
+  '$0.isImage && allowedImages.contains($0.url)', 'AgentMarkdownArtifactReferences.citationMarkup(resolved.text).links']) assert(verification.includes(token));
+const markdown = read(swift('AgentRichMarkdownParser'));
+const typedStart = markdown.indexOf('        let isImage = value[index] == "!"');
+const typedEnd = markdown.indexOf('        if !omitLinks', typedStart);
+assert(typedStart > 0 && typedEnd > typedStart);
+const typedLinks = markdown.slice(typedStart, typedEnd);
+for (const token of ['result.links.append((link.destination, isImage))', 'image.end <= labelEnd',
+  'inlineCodeEnd(value, at: nested)', 'result.links.append((image.destination, true))']) assert(typedLinks.includes(token));
+assert.equal((markdown.slice(0, typedStart) + markdown.slice(typedEnd))
+  .replace('    var links: [(destination: String, isImage: Bool)] = []\n', ''),
+  git('show', base + ':' + swift('AgentRichMarkdownParser')), 'Only typed destination observation added; text/legacy destinations/artifact stripping/rendering remain byte-identical');
+const mediaTests = read('apps/ios/GalaxySSITests/AgentIOSWebEvidencePackTests.swift') + read('apps/ios/GalaxySSITests/AgentIOSWebEvidenceVerificationTests.swift');
+for (const name of ['testImagesSurviveRetrievedBodyPreferenceAndAggregateOnlyTheirSourcePage',
+  'testMediaURLsAreBoundedWebCandidatesNotLocalOrCredentialedLocations',
+  'testDiscoveredImageURLsAreAllowedOnlyAsImagesNotOrdinaryCitationLinks',
+  'testInvalidSourceIdentityCannotAuthorizeImageDestinations']) assert(mediaTests.includes('func ' + name + '('));
 assert.equal(section(provider, '  private func requestResource(', '  private func failure(_ error:'),
   section(oldProvider, '  private func requestResource(', '  private func failure(_ error:'),
   'HTTP bounds, redirect/public-host policy, resource extraction and browser transport stay unchanged');
@@ -149,6 +180,8 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
   if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Native research shares a monotonic deadline across query and page-read children, validates all engine IDs before searching, marks skipped queries/partial status and preserves evidence. Profile defaults applied; explicit limits retained. Ranking/cache/maintenance parity incomplete';
+  if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
+  if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
   if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: native profile defaults and currently supported engine selection/validation adapted. General coordinator, relevance/ranker, all adapters and full acceptance remain incomplete';
   if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
   if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
@@ -161,7 +194,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/Sogou image evidence, renderer lifecycle, research query/page deadline and configured cloud round/tool remaining-time caps with bounded finalization. Other image engines/relevance, maintenance/index atomicity, timing spans and native transport/performance acceptance incomplete.',
+  scope: 'Public web/Sogou image search, source-owned media evidence and typed image citation checks; renderer lifecycle, research and configured cloud round/tool time caps. Other image engines/relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

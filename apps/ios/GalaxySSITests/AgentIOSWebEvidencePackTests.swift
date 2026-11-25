@@ -2,6 +2,39 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSWebEvidencePackTests: XCTestCase {
+  func testImagesSurviveRetrievedBodyPreferenceAndAggregateOnlyTheirSourcePage() throws {
+    let page = "https://source.test/article"
+    let first: AgentMcpJSONObject = ["url": .string("https://images.test/first.jpg"),
+      "thumbnail_url": .string("https://images.test/first-small.jpg"), "width": .int(640)]
+    let second: AgentMcpJSONObject = ["url": .string("https://images.test/second.jpg"), "height": .int(480)]
+    let pack = AgentIOSWebEvidencePack.build(query: "pictures", status: "completed",
+      documents: [["url": .string(page), "content": .string("Retrieved source body")]],
+      results: [["url": .string(page), "lead_image_url": first["url"]!, "images": .array([.object(first)])],
+        ["url": .string(page), "images": .array([.object(first), .object(second),
+          .object(["url": .string("file:///private/image.jpg")]),
+          .object(["url": .string("https://user:pass@images.test/private.jpg")])])],
+        ["url": .string("https://other.test/article"), "images": .array([.object(["url": .string("https://images.test/other.jpg")])])]],
+      receipts: [], generatedAtMillis: 1)
+    let item = try XCTUnwrap(pack["items"]?.arrayValue?.first?.objectValue)
+    let images = try XCTUnwrap(item["images"]?.arrayValue)
+    XCTAssertEqual(item["source_kind"], .string("document"))
+    XCTAssertEqual(item["media_evidence_level"], .string("discovered_url_not_visually_verified"))
+    XCTAssertEqual(images.count, 2)
+    XCTAssertEqual(images.first?.objectValue?["width"], .int(640))
+    XCTAssertEqual(images.last?.objectValue?["url"], second["url"])
+    XCTAssertEqual(item["lead_image_url"], first["url"])
+    XCTAssertEqual(images.first?.objectValue?["source_url"], .string(page))
+  }
+
+  func testMediaURLsAreBoundedWebCandidatesNotLocalOrCredentialedLocations() {
+    for value in ["file:///private/image.jpg", "data:image/png;base64,AAA", "https://user:pass@example.test/a.jpg",
+                  "https://example.test/" + String(repeating: "a", count: 4100)] {
+      XCTAssertNil(AgentIOSWebEvidencePack.mediaURL(value), value)
+    }
+    XCTAssertEqual(AgentIOSWebEvidencePack.mediaURL("https://images.test/a.jpg?token=opaque"),
+      "https://images.test/a.jpg?token=opaque")
+  }
+
   func testAttachingFetchCreatesCompactUnifiedEvidencePack() throws {
     let content = String(repeating: "Retrieved article evidence for unified model synthesis. ", count: 80)
     let hash = String(repeating: "a", count: 64)

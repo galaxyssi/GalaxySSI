@@ -160,14 +160,30 @@ enum AgentIOSWebEvidenceVerification {
   ) -> AgentIOSWebCitationValidation {
     let sources = citationSources(packs)
     let allowed = Set(sources.map(\.url))
+    let sourceIDs = Set(sources.map { $0.id + "\n" + $0.url })
+    var allowedImages = Set<String>()
+    for pack in packs where pack["protocol"] == .string(AgentIOSWebEvidencePack.protocolId) {
+      for item in objects(pack["items"]) where sourceIDs.contains(item.string("citation_id") + "\n" + item.string("url")) {
+        for image in objects(item["images"]) {
+          for key in ["url", "thumbnail_url", "original_url"] {
+            if let url = AgentIOSWebEvidencePack.mediaURL(image.string(key)) {
+              allowedImages.insert(AgentIOSWebEvidencePack.canonicalURL(url))
+            }
+          }
+        }
+      }
+    }
     let evidenceItems = packs.reduce(0) { $0 + objects($1["items"]).count }
     let resolved = resolveCitations(answer, sources: sources)
-    let cited = AgentMarkdownArtifactReferences.citationMarkup(resolved.text).destinations.filter {
-      $0.lowercased().hasPrefix("https://") || $0.lowercased().hasPrefix("http://")
-    }.map {
-      isWebURL($0) ? AgentIOSWebEvidencePack.canonicalURL($0) : $0
-    }.uniqued()
-    let invalid = cited.filter { !allowed.contains($0) } + resolved.unresolved.map { "cite:\($0)" }
+    let links = AgentMarkdownArtifactReferences.citationMarkup(resolved.text).links.filter {
+      $0.destination.lowercased().hasPrefix("https://") || $0.destination.lowercased().hasPrefix("http://")
+    }.map { link in
+      (url: isWebURL(link.destination) ? AgentIOSWebEvidencePack.canonicalURL(link.destination) : link.destination,
+       isImage: link.isImage)
+    }
+    let cited = links.map(\.url).uniqued()
+    let invalid = links.filter { !allowed.contains($0.url) && !($0.isImage && allowedImages.contains($0.url)) }
+      .map(\.url).uniqued() + resolved.unresolved.map { "cite:\($0)" }
     let status: String
     if !resolved.unresolved.isEmpty {
       status = "unresolved_citations"

@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/Sogou image evidence, renderer lifecycle, research query/page deadline and configured cloud round/tool remaining-time caps with bounded finalization. Other image engines/relevance, maintenance/index atomicity, timing spans and native transport/performance acceptance incomplete.",
+  "scope": "Public web/Sogou image search, source-owned media evidence and typed image citation checks; renderer lifecycle, research and configured cloud round/tool time caps. Other image engines/relevance, maintenance/index atomicity, timing spans and native acceptance incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -87,12 +87,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidencePack.kt",
       "sha256": "1ae6503b89c411c68b291d178b4f47aec559f734a22ec675c76f78a59aff85fd",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebEvidenceVerification.kt",
       "sha256": "5d5ba0f74a3d5c6878be0abf71279f7fa91aadbecdc71117e1d7a11076a0fcda",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebExecutionBudget.kt",
