@@ -1819,6 +1819,7 @@
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
     F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */; };
     F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */; };
+    F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */; };
     A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
     A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
     E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */; };
@@ -4027,6 +4028,7 @@
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
     F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeWire.swift; sourceTree = "<group>"; };
     F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeBridge.swift; sourceTree = "<group>"; };
+    F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeFiles.swift; sourceTree = "<group>"; };
     A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
     A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
     E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSemanticModel.swift; sourceTree = "<group>"; };
@@ -5534,6 +5536,7 @@
         A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */,
         F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */,
         F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */,
+        F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */,
         A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
         E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
@@ -7771,6 +7774,7 @@
         A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */,
         F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */,
         F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */,
+        F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */,
         A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
         E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,

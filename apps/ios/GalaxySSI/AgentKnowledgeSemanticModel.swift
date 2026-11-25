@@ -350,13 +350,18 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         let runtime = try await ensureRuntime()
         let indexer = AgentKnowledgeVectorIndexer(database: database, runtime: runtime, provenance: provenance)
         while true {
+          try Task.checkCancellation()
+          let nativeEnrollmentComplete = try await Task.detached(priority: .utility) { [database = self.database, provenance = self.provenance] in
+            try database.maintainNativeVectorEnrollment(provenance: provenance)
+          }.value
           let indexed = try await indexer.indexPending(pageSize: 32)
           let enrollmentPending = try database.vectorEnrollmentPending(
             modelSHA256: AgentKnowledgeEmbeddingModel.sha256
           )
-          state.enrollmentPending = enrollmentPending
+          state.enrollmentPending = enrollmentPending || !nativeEnrollmentComplete
           try refreshCounts()
-          if indexed == 0 && !enrollmentPending { break }
+          if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete { break }
+          await Task.yield()
         }
         try refreshCounts()
         state.enrollmentPending = false
@@ -389,9 +394,17 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   func destroyPrivateData() {
     work?.cancel()
     countWork?.cancel()
+    database.nativeFiles.invalidate()
+    let nativeCleanupError: Error?
+    do { try database.nativeFiles.destroy(); nativeCleanupError = nil }
+    catch { nativeCleanupError = error }
     storage.delete()
     GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: stateKey, secrets: secrets)
     state = AgentKnowledgeSemanticState()
+    if let nativeCleanupError {
+      state.phase = .failed
+      state.error = String(nativeCleanupError.localizedDescription.prefix(180))
+    }
     Task { await closeRuntime() }
   }
 
@@ -416,6 +429,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   }
 
   private func closeRuntime() async {
+    database.nativeFiles.invalidate()
     semanticSearch?.clearTransientIndex()
     semanticSearch = nil
     await runtime?.close()

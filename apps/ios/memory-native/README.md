@@ -50,10 +50,22 @@ required before activation:
 
 - Verify the framework build, C/Swift ABI layout, module discovery, architecture
   slices, export isolation, signing and installation with Xcode.
-- Add protected files/Keychain ownership and App lifecycle cancellation, then
-  consume published-event replay pages in bounded slices.
-- Handle legacy-vector reindex/bootstrap, interrupted progress and feed freshness
-  before replacing the existing in-memory USearch path.
+- Connect the production replay/query consumer to the new protected file store.
+  That store keeps a random master key in the database's ThisDeviceOnly Keychain
+  namespace, derives per-specification/epoch index keys with HKDF, and uses
+  master-keyed directory names. Directories inherit complete file protection and
+  are excluded from backups. Missing keys and symbolic links fail closed.
+- Consume durable replay pages and fence feed freshness before replacing the
+  existing in-memory USearch path. Generation invalidation and handle retirement
+  now run on loss of foreground/protected data, model close and private reset;
+  the future consumer must reject late query results too.
+
+The existing indexing worker now enrolls legacy documents in transactional
+64-source slices with a persisted cursor. The full embedding contract is hashed
+into enrollment state; a change resets that cursor. Old offset-free vectors and
+incompatible contracts are actually re-embedded, not assigned synthetic offsets.
+Current ranged checkpoints are skipped without duplicate publication. This
+producer-side migration does not itself advance native graph replay checkpoints.
 
 Do not claim native activation from source checks alone. Existing App retrieval
 remains USearch until the production replay/query consumer is implemented.

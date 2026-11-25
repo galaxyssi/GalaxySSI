@@ -51,17 +51,18 @@ not a bounded total-memory guarantee and are not a durable graph implementation.
 | AgentKnowledgeDatabase native index directory | Deferred with native index ownership |
 | KnowledgeNativeBridge, JNI owner/arrays/mod | C ABI and synchronous Swift bridge added; Xcode framework build/link/embed configured but uncompiled |
 | KnowledgeNativeWire | Swift decoder preserves Rust binary records, pending progress and match provenance with strict lengths/flags/bounds |
-| KnowledgeNativeFiles key wrapping | Not ported; requires iOS Keychain-backed index key and protected files |
-| KnowledgeModelWork bounded durable successors | Not ported; requires iOS lifecycle/background scheduling |
+| KnowledgeNativeFiles key wrapping | Per-database ThisDeviceOnly Keychain root, HKDF spec/epoch keys, keyed directories, complete protection, backup exclusion and reset/invalidation sources added; native storage acceptance unverified |
+| KnowledgeModelWork bounded durable successors | Existing iOS embedding worker now resumes bounded source enrollment/reindex with contract hash; native replay and durable background successors still required |
 | memory-native Cargo files, lib.rs and replay format | Android engine unchanged; separate iOS crate uses current 0.6.0 path dependency and a derived lockfile; native framework integration remains required |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android inputs untouched; iOS-only locked framework build/export isolation/CodeSignOnCopy configured, not executed |
-| Two Android device fixtures | Not executable on iOS; thirteen Swift fixture methods authored, not run |
+| Two Android device fixtures | Not executable on iOS; nineteen Swift fixture methods authored, not run |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
-Still required before native activation: legacy published-document bootstrap,
-native model/epoch ownership, replay-page consumption, transactional progress recovery,
-compiled ABI ownership/cancellation acceptance, framework packaging validation, key lifecycle, privacy
-invalidation, query freshness fencing and lexical fallback during replay.
+Still required before native activation: production native model/epoch ownership,
+replay-page consumption and transactional progress recovery, published-source
+query resolution, compiled ABI/lifecycle acceptance, framework packaging
+validation, late-result privacy/freshness fencing and lexical fallback during
+replay. Producer-side legacy enrollment is connected, but graph replay is not.
 No native framework, build, device, latency or scale acceptance is claimed here.
 
 ## Verification Scope
@@ -76,6 +77,12 @@ from the audited shared engine lock, not claimed as Cargo-validated on Windows.
 build/export/signing wiring, Swift module registration and four binary-protocol
 fixtures. Node syntax and Swift grammar checks do not prove Xcode builds or
 installation. No native build script has been executed on Windows.
+`node apps/ios/tools/check-knowledge-native-lifecycle-scope.cjs` checks Keychain/
+HKDF ownership, protected no-backup directories, generation fencing, lifecycle
+notifications, reset wiring and transactional legacy enrollment. Six additional
+Swift fixture methods cover resume, contract changes, legacy/current vectors,
+namespace isolation, token invalidation, key deletion and missing-key/symlink
+rejection. They are source only, not successful device/runtime acceptance.
 Swift grammar parsing and project structure checks are not Xcode type checking.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,

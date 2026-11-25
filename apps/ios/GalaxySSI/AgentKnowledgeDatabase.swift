@@ -49,6 +49,7 @@ struct AgentKnowledgeVectorCountSnapshot: Equatable {
 }
 
 final class AgentKnowledgeDatabase {
+  let nativeFiles: AgentKnowledgeNativeFiles
   private let fileURL: URL
   private let secrets: GalaxySSISecretStore
   private let cipher: GalaxySSIAttachmentAtRestCipher
@@ -60,6 +61,7 @@ final class AgentKnowledgeDatabase {
   private var database: OpaquePointer?
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
+    nativeFiles = AgentKnowledgeNativeFiles(databaseURL: fileURL, secrets: secrets)
     self.fileURL = fileURL
     self.secrets = secrets
     cipher = GalaxySSIAttachmentAtRestCipher(
@@ -82,6 +84,7 @@ final class AgentKnowledgeDatabase {
   }
 
   deinit {
+    nativeFiles.invalidate()
     if let database { sqlite3_close_v2(database) }
   }
 
@@ -487,6 +490,21 @@ final class AgentKnowledgeDatabase {
     try locked {
       let pageSize = min(max(limit, 1), 64)
       let modelHash = keyedHash(modelSHA256.lowercased())
+      guard let migration = prepare("SELECT contract_hash FROM knowledge_vector_native_enrollment WHERE model_hash = ? LIMIT 1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(modelHash, at: 1, to: migration)
+      let migrationStatus = sqlite3_step(migration)
+      let nativeContract: String?
+      if migrationStatus == SQLITE_ROW {
+        guard let text = sqlite3_column_text(migration, 0) else {
+          sqlite3_finalize(migration)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        nativeContract = String(cString: text)
+      } else { nativeContract = nil }
+      sqlite3_finalize(migration)
+      guard migrationStatus == SQLITE_ROW || migrationStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard ensureVectorEnrollment(modelHash: modelHash) else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -517,8 +535,17 @@ final class AgentKnowledgeDatabase {
         let expectedCount = checkpoints.first?.chunkCount ?? 0
         let completeIndices = expectedCount > 0 &&
           Set(checkpoints.map(\.chunkIndex)) == Set(0..<expectedCount)
+        var nativeReady = true
+        if let nativeContract {
+          let ordinalCount = try replayOrdinalCount(modelHash: modelHash, itemHash: itemHash, revisionHash: keyedHash(revision))
+          nativeReady = try checkpoints.allSatisfy { checkpoint in
+            guard checkpoint.validatedSourceRange(in: item) != nil else { return false }
+            return try vectorProvenanceHash(checkpoint.provenance) == nativeContract
+          }
+          nativeReady = nativeReady && ordinalCount == Int64(expectedCount)
+        }
         if !checkpoints.isEmpty && checkpoints.allSatisfy({ $0.sourceRevision == revision }) &&
-           checkpoints.count == expectedCount && completeIndices {
+           checkpoints.count == expectedCount && completeIndices && nativeReady {
           completedHashes.append(itemHash)
         } else {
           pending.append(item)
@@ -528,6 +555,89 @@ final class AgentKnowledgeDatabase {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       return Array(pending.prefix(pageSize))
+    }
+  }
+
+  // Enroll legacy documents in bounded durable slices; the normal indexer performs
+  // real tokenization/embedding and republishes complete, source-ranged vectors.
+  func maintainNativeVectorEnrollment(provenance: AgentKnowledgeVectorProvenance, pageSize: Int = 64) throws -> Bool {
+    try locked {
+      guard (1...64).contains(pageSize), execute("BEGIN IMMEDIATE TRANSACTION") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      let modelHash = keyedHash(provenance.modelSHA256.lowercased())
+      let contractHash = try vectorProvenanceHash(provenance)
+      guard ensureVectorEnrollment(modelHash: modelHash) else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard let insert = prepare("""
+        INSERT INTO knowledge_vector_native_enrollment(model_hash, contract_hash) VALUES (?, ?)
+        ON CONFLICT(model_hash) DO UPDATE SET after_item_hash = '', complete = 0, contract_hash = excluded.contract_hash
+        WHERE knowledge_vector_native_enrollment.contract_hash != excluded.contract_hash
+        """) else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(modelHash, at: 1, to: insert)
+      bind(contractHash, at: 2, to: insert)
+      let inserted = sqlite3_step(insert) == SQLITE_DONE
+      sqlite3_finalize(insert)
+      guard inserted, let state = prepare("SELECT after_item_hash, complete FROM knowledge_vector_native_enrollment WHERE model_hash = ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(modelHash, at: 1, to: state)
+      guard sqlite3_step(state) == SQLITE_ROW, let text = sqlite3_column_text(state, 0) else {
+        sqlite3_finalize(state)
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let cursor = String(cString: text), alreadyComplete = sqlite3_column_int(state, 1) != 0
+      sqlite3_finalize(state)
+      if alreadyComplete {
+        guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+        committed = true
+        return true
+      }
+      guard let source = prepare("SELECT item_hash FROM knowledge_items WHERE item_hash > ? ORDER BY item_hash ASC LIMIT ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(cursor, at: 1, to: source)
+      sqlite3_bind_int(source, 2, Int32(pageSize))
+      var hashes: [String] = []
+      var status = sqlite3_step(source)
+      while status == SQLITE_ROW {
+        guard let hash = sqlite3_column_text(source, 0) else {
+          sqlite3_finalize(source)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        hashes.append(String(cString: hash))
+        status = sqlite3_step(source)
+      }
+      sqlite3_finalize(source)
+      guard status == SQLITE_DONE, let queue = prepare("INSERT OR IGNORE INTO knowledge_vector_queue(model_hash, item_hash) VALUES (?, ?)") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      for hash in hashes {
+        sqlite3_reset(queue)
+        sqlite3_clear_bindings(queue)
+        bind(modelHash, at: 1, to: queue)
+        bind(hash, at: 2, to: queue)
+        guard sqlite3_step(queue) == SQLITE_DONE else {
+          sqlite3_finalize(queue)
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+      }
+      sqlite3_finalize(queue)
+      guard let update = prepare("UPDATE knowledge_vector_native_enrollment SET after_item_hash = ?, complete = ? WHERE model_hash = ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      let complete = hashes.count < pageSize
+      bind(hashes.last ?? cursor, at: 1, to: update)
+      sqlite3_bind_int(update, 2, complete ? 1 : 0)
+      bind(modelHash, at: 3, to: update)
+      let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+      sqlite3_finalize(update)
+      guard updated, execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+      committed = true
+      return complete
     }
   }
 
@@ -1393,6 +1503,14 @@ final class AgentKnowledgeDatabase {
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_replay ON knowledge_vector_changes(model_hash, sequence)")
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_vector_change_document ON knowledge_vector_changes(model_hash, item_hash, sequence)")
     _ = execute("""
+      CREATE TABLE IF NOT EXISTS knowledge_vector_native_enrollment (
+        model_hash TEXT PRIMARY KEY NOT NULL,
+        contract_hash TEXT NOT NULL,
+        after_item_hash TEXT NOT NULL DEFAULT '',
+        complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0, 1))
+      )
+      """)
+    _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_vector_enrollment (
         model_hash TEXT PRIMARY KEY NOT NULL,
         after_item_hash TEXT NOT NULL DEFAULT '',
@@ -2123,6 +2241,22 @@ final class AgentKnowledgeDatabase {
     let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
     sqlite3_finalize(update)
     return updated
+  }
+
+  private func vectorProvenanceHash(_ provenance: AgentKnowledgeVectorProvenance) throws -> String {
+    keyedHash(String(decoding: try JSONEncoder.galaxySSI.encode(provenance), as: UTF8.self))
+  }
+
+  private func replayOrdinalCount(modelHash: String, itemHash: String, revisionHash: String) throws -> Int64 {
+    guard let statement = prepare("SELECT COUNT(*) FROM knowledge_vector_replay_rows WHERE model_hash = ? AND item_hash = ? AND source_revision_hash = ?") else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_finalize(statement) }
+    bind(modelHash, at: 1, to: statement)
+    bind(itemHash, at: 2, to: statement)
+    bind(revisionHash, at: 3, to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+    return sqlite3_column_int64(statement, 0)
   }
 
   private func storeVectorReplayOrdinal(_ checkpoint: AgentKnowledgeVectorCheckpoint, vectorKey: String) -> Bool {

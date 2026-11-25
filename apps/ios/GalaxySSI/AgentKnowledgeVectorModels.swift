@@ -51,7 +51,7 @@ struct AgentKnowledgeVectorCheckpoint: Codable, Equatable, Identifiable {
   }
 
   var isValid: Bool {
-    sourceRangeIsValid && !itemId.isEmpty && sourceRevision.count == 64 && chunkIndex < chunkCount &&
+    sourceRangeIsValid && !itemId.isEmpty && sourceRevision.count == 64 && chunkCount > 0 && chunkIndex >= 0 && chunkIndex < chunkCount &&
       provenance.modelSHA256.count == 64 &&
       vector.count == provenance.dimensions && vector.allSatisfy(\.isFinite) &&
       abs(vector.reduce(0.0) { $0 + Double($1) * Double($1) } - 1) < 0.01
