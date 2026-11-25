@@ -126,7 +126,7 @@ class HealthComparisonUiDeviceTest {
             }
         }
     }
-    @Test fun chartTapsShowOneRecordedDayAndBlankTapsClearTheSelection() = fixture { names ->
+    @Test fun chartTapsAndHorizontalDragsSelectCalendarDaysWithoutHittingDots() = fixture { names ->
         val today = LocalDate.now()
         HealthActivityHistoryStore(context, names.activity).use { store ->
             listOf(1_600L, 2_430L, 5_300L, 3_100L, 950L, 8_150L, 4_200L).forEachIndexed { index, steps ->
@@ -183,15 +183,35 @@ class HealthComparisonUiDeviceTest {
                     assertFalse("An unrecorded date must not be plotted", columns[from + (to - from) / 3])
                     assertTrue("A recorded zero remains visible", columns[from + (to - from) / 2])
 
-                    fun tapPoint(x: Int) {
-                        val y = (0 until bitmap.height).first { bitmap.getPixel(x, it) == green }
-                        tapAt(x.toFloat(), y.toFloat(), chart::dispatchTouchEvent)
-                    }
-                    val zeroX = (from + to) / 2
-                    tapPoint(zeroX)
+                    fun xAt(day: Int) = from + (to - from) * day / 6f
+                    val y = chart.height / 4f
+                    tapAt(xAt(3), y, chart::dispatchTouchEvent)
                     val zero = healthActivityAmount(activity, HealthActivityKind.CYCLING, 0)
                     assertTrue(chart.contentDescription.toString().endsWith(zero))
-                    tapPoint(from + (activity.resources.displayMetrics.density * 2).toInt())
+                    tapAt(xAt(2), y, chart::dispatchTouchEvent)
+                    val unrecorded = activity.getString(R.string.health_activity_day_unrecorded)
+                    assertTrue(chart.contentDescription.toString().endsWith(unrecorded))
+
+                    val time = SystemClock.uptimeMillis()
+                    sendChartTouch(time, MotionEvent.ACTION_DOWN, xAt(2), y, chart::dispatchTouchEvent)
+                    sendChartTouch(time, MotionEvent.ACTION_MOVE, xAt(3), y, chart::dispatchTouchEvent)
+                    assertTrue(chart.contentDescription.toString().endsWith(zero))
+                    sendChartTouch(time, MotionEvent.ACTION_MOVE, xAt(4), y, chart::dispatchTouchEvent)
+                    assertTrue(chart.contentDescription.toString().endsWith(unrecorded))
+                    sendChartTouch(time, MotionEvent.ACTION_MOVE, xAt(1), y, chart::dispatchTouchEvent)
+                    val fortyFive = healthActivityAmount(activity, HealthActivityKind.CYCLING, 2_700_000)
+                    assertTrue(chart.contentDescription.toString().endsWith(fortyFive))
+                    sendChartTouch(time, MotionEvent.ACTION_UP, xAt(1), y, chart::dispatchTouchEvent)
+                    assertTrue(chart.contentDescription.toString().endsWith(fortyFive))
+
+                    val vertical = SystemClock.uptimeMillis()
+                    sendChartTouch(vertical, MotionEvent.ACTION_DOWN, xAt(3), y, chart::dispatchTouchEvent)
+                    sendChartTouch(vertical, MotionEvent.ACTION_MOVE, xAt(3), y + chart.height / 3, chart::dispatchTouchEvent)
+                    sendChartTouch(vertical, MotionEvent.ACTION_UP, xAt(3), y + chart.height / 3, chart::dispatchTouchEvent)
+                    assertTrue("Vertical movement must not change the selected date",
+                        chart.contentDescription.toString().endsWith(fortyFive))
+
+                    tapAt(xAt(0), y, chart::dispatchTouchEvent)
                     val sixty = healthActivityAmount(activity, HealthActivityKind.CYCLING, 3_600_000)
                     assertTrue(chart.contentDescription.toString().endsWith(sixty))
                     val guideX = from + (activity.resources.displayMetrics.density * 2.5f).toInt()
@@ -220,9 +240,12 @@ class HealthComparisonUiDeviceTest {
     private fun tapAt(x: Float, y: Float, dispatch: (MotionEvent) -> Boolean) {
         val time = SystemClock.uptimeMillis()
         listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP).forEach { action ->
-            val event = MotionEvent.obtain(time, time, action, x, y, 0)
-            try { dispatch(event) } finally { event.recycle() }
+            sendChartTouch(time, action, x, y, dispatch)
         }
+    }
+    private fun sendChartTouch(time: Long, action: Int, x: Float, y: Float, dispatch: (MotionEvent) -> Boolean) {
+        val event = MotionEvent.obtain(time, SystemClock.uptimeMillis(), action, x, y, 0)
+        try { dispatch(event) } finally { event.recycle() }
     }
     private fun capturePointPreview(name: String) {
         if (InstrumentationRegistry.getArguments().getString("preview") != "true") return

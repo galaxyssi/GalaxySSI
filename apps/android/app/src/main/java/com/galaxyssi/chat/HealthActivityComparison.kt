@@ -2,12 +2,16 @@ package com.galaxyssi.chat
 
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 
 internal enum class HealthActivityKind { STEPS, CYCLING }
 internal data class HealthActivityDay(val kind: HealthActivityKind, val day: LocalDate, val total: Long)
 internal data class HealthActivityComparison(val first: LocalDate, val last: LocalDate,
     val current: List<Long?>) {
     fun dayAt(index: Int): LocalDate = first.plusDays(index.toLong())
+
+    fun nearestDayIndex(fraction: Float): Int =
+        (fraction.coerceIn(0f, 1f) * current.lastIndex).roundToInt()
 
     fun dateTickIndices(limit: Int): List<Int> {
         val count = limit.coerceIn(2, 7).coerceAtMost(current.size)

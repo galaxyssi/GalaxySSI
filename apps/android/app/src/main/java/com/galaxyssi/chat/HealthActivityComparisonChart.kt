@@ -17,21 +17,21 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.time.LocalDate
 import java.text.NumberFormat
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.hypot
 
 internal class HealthActivityComparisonChart(
     context: Context,
     private val data: HealthActivityComparison,
     private val kind: HealthActivityKind,
     selectedDay: LocalDate?,
+    private val onGestureFinished: () -> Unit,
     private val onSelection: (LocalDate?) -> Unit,
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val tooltipPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val area = RectF()
-    private val recordedDays = data.current.indices.filter { data.current[it] != null }
     private val divisor = if (kind == HealthActivityKind.CYCLING) 60_000.0 else 1.0
     private val interval = ceil((data.current.filterNotNull().maxOrNull() ?: 0L) / divisor / 3).coerceAtLeast(1.0)
     private val maximum = interval * 3 * divisor
@@ -40,14 +40,17 @@ internal class HealthActivityComparisonChart(
     private val valueLabels = List(4) { numbers.format(interval * it) }
     private val dates = DateTimeFormatter.ofPattern(if (data.first.year == data.last.year) "M/d" else "yy/M/d", locale)
     private val dateLabels = data.current.indices.map { dates.format(data.dayAt(it)) }
-    private var selectedIndex = recordedDays.firstOrNull { data.dayAt(it) == selectedDay }
+    private var selectedIndex = data.current.indices.firstOrNull { data.dayAt(it) == selectedDay }
+    private enum class Gesture { IDLE, PENDING, SCRUBBING, IGNORED }
+    private var gesture = Gesture.IDLE
+    val trackingTouch: Boolean get() = gesture != Gesture.IDLE
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f
     private var downY = 0f
-    private var dragged = false
 
     init {
         minimumHeight = (220 * density).toInt()
-        isClickable = recordedDays.isNotEmpty()
+        isClickable = data.current.isNotEmpty()
         isFocusable = isClickable
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         updateDescription()
@@ -101,13 +104,16 @@ internal class HealthActivityComparisonChart(
         }
         selectedIndex?.let { index ->
             val x = xAt(index)
-            val y = yAt(requireNotNull(data.current[index]))
-            val radius = 5.5f * density
-            canvas.drawCircle(x, y, radius, paint)
-            paint.color = context.getColor(R.color.page_bg)
-            canvas.drawCircle(x, y, radius - density, paint)
-            paint.color = accent
-            canvas.drawCircle(x, y, 2.5f * density, paint)
+            val value = data.current[index]
+            val y = value?.let(::yAt) ?: area.centerY()
+            if (value != null) {
+                val radius = 5.5f * density
+                canvas.drawCircle(x, y, radius, paint)
+                paint.color = context.getColor(R.color.page_bg)
+                canvas.drawCircle(x, y, radius - density, paint)
+                paint.color = accent
+                canvas.drawCircle(x, y, 2.5f * density, paint)
+            }
             drawPointValue(canvas, x, y, pointLabel(index))
         }
     }
@@ -116,8 +122,9 @@ internal class HealthActivityComparisonChart(
         else area.left + area.width() * index / data.current.lastIndex
     private fun yAt(value: Long) = area.bottom - area.height() * (value / maximum).toFloat()
 
-    private fun pointLabel(index: Int) = context.getString(R.string.health_activity_point_value,
-        dateLabels[index], healthActivityAmount(context, kind, requireNotNull(data.current[index])))
+    private fun pointLabel(index: Int) = context.getString(R.string.health_activity_point_value, dateLabels[index],
+        data.current[index]?.let { healthActivityAmount(context, kind, it) }
+            ?: context.getString(R.string.health_activity_day_unrecorded))
 
     private fun drawPointValue(canvas: Canvas, x: Float, y: Float, label: String) {
         val gap = 9 * density
@@ -160,35 +167,69 @@ internal class HealthActivityComparisonChart(
 
     fun clearSelection() = select(null)
 
+    private fun onTimeline(x: Float, y: Float): Boolean {
+        val edge = 10 * density
+        return !area.isEmpty && x >= area.left - edge && x <= area.right + edge &&
+            y >= area.top - edge && y <= height
+    }
+
+    private fun selectAt(x: Float) {
+        if (!area.isEmpty) select(data.nearestDayIndex((x - area.left) / area.width()))
+    }
+
+    private fun finishGesture() {
+        if (gesture == Gesture.IDLE) return
+        gesture = Gesture.IDLE
+        parent?.requestDisallowInterceptTouchEvent(false)
+        post { if (isAttachedToWindow) onGestureFinished() }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isClickable) return super.onTouchEvent(event)
-        val slop = ViewConfiguration.get(context).scaledTouchSlop
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y; dragged = false }
-            MotionEvent.ACTION_POINTER_DOWN -> dragged = true
-            MotionEvent.ACTION_MOVE -> if (hypot(event.x - downX, event.y - downY) > slop) dragged = true
-            MotionEvent.ACTION_UP -> if (!dragged && hypot(event.x - downX, event.y - downY) <= slop) {
-                fun distance(index: Int) = hypot(xAt(index) - event.x, yAt(requireNotNull(data.current[index])) - event.y)
-                val hit = recordedDays.minByOrNull(::distance)?.takeIf { !area.isEmpty && distance(it) <= 22 * density }
-                select(hit)
-                if (hit != null) super.performClick()
+            MotionEvent.ACTION_DOWN -> { downX = event.x; downY = event.y; gesture = Gesture.PENDING }
+            MotionEvent.ACTION_MOVE -> {
+                if (gesture == Gesture.PENDING) {
+                    val dx = abs(event.x - downX)
+                    val dy = abs(event.y - downY)
+                    if (maxOf(dx, dy) > touchSlop) {
+                        gesture = if (dx > dy && onTimeline(downX, downY)) Gesture.SCRUBBING else Gesture.IGNORED
+                        if (gesture == Gesture.SCRUBBING) parent?.requestDisallowInterceptTouchEvent(true)
+                    }
+                }
+                if (gesture == Gesture.SCRUBBING) selectAt(event.x)
             }
+            MotionEvent.ACTION_UP -> {
+                if (gesture == Gesture.SCRUBBING) selectAt(event.x)
+                else if (gesture == Gesture.PENDING &&
+                    maxOf(abs(event.x - downX), abs(event.y - downY)) <= touchSlop) {
+                    if (onTimeline(event.x, event.y)) {
+                        selectAt(event.x)
+                        super.performClick()
+                    } else clearSelection()
+                }
+                finishGesture()
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                gesture = Gesture.IGNORED
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            MotionEvent.ACTION_CANCEL -> finishGesture()
         }
         return true
     }
 
     override fun performClick(): Boolean {
         if (!isClickable) return false
-        if (selectedIndex == null) select(recordedDays.last())
+        if (selectedIndex == null) select(data.current.lastIndex)
         super.performClick()
         return true
     }
 
     private fun moveSelection(forward: Boolean): Boolean {
-        val current = selectedIndex
-        val next = if (forward) recordedDays.firstOrNull { current == null || it > current }
-            else recordedDays.lastOrNull { current == null || it < current }
-        if (next == null) return false
+        val next = selectedIndex?.let { it + if (forward) 1 else -1 }
+            ?: if (forward) 0 else data.current.lastIndex
+        if (next !in data.current.indices) return false
         select(next)
         return true
     }
@@ -201,9 +242,9 @@ internal class HealthActivityComparisonChart(
 
     override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        if (recordedDays.size <= 1) return
-        if (selectedIndex != recordedDays.last()) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
-        if (selectedIndex != recordedDays.first()) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
+        if (data.current.size <= 1) return
+        if (selectedIndex != data.current.lastIndex) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD)
+        if (selectedIndex != 0) info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)
     }
 
     override fun performAccessibilityAction(action: Int, arguments: Bundle?): Boolean = when (action) {
