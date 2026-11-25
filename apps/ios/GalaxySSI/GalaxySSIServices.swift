@@ -14307,11 +14307,13 @@ final class MessageCoordinator: ObservableObject {
 
     let history = supervisorHistory(task: task, outgoing: outgoing)
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
-    let original = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
+    var original = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
+    if let language = boundAction.parameters["response_language"] { original.parameters["response_language"] = language }
     let priorDispatch = runtime.nativeActionExecutor.observedConnectorDispatch(action: original)
     let routed = priorDispatch == nil
       ? refreshAutomaticConnectorAction(boundAction, outgoing: outgoing, goal: task.goal) : boundAction
-    var executionAction = scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task)
+    var executionAction = priorDispatch == nil
+      ? scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task) : original
     if executionAction.kind == .callConnector, priorDispatch == nil {
       executionAction.parameters[AgentIOSConnectorDispatch.sourceKey] = outgoing.id.uuidString
       executionAction.parameters[AgentIOSConnectorDispatch.profileKey] = store.profile.identityFingerprint
@@ -14722,6 +14724,59 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func continueFailedNativeConnector(
+    action: AgentAction, result: AgentActionResult, outgoing: ChatMessage, task: inout AgentTaskRecord
+  ) -> Bool {
+    guard !result.success, result.metadata["connector_disposition"] == "response",
+          ["failed", "timed_out"].contains(result.metadata["remote_task_status"] ?? ""),
+          AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic,
+          AgentSupervisorRecoveryPolicy.stopReason(action: action, result: result,
+            history: supervisorHistory(task: task, outgoing: outgoing)) == nil,
+          let fallback = connectorFallbackAction(action: action, failedResult: result, goal: task.goal),
+          var plan = task.activePlan, plan.actions.filter({ $0.id == action.id }).count == 1,
+          let index = plan.actions.firstIndex(where: { $0.id == action.id }) else { return false }
+    let previous = task
+    var failed = action
+    failed.status = .failed
+    failed.result = result.message
+    failed.evidence = AgentMcpJSONCodec.stringify([
+      "type": .string("connector_terminal_observation"), "success": .bool(false),
+      "task_status": .string(result.metadata["remote_task_status"] ?? ""),
+      "source_message_id": .string(result.metadata["source_message_id"] ?? ""),
+      "message": .string(String(result.message.prefix(2_000)))])
+    plan.actionHistory = Array((plan.actionHistory + [failed]).suffix(AgentLongTaskPersistenceLimits.maximumActions))
+    plan.actions[index] = fallback
+    plan.selectedAgentOrModel = fallback.target
+    plan.route = AgentRouteResolver.resolve(action: fallback, targets: AgentCallableTargetCatalog.build(
+      contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) }))
+    plan.validation = AgentPlanValidator.validate(plan)
+    guard plan.validation.valid else { return false }
+    task.activePlan = plan
+    task.planContext = AgentTaskPlanContext(plan: plan)
+    task.pendingActions = [fallback] + task.pendingActions.filter { $0.id != action.id }
+    task.pendingAction = fallback
+    task.phase = .executing
+    task.blocked = false
+    task.result = ""
+    task.verification = localizedReply("galaxyssi.agent.connector.fallback_pending",
+      fallback: "The original connector failed. The next permitted route is awaiting dispatch checks.")
+    task.executionLog.append("Connector terminal fallback: \(action.target) -> \(fallback.target)")
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    guard store.commitOwnedAgentTaskState(expected: previous, updated: task) else {
+      task = previous
+      task.phase = .blocked
+      task.blocked = true
+      return true
+    }
+    if !applyLocalNativeAction(action: fallback, outgoing: outgoing, task: &task) {
+      let saved = store.agentTask(id: task.taskId)
+      task.phase = .blocked
+      task.blocked = true
+      _ = store.commitOwnedAgentTaskState(expected: saved, updated: task)
+    }
+    return true
+  }
+
   private func resumeWaitingNativeConnectors(owner: String? = nil) {
     guard UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
           !store.agentSafetySettings.executionPaused,
@@ -14747,6 +14802,7 @@ final class MessageCoordinator: ObservableObject {
       var executed = action
       executed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.receiptKey)
       executed.parameters.removeValue(forKey: AgentNativeConnectorContinuation.sourceKey)
+      if continueFailedNativeConnector(action: executed, result: settled, outgoing: outgoing, task: &task) { continue }
       recordAutomaticConnectorTarget(executed, result: settled, outgoing: outgoing)
       finishLocalNativeAction(action: executed, executionAction: executed, result: settled,
         outgoing: outgoing, rollbackAction: nil, task: &task)

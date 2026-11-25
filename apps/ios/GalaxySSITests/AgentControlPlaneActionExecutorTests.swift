@@ -2,6 +2,27 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testOwnedConnectorRunIdentitySeparatesRetriesAndPreservesFirstManualIdentity() throws {
+    let original = nativeConnectorWaitFixture().action
+    let first = AgentControlPlaneActionExecutor.connectorRunId(action: original, agentId: "codex")
+    XCTAssertEqual(first, AgentControlPlaneActionExecutor.stableRunId(conversationId: "conversation",
+      turnId: "turn", actionId: original.id, agentId: "codex"))
+    var retry = original
+    retry.parameters["routing_fallback_action_id"] = retry.id
+    retry.parameters[AgentConnectorFallbackAction.attemptedParameter] = "codex,cloud-model:deepseek"
+    retry.parameters["routing_retried_resource_ids"] = "codex"
+    let attempt = AgentControlPlaneActionExecutor.connectorRunId(action: retry, agentId: "codex")
+    XCTAssertNotEqual(first, attempt)
+    let reopened = try JSONDecoder().decode(AgentAction.self, from: JSONEncoder().encode(retry))
+    XCTAssertEqual(attempt, AgentControlPlaneActionExecutor.connectorRunId(action: reopened, agentId: "codex"))
+    retry.parameters["manual_target_locked"] = "true"
+    XCTAssertEqual(first, AgentControlPlaneActionExecutor.connectorRunId(action: retry, agentId: "codex"))
+    var unrelated = original
+    unrelated.parameters["routing_fallback_action_id"] = "another-action"
+    unrelated.parameters[AgentConnectorFallbackAction.attemptedParameter] = "codex"
+    XCTAssertEqual(first, AgentControlPlaneActionExecutor.connectorRunId(action: unrelated, agentId: "codex"))
+  }
+
   func testQueuedConnectorKickoffRunsOnlyAfterDurableOwnershipAndDoesNotReplay() {
     for reject in [false, true] {
       let ledger: AgentManagedResponseLedger = reject

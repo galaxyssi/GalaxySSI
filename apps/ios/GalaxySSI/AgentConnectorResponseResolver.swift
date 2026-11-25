@@ -24,8 +24,7 @@ enum AgentNativeConnectorContinuation {
           !(metadata["contact_id"] ?? "").isBlank, !(metadata["task_id"] ?? "").isBlank,
           let owner = metadata["control_plane_run_id"], !owner.isBlank,
           let agent = metadata["control_plane_agent_id"], !agent.isBlank,
-          owner == AgentControlPlaneActionExecutor.stableRunId(conversationId: conversation,
-            turnId: turn, actionId: action.id, agentId: agent),
+          owner == AgentControlPlaneActionExecutor.connectorRunId(action: action, agentId: agent),
           let encoded = try? JSONEncoder().encode(result), encoded.count <= 128 * 1_024 else { return nil }
     var waiting = action
     waiting.status = .waitingResponse

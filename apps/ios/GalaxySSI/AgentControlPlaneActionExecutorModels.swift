@@ -82,12 +82,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     }
     let conversationId = action.parameters[Self.conversationIdKey] ?? ""
     let turnId = action.parameters[Self.turnIdKey] ?? ""
-    let runId = Self.stableRunId(
-      conversationId: conversationId,
-      turnId: turnId,
-      actionId: action.id,
-      agentId: agentId
-    )
+    let runId = Self.connectorRunId(action: action, agentId: agentId)
     let request = AgentRunRequest(
       conversationId: conversationId,
       messageId: turnId.ifBlank(action.id),
@@ -246,6 +241,12 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
     Task { [weak self] in
       _ = await self?.prewarm()
     }
+  }
+
+  static func connectorRunId(action: AgentAction, agentId: String) -> String {
+    stableRunId(conversationId: action.parameters[conversationIdKey] ?? "",
+      turnId: action.parameters[turnIdKey] ?? "",
+      actionId: AgentConnectorHandoffRecovery.effectAttemptKey(action), agentId: agentId)
   }
 
   static func stableRunId(conversationId: String, turnId: String, actionId: String, agentId: String) -> String {

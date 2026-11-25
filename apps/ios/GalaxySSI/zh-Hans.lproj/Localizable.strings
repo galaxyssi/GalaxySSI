@@ -7809,3 +7809,4 @@
 "galaxyssi.agent.connector.wait_unsaved" = "未能保存连接器的后续状态，未重复执行。";
 "galaxyssi.agent.connector.response_unsaved" = "未能保存连接器回复，未重复发送原请求。";
 "galaxyssi.agent.connector.outcome_unknown" = "连接器可能已开始执行，但结果尚不确定。未重复发送原请求。";
+"galaxyssi.agent.connector.fallback_pending" = "原连接器已失败，正在检查下一条允许的执行路径。";

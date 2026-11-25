@@ -178,8 +178,20 @@ const queuedKickoff = `    if awaitingResponse, sourceMessageId > 0,
 assert(providerText.includes(queuedKickoff));
 assert(providerText.indexOf(queuedKickoff) > providerText.indexOf('    let outcome:'));
 assert(providerText.lastIndexOf('    emit(', providerText.indexOf(queuedKickoff)) > catchStart);
+const runIdentityStart = providerText.indexOf('  static func connectorRunId(');
+const runIdentityEnd = providerText.indexOf('  static func stableRunId(', runIdentityStart);
+assert(runIdentityStart > 0 && runIdentityEnd > runIdentityStart);
+const runIdentity = providerText.slice(runIdentityStart, runIdentityEnd);
+for (const token of ['action.parameters[conversationIdKey]', 'action.parameters[turnIdKey]',
+  'AgentConnectorHandoffRecovery.effectAttemptKey(action)']) assert(runIdentity.includes(token));
 const normalizedProvider = providerText.replace(waitValidation, '').replace(trackingBlock, oldTracking)
-  .replace(trackingFailure, '').replace(queuedKickoff, '');
+  .replace(trackingFailure, '').replace(queuedKickoff, '').replace(runIdentity, '')
+  .replace('    let runId = Self.connectorRunId(action: action, agentId: agentId)', `    let runId = Self.stableRunId(
+      conversationId: conversationId,
+      turnId: turnId,
+      actionId: action.id,
+      agentId: agentId
+    )`);
 assert.equal(normalizedProvider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
   '    var result = delegate.execute(action: item.action, screen: item.screen)'), git('show', `${base}:${providerFile}`));
 module.exports.normalizedProvider = normalizedProvider;
@@ -190,7 +202,8 @@ for (const name of ['testNativeConnectorWaitRoundTripsAndOnlySettlesExactCommitt
   'testNativeConnectorQueueCannotProjectSuccessfulToolCompletion',
   'testNativeConnectorWaitRejectsMissingScopeAndUntrackedFailureCannotReroute',
   'testQueuedConnectorKickoffRunsOnlyAfterDurableOwnershipAndDoesNotReplay',
-  'testQueuedConnectorIdentityAndHostPolicyMatchKeepExactSourceAndPrompt']) assert(dispatchTests.includes('func ' + name + '('));
+  'testQueuedConnectorIdentityAndHostPolicyMatchKeepExactSourceAndPrompt',
+  'testOwnedConnectorRunIdentitySeparatesRetriesAndPreservesFirstManualIdentity']) assert(dispatchTests.includes('func ' + name + '('));
 assert(source.includes('failure.metadata["effect_outcome_unknown"] != "true"'));
 assert(source.includes('failure.metadata["non_retriable"] != "true"'));
 for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutResolver.swift']) {
@@ -211,7 +224,7 @@ assert(continuationStart > 0 && continuationEnd > continuationStart);
 assert.equal(resolver.slice(0, continuationStart) + resolver.slice(continuationEnd), git('show', `${base}:${resolverFile}`));
 for (const token of ['record.matchesCommittedResult(response)', 'record.ownerRunId == pending.metadata["control_plane_run_id"]',
   'response.contactId == record.contactId', 'response.executionGeneration == record.executionGeneration',
-  'AgentControlPlaneActionExecutor.stableRunId(', 'outgoing.contactId == "hermes"',
+  'AgentControlPlaneActionExecutor.connectorRunId(', 'outgoing.contactId == "hermes"',
   'waiting.status = .waitingResponse']) assert(resolver.includes(token));
 const waitHost = services.slice(services.indexOf('  private func retainWaitingNativeConnector('),
   services.indexOf('  private func finishLocalNativeAction('));
@@ -224,6 +237,17 @@ const finishHost = services.slice(services.indexOf('  private func finishLocalNa
 assert(finishHost.indexOf('result.metadata["awaiting_response"] == "true"') < finishHost.indexOf('updateActiveNativePlan('));
 assert(services.includes('nativeConnectorResponseToken = AgentLateManagedResponseBus.shared.addListener'));
 assert(services.includes('!AgentNativeConnectorContinuation.hasWaitingAction(task),'));
+const asyncFailure = services.slice(services.indexOf('  private func continueFailedNativeConnector('),
+  services.indexOf('  private func resumeWaitingNativeConnectors('));
+for (const token of ['result.metadata["connector_disposition"] == "response"',
+  '["failed", "timed_out"].contains(result.metadata["remote_task_status"] ?? "")',
+  'selection(for: outgoing.conversationId).mode == .automatic', 'AgentSupervisorRecoveryPolicy.stopReason(',
+  'connectorFallbackAction(action: action, failedResult: result, goal: task.goal)',
+  'plan.actionHistory + [failed]', 'plan.actions[index] = fallback', 'guard plan.validation.valid else { return false }',
+  'task.pendingActions = [fallback] +', 'store.commitOwnedAgentTaskState(expected: previous, updated: task)',
+  'applyLocalNativeAction(action: fallback']) assert(asyncFailure.includes(token));
+assert(asyncFailure.indexOf('store.commitOwnedAgentTaskState(expected: previous, updated: task)') < asyncFailure.indexOf('applyLocalNativeAction(action: fallback'));
+assert(waitHost.includes('if continueFailedNativeConnector(action: executed, result: settled'));
 const dispatchHost = services.slice(services.indexOf('  private func executeLocalNativeAction('),
   services.indexOf('  private func refreshAutomaticConnectorAction('));
 assert(dispatchHost.indexOf('observedConnectorDispatch(action: original)') < dispatchHost.indexOf('refreshAutomaticConnectorAction('));
@@ -319,18 +343,18 @@ const disposition = file => {
   if (file.endsWith('AgentStableAutoRoute.kt')) return 'Candidate admission, exact target ID, begin-turn and stale update guards adapted using encrypted native session payload, not a new plaintext preference store';
   if (file.endsWith('MainActivityAgentExecution.kt')) return 'Native header uses the same exact target identity as dispatch, not stale display labels or a fabricated Codex fallback';
   if (file.endsWith('AgentResourceRouter.kt')) return 'Live exact-ID registration/global-slot capacity, privacy/capability and explicit provider/network budget admission precedes stable primary selection and fresh synchronous fallback. Current telemetry-only counters retained; full scored/circuit-health/failure-domain router remains incomplete';
-  if (file.endsWith('MobileNativeAgentExecution.kt')) return 'Primary branch snapshot and parallel/synchronous pre-dispatch route refresh preserve updated action parameters and exact outgoing context; asynchronous recovery specifics still incomplete';
+  if (file.endsWith('MobileNativeAgentExecution.kt')) return 'Primary branch snapshot and parallel/synchronous pre-dispatch refresh retain exact context. Committed owned terminal failures stage validated fallback before normal confirmation/dispatch; active timeout/deferred observation remains incomplete';
   if (file.endsWith('MainActivityAgentPage.kt')) return 'Composer captures owner/contact/conversation, requires that conversation at send, and rejects stale UI restoration; attachment staging/routing uses outgoing identity; no live navigation acceptance';
-  if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto-reroute metadata propagated through actual native/control-plane executor results; manual/explicit false flags dominate; synchronous fallback uses current admitted ranking and owned attempt trail';
+  if (file.endsWith('AgentConnectorFallbackAction.kt')) return 'Auto metadata propagates through actual native/control-plane results; manual/false flags dominate. Synchronous and committed known-terminal asynchronous fallback use fresh admission and owned trails; run/source/task identities share the effect-attempt key';
   if (file.endsWith('AgentConnectorHandoffRecovery.kt')) return 'Native synchronous fallback refuses unobserved remote timeout outcomes; actual pre-timeout observer/deferred asynchronous discovery remains incomplete';
   if (file.endsWith('MobileNativeAgent.kt')) return 'Existing real Desktop recovery recomputes alternative rankings within paired/verified same-Desktop eligibility and retains original retry budget. Generic timeout observer/candidate callback remains unwired; journal transport does not gain Codex replay';
   if (file.endsWith('MobileNativeAgentRuntimeTiming.kt')) return 'Native synchronous connector execution records exact selected/fallback/result target for the current conversation turn; full async/parallel/resume timing path still incomplete';
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; queued producer with owned native continuation and read-before-reroute recovery, exact local/cloud-image/paired-text backend paths and encrypted response staging; full scored router, broader attachments/rich outputs, asynchronous failover/timeout and broader resume parity incomplete',
+  scope: 'Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; queued producer, exact local/cloud-image/paired-text paths and encrypted responses; guarded known-terminal asynchronous fallback with attempt-specific run identity. Full scored router, broader attachments/rich outputs, active timeout/deferred observation and broader resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(report, 'utf8')), inventory);
-console.log('Android #3119: scoped Auto and queued producer/continuation contracts; broader attachments, asynchronous failover/timeout and native acceptance remain incomplete. Source checks only.');
+console.log('Android #3119: scoped Auto, queued producer and known-terminal fallback contracts; broader attachments, active timeout/deferred observation and native acceptance remain incomplete. Source checks only.');
