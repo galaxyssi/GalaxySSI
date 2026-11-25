@@ -6,6 +6,29 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func ciliaTrack(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let left = 26.0, right = 314.0, step = (314.0 - 26) / 9
+    let marker = left + (right - left) * (model.companionValue / 100)
+    rectangle(left - 12, 34, right + 12, 64, 0xD3E8E3, radius: 14)
+    for i in 0..<9 {
+      let x = left + step * Double(i)
+      rectangle(x + 1, 77, x + step - 1, 121, 0xA4D4CB, radius: 8)
+      oval(x + 10, 95, x + 23, 112, 0x598788)
+      for branch in 0..<4 {
+        let base = x + 4 + Double(branch) * 6
+        var cilium = Path()
+        cilium.move(to: CGPoint(x: base, y: 80))
+        cilium.addQuadCurve(to: CGPoint(x: base + 4, y: (i + branch) % 3 == 0 ? 57 : 60),
+          control: CGPoint(x: base - 3, y: 69))
+        context.stroke(cilium, with: .color(color(Self.teal)), style: StrokeStyle(lineWidth: 1.65, lineCap: .round))
+      }
+    }
+    line(left, 49, right, 49, 0x7FAAA3, 1.6)
+    if marker - left >= 8 { arrow(left, 49, marker - 2, 49, Self.teal, 2.1) }
+    oval(marker - 6, 43, marker + 6, 55, 0xBC803F)
+    oval(marker - 2, 45, marker + 1, 48, 0xFFE0A5)
+    label("airway_ciliary_clearance_track", 170, 145, 300)
+  }
   func arterialContinuity(_ model: GalaxySSIHealthAtlasPhysiology) {
     let x = 77.0, y = 67.0, radius = model.input(0) * 1.15
     let speed = model.result / model.kind.bounds.upperBound, outer = radius + 8

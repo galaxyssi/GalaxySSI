@@ -39,6 +39,16 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .retinalConvergence: result = values[0] * (values[1] / 100)
     case .muscleShortening: result = values[0] * values[1] / 1000
     case .keratinGrowth: result = values[0] * values[1]
+    case .bladderExpansion: result = 100 * (pow(1 + values[1] / values[0], 2.0 / 3.0) - 1)
+    case .vestibularTilt: result = atan2(values[0], values[1]) * 180 / .pi
+    case .airwayCiliaryClearance: result = values[0] * values[1]
+    case .gastricLiquidEmptying: result = 100 * pow(1 - values[0] / 100, values[1])
+    case .bileStorage: result = values[0] / (12 - values[1])
+    case .thoracicCrossSection: result = .pi * values[0] * values[1] / 4
+    // Positive chart samples use Android's half-up whole-icon counts.
+    case .plateletFragmentCount: result = values[0].rounded() * values[1].rounded()
+    case .boneRemodelingBalance: result = values[1] - values[0]
+    case .cutaneousSebum: result = values[0] / values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -73,6 +83,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .retinalConvergence: result = values[0] * (1 - values[1] / 100)
     case .muscleShortening: result = values[0] * (2.5 - values[1]) / 1000
     case .keratinGrowth: result = 1 / values[1]
+    case .bladderExpansion: result = 4 * .pi * pow(cbrt(3 * (values[0] + values[1]) / (4 * .pi)), 2)
+    case .vestibularTilt: result = hypot(values[0], values[1])
+    case .airwayCiliaryClearance: result = 100 * (values[0] * values[1]) / 60
+    case .gastricLiquidEmptying: result = 100 - 100 * pow(1 - values[0] / 100, values[1])
+    case .bileStorage: result = values[0]
+    case .thoracicCrossSection: result = values[0] / values[1]
+    case .plateletFragmentCount: result = values[1].rounded()
+    case .boneRemodelingBalance: result = 100 + values[1] - values[0]
+    case .cutaneousSebum: result = values[0]
     }
     return result.isFinite ? result : nil
   }

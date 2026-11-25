@@ -95,6 +95,33 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .keratinGrowth:
       return [control("keratin-growth-time", "time", 0...20, 8, "d", digits: 0),
         control("keratin-growth-rate", "rate", 2...8, 5, "mm/d", scale: 10, digits: 1)]
+    case .bladderExpansion:
+      return [control("bladder-starting-volume", "initial", 50...150, 100, "mL", digits: 0),
+        control("bladder-added-volume", "added", 0...300, 100, "mL", digits: 0)]
+    case .vestibularTilt:
+      return [control("vestibular-tilt-lateral", "lateral", 0...100, 30, "g", scale: 100),
+        control("vestibular-tilt-downward", "downward", 50...150, 100, "g", scale: 100)]
+    case .airwayCiliaryClearance:
+      return [control("airway-ciliary-clearance-cycles", "cycles", 0...24, 12, "cycles", digits: 0),
+        control("airway-ciliary-clearance-advance", "advance", 0...25, 15, "u/cycle", scale: 10, digits: 1)]
+    case .gastricLiquidEmptying:
+      return [control("gastric-liquid-removal", "removal", 5...40, 20, "%", digits: 0),
+        control("gastric-liquid-intervals", "intervals", 0...10, 4, "", digits: 0)]
+    case .bileStorage:
+      return [control("bile-storage-marker-amount", "marker_amount", 1...12, 6, "TU", digits: 0),
+        control("bile-storage-water-removed", "water_removed", 0...8, 6, "VU", digits: 0)]
+    case .thoracicCrossSection:
+      return [control("thoracic-cross-section-front-to-back", "front_to_back", 12...24, 18, "cm", digits: 0),
+        control("thoracic-cross-section-side-to-side", "side_to_side", 24...36, 30, "cm", digits: 0)]
+    case .plateletFragmentCount:
+      return [control("platelet-fragment-count-icons", "icons", 0...8, 4, "", digits: 0),
+        control("platelet-fragment-count-tiles-per-icon", "tiles_per_icon", 0...6, 3, "", digits: 0)]
+    case .boneRemodelingBalance:
+      return [control("bone-remodeling-resorbed", "resorbed", 0...20, 10, "a.u.", digits: 0),
+        control("bone-remodeling-formed", "formed", 0...20, 10, "a.u.", digits: 0)]
+    case .cutaneousSebum:
+      return [control("cutaneous-sebum-mass", "mass", 20...80, 40, "\u{00b5}g", digits: 0),
+        control("cutaneous-sebum-area", "area", 4...16, 8, "cm\u{00b2}", digits: 0)]
     }
   }
 }

@@ -8,6 +8,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case immuneComposition, ductTransit, oviductCiliaryCycles, kneeMoment
   case arterialContinuity, glialCapacitance, colonicWaterBalance, lymphParticleTransport, endocrineDilution
   case boneSection, retinalConvergence, muscleShortening, keratinGrowth
+  case bladderExpansion, vestibularTilt, airwayCiliaryClearance, gastricLiquidEmptying, bileStorage
+  case thoracicCrossSection, plateletFragmentCount, boneRemodelingBalance, cutaneousSebum
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -20,7 +22,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .valveFlux, .skinWaterBarrier, .airwaySplit, .peristalticTravel,
          .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
          .immuneComposition, .oviductCiliaryCycles, .colonicWaterBalance,
-         .endocrineDilution, .retinalConvergence, .muscleShortening: return 1
+         .endocrineDilution, .retinalConvergence, .muscleShortening,
+         .bladderExpansion, .gastricLiquidEmptying, .bileStorage, .cutaneousSebum: return 1
     default: return 0
     }
   }
@@ -51,6 +54,14 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .boneSection: return "MPa"
     case .retinalConvergence: return ""
     case .muscleShortening, .keratinGrowth: return "mm"
+    case .bladderExpansion, .gastricLiquidEmptying: return "%"
+    case .vestibularTilt: return "\u{00b0}"
+    case .airwayCiliaryClearance: return "u"
+    case .bileStorage: return "TU/VU"
+    case .thoracicCrossSection: return "cm\u{00b2}"
+    case .plateletFragmentCount: return ""
+    case .boneRemodelingBalance: return "a.u."
+    case .cutaneousSebum: return "\u{00b5}g/cm\u{00b2}"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -79,13 +90,22 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .boneSection: return 0...5
     case .retinalConvergence, .keratinGrowth: return 0...16
     case .muscleShortening: return 0...1
+    case .bladderExpansion: return 0...270
+    case .vestibularTilt: return 0...65
+    case .airwayCiliaryClearance: return 0...60
+    case .gastricLiquidEmptying: return 0...100
+    case .bileStorage: return 0...3
+    case .thoracicCrossSection: return 200...700
+    case .plateletFragmentCount: return 0...48
+    case .boneRemodelingBalance: return -20...20
+    case .cutaneousSebum: return 0...20
     }
   }
   var digits: Int {
     switch self {
-    case .glomerularFiltration, .cardiacPhaseTime: return 1
+    case .glomerularFiltration, .cardiacPhaseTime, .airwayCiliaryClearance: return 1
     case .tendonElongation, .muscleShortening: return 3
-    case .immuneComposition: return 0
+    case .immuneComposition, .plateletFragmentCount, .boneRemodelingBalance: return 0
     default: return 2
     }
   }
@@ -118,6 +138,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .retinalConvergence: return "health_atlas_retinal_convergence"
     case .muscleShortening: return "health_atlas_muscle_shortening"
     case .keratinGrowth: return "health_atlas_keratin_growth"
+    case .bladderExpansion: return "health_atlas_bladder_expansion"
+    case .vestibularTilt: return "health_atlas_vestibular_tilt"
+    case .airwayCiliaryClearance: return "health_atlas_airway_ciliary_clearance"
+    case .gastricLiquidEmptying: return "health_atlas_gastric_liquid_emptying"
+    case .bileStorage: return "health_atlas_bile_storage"
+    case .thoracicCrossSection: return "health_atlas_thoracic_cross_section"
+    case .plateletFragmentCount: return "health_atlas_platelet_fragment_count"
+    case .boneRemodelingBalance: return "health_atlas_bone_remodeling_balance"
+    case .cutaneousSebum: return "health_atlas_cutaneous_sebum"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -136,9 +165,11 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .visualAngle: suffix = "half"
     case .hormoneSignal: suffix = "removed"
     case .kneeMoment: suffix = "arm_meters"
-    case .arterialContinuity, .boneSection: suffix = "area"
+    case .arterialContinuity, .boneSection, .bladderExpansion: suffix = "area"
     case .glialCapacitance: suffix = "per_area"
     case .muscleShortening: suffix = "remaining_length"
+    case .vestibularTilt: suffix = "magnitude"
+    case .airwayCiliaryClearance: suffix = "progress"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -172,6 +203,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .retinalConvergence: return ["cell-retinal-ganglion-cell", "cell-retinal-bipolar-cell"]
     case .muscleShortening: return ["cell-skeletal-myocyte", "tissue-skeletal-muscle", "pectoralis-major", "deltoid", "triceps-brachii", "rectus-abdominis", "oblique-abdominal-muscles", "trapezius", "latissimus-dorsi", "erector-spinae", "gluteus-maximus", "hamstrings"]
     case .keratinGrowth: return ["hair", "hair-follicles", "cell-hair-matrix-cell"]
+    case .bladderExpansion: return ["bladder", "cell-urothelial-cell"]
+    case .vestibularTilt: return ["vestibular-apparatus"]
+    case .airwayCiliaryClearance: return ["nose", "nasal-cavity", "paranasal-sinuses", "tissue-respiratory-epithelium", "cell-ciliated-airway-cell"]
+    case .gastricLiquidEmptying: return ["stomach"]
+    case .bileStorage: return ["gallbladder"]
+    case .thoracicCrossSection: return ["ribs", "sternum"]
+    case .plateletFragmentCount: return ["fragment-platelet", "cell-megakaryocyte"]
+    case .boneRemodelingBalance: return ["cell-osteoblast", "cell-osteoclast", "cell-osteocyte"]
+    case .cutaneousSebum: return ["sebaceous-glands", "cell-sebocyte"]
     }
   }
   var sources: [URL] {
@@ -209,6 +249,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .retinalConvergence: values = ["https://www.webvision.pitt.edu/book/part-viii-psychophysics-of-vision/visual-acuity/", "https://elifesciences.org/articles/05241"]
     case .muscleShortening: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation"]
     case .keratinGrowth: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin"]
+    case .bladderExpansion: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/25-2-gross-anatomy-of-urine-transport", "https://openstax.org/books/prealgebra-2e/pages/c-geometric-formulas"]
+    case .vestibularTilt: values = ["https://www.nature.com/articles/19303", "https://www.ncbi.nlm.nih.gov/books/NBK10792/"]
+    case .airwayCiliaryClearance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/22-1-organs-and-structures-of-the-respiratory-system", "https://iowaprotocols.medicine.uiowa.edu/protocols/endoscopic-sinus-surgery"]
+    case .gastricLiquidEmptying: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-4-the-stomach", "https://pmc.ncbi.nlm.nih.gov/articles/PMC1159224/"]
+    case .bileStorage: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-6-accessory-organs-in-digestion-the-liver-pancreas-and-gallbladder", "https://www.niddk.nih.gov/health-information/digestive-diseases/digestive-system-how-it-works"]
+    case .thoracicCrossSection: values = ["https://sta.uwi.edu/fms/MDSC1001/Thorax_Thoracic_wall.pdf", "https://openstax.org/books/calculus-volume-3/pages/6-4-greens-theorem"]
+    case .plateletFragmentCount: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/18-4-leukocytes-and-platelets", "https://training.seer.cancer.gov/hematopoietic1/intro-to-blood.html"]
+    case .boneRemodelingBalance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure", "https://www.ncbi.nlm.nih.gov/sites/books/NBK279149/"]
+    case .cutaneousSebum: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin", "https://histologyguide.com/EM-view/EM-373-sebaceous-gland/12-photo-1.html"]
     }
     return values.map { URL(string: $0)! }
   }
