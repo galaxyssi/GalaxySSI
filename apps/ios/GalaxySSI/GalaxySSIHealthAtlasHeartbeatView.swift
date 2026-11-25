@@ -15,10 +15,10 @@ struct GalaxySSIHealthAtlasHeartbeatView: View {
         RoundedRectangle(cornerRadius: 8).fill(LinearGradient(colors: [Self.color(0xE8F2F6), Self.color(0xF8EEEE)], startPoint: .top, endPoint: .bottom))
         GalaxySSIHealthAtlasMeshImage(asset: "HealthAtlasHeartSection", logicalSize: CGSize(width: 1254, height: 1254),
           vertices: motion.mesh, columns: 24, rows: 24)
-          .frame(width: 336 * scale, height: 336 * scale).offset(x: 4 * scale, y: 5 * scale)
+          .frame(width: 256 * scale, height: 256 * scale).offset(x: 44 * scale, y: 0)
         Canvas { context, _ in
           var drawing = context; drawing.scaleBy(x: scale, y: scale)
-          var art = drawing; art.translateBy(x: 4, y: 5); art.scaleBy(x: 336.0 / 1254, y: 336.0 / 1254)
+          var art = drawing; art.translateBy(x: 44, y: 0); art.scaleBy(x: 256.0 / 1254, y: 256.0 / 1254)
           switch motion.stage {
           case .filling:
             stream(in: art, route: Self.rightFill, color: Self.blue, time: motion.fraction, motion: motion)
@@ -33,8 +33,9 @@ struct GalaxySSIHealthAtlasHeartbeatView: View {
           case .pressureRise, .relaxation: break
           }
           for valve in GalaxySSIHealthAtlasHeartSection.Valve.allCases { gate(in: art, valve: valve, motion: motion) }
-          legend(in: drawing, center: 86, text: t("low"), color: Self.blue)
-          legend(in: drawing, center: 258, text: t("high"), color: Self.rose)
+          legend(in: drawing, center: 86, baseline: 239, text: t("low"), color: Self.blue)
+          legend(in: drawing, center: 258, baseline: 239, text: t("high"), color: Self.rose)
+          pressures(in: drawing, stage: motion.stage, fraction: motion.fraction)
         }
       }.frame(width: edge, height: edge).position(x: geometry.size.width / 2, y: geometry.size.height / 2)
     }.aspectRatio(1, contentMode: .fit).clipped()
@@ -67,12 +68,12 @@ struct GalaxySSIHealthAtlasHeartbeatView: View {
     glyph.move(to: CGPoint(x: 28, y: -10)); glyph.addLine(to: CGPoint(x: spread, y: 10 + tilt))
     drawing.stroke(glyph, with: .color(Self.color(0xFFF9E7)), style: StrokeStyle(lineWidth: 8, lineCap: .round, lineJoin: .round))
   }
-  private func legend(in context: GraphicsContext, center: Double, text: String, color: Color) {
+  func legend(in context: GraphicsContext, center: Double, baseline: Double, text: String, color: Color) {
     let font = UIFont.systemFont(ofSize: 11.5), width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: 11.5)]).width
     let start = center - (width + 13) / 2
     context.draw(Text(verbatim: text).font(.system(size: 11.5)).foregroundColor(Self.color(0x213D4D)),
-      at: CGPoint(x: start + 13, y: 329 - font.ascender), anchor: .topLeading)
-    context.fill(Path(ellipseIn: CGRect(x: start, y: 321.5, width: 7, height: 7)), with: .color(color))
+      at: CGPoint(x: start + 13, y: baseline - font.ascender), anchor: .topLeading)
+    context.fill(Path(ellipseIn: CGRect(x: start, y: baseline - 7.5, width: 7, height: 7)), with: .color(color))
   }
   private func circle(_ radius: Double) -> Path { Path(ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2)) }
   private static func route(_ x: Double, _ y: Double, _ controls: [Double]...) -> GalaxySSIHealthAtlasSectionLesson.Route {
@@ -87,8 +88,8 @@ struct GalaxySSIHealthAtlasHeartbeatView: View {
   static let leftOutArch = route(695, 293, [700,235,747,176,793,171], [826,165,816,116,823,69])
   static let shortToRight = route(454, 565, [472,623,415,650,451,707], [469,738,529,817,563,903])
   static let shortToLeft = route(855, 544, [814,590,875,652,860,693], [834,748,765,823,752,908])
-  private static func color(_ value: UInt32) -> Color {
+  static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
   }
-  private func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_beat_" + key, language) }
+  func t(_ key: String) -> String { GalaxySSIHealthAtlasFunctionText.get("health_atlas_beat_" + key, language) }
 }

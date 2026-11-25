@@ -74,13 +74,15 @@ struct GalaxySSIHealthAtlasHearingView: View {
     label(in: context, key: "apex", center: 288, baseline: 330, size: 11)
   }
   private func hair(in context: GraphicsContext, motion: Motion) {
-    annotation(in: context, x: 149 + 7 * motion.motion, y: 79, center: 269, baseline: 64, key: "bundle", color: Self.movement)
-    annotation(in: context, x: 160, y: 272, center: 56, baseline: 306, key: "synapse", color: Self.nerveInk)
-    if motion.motion > 0 {
-      let departure = 15 * motion.motion
-      context.fill(circle(x: 165, y: 264 + departure, radius: 3.5), with: .color(Self.color(0xF1A337)))
-      context.fill(circle(x: 176, y: 268 + departure, radius: 2.5), with: .color(Self.color(0xF1A337)))
+    annotation(in: context, x: 79 + 5 * motion.motion, y: 83, center: 77, baseline: 23, key: "bundle", color: Self.movement)
+    annotation(in: context, x: 86, y: 225, center: 82, baseline: 290, key: "synapse", color: Self.nerveInk)
+    let opening = Motion.relativeChannelOpening(motion.motion)
+    if opening > 0.32 {
+      let departure = 15 * opening
+      context.fill(circle(x: 90, y: 222 + departure, radius: 3.5), with: .color(Self.color(0xF1A337)))
+      context.fill(circle(x: 100, y: 225 + departure, radius: 2.5), with: .color(Self.color(0xF1A337)))
     }
+    tipLink(in: context, time: motion.fraction, motion: motion.motion, opening: opening)
   }
   private func nerve(in context: GraphicsContext, motion: Motion) {
     bitmap(in: context, asset: "HealthAtlasBrain", rect: CGRect(x: 70, y: 11, width: 204, height: 204))
@@ -120,7 +122,7 @@ struct GalaxySSIHealthAtlasHearingView: View {
   private func circle(x: Double, y: Double, radius: Double) -> Path {
     Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2))
   }
-  private func label(in context: GraphicsContext, key: String, center: Double, baseline: Double, size: Double) {
+  func label(in context: GraphicsContext, key: String, center: Double, baseline: Double, size: Double) {
     let text = GalaxySSIHealthAtlasFunctionText.get("health_atlas_hear_" + key, language)
     let font = UIFont.systemFont(ofSize: size), width = (text as NSString).size(withAttributes: [.font: UIFont.systemFont(ofSize: size)]).width
     context.draw(Text(verbatim: text).font(.system(size: size)).foregroundColor(Self.lettering),
@@ -133,7 +135,7 @@ struct GalaxySSIHealthAtlasHearingView: View {
   }
   static let cochlea = route(218, 171, [225,138,278,139,281,171], [284,200,239,207,232,181], [226,157,270,155,266,177], [263,189,244,184,245,173], [246,165,255,165,255,173])
   static let nerveRoute = route(45, 246, [77,246,82,216,113,216], [148,216,144,245,172,245], [199,245,206,216,232,216], [262,216,271,245,300,245])
-  private static func color(_ value: UInt32) -> Color {
+  static func color(_ value: UInt32) -> Color {
     Color(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
   }
 }

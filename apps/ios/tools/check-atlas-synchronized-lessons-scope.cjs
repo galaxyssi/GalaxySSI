@@ -32,7 +32,7 @@ requireTokens(source('StandaloneModels'), ['state.closeStandaloneModel(entry, de
 requireTokens(source('CompactTabs'), ['minHeight: 42', '.frame(height: 2).padding(.horizontal, 24)', 'identifier + "-" + key(option)', 'fixedSize(horizontal: false, vertical: true)']);
 for (const name of ['Detail', 'FunctionPanel', 'Research']) assert(source(name).includes('GalaxySSIHealthAtlasCompactTabs'));
 requireTokens(source('SynchronizedCatalogue'), ['health_atlas_beat_choice', 'health_atlas_breathe_choice', '12-4-the-action-potential', 'references.insert(reference, at: 0)', 'routes: routes, entryPhases: entryPhases']);
-requireTokens(source('FunctionCatalogue'), ['revision: Int = 4439', 'original.synchronizedLessons()', '== 321']);
+requireTokens(source('FunctionCatalogue'), ['if revision == 4439', 'original.synchronizedLessons()', '== 321']);
 requireTokens(source('SignalMotion'), ['0.30 * input(0.24, 0.25)', '- 0.24 * input(0.47, 0.17)', '0.35 * input(0.81, 0.27)', '(0...64).map', 'duration > 0']);
 requireTokens(source('SynapticChannelsDrawing'), ['0.58 * height', 'Motion.potential[i]', 't * 1.55', 'Double(segment) * 0.29', '(0.04...0.69)', '(local - 0.32) / 0.37']);
 requireTokens(source('SynapseDrawing'), ['gradedPotential(t)', 'membraneRelay(t)', 'gateProgress', 'receptorOpen', 'clearing']);

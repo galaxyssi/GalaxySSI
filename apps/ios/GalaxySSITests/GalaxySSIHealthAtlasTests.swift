@@ -5,6 +5,64 @@ import SwiftUI
 
 @MainActor
 final class GalaxySSIHealthAtlasTests: XCTestCase {
+  func testPressureTraceRespectsValvesAndReplaysContinuously() {
+    typealias Trace = GalaxySSIHealthAtlasBeatPressureTrace
+    let stages = GalaxySSIHealthAtlasBeatStage.allCases
+    for stage in stages {
+      for index in 1...19 {
+        let pressure = Trace.sample(stage, fraction: Double(index) / 20)
+        XCTAssertEqual(pressure.atrium > pressure.ventricle, stage.fillsVentricles)
+        XCTAssertEqual(pressure.ventricle > pressure.aorta, stage.ejects)
+      }
+      let end = Trace.sample(stage, fraction: 1)
+      let start = Trace.sample(stages[(stage.rawValue + 1) % stages.count], fraction: 0)
+      XCTAssertEqual(end.atrium, start.atrium, accuracy: 1e-9)
+      XCTAssertEqual(end.ventricle, start.ventricle, accuracy: 1e-9)
+      XCTAssertEqual(end.aorta, start.aorta, accuracy: 1e-9)
+      XCTAssertEqual(Trace.sample(stage, fraction: .nan), Trace.sample(stage, fraction: 0))
+    }
+  }
+
+  func testTipLinkOpeningRespondsInBothDirectionsAndClamps() {
+    typealias Motion = GalaxySSIHealthAtlasHearingMotion
+    let resting = Motion.relativeChannelOpening(0)
+    XCTAssertEqual(resting, 0.19, accuracy: 1e-9)
+    XCTAssertEqual(Motion.relativeChannelOpening(-1), 0.03, accuracy: 1e-9)
+    XCTAssertEqual(Motion.relativeChannelOpening(1), 0.95, accuracy: 1e-9)
+    XCTAssertLessThan(Motion.relativeChannelOpening(-1), resting)
+    XCTAssertEqual(Motion.relativeChannelOpening(4), Motion.relativeChannelOpening(1))
+    XCTAssertEqual(Motion.relativeChannelOpening(-4), Motion.relativeChannelOpening(-1))
+    XCTAssertEqual(Motion.relativeChannelOpening(.nan), resting)
+  }
+
+  func testCloseupReferenceOverlayChangesOnlyHearingAndNephronReferences() throws {
+    let bundle = Bundle(for: GalaxySSIStore.self)
+    let previous = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle, revision: 4439))
+    let updated = previous.mechanismCloseups()
+    try updated.validate()
+    XCTAssertEqual(updated.source.androidPR, 4440)
+    XCTAssertEqual(updated.routes, previous.routes)
+    XCTAssertEqual(updated.entryPhases, previous.entryPhases)
+    XCTAssertEqual(updated.stories.reduce(0) { $0 + $1.references.count }, 323)
+    XCTAssertEqual(updated.mechanismCloseups().stories, updated.stories)
+    for before in previous.stories {
+      let after = try XCTUnwrap(updated.story(before.id))
+      if before.id == "HEARING" || before.id == "NEPHRON" {
+        XCTAssertEqual(after.references.count, before.references.count + 1)
+        XCTAssertEqual(after.references.first, before.references.first)
+        XCTAssertEqual(Array(after.references.dropFirst(2)), Array(before.references.dropFirst()))
+        XCTAssertEqual(after.owners, before.owners)
+        XCTAssertEqual(after.title, before.title)
+        XCTAssertEqual(after.choiceTitle, before.choiceTitle)
+        XCTAssertEqual(after.scope, before.scope)
+        XCTAssertEqual(after.chapters, before.chapters)
+        XCTAssertEqual(after.related, before.related)
+        XCTAssertEqual(after.durationMs, before.durationMs)
+        XCTAssertEqual(after.showStructurePreview, before.showStructurePreview)
+      } else { XCTAssertEqual(after, before) }
+    }
+  }
+
   func testSynchronizedLessonOverlayPreservesAllOtherCatalogueFields() throws {
     let bundle = Bundle(for: GalaxySSIStore.self)
     let original = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: bundle, revision: 4388))
@@ -1393,7 +1451,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {
     let catalogue = try XCTUnwrap(GalaxySSIHealthAtlasFunctionCatalogue.read(bundle: Bundle(for: GalaxySSIStore.self)))
     try catalogue.validate(in: completeCatalogue())
-    XCTAssertEqual(catalogue.source.androidPR, 4439)
+    XCTAssertEqual(catalogue.source.androidPR, 4440)
     XCTAssertEqual(catalogue.stories.count, 138); XCTAssertEqual(catalogue.routes.count, 313)
     XCTAssertEqual(catalogue.stories.reduce(0) { $0 + $1.chapters.count }, 643)
     XCTAssertEqual(GalaxySSIHealthAtlasFunctionRendering.implemented, Set(catalogue.stories.map(\.id)))
@@ -1545,8 +1603,8 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     XCTAssertEqual(stillEar.mesh.count, 841)
     XCTAssertEqual(stillEar.mesh.first, CGPoint(x: 16, y: 58))
     XCTAssertEqual(stillEar.mesh.last, CGPoint(x: 328, y: 266))
-    XCTAssertEqual(stillHair.mesh.first, CGPoint(x: 45, y: 0))
-    XCTAssertEqual(stillHair.mesh.last, CGPoint(x: 267, y: 333))
+    XCTAssertEqual(stillHair.mesh.first, CGPoint(x: 12, y: 27))
+    XCTAssertEqual(stillHair.mesh.last, CGPoint(x: 157, y: 267))
     let movingEar = Motion(chapter: 1, fraction: 1.0 / 12), movingHair = Motion(chapter: 3, fraction: 1.0 / 12)
     XCTAssertGreaterThan(movingEar.mesh[14 * 29 + 12].x, stillEar.mesh[14 * 29 + 12].x)
     XCTAssertGreaterThan(movingHair.mesh[4 * 29 + 13].x, stillHair.mesh[4 * 29 + 13].x)
