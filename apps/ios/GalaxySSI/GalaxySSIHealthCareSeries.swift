@@ -5,7 +5,7 @@ enum GalaxySSIHealthCareSeries {
   static let pageSize = 30
   static let wireProtocol = "galaxyssi.health-history.v1"
 
-  struct Cursor: Equatable {
+  struct Cursor: Codable, Equatable {
     let beforeTime: Int64
     let beforeID: UUID
 
@@ -16,7 +16,7 @@ enum GalaxySSIHealthCareSeries {
     }
   }
 
-  struct Binding: Equatable {
+  struct Binding: Codable, Equatable {
     let concern: UUID
     let revision: Int
     let historyVersion: String

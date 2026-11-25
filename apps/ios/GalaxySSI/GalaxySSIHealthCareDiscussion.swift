@@ -28,6 +28,7 @@ enum GalaxySSIHealthCareDiscussion {
     var automaticQuestionRequestDigest: String?
     // Stored only in the encrypted Health archive, never used as assistant history.
     var interruptedReply: String?
+    var execution: GalaxySSIHealthCareDiscussionRecovery.Execution?
 
     var hasInterruptedReply: Bool {
       interruptedReply != nil || answer.map(AgentModelPlanParser.containsUnexecutedControlReply) == true
@@ -104,9 +105,9 @@ enum GalaxySSIHealthCareDiscussion {
     }
   }
 
-  struct Approval: Identifiable {
-    enum Destination {
-      case cloud(model: CloudModelConfig, endpoint: URL, credential: SHA256.Digest)
+  struct Approval: Codable, Equatable, Identifiable {
+    enum Destination: Codable, Equatable {
+      case cloud(model: CloudModelConfig, endpoint: URL, credential: Data)
       case paired(GalaxySSIHealthDesktopResearch.Route)
     }
     let id: UUID
@@ -162,7 +163,7 @@ enum GalaxySSIHealthCareDiscussion {
       if case .cloud(_, let endpoint, _) = destination { return endpoint }
       return nil
     }
-    var credentialDigest: SHA256.Digest? {
+    var credentialDigest: Data? {
       if case .cloud(_, _, let digest) = destination { return digest }
       return nil
     }
@@ -252,7 +253,7 @@ enum GalaxySSIHealthCareDiscussion {
     return endpoint
   }
 
-  static func destination(contactID: String, model: CloudModelConfig, endpoint: URL, credential: SHA256.Digest) -> String {
+  static func destination<D: Sequence>(contactID: String, model: CloudModelConfig, endpoint: URL, credential: D) -> String where D.Element == UInt8 {
     AgentModelLoopRecoveryIdentity.sha256(["contact": contactID, "endpoint": endpoint.absoluteString,
       "model": model.modelId, "style": model.apiStyle.rawValue,
       "credential": credential.map { String(format: "%02x", $0) }.joined()])

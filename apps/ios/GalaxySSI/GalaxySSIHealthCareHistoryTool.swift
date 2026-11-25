@@ -13,7 +13,7 @@ enum GalaxySSIHealthCareHistoryTool {
     assessment after an optional plan draft and before the final reply.
     """
 
-  struct Output: Equatable {
+  struct Output: Codable, Equatable {
     let payload: AgentMcpJSONObject
     let cursor: GalaxySSIHealthCareSeries.Cursor?
     let token: String?
@@ -24,7 +24,7 @@ enum GalaxySSIHealthCareHistoryTool {
     }
   }
 
-  struct Approval {
+  struct Approval: Codable, Equatable {
     let binding: GalaxySSIHealthCareSeries.Binding
     let recent: Output
     var entryToken: String?

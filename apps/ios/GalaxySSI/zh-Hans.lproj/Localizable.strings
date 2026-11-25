@@ -32,6 +32,9 @@
 "galaxyssi.health.discussion.more" = "显示更早消息";
 "galaxyssi.health.discussion.unanswered" = "没有已保存的回复";
 "galaxyssi.health.discussion.interrupted_control" = "此回复包含未执行的 Agent 指令。问题和回复已私密保留，未执行指令，也未重新发送。";
+"galaxyssi.health.discussion.request_interrupted" = "此请求已中断，未重新发送。";
+"galaxyssi.health.discussion.processing_seconds" = "已处理 %d 秒";
+"galaxyssi.health.discussion.processed_seconds" = "处理耗时 %d 秒";
 "galaxyssi.health.discussion.online_permission" = "允许经确认的在线健康提问";
 "galaxyssi.health.discussion.provider" = "服务商与模型";
 "galaxyssi.health.discussion.select_provider" = "选择模型";

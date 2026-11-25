@@ -70,7 +70,7 @@ enum GalaxySSIHealthCareResearchHandoff {
     }
   }
 
-  struct Handoff: Equatable {
+  struct Handoff: Codable, Equatable {
     let basis: Basis
     let payload: AgentMcpJSONObject
     let plansOnly: Bool
