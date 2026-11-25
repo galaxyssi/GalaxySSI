@@ -2,6 +2,10 @@ import Foundation
 
 enum GalaxySSIHealthAtlasPhysiologyText {
   static func string(_ key: String, language: String) -> String {
+    let calfKey = ["model_calfPump": "calf_pump_title", "model_calfPump_scope": "calf_pump_scope",
+      "model_calfPump_formula": "calf_pump_formula"][key]
+    if let calfKey { return GalaxySSIHealthAtlasText.get("health_atlas_" + calfKey, language) }
+    if key.hasPrefix("calf_pump_") { return GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
     let materialKey = ["model_alveolarDiffusion": "diffusion_title",
       "model_alveolarDiffusion_scope": "diffusion_scope",
       "model_alveolarDiffusion_formula": "diffusion_formula",
@@ -92,6 +96,9 @@ enum GalaxySSIHealthAtlasPhysiologyText {
     string("model_" + model.kind.rawValue, language: language) + ": " + resultNumber(model.result, kind: model.kind, language: language) + " " + model.kind.unit
   }
   static func companion(_ model: GalaxySSIHealthAtlasPhysiology, language: String) -> String {
+    if model.kind == .calfPump {
+      return String(format: string("calf_pump_net_stroke", language: language), number(model.companionValue, language: language))
+    }
     let materialCompanion = [GalaxySSIHealthAtlasPhysiology.Kind.alveolarDiffusion: "diffusion_conductance",
       .cartilageCompression: "compression_remaining", .boneBending: "bone_bending_inertia"][model.kind]
     if let materialCompanion {

@@ -71,7 +71,7 @@ for(const token of [
  'stride(from:76.0,through:244,by:14)','atan2(m.spineX(y+1,flexion)-x,1)*(-180 / .pi)',
  'g.trace(flexion,0,72,252)','g.trace(motion.flexion,-23,77,258)','g.trace(motion.flexion,-16,71,258)',
  'stroke(p,edge,7.3); stroke(p,fill,5)','copy(c).stroke(p,edge,2.8)',
- 'CGRect(x:0,y:42,width:360,height:280)','Image("HealthAtlasFunctionErector")',
+ 'CGRect(x:0,y:42,width:360,height:280)','Image("HealthAtlasRegionalErectorSpinaePlate")',
  'for side in [-1.0,1.0]','CGRect(x:x-8,y:147,width:16,height:37)',
  'at(g.extensionRoute,ease)','arrow(151,44,139,50,Self.blue)',
  'Supported and loaded chapters intentionally retain the same neutral geometry.',

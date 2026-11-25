@@ -7,7 +7,7 @@ const retinal = process.argv.includes("--retinal-cells");
 const systems = process.argv.includes("--system-overviews");
 const batch = process.argv.includes("--tissue-lymph");
 const functionArt = require("./body-atlas-function-artwork.cjs");
-const sha = functionArt ? "ab78711d467c013444883dbaeca23c39a601c875" : batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
+const sha = functionArt ? (functionArt.sha ?? "ab78711d467c013444883dbaeca23c39a601c875") : batch ? "b8fbf1191367153af2824506df99bbc5c5bae56e" : systems ? "5ca99f3dde521cd65ca0f0f84b5550a31da5b9f2" : retinal ? "b513fe5023b8699e4e64e1f914f09be98ddeeacb" : "7e5841c21c313fd2ecee924e6805385e96a564a1";
 const source = file => execFileSync("git", ["show", sha + ":" + file], {encoding: "utf8", maxBuffer: 4_000_000});
 const batchFrames = [];
 if (batch) for (const [name, filename] of [["HealthAtlasTissues","tissue.pdf"],["HealthAtlasLymphOrgans","cell.pdf"]]) {
@@ -36,9 +36,12 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
     const vector = xml.xml2js(raw, {compact: true}).vector;
     if (vector.group) {
       assert(functionArt?.groups,"Unexpected grouped source");
-      vector.path=require("./body-atlas-ordered-vector.cjs")(raw, {affine: !!functionArt.affineGroups});
+      vector.path=require("./body-atlas-ordered-vector.cjs")(raw, {affine: !!functionArt.affineGroups, clips: !!functionArt.clips});
     }
     const dir = path.join(assets, asset + ".imageset"), metadata = JSON.parse(fs.readFileSync(path.join(dir, "Contents.json")));
+    if (functionArt?.normalizeQuadratics) for (const item of vector.path) {
+      item._attributes["android:pathData"] = require("./body-atlas-quadratic-path.cjs")(item._attributes["android:pathData"]);
+    }
     assert(metadata.properties["preserves-vector-representation"]); assert(metadata.images.some(i => i.filename === filename));
     const pdf = await PDFDocument.load(fs.readFileSync(path.join(dir, filename)));
     assert.equal(pdf.getPageCount(), 1);
@@ -57,6 +60,16 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
       const geometry = drawSvgPath(item._attributes["android:pathData"], {x:0,y:box.height,color:rgb(0,0,0)})
         .map(op=>op.toString()).filter(op=>/(?:^|\s)(?:m|l|c|v|y|h)$/.test(op)).join("\n");
       assert(geometry.length > 0 && contents.includes(geometry), "Missing original geometry " + slug);
+      if (item._atlasClips) {
+        let cursor = orderedCursor;
+        for (const clip of item._atlasClips) {
+          const signature = require("./body-atlas-vector-clips.cjs")(clip, box.height).map(op=>op.toString()).join("\n");
+          const at = contents.indexOf(signature, cursor);
+          assert(at >= cursor, "Missing source clip " + slug);
+          cursor = at + signature.length;
+        }
+        assert(contents.indexOf(geometry, cursor) >= cursor, "Source clip must precede its painted geometry " + slug);
+      }
       if (functionArt.groups && !functionArt.affineGroups) {
         const at=contents.indexOf(geometry,orderedCursor);
         assert(at>=orderedCursor,"Source path order "+slug);
@@ -124,7 +137,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
       }
       assert.equal(shade.lookup(PDFName.of("ShadingType")).asNumber(), radial ? 3 : 2);
       const coords = radial ? [g["android:centerX"], g["android:centerY"], 0, g["android:centerX"], g["android:centerY"], g["android:gradientRadius"]].map(Number) :
-        ["startX","startY","endX","endY"].map(k => Number(g["android:" + k]));
+        ["startX","startY","endX","endY"].map(k => Number(g["android:" + k] ?? 0));
       assert.deepEqual(array(shade, "Coords"), coords);
       const fn = shade.lookup(PDFName.of("Function"), PDFDict);
       const rawStops = item["aapt:attr"].gradient.item;
@@ -146,7 +159,7 @@ const colour = value => [1,3,5].map(i => parseInt(value.slice(i, i + 2), 16) / 2
   }
   assert.equal(paths, functionArt ? functionArt.paths : batch ? 646 : systems ? 39 : retinal ? 35 : 24); assert.equal(gradientCount, functionArt ? functionArt.gradients : batch ? 210 : systems ? 18 : retinal ? 11 : 2);
   if (functionArt) {
-    console.log("Android #4384 " + functionArt.name + " Function artwork: " + frames.length + " vector PDFs, " + paths + " exact path geometries and " + gradientCount + " native gradients; no native pixel verification.");
+    console.log("Android #" + (functionArt.androidPR ?? 4384) + " " + functionArt.name + " Function artwork: " + frames.length + " vector PDFs, " + paths + " exact path geometries and " + gradientCount + " native gradients; no native pixel verification.");
     return;
   }
   if (batch) {

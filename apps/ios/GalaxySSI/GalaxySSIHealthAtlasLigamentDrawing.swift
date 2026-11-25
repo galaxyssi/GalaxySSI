@@ -3,14 +3,15 @@ import SwiftUI
 extension GalaxySSIHealthAtlasIllustratedDrawing {
   func ligamentScene(_ step: Int, _ t: Double) {
     let plate = GalaxySSIHealthAtlasLigamentPlate.self
-    context.draw(Image("HealthAtlasFunctionLigaments"),in:CGRect(x:0,y:plate.top,width:plate.width,height:plate.height))
+    context.draw(Image("HealthAtlasRegionalLigamentsPlate"),in:CGRect(x:0,y:plate.top,width:plate.width,height:plate.height))
     ligamentCallout("ligament_guidance_story_femur",55,55,86,60,CGPoint(x:143,y:54),0x886E59)
     ligamentCallout("ligament_guidance_story_tibia",306,212,281,217,plate.display(plate.tibia),0x886E59)
     ligamentCallout("ligament_guidance_story_acl",47,104,67,109,plate.display(plate.aclFemur),0x30756C)
     ligamentCallout("ligament_guidance_story_pcl",313,104,293,109,plate.display(plate.pclFemur),0x77587A)
     let emphasis = plate.emphasis(t)
-    let acl: Double? = (1...2).contains(step) || step == 4 ? emphasis : nil
-    let pcl: Double? = step == 1 || (3...4).contains(step) ? emphasis : nil
+    let phase = GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(t)
+    let acl: Double? = step == 0 ? phase : (1...2).contains(step) || step == 4 ? emphasis : nil
+    let pcl: Double? = step == 0 ? 1 - phase : step == 1 || (3...4).contains(step) ? emphasis : nil
     ligamentFootprint(plate.aclFemur,0x30756C,acl); ligamentFootprint(plate.aclTibia,0x30756C,acl)
     ligamentFootprint(plate.pclFemur,0x77587A,pcl); ligamentFootprint(plate.pclTibia,0x77587A,pcl)
     if step >= 2 {

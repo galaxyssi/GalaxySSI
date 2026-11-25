@@ -64,6 +64,7 @@ struct GalaxySSIHealthAtlas: Decodable {
     if let pack = try LymphPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try GutPack.read(bundle: bundle) { result = try pack.applying(to: result, bundle: bundle) }
     if let pack = try FunctionStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
+    if let pack = try RegionalStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }
     return result
   }
 
@@ -257,10 +258,15 @@ struct GalaxySSIHealthAtlas: Decodable {
     if id == "heart" { return [GalaxySSIHealthAtlasHeartSection.exterior, GalaxySSIHealthAtlasHeartSection.section] }
     if let id, let plate = GalaxySSIHealthAtlasHeartSection.plate(for: id) { return [plate] }
     if GalaxySSIHealthAtlasMiddleEar.ids.contains(id ?? "") { return [GalaxySSIHealthAtlasMiddleEar.plate] }
+    if id == "cell-tenocyte" {
+      let views = RegionalStructurePack.views(for: id)
+      if !views.isEmpty { return views }
+    }
     if let pack = try? MusculoskeletalPack.bundled.get() {
       let views = pack.plates.filter { $0.entryIDs.contains(id ?? "") }
       if !views.isEmpty {
-        return FunctionStructurePack.plate(for: id).map { [$0] + views } ?? views
+        let detail = RegionalStructurePack.plate(for: id) ?? FunctionStructurePack.plate(for: id)
+        return detail.map { [$0] + views } ?? views
       }
     }
     return defaultPlate(for: id).map { [$0] } ?? []
@@ -271,13 +277,14 @@ struct GalaxySSIHealthAtlas: Decodable {
       (source.host == "openstax.org" || source == GalaxySSIHealthAtlasEyeOptics.anatomySource ||
         source == GalaxySSIHealthAtlasMiddleEar.anatomySource || DigestivePack.paperSources.contains(source) ||
         SensoryPack.externalSources.contains(source) || TissueContextPack.paperSources.contains(source) ||
-        FunctionStructurePack.sources.contains(source))
+        RegionalStructurePack.sources.contains(source))
   }
   func plate(for id: String?, viewKey: String? = nil) -> Plate? {
     let available = views(for: id)
     return available.first(where: { $0.viewKey == viewKey }) ?? available.first
   }
   private func defaultPlate(for id: String?) -> Plate? {
+    if let plate = RegionalStructurePack.plate(for: id) { return plate }
     if let plate = FunctionStructurePack.plate(for: id) { return plate }
     if let pack = try? GutPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
     if let pack = try? LymphPack.bundled.get(), let plate = pack.plates.first(where: { $0.owner == id }) { return plate }
@@ -329,7 +336,7 @@ enum GalaxySSIHealthAtlasText {
     let name = LanguagePolicySettings.resolveInterface(language) == LanguagePolicySettings.zhCN ? "zh-Hans" : "en"
     if key == "health_atlas_belongs" {
       let english = localized(key, locale: "en", fallback: localized(key, locale: "en", fallback: key), table: "AtlasFunction")
-      return localized(key, locale: name, fallback: english, table: "AtlasFunction")
+      return regional(key, locale: name, fallback: localized(key, locale: name, fallback: english, table: "AtlasFunction"))
     }
     let organ = try? GalaxySSIHealthAtlas.ArtworkPack.bundled.get()
     let cells = try? GalaxySSIHealthAtlas.CellPack.bundled.get()
@@ -337,7 +344,11 @@ enum GalaxySSIHealthAtlasText {
     let extensionText = systems?.english[key] ?? cells?.english[key] ?? organ?.english[key]
     let english = extensionText ?? localized(key, locale: "en", fallback: localized(key, locale: "en", fallback: key, table: "AtlasFunction"))
     let fallback = localized(key, locale: name, fallback: english, table: "AtlasFunction")
-    return localized(key, locale: name, fallback: fallback, table: extensionText == nil ? "BodyAtlas" : "Localizable")
+    return regional(key, locale: name, fallback: localized(key, locale: name, fallback: fallback, table: extensionText == nil ? "BodyAtlas" : "Localizable"))
+  }
+  private static func regional(_ key: String, locale: String, fallback: String) -> String {
+    let english = localized(key, locale: "en", fallback: fallback, table: "AtlasRegional")
+    return localized(key, locale: locale, fallback: english, table: "AtlasRegional")
   }
   private static func localized(_ key: String, locale: String, fallback: String, table: String = "BodyAtlas") -> String {
     guard let path = Bundle.main.path(forResource: locale, ofType: "lproj"), let bundle = Bundle(path: path) else { return fallback }

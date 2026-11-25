@@ -1,0 +1,13 @@
+{
+  "LICENSE": "6caa5f5c4e6957535e77e3eb2a4cc8cdf9242040976faaf01dcc8c3934e2ca4f",
+  "README.md": "382533ebf25c897729c596889ea6c6693dc07c598c81b50da8a112d96e31fea1",
+  "index.d.ts": "ab52340914540eebb6f693de2a0401b37b62ffde804b24fdda8689c6f435ad3d",
+  "index.js": "ccdfcf754ee3dadfcf9b9d907e3cbc7e773f13eb96bb32d834190ec1c193c051",
+  "lib/a2c.js": "f0190bd528ed42a408cb18fa4e518db1359df184aadcbce3ea3049d5fedc9913",
+  "lib/ellipse.js": "c0a3183d3f1306aad5d5b775bcc6940172080ac9a8b199a6e964f4da6cf88bdd",
+  "lib/matrix.js": "02bcaa2207a176041ee06f53f34765e4e71c1ce5db790cef8f3a4cba4151ff27",
+  "lib/path_parse.js": "2c332c02026177fff4d97134ccc07ab020de9b283e885db32ae7f5683534afc3",
+  "lib/svgpath.js": "a92108499f44843d40b0f37dc02a16548f9e1d678d7451d8157634b04caec724",
+  "lib/transform_parse.js": "80ac59428007f271b889f4052b609ec3d68f9eac48a3f12ac64075b50134c9b9",
+  "package.json": "6efabdbeaf62ab684187b8f96297be73df9f1dd138074e0080a7c863a16b4d81"
+}

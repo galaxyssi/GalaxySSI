@@ -52,7 +52,8 @@ for(const [name,begin]of [["GalaxySSIHealthAtlasPhagocytosis",'drawing.draw(Imag
 const ids=["NEUTROPHIL_DEFENSE","EOSINOPHIL_RESPONSE","BASOPHIL_SIGNALING","MONOCYTE_RECRUITMENT","DENDRITIC_PRESENTATION","T_CELL_RESPONSE","NK_SURVEILLANCE","PLATELET_FORMATION","MACROPHAGE_CLEARANCE"];
 const data=JSON.parse(read("apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasFunctionStories.dataset/content.json"));
 const registry=local("GalaxySSIHealthAtlasFunctionArtwork"),native=local("GalaxySSIHealthAtlasCellFunctionView");
-const enabled=[...registry.match(/implemented: Set<String> = \[([^\]]+)\]/)[1].matchAll(/"([^"]+)"/g)].map(m=>m[1]);
+assert(registry.includes("static let implemented = baseline.union(regional)"));
+const enabled=[...registry.match(/baseline: Set<String> = \[([^\]]+)\]/)[1].matchAll(/"([^"]+)"/g)].map(m=>m[1]);
 assert.equal(enabled.length,101);assert.deepEqual(new Set(enabled),new Set(data.stories.map(s=>s.id)));
 const source=android("HealthAtlasCellFunctionArt"),scene=android("HealthAtlasCellSceneView");
 for(const token of ["0xffeaf4f1","8f * resources.displayMetrics.density","scene.drawFrame(canvas, width, height, phase)","HealthAtlasPhagocytosisView.OWNER","HealthAtlasGranulocyte.forId(owner)","HealthAtlasImmuneLink.forId(owner)","HealthAtlasBloodDefense.forId(owner)"])assert(source.includes(token),token);

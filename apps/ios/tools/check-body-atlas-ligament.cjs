@@ -88,7 +88,7 @@ for(const token of [
  'line(31,283,329,283,0xADC1BA,1)','label("ligament_guidance_story_direction_key",180,302,306)',
  'disc(p.x,p.y,2.55,color,border:Self.cream)',
  'Fixed arrows show the checked direction, not force or tibial displacement.',
- 'Image("HealthAtlasFunctionLigaments")','CGRect(x:0,y:plate.top,width:plate.width,height:plate.height)',
+ 'Image("HealthAtlasRegionalLigamentsPlate")','CGRect(x:0,y:plate.top,width:plate.width,height:plate.height)',
  'accessibilityIdentifier("atlas-function-ligament-guidance-art")'
 ])assert(all.includes(token),token);
 for(const[,key]of source.matchAll(/R.string.health_atlas_(\w+)/g)){

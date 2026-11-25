@@ -1,0 +1,3 @@
+# Preserve the published MIT text and README Setext heading without false diff warnings.
+svgpath-2.6.0/LICENSE whitespace=-blank-at-eof
+svgpath-2.6.0/README.md conflict-marker-size=32

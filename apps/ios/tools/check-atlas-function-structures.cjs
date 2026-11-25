@@ -31,9 +31,12 @@ for(const flag of ["structures","erector","ligaments","placenta","pineal"]){
 }
 const atlas=local("GalaxySSIHealthAtlas"),art=local("GalaxySSIHealthAtlasArtwork");
 assert(atlas.includes("if let pack = try FunctionStructurePack.read(bundle: bundle) { try pack.validating(in: result, bundle: bundle) }"));
-assert(atlas.includes("FunctionStructurePack.plate(for: id).map { [$0] + views } ?? views"));
+assert(atlas.includes("RegionalStructurePack.plate(for: id) ?? FunctionStructurePack.plate(for: id)"));
+assert(atlas.includes("return detail.map { [$0] + views } ?? views"));
 assert(atlas.indexOf("if let plate = FunctionStructurePack.plate(for: id) { return plate }")<atlas.indexOf("if let pack = try? GutPack.bundled.get()"));
-assert(atlas.includes("FunctionStructurePack.sources.contains(source)"));
+const regional=local("GalaxySSIHealthAtlasRegionalStructures");
+assert(regional.includes("static let sources = FunctionStructurePack.sources.union"));
+assert(atlas.includes("RegionalStructurePack.sources.contains(source)"));
 assert(atlas.includes('if key == "health_atlas_belongs"'));
 assert(art.includes("ForEach(Array(views.enumerated()), id: \\.element.id)"));
 assert(art.includes('t(index == 0 ? "view_front" : "view_back")'));
@@ -56,4 +59,4 @@ assert.throws(()=>transforms.group({"android:invalid":"1"}));assert.throws(()=>t
 const pbx=fs.readFileSync(path.join(root,"apps/ios/GalaxySSI.xcodeproj/project.pbxproj"),"utf8");
 assert.equal(pbx.split("path = GalaxySSIHealthAtlasFunctionStructures.swift;").length-1,1);
 const defs=[...pbx.matchAll(/^\s*(C4384[0-9A-F]{19}) \/\*[^\n]+\*\/ = \{/gm)].map(m=>m[1]);assert.equal(defs.length,new Set(defs).size);
-console.log("Android #4384 structures: 54 exact evaluated declarations/177 features/27 links, 782 paths/119 gradients including four reused plates, affine/RGB/alpha PDF state, owner-only priority/context view wiring and bilingual key coverage. No Swift/XCTest/native pixel execution.");
+console.log("Android #4384 frozen structures: 54 evaluated declarations/177 features/27 links, 782 encoded paths/119 gradients including reused plates, affine/RGB/alpha state and retained regional fallback. This is not SVG quadratic equivalence or latest-view acceptance; no native execution.");

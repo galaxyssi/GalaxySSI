@@ -2,7 +2,7 @@ import SwiftUI
 
 extension GalaxySSIHealthAtlasIllustratedDrawing {
   func placentalOrient(_ t: Double) {
-    context.draw(Image("HealthAtlasFunctionPlacenta"),in:CGRect(x:20,y:53,width:320,height:249))
+    context.draw(Image("HealthAtlasRegionalPlacentaPlate"),in:CGRect(x:20,y:53,width:320,height:249))
     let r = 12+6*GalaxySSIHealthAtlasPlacentalMotion.emphasis(t)
     let ring = Path(ellipseIn:CGRect(x:210.2-r,y:202.4-r,width:2*r,height:2*r))
     stroke(ring,0xFDF4DA,3.4); stroke(ring,0x3E7582,1.4)
