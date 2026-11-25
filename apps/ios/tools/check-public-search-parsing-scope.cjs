@@ -188,11 +188,17 @@ for (const name of ['testResearchBudgetKeepsEvidenceAndSkipsUnstartedQueriesAndP
   'testResearchValidatesLaterEngineBeforeAnyEarlierSearch', 'testSearchProfilesSupplyDefaultsButPreserveExplicitLimits',
   'testMonotonicResearchBudgetCapsProgressAwareChildDeadline']) assert(budgetTests.includes('func ' + name + '('));
 const planning = read(swift('CloudModelAgentPlanningProvider'));
-assert(planning.includes('if call.name == "web_image_search" {'));
-assert(planning.includes('"verticals": .array([.string("image")])'));
-assert(planning.includes('try executor.executeTool(call: dispatch, context: context)'));
+assert(planning.includes('try executor.executeTool(call: call, context: context)'));
+assert(!planning.includes('functions.append(image)'));
 const oldProvider = git('show', base + ':' + swift('AgentIOSURLSessionWebMediaProvider'));
 const section = (source, start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+const oldPlanning = git('show', base + ':' + swift('CloudModelAgentPlanningProvider'));
+assert.equal(planning, oldPlanning
+  .replace(section(oldPlanning, '    if var image = functions.first(', '    return functions'), '')
+  .replace(section(oldPlanning, '        var dispatch = call', '        let context = CloudConversationToolExecutionContext'), '')
+  .replace('    var functions = CloudWebGrounding.openAITools()', '    let functions = CloudWebGrounding.openAITools()')
+  .replace('try executor.executeTool(call: dispatch, context: context)', 'try executor.executeTool(call: call, context: context)'),
+  'Supervision unchanged except reuse of the real image alias instead of cloning/translating it');
 const workspace = read(swift('AgentWorkspaceStore'));
 const oldWorkspace = git('show', base + ':' + swift('AgentWorkspaceStore'));
 const persistedReader = section(workspace, '  // Persistence cannot interpret', '  fileprivate static func encodedListLength(');
@@ -258,9 +264,41 @@ for (const name of ['testImagesSurviveRetrievedBodyPreferenceAndAggregateOnlyThe
 assert.equal(section(provider, '  private func requestResource(', '  private func failure(_ error:'),
   section(oldProvider, '  private func requestResource(', '  private func failure(_ error:'),
   'HTTP bounds, redirect/public-host policy, resource extraction and browser transport stay unchanged');
-for (const name of ['CloudWebGrounding', 'GalaxySSIServices']) {
+for (const name of ['GalaxySSIServices']) {
   assert.equal(read(swift(name)), git('show', base + ':' + swift(name)), name + ' unchanged in this increment');
 }
+const grounding = read(swift('CloudWebGrounding'));
+const aliasDefinition = section(grounding, '      functionTool(\n        name: "web_image_search",', '      functionTool(\n        name: "web_weather",');
+const aliasNormalization = section(grounding, '    if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_image_search" {', '    if operation(forToolName: name) == .search {');
+const imageBoundedHook = section(grounding, '      if pack["presentation"] == .string("compact_image_candidates") {', '      let links = discoveredNavigationLinks');
+assert(aliasDefinition.includes('maximum: 12'));
+assert(aliasNormalization.includes('min(max(result["max_results"]?.intValue ?? 12, 6), 12)'));
+assert(imageBoundedHook.includes('maximumCharacters: maximumToolResultCharacters'));
+assert.equal(grounding.replace(aliasDefinition, '').replace(aliasNormalization, '').replace(imageBoundedHook, '')
+  .replace('case "web_search", "web_image_search", AgentIOSWebIntelligenceNativeToolCatalog.search.lowercased():',
+    'case "web_search", AgentIOSWebIntelligenceNativeToolCatalog.search.lowercased():'),
+  git('show', base + ':' + swift('CloudWebGrounding')), 'Only image tool declaration/mapping/normalization and bounded presentation dispatch added; legacy weather, prompts, read-only, formats and native dispatch retained');
+const imagePresentation = read(swift('CloudImageSearchEvidence'));
+for (const token of ['AgentIOSWebEvidencePack.mediaURL', 'image.removeValue(forKey: "width")',
+  'image.removeValue(forKey: "height")', '"search_preview"', '"original_url"',
+  'String(item.string("excerpt").prefix(240))', 'AgentIOSWebEvidenceVerification.attach(pack)',
+  'AgentIOSWebEvidenceVerification.attach(compact)', 'for candidate in [full, minimal]',
+  'encode(selected + [trial]).count <= maximumCharacters', '"presentation_omitted_images"',
+  '"media_fields_omitted"', 'not visual identification', 'image_candidate_output_limit']) assert(imagePresentation.includes(token), token);
+assert(!imagePresentation.includes('URLSession'));
+assert(pack.includes('return operation == "search" && CloudImageSearchEvidence.isImageOnly(output)'));
+const rawNativeTools = read(swift('AgentIOSWebMediaNativeTools'));
+const imageNativeHook = section(rawNativeTools, '    if operation == .webSearch, CloudImageSearchEvidence.isImageOnly(output) {', '    var metadata = execution.metadata');
+assert(imageNativeHook.includes('output["evidence_pack"] = prepared["evidence_pack"]'));
+assert.equal(rawNativeTools.replace(imageNativeHook, ''), git('show', base + ':' + swift('AgentIOSWebMediaNativeTools')),
+  'Raw image pack addition only; operation namespace, permission/recovery/browser and native schemas retained');
+const imagePresentationTests = read('apps/ios/GalaxySSITests/AgentIOSWebEvidencePackTests.swift');
+for (const name of ['testImagePresentationUsesSecurePreviewAndRetainsSourceIdentity',
+  'testImagePresentationRejectsInsecurePreviewsAndCannotRepairInvalidSourceIdentity',
+  'testBoundedImagePresentationKeepsWholeURLsAndVerifiableRemainingCandidates',
+  'testImageAliasIsRegisteredOnceNormalizedAndCoveredByResearchBudget',
+  'testCloudImageAliasReachesNativeRegistryAndReturnsPreparedPreviewEvidence',
+  'testRawNativeImageSearchAddsPreviewPackWithoutChangingOperation']) assert(imagePresentationTests.includes('func ' + name + '('));
 const stream = read(swift('CloudConversationStreamEngine'));
 const oldStream = git('show', base + ':' + swift('CloudConversationStreamEngine'));
 const runtimeBudget = read(swift('CloudResearchRuntimeBudget'));
@@ -328,6 +366,7 @@ for (const token of ['AgentIOSPublicSearchParser.swift in Sources', 'SwiftSoup i
   'AgentIOSWebExecutionBudget.swift in Sources',
   'AgentIOSWebSourceLearning.swift in Sources',
   'AgentIOSWebSourceHealth.swift in Sources',
+  'CloudImageSearchEvidence.swift in Sources',
   'productName = SwiftSoup;', 'repositoryURL = "https://github.com/scinfu/SwiftSoup";', 'version = 2.6.0;']) assert(project.includes(token));
 const pins = JSON.parse(read('apps/ios/GalaxySSI.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved'));
 const pin = pins.pins.find(p => p.identity === 'swiftsoup');
@@ -351,6 +390,7 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
   if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete';
   if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
+  if (file.endsWith('/CloudImageSearchEvidence.kt')) return 'Native image-only packs prefer safe HTTPS previews, retain originals without claiming download/visual verification, remove original dimensions and use exact-subject Markdown guidance. Image-aware bounded model formatting admits whole URLs and re-verifies remaining source identities, with explicit omissions/failure. Native/network/UI acceptance not run';
   if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
@@ -366,9 +406,9 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/image evidence, renderer/research/cloud caps, atomic cache/workspace commits; actual raw/intelligence scoped learning with no duplicate observation, qualified domain-index routing, topic cache isolation and circuit-aware source health. Full catalog/ranker/exclusion and learned image adapters, indexed-storage performance, other media/relevance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/image evidence with shared secure-preview presentation, real cloud image alias and bounded whole-URL candidate delivery; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), inventory);
-console.log('Android #3007: web/image evidence, scoped source learning/health and cache/workspace persistence contracts. Partial port; source checks only, no native or network acceptance.');
+console.log('Android #3007: web/image evidence and presentation, scoped learning/health and persistence contracts. Partial port; source checks only, no native or network acceptance.');

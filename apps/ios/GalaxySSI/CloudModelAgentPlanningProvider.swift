@@ -155,17 +155,8 @@ enum CloudSupervisedResearch {
   }
 
   static func toolDefinitions() -> [AgentMcpJSONObject] {
-    var functions = CloudWebGrounding.openAITools().compactMap { $0["function"]?.objectValue }
+    let functions = CloudWebGrounding.openAITools().compactMap { $0["function"]?.objectValue }
       .filter { allowedTools.contains($0.string("name")) }
-    if var image = functions.first(where: { $0.string("name") == "web_search" }) {
-      image["name"] = .string("web_image_search")
-      image["description"] = .string("Find images on the public web; provide a query and optional maximum result count.")
-      if var schema = image["parameters"]?.objectValue, let properties = schema["properties"]?.objectValue {
-        schema["properties"] = .object(properties.filter { ["query", "max_results"].contains($0.key) })
-        image["parameters"] = .object(schema)
-      }
-      functions.append(image)
-    }
     return functions
   }
 
@@ -242,17 +233,10 @@ enum CloudSupervisedResearch {
           results.append((call, evidence.project(cached)))
           continue
         }
-        var dispatch = call
-        if call.name == "web_image_search" {
-          dispatch.name = "web_search"
-          dispatch.argumentsJson = AgentMcpJSONCodec.stringify(arguments.merging([
-            "verticals": .array([.string("image")])
-          ]) { _, new in new })
-        }
         let context = CloudConversationToolExecutionContext(requestId: roundRequest.requestId,
           conversationId: conversationId, turnId: turnId, readOnlyAnalysis: true)
         let output = try await Task.detached(priority: .userInitiated) {
-          try executor.executeTool(call: dispatch, context: context)
+          try executor.executeTool(call: call, context: context)
         }.value
         if progress.record(toolName: call.name, arguments: arguments, output: output) { madeProgress = true }
         results.append((call, evidence.project(output)))

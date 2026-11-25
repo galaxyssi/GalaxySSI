@@ -287,6 +287,16 @@ enum CloudWebGrounding {
   static func openAITools() -> [AgentMcpJSONObject] {
     [
       functionTool(
+        name: "web_image_search",
+        description: "Find actual image candidates, previews and source pages for the exact requested subject. " +
+          "Use for showing images, not ordinary web search. Discovery is not visual verification.",
+        properties: objectProperties([
+          ("query", stringProperty()),
+          ("max_results", integerProperty(minimum: 1, maximum: 12))
+        ]),
+        required: ["query"]
+      ),
+      functionTool(
         name: "web_weather",
         description: "Get a verified-location weather-model forecast for a day or range within the next 16 local days. " +
           "Supply a city and first-level region in English plus ISO country_code. Use day_offset=1 for tomorrow " +
@@ -438,7 +448,7 @@ enum CloudWebGrounding {
   static func operation(forToolName name: String) -> AgentIOSWebIntelligenceOperation? {
     let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch normalized {
-    case "web_search", AgentIOSWebIntelligenceNativeToolCatalog.search.lowercased():
+    case "web_search", "web_image_search", AgentIOSWebIntelligenceNativeToolCatalog.search.lowercased():
       return .search
     case "web_fetch", AgentIOSWebIntelligenceNativeToolCatalog.fetch.lowercased():
       return .fetch
@@ -881,6 +891,11 @@ enum CloudWebGrounding {
     arguments: AgentMcpJSONObject
   ) -> AgentMcpJSONObject {
     var result = arguments
+    if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_image_search" {
+      return ["query": result["query"] ?? .string(""),
+        "limit": .int(min(max(result["max_results"]?.intValue ?? 12, 6), 12)),
+        "profile": .string("fast"), "verticals": .array([.string("image")]), "engine_fanout": .int(3)]
+    }
     if operation(forToolName: name) == .search {
       let imageSearch = result["verticals"]?.arrayValue?.contains {
         ($0.stringValue ?? "").caseInsensitiveCompare("image") == .orderedSame
@@ -910,6 +925,9 @@ enum CloudWebGrounding {
       return boundedReadingWindow(output, window: window, text: text)
     }
     if let pack = output["evidence_pack"]?.objectValue {
+      if pack["presentation"] == .string("compact_image_candidates") {
+        return CloudImageSearchEvidence.boundedModelJSON(output, maximumCharacters: maximumToolResultCharacters)
+      }
       let links = discoveredNavigationLinks(output, pack: pack)
       let modelOutput: AgentMcpJSONObject = [
         "protocol": output["protocol"] ?? .null,

@@ -55,7 +55,8 @@ enum AgentIOSWebEvidencePack {
       research["citation_count"] = .int(Int64(objectList(pack["items"]).count))
       attached["research"] = .object(research)
     }
-    return attached
+    return operation == "search" && CloudImageSearchEvidence.isImageOnly(output)
+      ? CloudImageSearchEvidence.prepare(attached) : attached
   }
 
   static func build(

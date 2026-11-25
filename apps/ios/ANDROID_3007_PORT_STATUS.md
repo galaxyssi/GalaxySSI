@@ -1,7 +1,9 @@
 # Android #3007 Public Search Parsing
 
 Reference merge: `65655f0c79c6ab04121150229a65b089180f82f2`.
-Incremental predecessor: #4534 at `492bebe922013c2f707b38e4ddc849a655deba68`.
+Historical #4535 incremental predecessor: #4534 at `492bebe922013c2f707b38e4ddc849a655deba68`.
+Original implementation #4535 merged through `1497fc0171a0cbedde5e3d52de1cead10a857d06`.
+The image-presentation follow-up starts from fetched main `7e91ac6862e59fdf5a168fee89c925db281d4919`; its PR diff contains only that follow-up. The inventory/checker's older baseline remains the historical cumulative Android comparison, not this new PR's diff base.
 This is a partial port, NOT completion of all #3007 behavior.
 
 ## Implemented
@@ -104,6 +106,15 @@ This is a partial port, NOT completion of all #3007 behavior.
 - Read learned records and health together in one source-routing snapshot per raw invocation. Resolve from current state each time, not a permanent enabled-adapter registry; subsequent calls cannot use a removed/disabled source after clear/update. This does not interrupt already-admitted/in-flight searches or prevent a still-running search from producing a new post-clear observation. Full-snapshot decryption remains, not indexed I/O.
 - Direct raw searches now queue scoped optional learning too. The upper concrete-native wrapper reuses that raw learning receipt instead of counting the same observation twice; custom providers retain upper learning. Native default source storage is injectable, including nil for isolated raw callers. Preserve queued-versus-saved semantics and prior generation/write-failure checks.
 - Topic-scoped searches cannot reuse unscoped text-cache entries. Route metadata distinguishes admitted learned IDs from official sources. Six native fixture sources added for eligibility/topic rules, actual scoped endpoint/filtering/single observation and post-clear rejection, raw direct learning, whole-plan rejection, topic-cache isolation and explicit source order/deduplication. NOT executed; source/project/grammar checks are not package resolution/type checking, live search, model behavior, reset races, UI or device acceptance.
+
+## Image Presentation Follow-up
+
+- Register a real cloud web_image_search tool mapped to native search, with image-only/fast/three-source preference and the reference's six-to-twelve candidate pool. Candidate pool size is not the number of images to display. Supervised planning reuses the real tool declaration/dispatch rather than cloning and translating an alias; shared research deadline handling recognizes it through the existing operation map.
+- Shared native image-only evidence packs prefer a valid HTTPS thumbnail, keep the original URL for explicit resolution requests, remove original-image dimensions from previews, and retain bounded excerpts and source identities. Existing native URL validation is reused and unsafe media references are removed. Image evidence remains discovered_url_not_visually_verified; no bytes are downloaded or decoded by this presentation policy.
+- Add exact-subject/qualifier, per-image title/alt, Markdown-plus-source-link and no-duplicate-gallery guidance. This is model-facing selection policy, not semantic or visual verification. Full-size URLs remain candidates, not validated originals or permission to bypass image-network policy.
+- Image-aware model formatting admits whole media URLs under the existing 24,000-character budget instead of dropping every image during generic compaction. Re-rank and re-verify retained source items; preserve citation IDs/hash/URL ownership, explicitly count omitted candidates/items and mark field omission when a minimal image representation is necessary. If no complete candidate fits, report output-limit failure. Do not truncate a URL into a new destination.
+- Raw native image search also adds a prepared pack without changing its native operation namespace or existing result fields. Ordinary non-image evidence and the legacy generic formatter, weather, read-only policy, prompts, annotations and browser/effect recovery remain unchanged outside narrowly checked image hooks. A preview is still a discovered URL: actual secure image loading, caching, cancellation, display, relevance and device acceptance remain incomplete.
+- Six native fixture sources added for safe preview/identity/idempotence, insecure previews/invalid source identity, bounded full-URL delivery and citation containment, real alias uniqueness/normalization/deadline classification, cloud-to-native alias execution and raw native image packing. NOT executed. Source/project/grammar checks do not prove dependency resolution, Swift type checking, model or network behavior, pixel/UI or native acceptance. No IPA generated.
 
 ## Remaining Work
 
