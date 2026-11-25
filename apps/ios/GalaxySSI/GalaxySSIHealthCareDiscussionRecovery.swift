@@ -10,6 +10,7 @@ enum GalaxySSIHealthCareDiscussionRecovery {
     var state = State.prepared
     var response: Data?
     var receivedAt: Date?
+    var rounds: GalaxySSIHealthCareDiscussionRounds.State?
 
     init(approval: GalaxySSIHealthCareDiscussion.Approval, agentConversationID: String?, startedAt: Date) throws {
       guard approval.research == nil, approval.model != nil, approval.credentialDigest?.count == 32,
@@ -29,6 +30,10 @@ extension GalaxySSIHealthRecords {
     try validateLocalCareDiscussionTurn(approval, now: now)
     try updateCareDiscussionExecution(approval) { execution in
       guard execution.state == .prepared else { throw Failure.stale }
+      if execution.rounds != nil {
+        guard execution.rounds?.phase == .prepared, execution.rounds?.index == 0 else { throw Failure.stale }
+        execution.rounds?.phase = .dispatched
+      }
       execution.state = .dispatched
     }
   }
@@ -43,6 +48,9 @@ extension GalaxySSIHealthRecords {
         return
       }
       guard execution.state == .dispatched, now >= execution.startedAt else { throw Failure.stale }
+      if let rounds = execution.rounds {
+        guard rounds.phase == .received, rounds.response == response else { throw Failure.stale }
+      }
       execution.response = response
       execution.receivedAt = now
       execution.state = .received
@@ -86,7 +94,7 @@ extension GalaxySSIHealthRecords {
     }
   }
 
-  private func updateCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+  func updateCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval,
       _ change: (inout GalaxySSIHealthCareDiscussionRecovery.Execution) throws -> Void) throws {
     var archive = try load()
     let key = approval.concernID.uuidString

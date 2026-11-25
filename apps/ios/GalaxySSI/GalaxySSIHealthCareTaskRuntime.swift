@@ -44,7 +44,8 @@ final class GalaxySSIHealthCareTaskRuntime {
   }
 
   func restore(_ approval: GalaxySSIHealthCareDiscussion.Approval,
-      mayApply: @escaping @MainActor () -> Bool) async throws {
+      mayApply: @escaping @MainActor () -> Bool,
+      resumeRound: (@MainActor () async throws -> Void)? = nil) async throws {
     let id = identity(approval)
     // A second view must not create a second executor while the first one unwinds.
     if let active = handles[id] { await active.join() }
@@ -69,6 +70,16 @@ final class GalaxySSIHealthCareTaskRuntime {
     let operation: @MainActor (AgentTaskContext) async throws -> Void = { [self] _ in
       let current = try self.execution(approval)
       if current.state == .applied { return }
+      if (current.state == .prepared || current.state == .dispatched),
+         current.rounds?.canResume == true, mayApply(), let resumeRound {
+        do { try await resumeRound() }
+        catch is CancellationError { throw CancellationError() }
+        catch {
+          try? records.interruptLocalCareDiscussionExecution(approval)
+          throw error
+        }
+        return
+      }
       guard current.state == .received, mayApply() else {
         try records.interruptLocalCareDiscussionExecution(approval)
         return

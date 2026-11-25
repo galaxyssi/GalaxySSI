@@ -332,6 +332,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
       }
       do {
         try records.beginLocalCareDiscussionTurn(review, persistExecution: true)
+        try records.prepareCareDiscussionRounds(review, request: request)
       } catch {
         AgentDataDisclosureLedger.update(store: ledger, ticket: ticket, status: .failed,
           failureReason: "health_discussion_approval_changed")
@@ -355,6 +356,7 @@ struct GalaxySSIHealthCareDiscussionView: View {
           try records.dispatchLocalCareDiscussionTurn(review)
           var bytes = try await GalaxySSIHealthSummaryTransport.responseBytes(request, limit: 65_536)
           status = .sent
+          try records.retainCareDiscussionRound(review, index: 0, request: request, response: bytes)
           if !review.allowsAnswerDraft && (review.history != nil || review.questions != nil || review.feedbackCursor != nil) {
             bytes = try await GalaxySSIHealthScopedReadTransport.finish(review, records: records, initial: bytes,
               request: request, style: style, ledger: ledger, currentDestination: {
@@ -398,7 +400,20 @@ struct GalaxySSIHealthCareDiscussionView: View {
         if active?.id == review.id { active = nil; task = nil; refresh(open: false) }
       }
       do {
-        try await runtime.restore(review, mayApply: { active?.id == review.id && currentRoute(review) != nil })
+        try await runtime.restore(review, mayApply: { active?.id == review.id && currentRoute(review) != nil }, resumeRound: {
+          guard active?.id == review.id, let (_, key) = currentRoute(review), let style = review.model?.apiStyle else {
+            throw GalaxySSIHealthRecords.Failure.permission
+          }
+          let request = try GalaxySSIHealthCareDiscussion.request(review, key: key)
+          let bytes = try await GalaxySSIHealthScopedReadTransport.resume(review, records: records,
+            request: request, style: style, ledger: coordinator.healthDisclosureStore, currentDestination: {
+              active?.id == review.id ? currentRoute(review)?.0 : nil
+            })
+          try Task.checkCancellation()
+          guard active?.id == review.id, currentRoute(review) != nil else { throw CancellationError() }
+          try records.retainLocalCareDiscussionResponse(review, response: bytes)
+          try records.applySavedLocalCareDiscussionReply(review)
+        })
       } catch { if !Task.isCancelled { failed = true } }
     }
   }

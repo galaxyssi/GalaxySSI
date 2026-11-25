@@ -26,6 +26,9 @@ exactChanges('GalaxySSIHealthCareHistoryTool.swift', [
   ['struct Output: Equatable', 'struct Output: Codable, Equatable'],
   ['struct Approval {', 'struct Approval: Codable, Equatable {']
 ]);
+exactChanges('GalaxySSIHealthCareFeedbackTool.swift', [
+  ['struct Cursor: Equatable', 'struct Cursor: Codable, Equatable']
+]);
 exactChanges('GalaxySSIHealthCareSeries.swift', [
   ['struct Cursor: Equatable', 'struct Cursor: Codable, Equatable'],
   ['struct Binding: Equatable', 'struct Binding: Codable, Equatable']
@@ -57,7 +60,10 @@ exactChanges('FileAgentWorkspaceStore.swift', [
 ]);
 for (const name of ['GalaxySSIHealthScopedReadTransport.swift', 'GalaxySSIHealthAnalysis.swift',
   'GalaxySSIHealthFollowUp.swift', 'GalaxySSIServices.swift', 'AgentTaskSupervisor.swift']) {
-  assert.equal(read(prefix + name), old(prefix + name), `${name}: no transport/planner/supervisor substitute`);
+  const current = name === 'GalaxySSIHealthScopedReadTransport.swift'
+    ? require('./check-health-discussion-rounds-scope.cjs').retainedScopedReadTransport(read(prefix + name))
+    : read(prefix + name);
+  assert.equal(current, old(prefix + name), `${name}: behavior retained outside declared hooks`);
 }
 
 const recovery = read(prefix + 'GalaxySSIHealthCareDiscussionRecovery.swift');
@@ -77,7 +83,7 @@ assert.match(view, /dispatchLocalCareDiscussionTurn\(review\)[\s\S]*?responseByt
 assert.match(view, /retainLocalCareDiscussionResponse\(review, response: bytes\)[\s\S]*?applySavedLocalCareDiscussionReply\(review\)/);
 const runtime = read(prefix + 'GalaxySSIHealthCareTaskRuntime.swift');
 assert.match(view, /runtime\.submit\(review\)/);
-assert.match(view, /runtime\.restore\(review, mayApply: \{ active\?\.id == review\.id && currentRoute\(review\) != nil \}\)/);
+assert.match(view, /runtime\.restore\(review, mayApply: \{ active\?\.id == review\.id && currentRoute\(review\) != nil \}, resumeRound:/);
 assert.match(runtime, /current\.state == \.received, mayApply\(\)/);
 assert.match(runtime, /execution\.agentConversationID == thread\.agentConversationID/);
 assert.match(runtime, /execution\.approval == approval/);

@@ -77,7 +77,7 @@ is automatically replayed or granted a longer disclosure lifetime by this work.
 
 Source checks: `node apps/ios/tools/check-health-discussion-recovery-scope.cjs`,
 `npm run check:ios`, Swift grammar parsing and `git diff --check`. The source-scope
-checker also protects the unchanged HTTP/scoped-read transport, coordinator and
+checker also protects the unchanged base HTTP transport, coordinator and
 standard task supervisor, and limits shared history/question changes to Codable
 conformance and preserving the existing question cursor token during decoding.
 
@@ -128,3 +128,53 @@ checkpoints and original Agent transcript task projection. This private task
 integration does not claim those are complete, does not automatically execute
 received ActionPlan JSON, and does not extend or renew the approved disclosure
 lifetime.
+
+## Scoped-read round checkpoint follow-up
+
+Explicit cloud Health discussions now retain intermediate request/response state
+inside their original encrypted Health execution. Each checkpoint contains the
+exact request body, bounded response, history and selected-history cursors,
+question/feedback continuation cursors and remaining page budgets. It does not
+contain HTTP headers or API keys. Requests are still reconstructed from the
+current exact approved provider/model/credential and endpoint, not from a stored
+authorization header.
+
+The durable phases are `prepared`, `dispatched` and `received`. Dispatch intent
+commits before HTTP; a received response commits before parsing the next local
+read. Next-round preparation atomically records the new request body and cursor
+state with exactly one page-budget decrement. The round index is bounded at 12,
+the existing request body at 180,000 bytes and each response at 65,536 bytes; the
+serialized checkpoint is capped at 750,000 bytes. A stale checkpoint cannot
+replace a newer round or restore a spent page budget.
+
+The existing private task runtime can now resume a definitely unsent prepared
+initial request or continuation, or consume a received response and continue its
+approved reads. It never resends a dispatched round without a response receipt.
+Legacy executions without round checkpoints keep the previous conservative
+interruption behavior. All recovery still requires current ownership, original
+thread/Agent binding, unchanged consent epochs, scope/revision checks, exact
+current destination and the original ten-minute approval lifetime. Explicit
+cancellation remains authoritative in both stores.
+Navigation cancellation during round restoration preserves a known prepared or
+received checkpoint and pauses task execution; reopening can resume it again.
+
+Structured automatic research retains the previous transport path: its mutation
+and review logic is not moved into these manual-discussion checkpoints. A source
+normalizer verifies the previous complete transport body byte-for-byte outside
+the declared checkpoint hooks and the received-disclosure status correction.
+If an HTTP response was received but its local retention is rejected, the
+disclosure ledger retains `sent`, not an incorrect claim that the request failed
+to reach its destination.
+
+Eight additional native fixture source methods cover received-response reopen,
+supervised initial-request recovery, resumed history calls, prepared continuation
+cursor/budget preservation, uncertain-dispatch rejection, expiry/revocation/route
+and stale-budget fences, received-disclosure status and blocked destinations.
+They have not been executed on Windows. Source checks are
+`node apps/ios/tools/check-health-discussion-rounds-scope.cjs` and the cumulative
+recovery checker, project structure, Swift grammar and whitespace checks.
+
+The full model-driven Agent planning/action loop, its generic model/tool journal
+integration, streaming checkpoints and original Agent transcript projection are
+still outstanding. This work implements the scoped-read recovery prerequisite,
+not a claim of completed Android #4543 parity or native/device acceptance.
