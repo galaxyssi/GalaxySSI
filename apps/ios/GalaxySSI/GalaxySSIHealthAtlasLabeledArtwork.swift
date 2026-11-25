@@ -10,14 +10,15 @@ struct GalaxySSIHealthAtlasLabeledArtwork: View {
   let labels: [String]
   var featureIDs: Set<String> = []
   var splitCallouts: Bool = false
-  var legendInset: CGFloat = 0
   var minimumHeight: CGFloat = 300
+  var subjectFocus = CGPoint(x: 0.54, y: 0.22)
+  var onSubject: ((CGPoint) -> Void)? = nil
   let onSelect: (String) -> Void
   @State private var height: CGFloat = 360
   var body: some View {
     GalaxySSIAtlasLabeledScroll(asset: asset, aspectRatio: aspectRatio, zoom: $zoom, height: $height,
       currentID: currentID, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: splitCallouts,
-      legendInset: legendInset, minimumHeight: minimumHeight, onSelect: onSelect)
+      minimumHeight: minimumHeight, subjectFocus: subjectFocus, onSubject: onSubject, onSelect: onSelect)
       .frame(height: height)
   }
 }
@@ -32,8 +33,9 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
   let labels: [String]
   let featureIDs: Set<String>
   let splitCallouts: Bool
-  let legendInset: CGFloat
   let minimumHeight: CGFloat
+  let subjectFocus: CGPoint
+  let onSubject: ((CGPoint) -> Void)?
   let onSelect: (String) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -57,6 +59,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
     let content = Content()
     private var layoutActive = false
     private var size = CGSize.zero
+    private let notePosition = GalaxySSIHealthAtlasNotePosition()
     init(_ parent: GalaxySSIAtlasLabeledScroll) { self.parent = parent }
     func layout(_ scroll: UIScrollView) {
       guard !layoutActive, scroll.bounds.width > 0 else { return }
@@ -81,7 +84,17 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
         scroll.setZoomScale(CGFloat(parent.zoom), animated: false)
       }
       if parent.zoom == 1 { scroll.setContentOffset(.zero, animated: false) }
+      reportSubject(scroll)
     }
+    private func reportSubject(_ scroll: UIScrollView) {
+      guard parent.onSubject != nil else { return }
+      let local = content.convert(content.subject(parent.subjectFocus), to: scroll)
+      notePosition.report(CGPoint(x: local.x - scroll.bounds.minX, y: local.y - scroll.bounds.minY), identity: parent.asset) { [weak self] in
+        self?.parent.onSubject?($0)
+      }
+    }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { reportSubject(scrollView) }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { reportSubject(scrollView) }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { content }
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
       parent.zoom = Double(scale)
@@ -114,7 +127,7 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       self.input = input
       let unchanged = previous.map { old in
         old.asset == input.asset && old.aspectRatio == input.aspectRatio && old.currentID == input.currentID &&
-          old.splitCallouts == input.splitCallouts && old.legendInset == input.legendInset && old.minimumHeight == input.minimumHeight &&
+          old.splitCallouts == input.splitCallouts && old.minimumHeight == input.minimumHeight &&
           old.labels == input.labels && old.featureIDs == input.featureIDs && old.spots.map({ $0.0 }) == input.spots.map({ $0.0 }) &&
           old.spots.map({ $0.1 }) == input.spots.map({ $0.1 }) && old.spots.map({ $0.2 }) == input.spots.map({ $0.2 })
       } ?? false
@@ -172,10 +185,13 @@ private struct GalaxySSIAtlasLabeledScroll: UIViewRepresentable {
       return GalaxySSIHealthAtlasCalloutLayout.make(width: width, aspectRatio: input.aspectRatio,
         anchors: input.spots.map { CGPoint(x: $0.1, y: $0.2) }, splitRequested: input.splitCallouts,
         accessibility: traitCollection.preferredContentSizeCategory.isAccessibilityCategory,
-        preferredWidths: preferred, legendInset: input.legendInset, minimumHeight: input.minimumHeight,
+        preferredWidths: preferred, minimumHeight: input.minimumHeight,
         measureHeight: { self.labelHeight(self.buttons[$0], width: $1) })
     }
     func requiredHeight(width: CGFloat) -> CGFloat { plan(width: width)?.height ?? 300 }
+    func subject(_ focus: CGPoint) -> CGPoint {
+      CGPoint(x: imageRect.minX + imageRect.width * focus.x, y: imageRect.minY + imageRect.height * focus.y)
+    }
     override func layoutSubviews() {
       super.layoutSubviews()
       guard let input, let plan = plan(width: bounds.width) else { return }

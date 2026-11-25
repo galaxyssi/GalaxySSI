@@ -8,6 +8,7 @@ struct GalaxySSIHealthAtlasEndocrinePathView: View {
   let language: String
   let select: (Int) -> Void
   let open: (String) -> Void
+  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
   private var destination: GalaxySSIHealthAtlas.Entry? { path.step(stage)?.destination.flatMap(atlas.entry) }
   private var art: GalaxySSIHealthAtlas.Plate? { destination.flatMap { atlas.plate(for: $0.id) } ?? atlas.plate(for: entry.id) }
   var body: some View {
@@ -30,12 +31,19 @@ struct GalaxySSIHealthAtlasEndocrinePathView: View {
             }
           }
         }
-        HStack(spacing: 10) {
-          if let art { Image(art.asset).resizable().scaledToFit().frame(width: 84, height: 72).accessibilityHidden(true) }
-          Text(GalaxySSIHealthAtlasText.get(atlas.model(entry).stages[stage], language)).font(.subheadline.bold())
-            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("atlas-endocrine-current")
-        }
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-endocrine-figure", preferSideNote: true,
+          subjectAspectRatio: art?.aspectRatio, header: { EmptyView() }, artwork: {
+            if let art {
+              Image(art.asset).resizable().scaledToFit().frame(minHeight: 84, maxHeight: 110)
+                .accessibilityHidden(true).atlasAnnotationSubject("atlas-endocrine-figure")
+            }
+          }, legend: {
+            VStack(alignment: .leading, spacing: 5) {
+              GalaxySSIHealthAtlasReservedCaption(values: atlas.model(entry).stages.map { GalaxySSIHealthAtlasText.get($0, language) },
+                selected: stage, identifier: "atlas-endocrine-current").font(.subheadline.bold())
+              Text(GalaxySSIHealthAtlasText.get(path.scope, language)).font(.system(size: noteSize)).foregroundColor(.secondary)
+            }
+          })
         if let destination {
           Button { open(destination.id) } label: {
             HStack {
@@ -46,7 +54,6 @@ struct GalaxySSIHealthAtlasEndocrinePathView: View {
             }.frame(minHeight: 44)
           }.accessibilityIdentifier("atlas-endocrine-open-node")
         }
-        Text(GalaxySSIHealthAtlasText.get(path.scope, language)).font(.footnote).foregroundColor(.secondary)
       }.accessibilityIdentifier("atlas-endocrine-path")
     }
   }

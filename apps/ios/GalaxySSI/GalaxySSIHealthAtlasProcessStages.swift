@@ -6,6 +6,7 @@ struct GalaxySSIHealthAtlasProcessStages: View {
   let language: String
   let entryID: String
   let compact: Bool
+  var annotationScope: String? = nil
   let selected: (Int) -> Void
   private var current: Int { min(3, Int(GalaxySSIHealthAtlasFunctionCatalogue.Story.safePhase(phase) * 4)) }
   private func label(_ index: Int) -> String {
@@ -49,5 +50,6 @@ struct GalaxySSIHealthAtlasProcessStages: View {
       .accessibilityAddTraits(stage == current ? .isSelected : [])
       .accessibilitySortPriority(Double(4 - stage))
       .accessibilityIdentifier(compact ? "atlas-process-stage-" + String(stage) : "health-atlas-stage-" + entryID + "-" + String(stage))
+      .atlasAnnotationTarget(annotationScope ?? "", active: annotationScope != nil && stage == current)
   }
 }

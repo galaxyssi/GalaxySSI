@@ -10,8 +10,12 @@ struct GalaxySSIHealthAtlasArtwork: View {
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @ScaledMetric(relativeTo: .footnote) private var titleSize: CGFloat = 14
-  @ScaledMetric(relativeTo: .subheadline) private var explanationSize: CGFloat = 15
-  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 12
+  @ScaledMetric(relativeTo: .subheadline) private var explanationSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
+  @State private var subjectPoint: CGPoint?
+  @State private var fullscreenSubject: CGPoint?
+  @State private var sideNote = false
+  @State private var fullscreenSide = false
   @State private var layers = true
   @State private var zoom: Double = 1
   @State private var fullscreen = false
@@ -71,18 +75,31 @@ struct GalaxySSIHealthAtlasArtwork: View {
     let name = entry.map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? t("whole")
     return name + " \u{00b7} " + caption
   }
+  private func focus(side: Bool) -> CGPoint {
+    if let marker = plate?.markers.first(where: { $0.id == entry?.id }) { return .init(x: marker.x, y: marker.y) }
+    if plate?.owner == "cell-pancreatic-beta-cell" { return .init(x: 0.82, y: 0.44) }
+    return .init(x: side ? 0.36 : 0.54, y: side ? 0.48 : 0.22)
+  }
+  private var overlayNote: Bool {
+    plate?.hasLabels == true && entry != nil && plate?.splitCallouts != true &&
+      (plate?.annotations.isEmpty ?? true) && (plate?.markers.count ?? 0) <= 3
+  }
   var body: some View {
     Group {
       if let art {
         VStack(alignment: .leading, spacing: 8) {
           viewPicker
-          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-structure-figure", header: { controls }, artwork: {
+          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-structure-figure", overlayNote: overlayNote,
+            preferSideNote: plate?.hasLabels != true, subjectPoint: subjectPoint, onSideChanged: { sideNote = $0 },
+            header: { controls }, artwork: {
             canvas(art)
-          }, legend: { legend(title: caption, explanation: entry?.description, note: "illustration") })
+          }, legend: { legend(title: entry == nil ? fullscreenCaption : caption, explanation: entry?.description, note: "illustration") })
         }
       } else if let entry {
-        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-concept-figure", header: { EmptyView() }, artwork: {
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-concept-figure", preferSideNote: true,
+          subjectAspectRatio: 1, header: { EmptyView() }, artwork: {
           Image(systemName: conceptSymbol).font(.system(size: 64)).foregroundColor(GalaxySSIHealthTheme.accent)
+            .atlasAnnotationSubject("atlas-concept-figure")
             .frame(maxWidth: .infinity).frame(height: 132).accessibilityHidden(true)
         }, legend: { legend(title: GalaxySSIHealthAtlasText.get(entry.name, language),
           explanation: entry.description, note: "symbol_only") })
@@ -91,13 +108,16 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .fullScreenCover(isPresented: $fullscreen) {
         NavigationView {
           VStack(alignment: .leading, spacing: 8) {
+            GeometryReader { viewport in
             ScrollView {
               if let art {
-                GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-fullscreen-figure", header: { EmptyView() }, artwork: {
+                GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-fullscreen-figure", maximumHeight: viewport.size.height,
+                  subjectPoint: fullscreenSubject, onSideChanged: { fullscreenSide = $0 }, header: { EmptyView() }, artwork: {
                   canvas(art, full: true).accessibilityIdentifier("atlas-fullscreen-image")
                 }, legend: { legend(title: fullscreenCaption, explanation: nil, note: "illustration") })
               }
             }.id(fullscreenReset).accessibilityIdentifier("atlas-fullscreen-viewport")
+            }
             HStack {
               Spacer()
               if plate?.hasLabels == true {
@@ -134,7 +154,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
       .onChange(of: zoom) { value in if let entry { state.binding(entry).wrappedValue.zoom = value } }
       .alert(item: featureSelection(inSheet: false), content: featureAlert)
       .onChange(of: fullscreen) { _ in selectedFeature = nil }
-      .onChange(of: art) { _ in selectedFeature = nil }
+      .onChange(of: art) { _ in selectedFeature = nil; subjectPoint = nil; fullscreenSubject = nil }
       .onChange(of: selected) { id in
         if entry == nil, let id { state.rememberWholeSelection(id, in: atlas) }
       }
@@ -187,7 +207,7 @@ struct GalaxySSIHealthAtlasArtwork: View {
         Text(GalaxySSIHealthAtlasText.get(explanation, language)).font(.system(size: explanationSize)).padding(.top, 3)
           .accessibilityIdentifier("atlas-art-explanation")
       }
-      Text(t(note)).font(.system(size: noteSize)).foregroundColor(.secondary).padding(.top, 6)
+      Text(t(note)).font(.system(size: noteSize)).foregroundColor(.secondary).padding(.top, 5)
     }.fixedSize(horizontal: false, vertical: true)
   }
   private func canvas(_ art: String, full: Bool = false) -> some View {
@@ -196,12 +216,20 @@ struct GalaxySSIHealthAtlasArtwork: View {
     if shown, !spots.isEmpty {
       return AnyView(GalaxySSIHealthAtlasLabeledArtwork(asset: art, aspectRatio: plate?.aspectRatio ?? 1, zoom: scale,
         currentID: entry?.id, spots: spots, labels: labels, featureIDs: featureIDs, splitCallouts: plate?.splitCallouts ?? false,
-        legendInset: GalaxySSIHealthAtlasFigureLayout.overlap, minimumHeight: entry == nil ? 366 : 266, onSelect: choose))
+        minimumHeight: entry == nil ? 366 : 266, subjectFocus: focus(side: full ? fullscreenSide : sideNote),
+        onSubject: { if full { fullscreenSubject = $0 } else { subjectPoint = $0 } }, onSelect: choose)
+        .anchorPreference(key: GalaxySSIHealthAtlasFigureAnchors.self, value: .bounds) {
+          [(full ? "atlas-fullscreen-figure" : "atlas-structure-figure") + ".viewport": $0]
+        })
     }
     return AnyView(GalaxySSIHealthAtlasZoomCanvas(asset: art, zoom: scale, currentID: entry?.id, spots: shown ? spots : [],
-      labels: labels, onSelect: choose)
+      labels: labels, onSelect: choose, subjectFocus: focus(side: full ? fullscreenSide : sideNote),
+      onSubject: { if full { fullscreenSubject = $0 } else { subjectPoint = $0 } })
+      .anchorPreference(key: GalaxySSIHealthAtlasFigureAnchors.self, value: .bounds) {
+        [(full ? "atlas-fullscreen-figure" : "atlas-structure-figure") + ".viewport": $0]
+      }
       .aspectRatio(plate?.aspectRatio ?? 1, contentMode: .fit)
-      .padding(.horizontal, 12).padding(.bottom, 20).frame(minHeight: entry == nil ? 366 : 266))
+      .frame(minHeight: entry == nil ? 366 : 266))
   }
   private func choose(_ id: String) {
     switch plate?.labelTarget(id, in: atlas) {
@@ -232,6 +260,8 @@ private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
   let spots: [(String, Double, Double)]
   let labels: [String]
   let onSelect: (String) -> Void
+  let subjectFocus: CGPoint
+  let onSubject: (CGPoint) -> Void
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
   func makeUIView(context: Context) -> UIScrollView {
@@ -273,6 +303,7 @@ private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
     let content = UIImageView()
     var size = CGSize.zero
     private var layingOut = false
+    private let notePosition = GalaxySSIHealthAtlasNotePosition()
     init(_ parent: GalaxySSIHealthAtlasZoomCanvas) { self.parent = parent }
     func layout(_ scroll: UIScrollView) {
       guard !layingOut, scroll.bounds.width > 0, scroll.bounds.height > 0 else { return }
@@ -294,7 +325,17 @@ private struct GalaxySSIHealthAtlasZoomCanvas: UIViewRepresentable {
         scroll.setZoomScale(CGFloat(parent.zoom), animated: false)
       }
       if parent.zoom == 1 { scroll.setContentOffset(.zero, animated: false) }
+      reportSubject(scroll)
     }
+    private func reportSubject(_ scroll: UIScrollView) {
+      let local = content.convert(CGPoint(x: content.bounds.width * parent.subjectFocus.x,
+        y: content.bounds.height * parent.subjectFocus.y), to: scroll)
+      notePosition.report(CGPoint(x: local.x - scroll.bounds.minX, y: local.y - scroll.bounds.minY), identity: parent.asset) { [weak self] in
+        self?.parent.onSubject($0)
+      }
+    }
+    func scrollViewDidScroll(_ scrollView: UIScrollView) { reportSubject(scrollView) }
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { reportSubject(scrollView) }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { content }
     func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
       parent.zoom = Double(scale)

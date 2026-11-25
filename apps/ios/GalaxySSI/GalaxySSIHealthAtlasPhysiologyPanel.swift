@@ -37,13 +37,17 @@ struct GalaxySSIHealthAtlasPhysiologyPanel: View {
           GalaxySSIHealthAtlasPleuralSlideView(model: model, language: language, resetToken: resetToken).id(entryID)
         }
         if model.kind == .villusArea {
-          GalaxySSIHealthAtlasVillusAreaView(model: model, language: language)
-          Text(t("gut_section_area_views")).font(.footnote).foregroundColor(.secondary)
+          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-villus-figure", header: { EmptyView() }, artwork: {
+            GalaxySSIHealthAtlasVillusAreaView(model: model, language: language)
+          }, legend: { Text(t("gut_section_area_views")).font(.footnote) })
         }
         if model.kind.hasMaterialResponse {
-          GalaxySSIHealthAtlasMaterialResponseView(model: model, language: language)
-          Text(GalaxySSIHealthAtlasMaterialResponseView.description(model.kind, language: language))
-            .font(.footnote).foregroundColor(.secondary).fixedSize(horizontal: false, vertical: true)
+          GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-material-figure", header: { EmptyView() }, artwork: {
+            GalaxySSIHealthAtlasMaterialResponseView(model: model, language: language)
+          }, legend: {
+            Text(GalaxySSIHealthAtlasMaterialResponseView.description(model.kind, language: language))
+              .font(.footnote).fixedSize(horizontal: false, vertical: true)
+          })
         }
         if let forces = model.elbowForces { GalaxySSIHealthAtlasElbowView(forces: forces, language: language) }
         if let flow = model.vesselFlow { GalaxySSIHealthAtlasVesselFlowView(flow: flow, language: language) }

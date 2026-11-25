@@ -16,6 +16,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   private var playbackID: String { "simulation|" + entry.id }
   @State private var structure: String?
   @State private var referencesExpanded = false
+  @ScaledMetric(relativeTo: .footnote) private var stageSize: CGFloat = 14
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -59,7 +60,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
   }
   private var stageCaption: some View {
     GalaxySSIHealthAtlasReservedCaption(values: stageCaptions, selected: simulation.stage, identifier: "atlas-simulation-stage")
-      .font(.subheadline.weight(.semibold))
+      .font(.system(size: stageSize, weight: .semibold))
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -77,7 +78,7 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
           simulationArtwork
           if !retinal && endocrine == nil {
             GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-simulation-figure", header: { EmptyView() }, artwork: {
-              processArtwork.padding(.bottom, GalaxySSIHealthAtlasFigureLayout.overlap)
+              processArtwork
             }, legend: { stageCaption })
           }
           if inline || (!hasDiagram && !hasCloseup) { playbackControls }
@@ -178,7 +179,8 @@ struct GalaxySSIHealthAtlasSimulationPanel: View {
     }
     if !hasDiagram {
       GalaxySSIHealthAtlasProcessStages(stages: model.stages, phase: simulation.phase, language: language,
-        entryID: entry.id, compact: inline, selected: { pause(); simulation.selectStage($0) })
+        entryID: entry.id, compact: inline, annotationScope: "atlas-simulation-figure",
+        selected: { pause(); simulation.selectStage($0) })
     }
   }
   private func openStructure(_ id: String) { pause(); structure = id }

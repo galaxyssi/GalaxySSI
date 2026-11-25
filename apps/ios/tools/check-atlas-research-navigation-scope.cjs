@@ -42,7 +42,7 @@ for (const token of ["GalaxySSIHealthAtlasState.researchTopics(entry)", "GalaxyS
   'key: { $0.rawValue }, identifier: "atlas-research-tab"', "switch topic.wrappedValue", "topics.contains(selection.wrappedValue.research)",
   "state.openNumericalModel(entry); state.closeResearch(entry); dismiss()", '.navigationTitle(title)', '"targeted_research"'])
   assert(research.includes(token), token);
-assert.equal(research.split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1], "Drug, comparison and aging modules are not rewritten");
+assert.equal(research.split("      Divider()")[1], prior("Research").split("      Divider()")[1], "Drug, comparison and aging modules are not rewritten");
 for (const token of ["UIViewRepresentable", "private weak var scroll: UIScrollView?", "view.superview", "ancestor = current.superview",
   "!(current is UIScrollView)", "containing.observe(\\.contentOffset", "containing.observe(\\.contentSize", "DispatchQueue.main.async",
   "scroll.isDragging || scroll.isDecelerating { pending = nil }", "scroll.adjustedContentInset.top", "scroll.adjustedContentInset.bottom",

@@ -19,12 +19,12 @@ requireTokens(android('HealthAtlasSceneFrame'), ['val probe = TextView(context)'
 const scene = source('FunctionScene'), frame = source('SceneFrame');
 // #4445 intentionally replaces the active dark band with the integrated figure legend.
 requireTokens(scene, ['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"', 'legendIdentifier: "atlas-function-subtitles"', 'GalaxySSIHealthTheme.accent', '.foregroundColor(.primary)']);
-requireTokens(source('FigureFrame'), ['colorScheme == .dark', '.ground)', 'LinearGradient(colors: [ground.opacity(0), ground]', '.padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 14)']);
+requireTokens(source('FigureFrame'), ['colorScheme == .dark', '.ground)', 'overlayPreferenceValue', '.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 9)']);
 assert(!scene.includes('colors.caption'));
 requireTokens(frame, ['ground: Color? = nil', 'ForEach(values.indices', '.hidden().accessibilityHidden(true).allowsHitTesting(false)']);
-assert.equal((frame.match(/\.lineLimit\(nil\)\.fixedSize\(horizontal: false, vertical: true\)/g) || []).length, 2);
+assert.equal((frame.match(/\.lineLimit\(maximumLines\)\.truncationMode\(\.tail\)\.fixedSize\(horizontal: false, vertical: true\)/g) || []).length, 2);
 // The same native Text type, modifiers, inherited font and constrained width measure
-// both hidden probes and the displayed caption; no alternate-font estimate or line cap.
+// both hidden probes and the displayed caption, including the #4446 two-line cap.
 assert(!frame.includes('lineLimit(1)')); assert(!frame.includes('maxHeight:'));
 const colorXML = directory => xml.xml2js(git(['show', sha + ':apps/android/app/src/main/res/' + directory + '/health_atlas_scene_colors.xml']).toString(), {compact: false}).elements.find(e => e.name === 'resources').elements.filter(e => e.name === 'color');
 const colors = new Map(colorXML('values').map(e => [e.attributes.name, e.elements[0].text]));
@@ -48,14 +48,14 @@ assert.equal(normalizeVisibility(vision.split('  private func relay(')[1]), norm
 requireTokens(source('RodCatalogue'), ['story.id == "VISION"', 'https://pubmed.ncbi.nlm.nih.gov/2578616/', 'story.references + [reference]', 'routes: routes, entryPhases: entryPhases']);
 requireTokens(source('FunctionCatalogue'), ['revision: Int = 4443', 'original.rodPhototransduction()', '== 324']);
 assert.equal(source('FunctionCatalogue').split('struct GalaxySSIHealthAtlasFunctionSelection:')[1], prior('FunctionCatalogue').split('struct GalaxySSIHealthAtlasFunctionSelection:')[1]);
-for (const name of ['ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'ProcessStages', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
+for (const name of ['ChapterClock', 'Physiology', 'AgentContext', 'AgentHandoff', 'CrossBridgeDrawing', 'GlucoseTransportDrawing', 'PotassiumTraceDrawing']) assert.equal(source(name), prior(name), name);
 // #4444 changes navigation/related menu only, not the player clock, cache sanitizers or personal metric renderer.
 const navigationPlayerCore = s => s.split('}.accessibilityIdentifier("atlas-function-player")')[1];
 assert.equal(navigationPlayerCore(source("FunctionPlayer")), navigationPlayerCore(prior("FunctionPlayer")));
 const restoreSelectionCore = s => s.split("  func restore(_ text:")[1].split("  var serialized:")[0];
 assert.equal(restoreSelectionCore(source("State")), restoreSelectionCore(prior("State")));
 // #4445 adds contextual search/navigation and scroll tracking; preserve every research domain view.
-assert.equal(source("Research").split("  private var drugs:")[1], prior("Research").split("  private var drugs:")[1]);
+assert.equal(source("Research").split("      Divider()")[1], prior("Research").split("      Divider()")[1]);
 const physiologyCase = s => s.split("        case .physiology:")[1].split("        case .drugs:")[0];
 assert.equal(physiologyCase(source("Research")), physiologyCase(prior("Research")));
 assert(source("Research").includes("state.detailBinding(entry, depth: depth)"));

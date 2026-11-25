@@ -7,9 +7,12 @@ struct GalaxySSIHealthAtlasRetinaPathView: View {
   let language: String
   let select: (Int) -> Void
   let open: (String) -> Void
+  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
   var body: some View {
     if let destinations = GalaxySSIHealthAtlasRetinaPath.destinations(stage: stage), model.stages.count == 4 {
       VStack(alignment: .leading, spacing: 10) {
+        GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-retina-figure", header: { EmptyView() }, artwork: {
+        VStack(spacing: 10) {
         HStack(alignment: .top, spacing: 12) {
           VStack(spacing: 6) {
             heading("sensory_retinal_rod_route")
@@ -27,8 +30,14 @@ struct GalaxySSIHealthAtlasRetinaPathView: View {
           Image(systemName: "arrow.down.left").frame(maxWidth: .infinity)
         }.foregroundColor(.secondary).accessibilityHidden(true)
         node(3)
-        Text(GalaxySSIHealthAtlasText.get(model.stages[stage], language)).font(.subheadline.bold())
-          .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("atlas-retina-step-text")
+        }
+        }, legend: {
+          VStack(alignment: .leading, spacing: 5) {
+            GalaxySSIHealthAtlasReservedCaption(values: model.stages.map { GalaxySSIHealthAtlasText.get($0, language) },
+              selected: stage, identifier: "atlas-retina-step-text").font(.subheadline.bold())
+            Text(t("sensory_retinal_scope")).font(.system(size: noteSize)).foregroundColor(.secondary)
+          }
+        })
         ForEach(destinations, id: \.self) { id in
           if let entry = atlas.entry(id) {
             Button { open(id) } label: {
@@ -39,7 +48,6 @@ struct GalaxySSIHealthAtlasRetinaPathView: View {
             }.accessibilityIdentifier("atlas-retina-open-" + id)
           }
         }
-        Text(t("sensory_retinal_scope")).font(.footnote).foregroundColor(.secondary)
       }.accessibilityIdentifier("atlas-retinal-path")
     }
   }
@@ -62,6 +70,7 @@ struct GalaxySSIHealthAtlasRetinaPathView: View {
     }.buttonStyle(.plain).accessibilityLabel(GalaxySSIHealthAtlasText.get(model.stages[index], language))
       .accessibilityAddTraits(index == stage ? .isSelected : []).accessibilitySortPriority(Double(4 - index))
       .accessibilityIdentifier("atlas-retina-node-" + String(index))
+      .atlasAnnotationTarget("atlas-retina-figure", active: index == stage)
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
 }

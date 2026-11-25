@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C44460000000000000000001 /* GalaxySSIHealthAtlasNotePosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44460000000000000000002 /* GalaxySSIHealthAtlasNotePosition.swift */; };
     C44450000000000000000009 /* GalaxySSIHealthAtlasSearchNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4445000000000000000000A /* GalaxySSIHealthAtlasSearchNavigation.swift */; };
     C44450000000000000000001 /* AtlasIntegratedFigures.strings in Resources */ = {isa = PBXBuildFile; fileRef = C44450000000000000000002 /* AtlasIntegratedFigures.strings */; };
     C44450000000000000000005 /* GalaxySSIHealthAtlasFigureFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = C44450000000000000000006 /* GalaxySSIHealthAtlasFigureFrame.swift */; };
@@ -2162,6 +2163,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C44460000000000000000002 /* GalaxySSIHealthAtlasNotePosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasNotePosition.swift; sourceTree = "<group>"; };
     C4445000000000000000000A /* GalaxySSIHealthAtlasSearchNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasSearchNavigation.swift; sourceTree = "<group>"; };
     C44450000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/AtlasIntegratedFigures.strings; sourceTree = "<group>"; };
     C44450000000000000000004 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/AtlasIntegratedFigures.strings"; sourceTree = "<group>"; };
@@ -4922,6 +4924,7 @@
         C44450000000000000000006 /* GalaxySSIHealthAtlasFigureFrame.swift */,
         C44450000000000000000008 /* GalaxySSIHealthAtlasSearch.swift */,
         C4445000000000000000000A /* GalaxySSIHealthAtlasSearchNavigation.swift */,
+        C44460000000000000000002 /* GalaxySSIHealthAtlasNotePosition.swift */,
         C44440000000000000000008 /* GalaxySSIHealthAtlasRestoredDetailLink.swift */,
         C44430000000000000000008 /* GalaxySSIHealthAtlasRodResponse.swift */,
         C4443000000000000000000A /* GalaxySSIHealthAtlasRodMembraneDrawing.swift */,
@@ -7253,6 +7256,7 @@
         C44450000000000000000005 /* GalaxySSIHealthAtlasFigureFrame.swift */,
         C44450000000000000000007 /* GalaxySSIHealthAtlasSearch.swift */,
         C44450000000000000000009 /* GalaxySSIHealthAtlasSearchNavigation.swift */,
+        C44460000000000000000001 /* GalaxySSIHealthAtlasNotePosition.swift */,
         C44440000000000000000007 /* GalaxySSIHealthAtlasRestoredDetailLink.swift */,
         C44430000000000000000007 /* GalaxySSIHealthAtlasRodResponse.swift in Sources */,
         C44430000000000000000009 /* GalaxySSIHealthAtlasRodMembraneDrawing.swift in Sources */,

@@ -15,13 +15,14 @@ const inventory={schema:1,source:{androidPR:4445,mergeCommit:sha},files:changed.
 })};
 check(android('HealthAtlasFigureFrame'),['LEGEND_OVERLAP_DP = 28','atlas-figure-legend']);
 const frame=source('FigureFrame'),scene=source('FunctionScene'),art=source('Artwork'),detail=source('Detail'),panel=source('SimulationPanel'),nav=source('LessonNavigation');
-check(frame,['static let overlap: CGFloat = 28','min(overlap, min(art, legend))','header','artwork.frame(maxWidth: .infinity)','legend.frame(maxWidth: .infinity','.padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 14)','LinearGradient(colors: [ground.opacity(0), ground]','frame(height: 18)','background(measure("legend"))','onPreferenceChange','clipShape(RoundedRectangle(cornerRadius: 8))']);
+// #4446 replaces the former 28-point fading footer with connected responsive notes.
+check(frame,['width >= 580', 'preferSide && width >= 280', 'min(46, legend / 2)', '.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 9)', 'overlayPreferenceValue', 'clipShape(RoundedRectangle(cornerRadius: 8))']);
 check(scene,['GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-function-frame"','legendIdentifier: "atlas-function-subtitles"','GalaxySSIHealthAtlasReservedCaption(values: labels','story.chapters.map { t($0.caption) }','GalaxySSIHealthTheme.accent','.foregroundColor(.primary)']);
 assert(!scene.includes('colors.caption'));
-check(source('SceneFrame'),['ForEach(values.indices','.hidden().accessibilityHidden(true).allowsHitTesting(false)','.lineLimit(nil).fixedSize(horizontal: false, vertical: true)']);
-check(art,['plate?.markers.compactMap','if !choices.isEmpty || !(plate?.annotations.isEmpty ?? true)','atlas-source-structure','atlas-structure-figure','atlas-concept-figure','atlas-fullscreen-figure','note: "symbol_only"','explanation: entry.description','explanation: nil','legendInset: GalaxySSIHealthAtlasFigureLayout.overlap','minimumHeight: entry == nil ? 366 : 266','Button { fullscreenLayers.toggle() }','selectedFeature = feature','UIScrollView keeps image, markers']);
+check(source('SceneFrame'),['ForEach(values.indices','.hidden().accessibilityHidden(true).allowsHitTesting(false)','.lineLimit(maximumLines).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)']);
+check(art,['plate?.markers.compactMap','if !choices.isEmpty || !(plate?.annotations.isEmpty ?? true)','atlas-source-structure','atlas-structure-figure','atlas-concept-figure','atlas-fullscreen-figure','note: "symbol_only"','explanation: entry.description','explanation: nil','minimumHeight: entry == nil ? 366 : 266','Button { fullscreenLayers.toggle() }','selectedFeature = feature','UIScrollView keeps image, markers']);
 assert(!art.includes('atlas.children('));assert(!art.includes('atlas.cells('));assert(!art.includes('Slider('));
-check(source('LabeledArtwork'),['old.legendInset == input.legendInset','minimumHeight: input.minimumHeight','backgroundColor = .clear']);
+check(source('LabeledArtwork'),['minimumHeight: input.minimumHeight','backgroundColor = .clear']);
 check(source('CalloutLayout'),['legendInset.isFinite','minimumHeight.isFinite','required(right)) + legendInset','height - 8 - legendInset']);
 const structure=detail.split('  private var structure:')[1].split('  private var name:')[0];
 assert(structure.includes('GalaxySSIHealthAtlasArtwork('));assert(!structure.includes('relationships'));assert(!detail.includes('atlas-structure-layer'));assert(!detail.includes('Text(t("art_note"))'));
@@ -30,11 +31,11 @@ for(const name of ['Detail','Research','StandaloneModels'])check(source(name),['
 check(detail,['selection.wrappedValue.tab == .function || selection.wrappedValue.tab == .structure','structureOnly != true']);
 check(source('Search'),['@State private var kind = "organ"','@State private var system = ""','@State private var tissues = false','@FocusState','focused = true','value.prefix(100)','matches.prefix(limit)','atlas-search-result-','system = ""; tissues = false; limit = 24']);
 check(nav,['struct Search: Codable, Equatable, Identifiable','var search: Search?','playback.pause()','functionSnapshot(entry, depth: depth)','Self.safeScroll(scroll)','lessonNavigation.path.last == saved.origin','targetStory: "", structureOnly: true','next.tab = .structure','next.artworkView = saved.selection.artworkView','saved.path.last == search.origin','cleaned(search.selection','frame.structureOnly == true ? frame.targetStory.isEmpty']);
-check(panel,['if !retinal && endocrine == nil','atlas-simulation-figure','processArtwork.padding(.bottom, GalaxySSIHealthAtlasFigureLayout.overlap)','legend: { stageCaption }']);
+check(panel,['if !retinal && endocrine == nil','atlas-simulation-figure','annotationScope: "atlas-simulation-figure"','legend: { stageCaption }']);
 assert(!panel.includes('if germline != nil { stageCaption }'));
 assert.equal(panel.split('.onReceive(timer)')[1].split('.onDisappear { pause() }')[0],prior('SimulationPanel').split('.onReceive(timer)')[1].split('.onDisappear { pause() }')[0]);
 assert.equal(panel.split('  private var quantitative:')[1],prior('SimulationPanel').split('  private var quantitative:')[1]);
-for(const name of ['ChapterClock','FunctionPlayer','FunctionArtwork','FunctionCatalogue','Physiology','AgentContext','AgentHandoff','RodResponse','RodMembraneDrawing','ProcessStages','Circulation','GasExchange'])assert.equal(source(name),prior(name),name);
+for(const name of ['ChapterClock','FunctionArtwork','FunctionCatalogue','Physiology','AgentContext','AgentHandoff','RodResponse','RodMembraneDrawing','Circulation','GasExchange'])assert.equal(source(name),prior(name),name);
 assert.equal(detail.split('struct GalaxySSIHealthAtlasValues:')[1],prior('Detail').split('struct GalaxySSIHealthAtlasValues:')[1]);
 for(const [directory,expected]of[['values','#E7EFED'],['values-night','#263537']]){
  const doc=xml.xml2js(git(['show',sha+':apps/android/app/src/main/res/'+directory+'/health_atlas_scene_colors.xml']).toString(),{compact:false});
@@ -42,7 +43,7 @@ for(const [directory,expected]of[['values','#E7EFED'],['values-night','#263537']
  assert.equal(colors.length,1);assert.equal(colors[0].elements[0].text,expected);assert(source('FilmPalette').includes('0x'+expected.slice(1)));
 }
 const test='apps/ios/GalaxySSITests/GalaxySSIHealthAtlasLessonNavigationTests.swift';
-check(read(test),['testSearchCancelAndResultBackPreserveOriginVariantScrollAndPhase','testFigureOverlapAndBottomCalloutsReserveLegendWithoutChangingDefaults']);
+check(read(test),['testSearchCancelAndResultBackPreserveOriginVariantScrollAndPhase','testFigureNoteLayoutAndLegacyBottomInsetDefaults']);
 const mapping={HealthAtlasAnatomyDialog:['Artwork','FigureFrame','LabeledArtwork','CalloutLayout'],HealthAtlasCaptionSizes:['SceneFrame'],HealthAtlasCirculationView:['SimulationPanel'],HealthAtlasFigureFrame:['FigureFrame'],HealthAtlasFunctionPlayer:['FunctionScene','FigureFrame'],HealthAtlasLabeledImage:['LabeledArtwork','CalloutLayout','Artwork'],HealthAtlasProcessView:['SimulationPanel'],HealthAtlasSceneFrame:['SceneFrame','FigureFrame'],HealthAtlasSimulationPanel:['SimulationPanel','FigureFrame'],HealthAtlasUi:['Artwork','FigureFrame'],HealthBodyAtlasActivity:['Detail','Search','SearchNavigation','Research','StandaloneModels','LessonNavigation','State','Artwork']};
 const files=inventory.files.map(file=>{
  const name=path.basename(file.path),key=name.replace(/\.kt$/,'');let kind,ios,note;

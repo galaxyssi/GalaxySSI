@@ -19,15 +19,16 @@ struct GalaxySSIHealthAtlasReservedCaption: View {
   let values: [String]
   let selected: Int
   let identifier: String
+  var maximumLines: Int? = nil
   var body: some View {
     if !values.isEmpty {
       ZStack(alignment: .topLeading) {
         // Reserve the longest wrapped chapter at the current width and Dynamic Type size.
         ForEach(values.indices, id: \.self) { index in
-          Text(values[index]).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+          Text(values[index]).lineLimit(maximumLines).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             .hidden().accessibilityHidden(true).allowsHitTesting(false)
         }
-        Text(values[min(values.count - 1, max(0, selected))]).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+        Text(values[min(values.count - 1, max(0, selected))]).lineLimit(maximumLines).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
           .accessibilityIdentifier(identifier)
       }.frame(maxWidth: .infinity, alignment: .leading)
     }

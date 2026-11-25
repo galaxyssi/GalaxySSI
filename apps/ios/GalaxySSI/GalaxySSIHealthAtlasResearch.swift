@@ -8,6 +8,9 @@ struct GalaxySSIHealthAtlasResearch: View {
   let records: GalaxySSIHealthRecords
   let depth: Int
   @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
+  @State private var admeStage = 0
+  @ScaledMetric(relativeTo: .footnote) private var explanationSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.dismiss) private var dismiss
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
@@ -71,13 +74,28 @@ struct GalaxySSIHealthAtlasResearch: View {
   private var drugs: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text(t("adme_title")).font(.headline)
-      Text(t("drug_note")); Text(t("adme_scope")).font(.footnote).foregroundColor(.secondary)
+      Text(t("drug_note"))
+      let stages = ["absorption", "distribution", "metabolism", "excretion"]
+      GalaxySSIHealthAtlasFigureFrame(identifier: "atlas-adme-figure", header: { EmptyView() }, artwork: {
+        GalaxySSIHealthAtlasProcessStages(stages: stages.map { "health_atlas_" + $0 }, phase: Double(admeStage) / 4,
+          language: language, entryID: "adme", compact: false, selected: { admeStage = $0 })
+      }, legend: {
+        VStack(alignment: .leading, spacing: 5) {
+          GalaxySSIHealthAtlasReservedCaption(values: stages.map { t($0 + "_note") }, selected: admeStage,
+            identifier: "atlas-adme-explanation").font(.system(size: explanationSize))
+          Text(t("adme_scope")).font(.system(size: noteSize)).foregroundColor(.secondary)
+        }
+      })
       ForEach(["absorption", "distribution", "metabolism", "excretion"], id: \.self) { stage in
         VStack(alignment: .leading, spacing: 6) {
-          Text(t(stage)).font(.headline); Text(t(stage + "_note"))
           if let target = atlas.entry(admeEntry(stage)), depth < 32 {
             NavigationLink(destination: GalaxySSIHealthAtlasDetail(atlas: atlas, entry: target, state: state, records: records, depth: depth + 1)) {
-              GalaxySSIHealthAtlasRow(entry: target)
+              HStack {
+                Text(t(stage) + " · " + GalaxySSIHealthAtlasText.get(target.name, language))
+                  .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Image(systemName: "chevron.right").accessibilityHidden(true)
+              }.frame(minHeight: 44)
             }
           }
         }
