@@ -807,6 +807,7 @@ struct GalaxySSIConversationHubView: View {
       searchText,
       showingArchived ? "archived" : "active",
       hubRefreshToken.uuidString,
+      store.schedulePreviewCacheKey,
       conversationKey,
       contactKey,
       "friend-unread:\(store.unreadFriendRequestCount)"
@@ -990,7 +991,7 @@ struct GalaxySSIConversationHubView: View {
 
   private func agentHubItem(_ conversation: AgentConversation) -> GalaxySSIConversationHubItem {
     let latest = store.latestAgentSessionMessage(conversation.id)
-    let preview = latest.map { ContactConversationSummary(lastMessage: $0, unreadCount: 0).previewText } ?? ""
+    let preview = latest.map { ContactConversationSummary(lastMessage: store.scheduleListPreview($0), unreadCount: 0).previewText } ?? ""
     return GalaxySSIConversationHubItem(
       id: conversation.id,
       kind: .agent,

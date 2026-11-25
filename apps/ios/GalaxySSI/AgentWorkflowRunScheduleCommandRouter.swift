@@ -265,7 +265,8 @@ enum AgentConversationSchedule {
   }
 
   static func state(_ task: AgentProactiveTask, language: String) -> String {
-    GalaxySSILocalization.string(task.enabled ? "galaxyssi.schedule.enabled" : "galaxyssi.schedule.paused",
+    if AgentConversationScheduleProvenance.requiresReview(task) { return AgentConversationScheduleProvenance.text(language: language) }
+    return GalaxySSILocalization.string(task.enabled ? "galaxyssi.schedule.enabled" : "galaxyssi.schedule.paused",
       fallback: task.enabled ? "Enabled" : "Paused", language: language)
   }
 

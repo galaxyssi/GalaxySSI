@@ -9,7 +9,9 @@ enum AgentConversationScheduleTools {
     "Only use this phone-owned tool when the user asks for future repeated work; clarify genuine ambiguity. " +
     "List this conversation's tasks and timezone before changing one. Use its exact ID and observed revision. " +
     "Create and update request an immediate occurrence and then repeat. A saved receipt is not evidence that the action ran. " +
-    "During an occurrence do the assigned work, never create or change a schedule."
+    "During an occurrence do the assigned work, never create or change a schedule. " +
+    "requires_confirmation=true means an older task was paused because its creation intent could not be verified. " +
+    "Do not resume it unless the user explicitly confirms recurring execution."
 
   static func executables(
     invoke: @escaping (String, AgentNativeToolInvocation) -> AgentNativeToolExecutionResult
@@ -48,6 +50,7 @@ enum AgentConversationScheduleTools {
       return failure("schedule_context_missing", "An active conversation that allows scheduled tasks is required.")
     }
     let zone = TimeZone.current.identifier
+    guard store.reconcileConversationScheduleProvenance() else { return failure("schedule_state_unavailable", "Schedule state could not be verified.") }
     if tool == list, input.isEmpty {
       return .success(output: ["time_zone": .string(zone),
         "tasks": .array(store.conversationSchedules(conversation).map(value))], message: "Read saved schedules.")
@@ -84,13 +87,13 @@ enum AgentConversationScheduleTools {
           sourceMessageId: AgentMcpJSONCodec.sha256(input), conversationId: conversation, turnId: context.turnId)
         created = store.automationTask(id: creationID) == nil
         saved = try store.saveConversationSchedule(conversationId: conversation, id: nil, prompt: request.prompt ?? "",
-          trigger: request.trigger, frequency: request.label ?? "", creationId: creationID)
+          trigger: request.trigger, frequency: request.label ?? "", creationId: creationID, origin: .modelTool)
       case .update:
         saved = try store.saveConversationSchedule(conversationId: conversation, id: request.taskID,
-          prompt: request.prompt ?? "", trigger: request.trigger, frequency: request.label ?? "")
+          prompt: request.prompt ?? "", trigger: request.trigger, frequency: request.label ?? "", origin: .modelTool)
       case .pause, .resume:
         guard let id = request.taskID, try store.setConversationScheduleEnabled(id: id, conversationId: conversation,
-          enabled: request.operation == .resume), let updated = store.automationTask(id: id) else {
+          enabled: request.operation == .resume, origin: .modelTool), let updated = store.automationTask(id: id) else {
           return failure("schedule_save_failed", "The schedule could not be updated.")
         }
         saved = updated
@@ -185,7 +188,8 @@ enum AgentConversationScheduleTools {
     if trigger.kind == .cron { schedule["cron"] = .string(trigger.cron) }
     if trigger.kind == .interval { schedule["interval_seconds"] = .int(trigger.intervalSeconds) }
     return .object(["task_id": .string(task.taskId), "revision": .int(Int64(task.revision)),
-      "enabled": .bool(task.enabled), "prompt": .string(task.action.prompt), "schedule_label": .string(task.action.scheduleText),
+      "enabled": .bool(task.enabled), "requires_confirmation": .bool(AgentConversationScheduleProvenance.requiresReview(task)),
+      "prompt": .string(task.action.prompt), "schedule_label": .string(task.action.scheduleText),
       "schedule": .object(schedule), "next_run_at_millis": .int(task.nextRunAtMillis), "last_status": .string(task.lastStatus.rawValue)])
   }
 

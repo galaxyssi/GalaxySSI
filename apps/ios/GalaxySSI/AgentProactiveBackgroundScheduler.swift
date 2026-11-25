@@ -35,9 +35,10 @@ final class AgentProactiveBackgroundScheduler: ObservableObject {
   func scheduleNext() {
     guard registered else { return }
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+    guard store.reconcileConversationScheduleProvenance() else { return }
     let now = Int64(Date().timeIntervalSince1970 * 1_000)
     guard let next = store.automationTasks()
-      .filter({ $0.enabled && $0.nextRunAtMillis > 0 })
+      .filter({ $0.enabled && AgentConversationScheduleProvenance.verified($0) && $0.nextRunAtMillis > 0 })
       .map(\.nextRunAtMillis)
       .min() else {
       return
@@ -72,6 +73,7 @@ final class AgentProactiveBackgroundScheduler: ObservableObject {
         task.setTaskCompleted(success: false)
         return
       }
+      await self.coordinator.runAutomationSchedulerCycle()
       let executions = self.store.claimDueAutomationExecutions()
       var success = true
       for execution in executions {

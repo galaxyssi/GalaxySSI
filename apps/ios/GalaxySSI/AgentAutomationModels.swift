@@ -433,6 +433,7 @@ struct AgentProactiveAction: Codable, Equatable {
   var grantedConsents: Set<String>
   var conversationId: String
   var scheduleText: String
+  var scheduleOrigin: String
 
   var isConversationSchedule: Bool { kind == .agent && targetId == "conversation" && !conversationId.isBlank }
 
@@ -448,7 +449,8 @@ struct AgentProactiveAction: Codable, Equatable {
     grantedPermissions: Set<String> = [],
     grantedConsents: Set<String> = [],
     conversationId: String = "",
-    scheduleText: String = ""
+    scheduleText: String = "",
+    scheduleOrigin: String = ""
   ) throws {
     guard prompt.count <= 65_536 else {
       throw AgentProactiveTaskError.invalid("Proactive prompt is too long")
@@ -494,6 +496,7 @@ struct AgentProactiveAction: Codable, Equatable {
     self.grantedConsents = Set(grantedConsents.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     self.conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(256))
     self.scheduleText = String(scheduleText.prefix(160))
+    self.scheduleOrigin = String(scheduleOrigin.prefix(64))
   }
 
   enum CodingKeys: String, CodingKey {
@@ -509,6 +512,7 @@ struct AgentProactiveAction: Codable, Equatable {
     case grantedConsents = "granted_consents"
     case conversationId = "conversation_id"
     case scheduleText = "schedule_text"
+    case scheduleOrigin = "schedule_origin"
   }
 
   init(from decoder: Decoder) throws {
@@ -525,7 +529,8 @@ struct AgentProactiveAction: Codable, Equatable {
       grantedPermissions: try container.decodeIfPresent(Set<String>.self, forKey: .grantedPermissions) ?? [],
       grantedConsents: try container.decodeIfPresent(Set<String>.self, forKey: .grantedConsents) ?? [],
       conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
-      scheduleText: try container.decodeIfPresent(String.self, forKey: .scheduleText) ?? ""
+      scheduleText: try container.decodeIfPresent(String.self, forKey: .scheduleText) ?? "",
+      scheduleOrigin: try container.decodeIfPresent(String.self, forKey: .scheduleOrigin) ?? ""
     )
   }
 
@@ -543,6 +548,7 @@ struct AgentProactiveAction: Codable, Equatable {
     try container.encode(Array(grantedConsents).sorted(), forKey: .grantedConsents)
     if !conversationId.isEmpty { try container.encode(conversationId, forKey: .conversationId) }
     if !scheduleText.isEmpty { try container.encode(scheduleText, forKey: .scheduleText) }
+    if !scheduleOrigin.isEmpty { try container.encode(scheduleOrigin, forKey: .scheduleOrigin) }
   }
 }
 

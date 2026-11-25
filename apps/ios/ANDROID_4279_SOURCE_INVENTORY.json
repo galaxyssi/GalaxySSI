@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4279,
+    "mergeCommit": "7e2e3916b2aec82709091ba3ca70eca0c0dc1a8b"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "54e6902aec7e2beb2fc2e8c7d0fc7a269f83ff782a70bea8b28e290cc82d6356"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/ConversationScheduleDiagnosticsTest.kt",
+      "status": "M",
+      "sha256": "d9abfd2c56d4cb552787b5907912b7704881dfcfa42d25e3d5910e25d90d4d57"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/ConversationScheduledTasksDeviceTest.kt",
+      "status": "M",
+      "sha256": "701f170cd021b918507b3ba1acafd7a8cfa8e81152b52b47d46a732fbea89a93"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentProactiveTasks.kt",
+      "status": "M",
+      "sha256": "9902e909a7dcb491dde07e2dfb8424e8b4345af47758b57427cf9373d8e9ce76"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentScheduleNativeTools.kt",
+      "status": "M",
+      "sha256": "674c48124c8c65e05dba7a138e3ecf19aea7085d262c21c81ee873f7c460d120"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTranscriptStore.kt",
+      "status": "M",
+      "sha256": "310eb7104890ae5ef1409a8eca720b07fc9e8c762c0f9b31ff83e35747c0d857"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduleProvenance.kt",
+      "status": "A",
+      "sha256": "99c4b64e9b948d82966467962f5f28921ba5bc04b4ea143b70f4b7a715052473"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduleState.kt",
+      "status": "M",
+      "sha256": "3e01fcce8210418e308449fc4726639e7eaca9b30f844e7f8c62eb9d65363749"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduledTasks.kt",
+      "status": "M",
+      "sha256": "22717137b282f22f3bfb5779158a4e351a6e4b17d94b9d73c69dc8c63977322e"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityScheduledTasks.kt",
+      "status": "M",
+      "sha256": "20773d1a2af6d881e3a6bebb981f77b76c6081c978c7c15c11da68b4ff4a6d4c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/scheduled_tasks.xml",
+      "status": "M",
+      "sha256": "0ef06417bb93dda9f3189f97c3a88818f2a37e284fa29de955e1d017b3c02d7f"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/scheduled_tasks.xml",
+      "status": "M",
+      "sha256": "aba230ae6e0195011118e39cc0ea008818092f320db0519397a2989c9ce5a451"
+    },
+    {
+      "path": "docs/architecture/proactive-task-runtime.md",
+      "status": "M",
+      "sha256": "df0652d8dfa09287e989668f2d015703cc595dffa347b2a69009cd28c624661b"
+    }
+  ]
+}

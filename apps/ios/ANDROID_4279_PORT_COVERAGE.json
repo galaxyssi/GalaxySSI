@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4279,
+    "mergeCommit": "7e2e3916b2aec82709091ba3ca70eca0c0dc1a8b"
+  },
+  "verification": "source-and-resource-contracts-not-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "54e6902aec7e2beb2fc2e8c7d0fc7a269f83ff782a70bea8b28e290cc82d6356",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "No iOS version bump or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/ConversationScheduleDiagnosticsTest.kt",
+      "sourceSHA256": "d9abfd2c56d4cb552787b5907912b7704881dfcfa42d25e3d5910e25d90d4d57",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIStoreTests.swift"
+      ],
+      "note": "Reviewed paged origin lookup, foreign/stale receipt rejection, repeated migration, legacy execution/recovery/late-delivery suppression and original-message fingerprint diagnostics. iOS native migration/receipt/DB reopen/rollback/read-status/legacy-codec fixtures added but NOT executed. No device state, actual message fingerprints, dispatch or cancellation timing acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/ConversationScheduledTasksDeviceTest.kt",
+      "sourceSHA256": "701f170cd021b918507b3ba1acafd7a8cfa8e81152b52b47d46a732fbea89a93",
+      "kind": "android-device-source-reference",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIStoreTests.swift"
+      ],
+      "note": "Reviewed paged origin lookup, foreign/stale receipt rejection, repeated migration, legacy execution/recovery/late-delivery suppression and original-message fingerprint diagnostics. iOS native migration/receipt/DB reopen/rollback/read-status/legacy-codec fixtures added but NOT executed. No device state, actual message fingerprints, dispatch or cancellation timing acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentProactiveTasks.kt",
+      "sourceSHA256": "9902e909a7dcb491dde07e2dfb8424e8b4345af47758b57427cf9373d8e9ce76",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentAutomationModels.swift",
+        "apps/ios/GalaxySSI/AgentConversationScheduleProvenance.swift",
+        "apps/ios/GalaxySSI/GalaxySSIStoreAutomation.swift",
+        "apps/ios/GalaxySSI/AgentProactiveBackgroundScheduler.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ],
+      "note": "Backward-compatible origin encode/decode. Reconcile at startup/restore, background, due claim, begin/finish, manual trigger and direct execution. Pause before cancellation, cancel local pending runs, gate old dispatch and results; alternate background path delegates conversation work to its scoped coordinator."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentScheduleNativeTools.kt",
+      "sourceSHA256": "674c48124c8c65e05dba7a138e3ecf19aea7085d262c21c81ee873f7c460d120",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConversationScheduleTools.swift",
+        "apps/ios/GalaxySSI/GalaxySSIStoreAutomation.swift"
+      ],
+      "note": "Native tool list exposes requires_confirmation; contract requires explicit recurring-execution confirmation before legacy resume. Tool writes record model_tool provenance, editor writes editor. Existing owned user-turn/revision/admission constraints retained; no lexical intent parser."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentTranscriptStore.kt",
+      "sourceSHA256": "310eb7104890ae5ef1409a8eca720b07fc9e8c762c0f9b31ff83e35747c0d857",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConversationScheduleProvenance.swift",
+        "apps/ios/GalaxySSI/GalaxySSIChatHistoryDatabase.swift",
+        "apps/ios/GalaxySSI/GalaxySSIStore.swift",
+        "apps/ios/GalaxySSI/GalaxySSIConversationHubView.swift",
+        "apps/ios/GalaxySSI/GalaxySSINavigationContentPrewarm.swift"
+      ],
+      "note": "Migration never deletes/rewrites chat entries, attachments, timestamps or unread tokens. Typed legacy-result label removal is list-only, not transcript/context mutation. Durable conversation/turn blocks protect new row/transport writes; historical row reads and same-body read-status updates remain allowed. UUID case normalization prevents alias bypass. Observer/notification gates suppress late callbacks as well."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduleProvenance.kt",
+      "sourceSHA256": "99c4b64e9b948d82966467962f5f28921ba5bc04b4ea143b70f4b7a715052473",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConversationScheduleProvenance.swift",
+        "apps/ios/GalaxySSI/GalaxySSIChatHistoryDatabase.swift"
+      ],
+      "note": "Page exact-conversation native receipts beyond recent windows, require local receipt trace/task ID plus editor/tool ID prefix and current task name/schedule label. Never accept schedule-command receipts. iOS preexisting receipts are plain native text rather than Android rich cards; matching is adapted explicitly. Unknown origins fail closed. Idempotent pause and durable old-run suppression survive review/resume."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduleState.kt",
+      "sourceSHA256": "3e01fcce8210418e308449fc4726639e7eaca9b30f844e7f8c62eb9d65363749",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentWorkflowRunScheduleCommandRouter.swift"
+      ],
+      "note": "Localized legacy-review state takes precedence over normal paused/enabled labels."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/ConversationScheduledTasks.kt",
+      "sourceSHA256": "22717137b282f22f3bfb5779158a4e351a6e4b17d94b9d73c69dc8c63977322e",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIStoreAutomation.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift",
+        "apps/ios/GalaxySSI/AgentConversationScheduleProvenance.swift"
+      ],
+      "note": "Trusted origins persisted on explicit editor/model-tool save/resume. Reconcile before enabling/mutating/restoring/executing; generic editor cannot directly resume legacy without reviewing task/time. Old queued/running occurrences are cancelled and late deliveries are persistently blocked without deleting history."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityScheduledTasks.kt",
+      "sourceSHA256": "20773d1a2af6d881e3a6bebb981f77b76c6081c978c7c15c11da68b4ff4a6d4c",
+      "kind": "native-production-port",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIAutomationSupport.swift"
+      ],
+      "note": "Reconcile task page; legacy resume opens existing task/time editor instead of toggling enabled silently."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh-rCN/scheduled_tasks.xml",
+      "sourceSHA256": "0ef06417bb93dda9f3189f97c3a88818f2a37e284fa29de955e1d017b3c02d7f",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/ScheduleProvenance.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/ScheduleProvenance.strings"
+      ],
+      "note": "One exact legacy-review source pair per locale, dedicated table."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/scheduled_tasks.xml",
+      "sourceSHA256": "aba230ae6e0195011118e39cc0ea008818092f320db0519397a2989c9ce5a451",
+      "kind": "exact-resource-port",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/ScheduleProvenance.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/ScheduleProvenance.strings"
+      ],
+      "note": "One exact legacy-review source pair per locale, dedicated table."
+    },
+    {
+      "source": "docs/architecture/proactive-task-runtime.md",
+      "sourceSHA256": "df0652d8dfa09287e989668f2d015703cc595dffa347b2a69009cd28c624661b",
+      "kind": "architecture-source-reference",
+      "ios": [],
+      "note": "Native provenance/review/no-history-mutation contract documented in port status; Android/Desktop architecture file unchanged."
+    }
+  ]
+}

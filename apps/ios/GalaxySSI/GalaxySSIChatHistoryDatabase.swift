@@ -367,7 +367,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
   @discardableResult
   func upsert(_ message: ChatMessage) -> Bool {
     locked {
-      guard admitsAgentTurn(message) else { return false }
+      guard admitsAgentTurn(message), admitsScheduleReplyWrite(message) else { return false }
       if Self.agentTurnScoped(message), let prior = self.message(id: message.id) {
         guard prior.conversationId == message.conversationId,
               !prior.isMine || prior.turnId.isBlank ||
@@ -471,6 +471,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       throw MqttRouteError.invalidPayload
     }
     return try locked {
+      guard admitsScheduleReplyWrite(message) else { throw GalaxySSIChatHistoryError.locallyDeleted }
       guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
             execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
       var committed = false
@@ -696,6 +697,42 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     guard Self.agentTurnScoped(message), !message.isSystem, !message.turnId.isBlank,
           let owner = originalAgentTurnConversation(message.turnId) else { return true }
     return message.conversationId == owner || message.sourceConversationId == owner
+  }
+
+  func blockScheduleReplies(conversation: String, turns: [String]) -> Bool {
+    locked {
+      guard !conversation.isBlank else { return false }
+      guard !turns.isEmpty else { return true }
+      guard execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard let statement = prepare("INSERT OR IGNORE INTO schedule_reply_blocks(conversation_id, turn_id) VALUES (?, ?)") else { return false }
+      defer { sqlite3_finalize(statement) }
+      for turn in Set(turns) {
+        guard !turn.isBlank else { return false }
+        sqlite3_reset(statement); sqlite3_clear_bindings(statement)
+        bind(conversation, at: 1, to: statement); bind(AgentConversationScheduleProvenance.turnKey(turn), at: 2, to: statement)
+        guard sqlite3_step(statement) == SQLITE_DONE else { return false }
+      }
+      committed = execute("COMMIT"); return committed
+    }
+  }
+  func isScheduleReplyBlocked(conversation: String, turn: String) -> Bool {
+    locked {
+      guard !conversation.isBlank, !turn.isBlank else { return false }
+      guard let statement = prepare("SELECT 1 FROM schedule_reply_blocks WHERE conversation_id = ? AND turn_id = ?") else { return true }
+      defer { sqlite3_finalize(statement) }
+      bind(conversation, at: 1, to: statement); bind(AgentConversationScheduleProvenance.turnKey(turn), at: 2, to: statement)
+      return sqlite3_step(statement) != SQLITE_DONE
+    }
+  }
+  private func admitsScheduleReplyWrite(_ message: ChatMessage) -> Bool {
+    guard !message.isMine, !message.isSystem, message.sourceConversationId.isBlank,
+      isScheduleReplyBlocked(conversation: message.conversationId, turn: message.turnId) else { return true }
+    guard let prior = self.message(id: message.id) else { return false }
+    var comparable = message
+    comparable.deliveryStatus = prior.deliveryStatus; comparable.deliveryTrace = prior.deliveryTrace
+    return comparable == prior
   }
 
   private func unreadReplyKey(_ message: ChatMessage) -> String? {
@@ -1192,6 +1229,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_conversation_order ON chat_messages(conversation_id, created_at ASC, message_id ASC)")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_messages_remote_dedupe ON chat_messages(contact_id, remote_message_id, is_mine)")
     _ = execute("CREATE TABLE IF NOT EXISTS chat_message_deletions (contact_id TEXT NOT NULL, message_id TEXT NOT NULL, remote_message_id TEXT NOT NULL, is_mine INTEGER NOT NULL, PRIMARY KEY(contact_id, message_id))")
+    _ = execute("CREATE TABLE IF NOT EXISTS schedule_reply_blocks (conversation_id TEXT NOT NULL, turn_id TEXT NOT NULL, PRIMARY KEY(conversation_id, turn_id)) WITHOUT ROWID")
     _ = execute("CREATE INDEX IF NOT EXISTS chat_message_deletions_remote ON chat_message_deletions(contact_id, remote_message_id, is_mine)")
     _ = execute("CREATE TABLE IF NOT EXISTS desktop_reply_recovery (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE TABLE IF NOT EXISTS link_delivery_state (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), encrypted_payload BLOB NOT NULL)")

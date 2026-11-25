@@ -43,7 +43,17 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
   private var finishedResearchRuns = AgentConnectorResearchProgress.FinishedRuns()
-  var onIncomingMessage: ((ChatMessage) -> Void)?
+  private var incomingMessageObserver: ((ChatMessage) -> Void)?
+  var onIncomingMessage: ((ChatMessage) -> Void)? {
+    get {
+      guard let observer = incomingMessageObserver else { return nil }
+      return { [weak self] message in
+        guard self?.store.admitsScheduledReply(conversation: message.conversationId, turn: message.turnId) == true else { return }
+        observer(message)
+      }
+    }
+    set { incomingMessageObserver = newValue }
+  }
   var onIncomingMessageDelta: ((ChatMessage) -> Void)?
 
   let store: GalaxySSIStore
@@ -699,6 +709,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func start() {
+    _ = reconcileLegacyConversationSchedules()
     #if DEBUG
     Self.activeRemotePilotCoordinator = self
     #endif
@@ -1056,6 +1067,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func resumePendingAgentDelivery() {
+    guard reconcileLegacyConversationSchedules() else { return }
     guard mqttClient.relationshipSubscriptionsReady else {
       pendingReplyRecoveryWake.request(isConnected: false)
       return
@@ -1813,6 +1825,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func startAutomationScheduler() {
+    _ = store.reconcileConversationScheduleProvenance()
     automationSchedulerTask?.cancel()
     registerAutomationBackgroundTask()
     automationSchedulerTask = Task { [weak self] in
@@ -1828,6 +1841,7 @@ final class MessageCoordinator: ObservableObject {
     guard !runningAutomationCycle else { return }
     runningAutomationCycle = true
     defer { runningAutomationCycle = false; scheduleAutomationBackgroundRefresh() }
+    guard reconcileLegacyConversationSchedules() else { return }
     reconcileConversationScheduleRuns()
     _ = store.claimDueAutomationTasks()
     let ready = store.queuedAutomationRuns(limit: 500).filter { run in
@@ -1868,7 +1882,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func scheduleAutomationBackgroundRefresh() {
     let nextRun = store.automationTasks()
-      .filter { $0.enabled && $0.nextRunAtMillis > 0 }
+      .filter { $0.enabled && AgentConversationScheduleProvenance.verified($0) && $0.nextRunAtMillis > 0 }
       .map(\.nextRunAtMillis)
       .min()
     guard let nextRun else {
@@ -1915,6 +1929,8 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func executeConversationSchedule(_ task: AgentProactiveTask, run: AgentProactiveRun) async {
+    guard reconcileLegacyConversationSchedules(), let current = store.automationTask(id: task.taskId), current.enabled,
+      AgentConversationScheduleProvenance.verified(current), current.revision == task.revision else { return }
     let conversation = task.action.conversationId
     let goal = task.action.prompt
     guard let session = store.agentSession(id: conversation), session.status == .active, !session.privateMode, !session.trackingPaused,
@@ -2018,9 +2034,17 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func cancelLocalScheduleRuns(_ taskId: String) {
-    for run in store.automationRuns(taskId: taskId) where [.running, .waiting].contains(run.status) {
+    for run in store.automationRuns(taskId: taskId, limit: 500) where [.running, .waiting].contains(run.status) ||
+      (run.status == .cancelled && run.errorCode == "legacy_schedule_review_required") {
       _ = cancelLocalAgentTask(taskId: run.runId, emitReply: false)
     }
+  }
+
+  @discardableResult
+  func reconcileLegacyConversationSchedules() -> Bool {
+    let saved = store.reconcileConversationScheduleProvenance()
+    for task in store.proactiveTasks where AgentConversationScheduleProvenance.requiresReview(task) { cancelLocalScheduleRuns(task.taskId) }
+    return saved
   }
 
   private func executeAutomationAction(
@@ -15370,6 +15394,10 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func executeProactiveTask(_ task: AgentProactiveTask, causeJson: String = "") async -> Bool {
+    if task.action.isConversationSchedule {
+      guard reconcileLegacyConversationSchedules(), let current = store.automationTask(id: task.taskId), current.enabled,
+        AgentConversationScheduleProvenance.verified(current), current.revision == task.revision else { return false }
+    }
     let action = task.action
     let targetId: String
     if action.contactId != "system" {
