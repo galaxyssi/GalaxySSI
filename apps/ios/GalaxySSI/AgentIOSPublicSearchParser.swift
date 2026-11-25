@@ -58,6 +58,39 @@ enum AgentIOSPublicSearchParser {
     return components.url?.absoluteString
   }
 
+  static func imageRows(_ data: Data, brave: Bool, limit: Int) throws -> [Hit] {
+    guard limit > 0 else { return [] }
+    guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let rows = root["results"] as? [Any] else { throw AgentIOSURLSessionWebError.invalidSearchResponse }
+    var hits: [Hit] = [], seen = Set<String>()
+    for value in rows.prefix(100) {
+      guard let row = value as? [String: Any] else { continue }
+      let properties = row["properties"] as? [String: Any] ?? [:]
+      let thumbnail = row["thumbnail"] as? [String: Any] ?? [:]
+      guard let image = imageSearchURL(brave ? properties["url"] : row["image"]),
+            AgentIOSWebRenderURLPolicy.allows(image) else { continue }
+      let source = (row["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let page = imageSearchURL(source.isEmpty ? image : source, httpsOnly: false),
+            seen.insert(image).inserted else { continue }
+      let title = try SwiftSoup.parse(row["title"] as? String ?? "").text()
+      let cleanTitle = String((title.isEmpty ? URL(string: page)?.host ?? "" : title).prefix(512))
+      guard !cleanTitle.isEmpty else { continue }
+      let dimensions = brave ? properties : row
+      func dimension(_ key: String) -> AgentMcpJSONValue {
+        .int(Int64(max(0, min(100_000, (dimensions[key] as? NSNumber)?.intValue ?? 0))))
+      }
+      var media: AgentMcpJSONObject = ["url": .string(image), "original_url": .string(image),
+        "source_url": .string(page), "title": .string(cleanTitle), "width": dimension("width"), "height": dimension("height"),
+        "retrieval_status": .string("search_result_not_downloaded")]
+      if let preview = imageSearchURL(brave ? thumbnail["src"] : row["thumbnail"]),
+         AgentIOSWebRenderURLPolicy.allows(preview) { media["thumbnail_url"] = .string(preview) }
+      let excerpt = try SwiftSoup.parse((row["source"] as? String ?? "").ifBlank(row["provider"] as? String ?? "")).text()
+      hits.append(.init(title: cleanTitle, url: page, excerpt: String(excerpt.prefix(2048)), image: media))
+      if hits.count >= min(limit, 100) { break }
+    }
+    return hits
+  }
+
   static func parse(_ source: String, baseURL: String, limit: Int) throws -> [Hit] {
     guard limit > 0 else { return [] }
     let document = try SwiftSoup.parse(source, baseURL)

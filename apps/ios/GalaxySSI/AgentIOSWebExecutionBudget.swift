@@ -45,7 +45,7 @@ enum AgentIOSWebSearchProfile: String {
 
 enum AgentIOSWebSearchEnginePolicy {
   static var supported: Set<String> {
-    Set(["bing", "baidu", "duckduckgo", "sogou_image"] +
+    Set(["bing", "baidu", "duckduckgo", "sogou_image", "brave_image", "duckduckgo_image"] +
       AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.map(\.id))
   }
   static func canResolve(_ engines: [String]) -> Bool {
