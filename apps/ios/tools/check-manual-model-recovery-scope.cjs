@@ -73,7 +73,14 @@ assert(service.includes("manualTimeout.map { AgentRichContentCodec.encode(AgentR
 assert(service.includes("if let manualTimeout { richOutputJson = AgentRichContentCodec.encode(AgentRichContentCodec.fromText(manualTimeout)) }"));
 // Presentation changes must not edit authenticated packet bytes or receipt identity.
 const added = git(["diff", "--unified=0", base, "--", swift("GalaxySSIServices")]).toString().split(/\r?\n/).filter(l => l.startsWith("+") && !l.startsWith("+++"));
-assert(!added.some(l => /appPayload\[|payload\[/.test(l)), "Do not rewrite wire payloads to localize a failure");
+const packetWrites = added.filter(l => /appPayload\[|payload\[/.test(l));
+if (service.includes('  private func dispatchQueuedNativeConnector(')) {
+  const outgoing = service.split('  private func dispatchQueuedNativeConnector(')[1].split('  private func nativeConnectorResponseOutbox(')[0];
+  assert(outgoing.includes('var payload: [String: Any] = ["type": "text"'));
+  assert(outgoing.includes('enqueueLinkPayload(payload, link: link'));
+  assert.deepEqual(packetWrites, ['+          payload["agent_invocation"] = invocation'],
+    'Only the owned new outbound request constructor may add invocation; authenticated incoming packets remain unchanged');
+} else assert.equal(packetWrites.length, 0, 'Do not rewrite wire payloads to localize a failure');
 for (const name of ["AgentDesktopResultRecovery", "AgentConnectorTransportReceiptRecorder", "AgentConnectorTerminalStatusResolver"])
   assert.equal(source(name), prior(name), "Auto budget, confirmed timeout recognition and receipt/authentication gates stay intact: " + name);
 let remotePolicy = source("AgentRemoteTaskStatusPolicy");

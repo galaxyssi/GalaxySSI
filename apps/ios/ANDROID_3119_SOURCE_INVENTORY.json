@@ -2,7 +2,7 @@
   "androidPR": 3119,
   "androidCommit": "e7c6af6ef3eed21c7fb697b4458d1cf742833dc4",
   "incrementalBase": "ddcb2a69acd02ea12d20fb469e779d4d87b85a4f",
-  "scope": "Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; native queued receipt tracking/committed-owner continuation and read-before-reroute recovery; attachment UI scope and bounded Desktop recovery; full scored router, generic app connector producer, asynchronous failover/timeout and broader resume parity incomplete",
+  "scope": "Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; queued producer with owned native continuation and read-before-reroute recovery, exact local/cloud-image/paired-text backend paths and encrypted response staging; full scored router, broader attachments/rich outputs, asynchronous failover/timeout and broader resume parity incomplete",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",

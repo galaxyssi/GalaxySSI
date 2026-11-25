@@ -62,7 +62,15 @@ enum AgentNativeConnectorContinuation {
           response.executionGeneration == record.executionGeneration,
           response.taskStatus.isEmpty || AgentRemoteOutcomePolicy.isTerminal(response.taskStatus) else { return nil }
     var result = AgentConnectorResponseResolver.settle(pending: pending, response: response)?.result
-    if !response.taskStatus.isEmpty { result?.metadata["remote_task_status"] = response.taskStatus }
+    if !response.taskStatus.isEmpty {
+      result?.metadata["remote_task_status"] = response.taskStatus
+      if response.taskStatus == "completed", response.success,
+         pending.metadata["native_connector_dispatch_uncertain"] == "true" {
+        for key in ["effect_outcome_unknown", "non_retriable", "error_code", "evidence", "native_connector_dispatch_uncertain"] {
+          result?.metadata.removeValue(forKey: key)
+        }
+      }
+    }
     return result
   }
 }

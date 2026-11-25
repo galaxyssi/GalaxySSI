@@ -2,6 +2,67 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testQueuedConnectorKickoffRunsOnlyAfterDurableOwnershipAndDoesNotReplay() {
+    for reject in [false, true] {
+      let ledger: AgentManagedResponseLedger = reject
+        ? RejectingConnectorResponseLedger() : InMemoryAgentManagedResponseLedger()
+      var starts = 0
+      var ownedAtStart = false
+      let queued = AgentIOSQueuedConnectorExecutor(delegate: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: false, message: "Unexpected native delegation")
+      }) { action, receipt in
+        starts += 1
+        if let request = AgentIOSConnectorDispatch(action: action, receipt: receipt) {
+          ownedAtStart = (try? ledger.ownsResponse(request.response("probe", success: true))) == true
+        }
+      }
+      let executor = AgentControlPlaneActionExecutor(registrationSource: { [actionExecutorRegistration()] },
+        delegate: queued, managedResponseLedger: ledger)
+      var action = nativeConnectorWaitFixture().action
+      action.parameters[AgentIOSConnectorDispatch.sourceKey] = UUID().uuidString
+      action.parameters[AgentIOSConnectorDispatch.profileKey] = "profile"
+      action.parameters[AgentIOSConnectorDispatch.permissionKey] = "approved-mode"
+      let screen = AgentScreenContext(foregroundApp: "GalaxySSI")
+      let first = executor.execute(action: action, screen: screen)
+      let replay = executor.execute(action: action, screen: screen)
+      XCTAssertEqual(starts, reject ? 0 : 1)
+      XCTAssertEqual(ownedAtStart, !reject)
+      XCTAssertEqual(first.success, !reject)
+      XCTAssertEqual(replay.success, !reject)
+      if reject { XCTAssertEqual(first.metadata["effect_outcome_unknown"], "true") }
+      else { XCTAssertEqual(first.metadata["awaiting_response"], "true") }
+    }
+  }
+
+  func testQueuedConnectorIdentityAndHostPolicyMatchKeepExactSourceAndPrompt() throws {
+    let fixture = nativeConnectorWaitFixture()
+    var action = fixture.action
+    action.parameters[AgentIOSConnectorDispatch.sourceKey] = fixture.outgoing.id.uuidString
+    action.parameters[AgentIOSConnectorDispatch.profileKey] = "profile"
+    action.parameters[AgentIOSConnectorDispatch.permissionKey] = "approved-mode"
+    var pending = AgentIOSConnectorDispatch.prepare(action)
+    XCTAssertTrue(pending.success)
+    XCTAssertEqual(pending.metadata["source_message_id"], AgentIOSConnectorDispatch.prepare(action).metadata["source_message_id"])
+    var other = action
+    other.parameters[AgentIOSConnectorDispatch.profileKey] = "another-profile"
+    XCTAssertNotEqual(pending.metadata["source_message_id"], AgentIOSConnectorDispatch.prepare(other).metadata["source_message_id"])
+    pending.metadata["control_plane_agent_id"] = "codex"
+    pending.metadata["control_plane_run_id"] = fixture.result.metadata["control_plane_run_id"]
+    let waiting = try XCTUnwrap(AgentNativeConnectorContinuation.waitingAction(action,
+      result: pending, task: fixture.task, outgoing: fixture.outgoing))
+    var prepared = action
+    prepared.parameters[AgentExecutionPolicyPrompt.contextKey] = "Host execution policy"
+    let request = try XCTUnwrap(AgentIOSConnectorDispatch(action: prepared, receipt: pending))
+    XCTAssertTrue(request.matchesWaitingAction(waiting))
+    XCTAssertTrue(request.executionPrompt.hasPrefix("Host execution policy"))
+    var changed = waiting
+    changed.parameters["prompt"] = "Another request"
+    XCTAssertFalse(request.matchesWaitingAction(changed))
+    changed = action
+    changed.parameters.removeValue(forKey: AgentIOSConnectorDispatch.sourceKey)
+    XCTAssertFalse(AgentIOSConnectorDispatch.prepare(changed).success)
+  }
+
   func testNativeConnectorWaitRoundTripsAndOnlySettlesExactCommittedOwner() throws {
     let fixture = nativeConnectorWaitFixture()
     let waiting = try XCTUnwrap(AgentNativeConnectorContinuation.waitingAction(fixture.action,
@@ -18,6 +79,15 @@ extension GalaxySSIStoreTests {
     let settled = try XCTUnwrap(AgentNativeConnectorContinuation.settle(fixture.result, record: record))
     XCTAssertTrue(settled.success)
     XCTAssertEqual(settled.metadata["awaiting_response"], "false")
+    var uncertain = fixture.result
+    uncertain.metadata["native_connector_dispatch_uncertain"] = "true"
+    uncertain.metadata["effect_outcome_unknown"] = "true"
+    uncertain.metadata["non_retriable"] = "true"
+    XCTAssertNil(AgentNativeConnectorContinuation.settle(uncertain, record: record)?.metadata["effect_outcome_unknown"])
+    var failed = record
+    failed.response?.taskStatus = "failed"
+    failed.response?.success = false
+    XCTAssertEqual(AgentNativeConnectorContinuation.settle(uncertain, record: failed)?.metadata["effect_outcome_unknown"], "true")
     for field in ["owner", "agent", "source", "contact", "conversation", "turn", "task", "generation", "pending"] {
       var foreign = record
       switch field {

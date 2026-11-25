@@ -167,8 +167,19 @@ for (const token of ['metadata["effect_outcome_unknown"] = "true"', 'metadata["n
   'success: false', 'type: .runFailed']) assert(trackingFailure.includes(token));
 for (const forbidden of ['globalRunSlots.release(', 'terminalDeliveryStore.mark(', 'managedResponseLedger.removeOwner('])
   assert(!trackingFailure.includes(forbidden));
+const queuedKickoff = `    if awaitingResponse, sourceMessageId > 0,
+       let queued = delegate as? AgentQueuedConnectorDispatching {
+      var tracked = result
+      tracked.metadata["control_plane_run_id"] = request.runId
+      tracked.metadata["control_plane_agent_id"] = agentId
+      queued.startQueuedConnector(action: item.action, receipt: tracked)
+    }
+`;
+assert(providerText.includes(queuedKickoff));
+assert(providerText.indexOf(queuedKickoff) > providerText.indexOf('    let outcome:'));
+assert(providerText.lastIndexOf('    emit(', providerText.indexOf(queuedKickoff)) > catchStart);
 const normalizedProvider = providerText.replace(waitValidation, '').replace(trackingBlock, oldTracking)
-  .replace(trackingFailure, '');
+  .replace(trackingFailure, '').replace(queuedKickoff, '');
 assert.equal(normalizedProvider.replace('    var result = AgentConnectorFallbackAction.mergingRoutingMetadata(\n      delegate.execute(action: item.action, screen: item.screen), action: item.action)',
   '    var result = delegate.execute(action: item.action, screen: item.screen)'), git('show', `${base}:${providerFile}`));
 module.exports.normalizedProvider = normalizedProvider;
@@ -177,7 +188,9 @@ assert(dispatchTests.includes('func testConnectorTrackingFailureIsUnknownNonRetr
 assert(dispatchTests.includes('func testMalformedQueuedConnectorReceiptCannotBecomeCompletedOrWaiting('));
 for (const name of ['testNativeConnectorWaitRoundTripsAndOnlySettlesExactCommittedOwner',
   'testNativeConnectorQueueCannotProjectSuccessfulToolCompletion',
-  'testNativeConnectorWaitRejectsMissingScopeAndUntrackedFailureCannotReroute']) assert(dispatchTests.includes('func ' + name + '('));
+  'testNativeConnectorWaitRejectsMissingScopeAndUntrackedFailureCannotReroute',
+  'testQueuedConnectorKickoffRunsOnlyAfterDurableOwnershipAndDoesNotReplay',
+  'testQueuedConnectorIdentityAndHostPolicyMatchKeepExactSourceAndPrompt']) assert(dispatchTests.includes('func ' + name + '('));
 assert(source.includes('failure.metadata["effect_outcome_unknown"] != "true"'));
 assert(source.includes('failure.metadata["non_retriable"] != "true"'));
 for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutResolver.swift']) {
@@ -216,6 +229,23 @@ const dispatchHost = services.slice(services.indexOf('  private func executeLoca
 assert(dispatchHost.indexOf('observedConnectorDispatch(action: original)') < dispatchHost.indexOf('refreshAutomaticConnectorAction('));
 assert(dispatchHost.indexOf('checkpointNativeConnectorDispatch(executionAction') < dispatchHost.indexOf('runtime.actionExecutor.execute('));
 assert(dispatchHost.indexOf('checkpointNativeConnectorDispatch(fallbackAction') < dispatchHost.indexOf('runtime.actionExecutor.execute(action: fallbackAction'));
+const producer = services.slice(services.indexOf('  private func queuedNativeConnectorContext('),
+  services.indexOf('  private func checkpointNativeConnectorDispatch('));
+for (const token of ['dispatch.matchesWaitingAction(waiting)', 'record.state == .pending',
+  'task.phase == .waitingResponse', 'AgentIOSConnectorDispatch.profileKey', 'AgentIOSConnectorDispatch.permissionKey',
+  'nativeConnectorDispatches.insert(dispatch.owner).inserted', 'AgentTaskBudgetPolicy.evaluate(',
+  'matchExactIDs: true', 'attachments.count == blocks.count', 'attachments.allSatisfy(\\.isImage)',
+  'LocalModelInferenceRuntime.shared.generateAsync(profile: profile', 'cloudStreamEngine.streamConversation(',
+  'guard completed, !text.isBlank', 'taskIdentityStore.register(contactId: contact.id',
+  'AgentDataDisclosureLedger.beginDesktopRequest(', 'guard ticket.allowed', 'enqueueLinkPayload(payload, link: link',
+  '_ = markQueuedConnectorUnknown(dispatch)', 'nativeConnectorResponseOutbox().publish(response)',
+  'managedDesktopReplyLedger.complete(response)', 'committed.matchesCommittedResult(response)',
+  'profile == store.profile.identityFingerprint']) assert(producer.includes(token), token);
+assert(services.includes('delegate: connectorExecutor,\n      managedResponseLedger: self.managedDesktopReplyLedger'));
+const queuedFile = read('apps/ios/GalaxySSI/AgentIOSConnectorDispatch.swift');
+for (const token of ['AgentConnectorHandoffRecovery.effectAttemptKey(action)', 'digest.prefix(13)',
+  'completion_verified', 'original == prepared', 'AgentExecutionPolicyPrompt.contextKey']) assert(queuedFile.includes(token));
+assert(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj').includes('AgentIOSConnectorDispatch.swift in Sources'));
 const projectionFile = 'apps/ios/GalaxySSI/AgentRecordedExecutionEvidence.swift';
 const projected = read(projectionFile);
 assert.equal(projected.replace('    let awaiting = metadata["awaiting_response"] == "true"\n', '')
@@ -298,9 +328,9 @@ const disposition = file => {
   return 'Inspected reference for broader primary identity, fresh fallback ranking, deferred recovery, attachment scope and parallel routing; not implemented or claimed by this admission increment';
 };
 const inventory = { androidPR: 3119, androidCommit: android, incrementalBase: base,
-  scope: 'Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; native queued receipt tracking/committed-owner continuation and read-before-reroute recovery; attachment UI scope and bounded Desktop recovery; full scored router, generic app connector producer, asynchronous failover/timeout and broader resume parity incomplete',
+  scope: 'Live admission and encrypted Auto identity; scoped primary/synchronous/parallel/scheduled preparation; queued producer with owned native continuation and read-before-reroute recovery, exact local/cloud-image/paired-text backend paths and encrypted response staging; full scored router, broader attachments/rich outputs, asynchronous failover/timeout and broader resume parity incomplete',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', `${android}:${file}`)).digest('hex'), disposition: disposition(file) })) };
 const report = path.join(root, 'apps/ios/ANDROID_3119_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(report, JSON.stringify(inventory, null, 2) + '\n');
 else assert.deepEqual(JSON.parse(fs.readFileSync(report, 'utf8')), inventory);
-console.log('Android #3119: scoped Auto dispatch and bounded Desktop recovery contracts; generic connector/timeout wiring remains incomplete. Source checks only.');
+console.log('Android #3119: scoped Auto and queued producer/continuation contracts; broader attachments, asynchronous failover/timeout and native acceptance remain incomplete. Source checks only.');

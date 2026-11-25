@@ -1053,6 +1053,13 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       sequence: 4,
       payload: outcome.merging(waitingIdentity) { current, _ in current }
     )
+    if awaitingResponse, sourceMessageId > 0,
+       let queued = delegate as? AgentQueuedConnectorDispatching {
+      var tracked = result
+      tracked.metadata["control_plane_run_id"] = request.runId
+      tracked.metadata["control_plane_agent_id"] = agentId
+      queued.startQueuedConnector(action: item.action, receipt: tracked)
+    }
     if !(awaitingResponse && sourceMessageId > 0) {
       globalRunSlots.release(ownerId: slotOwnerId)
       lock.lock()
