@@ -1,0 +1,359 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4391,
+    "mergeCommit": "165809fc9606ac1ff6b0df6eb9bee73286b415ea"
+  },
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "status": "M",
+      "sha256": "b3446f32b5fb3dd1300498ac3be14aba7c1d5a7e7dbf692ba4d34396aa93e30f"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasHeartDeviceTest.kt",
+      "status": "M",
+      "sha256": "6f3a18b76f7d6bbff439f4ab2d79bf2cf126c0e8a56bb2a977c987e672d510b6"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMiddleEarDeviceTest.kt",
+      "status": "M",
+      "sha256": "4e24fe9203484fb01192e4b97ebfb351ebd53e9f9e6cd7346842be4c5c820660"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasMusculoskeletalDeviceTest.kt",
+      "status": "M",
+      "sha256": "a14e421d15fe6cb93f6cfe1bf8b9bccc76bf8243ecf54d99868ea290db365ffa"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasRenalDeviceTest.kt",
+      "status": "M",
+      "sha256": "29d4523c42ab0469a10f066705b302421a3983537ec433d313df0387fde5c605"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasSystemOverviewDeviceTest.kt",
+      "status": "M",
+      "sha256": "a447acaba66e1a6aa0731fa43b99da1dcea113d789f2c109fa92c2eaf50c444c"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasTissueContextDeviceTest.kt",
+      "status": "M",
+      "sha256": "b3d67dd8d0d80c618c92900aa23d9e712e07ca0695f29be7b67fbe04772293c8"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHeartChamberDetailPlates.kt",
+      "status": "A",
+      "sha256": "3d8f925ff19dab30137f5e707b1107fbf33ca6bbfc0a9da55f8cc6a4cb2f0db8"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasHeartValveDetailPlates.kt",
+      "status": "A",
+      "sha256": "61b32607b1fedb23cd0e42ba05c35509c68195cfae2407b9dbf5a64c841d3d53"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLimbBoneDetailPlates.kt",
+      "status": "A",
+      "sha256": "4966da1a947963d002dac95d3a58811baf5fb32884a6cac26b294835c8322233"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMajorMuscleDetailPlates.kt",
+      "status": "A",
+      "sha256": "f7e013eca526b4026e6faef39df8d6b14e3397864dcd09b5838125b96698cb84"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNephronStructureDetailPlates.kt",
+      "status": "A",
+      "sha256": "99d035259e519f53a13ff4a0289079dd22a68cf15bbe8852c10f1ae743be84d4"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasNeuralConnectionDetailPlates.kt",
+      "status": "A",
+      "sha256": "af94156aa859caf2669ff4e8f5d21280136c89f3bbab621e07af652b4fcc7d49"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasOuterSensoryDetailPlates.kt",
+      "status": "A",
+      "sha256": "bcd4d9975ffc7fb0dab2ac20faf1ffda60bc9c9efb2611a98da377304f826bea"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRegionalDetailPlates.kt",
+      "status": "M",
+      "sha256": "8ec2336d62e8cd9574b2c8dfa91216c73b34e698c99e008e548d2546ef99bd1d"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasReproductiveAnatomyDetailPlates.kt",
+      "status": "A",
+      "sha256": "b382c70c90a32c4600a8181af90a7f67e28b0e3f3b635d04f96212d3a89c7adf"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasSkinLayersDetailPlates.kt",
+      "status": "A",
+      "sha256": "9d7ba91459fcbaaa167ebca3854e5d415f036be95c0cb9fb80f27eeb941106d0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_aortic_valve_cutaway.xml",
+      "status": "A",
+      "sha256": "02ba13b0943eaeb8d7b4aadd1463a152b25fa6cdf334d13c1994d93ed4eecb67"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_biceps_brachii_anterior.xml",
+      "status": "A",
+      "sha256": "00aab814e8787d01d86b0334cabdaa24a813051cf884d7a719d700445fa0c817"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_bowmans_capsule_poles_cutaway.xml",
+      "status": "A",
+      "sha256": "7aae97c6a737a313f1431662b959fbc4c9e8f7b8806ff39704f18dd90ad704f8"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_cerebrum_medial_cutaway.xml",
+      "status": "A",
+      "sha256": "9a77cf906f80837d436bda86eb697f68b9624fe79201daaf2635cc902e97b362"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_dermis_papillary_reticular.xml",
+      "status": "A",
+      "sha256": "a54ecadb0728115ddaf39b9be00159952a69165f760b41a341005c272a97d805"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_dorsal_root_ganglion_cutaway.xml",
+      "status": "A",
+      "sha256": "ee7e8383d3bb255db9374b66f150d04abc320a2384e66017ceeb455e7808849b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_endometrial_layers.xml",
+      "status": "A",
+      "sha256": "ee62a75930b0113ca354c1edc378930ec2d30cbdd3ae4a8c2ff3b1ee813138a0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_epidermis_thick_layers.xml",
+      "status": "A",
+      "sha256": "483461d332b42a17b221963a01da97074b9813f3a1ba4aef95e9caf35959649d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_external_ear_canal_cutaway.xml",
+      "status": "A",
+      "sha256": "d603a7bcf1752e676f9081b9083e0544e4571bdfd67725f83f22cf300041988c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_femur_anterior_landmarks.xml",
+      "status": "A",
+      "sha256": "45c5d0a3d7564bfa8b5a0b3cf8688ae7eaceae757f5d42344c18200e1acbeed5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_foot_bones_dorsal_landmarks.xml",
+      "status": "A",
+      "sha256": "94b158a99f6649fc98df2f3979883d2fc3407ddf5132b11a3ee05c0f45987b70"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_glomerulus_tuft_cutaway.xml",
+      "status": "A",
+      "sha256": "894d17f6d266e6d262ac60606e731a22bf88c060f75152e7b63170c72ccaf7b1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_hamstrings_posterior.xml",
+      "status": "A",
+      "sha256": "5caae074e4ed53d4ada0ea1864cb1ec7ff9df11709fded37547d7f11335b75c9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_inner_ear_bony_labyrinth.xml",
+      "status": "A",
+      "sha256": "c6e32cb5753778b45915a147b1ac4181487dad4a9a1700e439ef866a943d97f4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_left_atrium_cutaway.xml",
+      "status": "A",
+      "sha256": "b58994e51a515888120f97565505c82109450ae3a3addb04da07111a99b8c5c4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_left_ventricle_cutaway.xml",
+      "status": "A",
+      "sha256": "7b2a04d210d06b2880911776254a44011420e332710a7e85d881a611c10049e4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_mitral_valve_cutaway.xml",
+      "status": "A",
+      "sha256": "bc187b41bd274b51f1a9954f5bdd881fa265edff30b2d616adbf1c90d0c7b29e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_nephron_loop_limb_cutaway.xml",
+      "status": "A",
+      "sha256": "ed48bffa834a1026106be48d4b0d0aa9dfc7c56d8ce32325939a03fa9a7c093a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_nose_lateral_wall_cutaway.xml",
+      "status": "A",
+      "sha256": "3e1ec4b9d9c549ee7203b795d06ddbb8fdd627affd27eb979ab9b85c842c9d80"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_ovarian_section.xml",
+      "status": "A",
+      "sha256": "8a8d2ccf9283669000f8da5667bcdd0ce6b6892c383b896179f1e73cc9aaf6dc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_patella_posterior_landmarks.xml",
+      "status": "A",
+      "sha256": "7f473ee34ccbbb3418fef36d598429f1e0568b82502b5e47427061deb4037386"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_peripheral_nerve_fascicle_cutaway.xml",
+      "status": "A",
+      "sha256": "647317ad07d99b2edf5a223e0978a49fe7300da149476dc7054d7d0274fc8fd6"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_proximal_tubule_brush_border_cutaway.xml",
+      "status": "A",
+      "sha256": "c82c3c8f70545232581b23537d64d7f8f74529ad27b36f588009ed43e8691ca5"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_pulmonary_valve_cutaway.xml",
+      "status": "A",
+      "sha256": "c7120f7aee7f1ea8cbb76d2ff283e1d275990e5170a390d8c38aee7e944a9858"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_quadriceps_femoris_anterior.xml",
+      "status": "A",
+      "sha256": "7c20813ccf7e9818f32ca2e9a6adeff38947bcfac57b31669cd866908e3492dc"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_right_atrium_cutaway.xml",
+      "status": "A",
+      "sha256": "3e214cb78954ce796da3790d7605508baef9ccf52b037cfc9b4977bacb94db5c"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_right_ventricle_cutaway.xml",
+      "status": "A",
+      "sha256": "be1aff01a77b68d49f65a80bfdb1d79e4e8178e0c84c69991a3c64acf9a1a5d4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_skin_cross_section.xml",
+      "status": "A",
+      "sha256": "0eb7561c068d15c97349a168bbde0c706cc62e6d86ada026ac006d553c21340e"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_spinal_nerve_roots_and_rami.xml",
+      "status": "A",
+      "sha256": "386c87c95553f0933efd80a41ccb024e1347c44b8bad55663db79231102de444"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_testicular_section.xml",
+      "status": "A",
+      "sha256": "62833c86b6b341a813e821e651b60e0ef083a2776a4865069adebd692138c7a7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_tongue_dorsal_cutaway.xml",
+      "status": "A",
+      "sha256": "9bc7f695018a06260c9493182a2f498226b80ee979a6d903efd81d59b69864b3"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_triceps_brachii_posterior.xml",
+      "status": "A",
+      "sha256": "5f03ad7acd451cb74396b6b3a5324dadd29ba132a07e30085d807e6e2e97e0e9"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_tricuspid_valve_cutaway.xml",
+      "status": "A",
+      "sha256": "3311405a812fb9d2e91ac5f8e32c2a656923c39e7453e4ecb9d7bc037b6cd9b1"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_ulna_lateral_landmarks.xml",
+      "status": "A",
+      "sha256": "3cd77d1eb5bf69dc4fb58fdbc123046a5def943b539f4d6cfcd07be982a596c7"
+    },
+    {
+      "path": "apps/android/app/src/main/res/drawable/health_atlas_uterine_tube_cutaway.xml",
+      "status": "A",
+      "sha256": "b05169e6ae693e98f11f9b2874e86c122d0dde2d8f0418bd2da631990ba4da6b"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_heart_chamber_detail_plates.xml",
+      "status": "A",
+      "sha256": "498de169aafc3e201c27ec07b34fbb835a7d4086612df1d8cf6bc6298bcb88a2"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_heart_valve_detail_plates.xml",
+      "status": "A",
+      "sha256": "09fe0e3d542062854f3b8cf9aa22b7358131440da0f1bc6de7efb5fe2c064abd"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_limb_bone_detail_plates.xml",
+      "status": "A",
+      "sha256": "59723ea9c0c35eecc63652854ff3059cbce50608f430ca6dd752c0dfeee1bf07"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_major_muscle_details.xml",
+      "status": "A",
+      "sha256": "13532a12f0d5cd7607ce74ba4cbd3898b1d670a2e07f7fe4fc12a134a791c787"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_nephron_structure_details.xml",
+      "status": "A",
+      "sha256": "43d6607bd2baf6c0d5dab36875760d053359c635f887776a8d94a6c4c534b822"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_outer_sensory_detail_plates.xml",
+      "status": "A",
+      "sha256": "96981f1c83e7346470f8d3e9dcfa50c9ed6897c2008bf463032fdf11d6131a34"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_reproductive_anatomy_detail.xml",
+      "status": "A",
+      "sha256": "1719bb8dd25e57bb0c03e5dd24003b1ab24960b61dc869d74e71fabaa252f143"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/health_atlas_skin_layers_details.xml",
+      "status": "A",
+      "sha256": "85f2b229e9d1ee78b708ae74a1068bde3e85ed8c4f49b7c04f4dd9bab6a1a20d"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh/strings_health_atlas_neural_connection_detail.xml",
+      "status": "A",
+      "sha256": "75c77ab5cca64360f88fcf5e8eecf90ee1d25c9bd22bfd43a5ab248e3fe6bf44"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_heart_chamber_detail_plates.xml",
+      "status": "A",
+      "sha256": "5671fbd6a85821b832e32ece26fa1b96a09d542b45d91046d3dbdaffa97f808a"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_heart_valve_detail_plates.xml",
+      "status": "A",
+      "sha256": "e98175fc80fc7bd9f8ca3b85d8dc14ecb2bdb6f63000a12fbe44b31465149cd4"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_limb_bone_detail_plates.xml",
+      "status": "A",
+      "sha256": "cc9d719c0ea9a9f8d6c58645674747e625ff200ee4ce421e0972f709b760c695"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_major_muscle_details.xml",
+      "status": "A",
+      "sha256": "f3e748c4f6bd1a22bfe7e3b48f5211d30e08556204d037253240406e2c20f856"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_nephron_structure_details.xml",
+      "status": "A",
+      "sha256": "6b49f59946f7e519bdcf301b3030fd7cebcf578af5ed77455c8ccb1cd9415213"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_outer_sensory_detail_plates.xml",
+      "status": "A",
+      "sha256": "0a0fe1e8a33947bfc5fcd5e0a22b205a1c9f031031e8514042699671e350cfc0"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_reproductive_anatomy_detail.xml",
+      "status": "A",
+      "sha256": "6426b0e7e919ac8c7bced2f2ed0337788d4018de070d932b28f7d4397563b775"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/health_atlas_skin_layers_details.xml",
+      "status": "A",
+      "sha256": "8eaacb6d6d4817208b88a42e7a96fcf4d904641f487a3d6ceaefea3f71be2206"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings_health_atlas_neural_connection_detail.xml",
+      "status": "A",
+      "sha256": "137fb499219cca3bdffed3acc2daf2b5075392fd609e532c81567d6207226062"
+    }
+  ]
+}

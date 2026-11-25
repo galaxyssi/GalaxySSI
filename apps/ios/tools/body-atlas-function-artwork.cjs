@@ -80,19 +80,21 @@ for (const [flag,dataset,paths,gradients] of [
     frames:pack.plates.filter(p=>p.drawable.endsWith(".xml")).map(p=>[
       path.basename(p.drawable,".xml").replace("health_atlas_",""),p.asset,"cell.pdf"])};
 }
-if (process.argv.includes("--detail-4389")) {
+if (process.argv.includes("--detail-4389") || process.argv.includes("--expanded-4391")) {
   const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process");
-  const root = path.resolve(__dirname, "../../.."), sha = "9508d49277cf33ab7f85e65722e7c470930fff7e";
-  const pack = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Assets.xcassets/HealthAtlasDetailStructures.dataset/content.json")));
-  if (pack.source.androidPR !== 4389 || pack.source.mergeCommit !== sha || pack.plates.length !== 26) throw Error("Detail source mismatch");
+  const expanded = process.argv.includes("--expanded-4391"), revision = expanded ? 4391 : 4389;
+  const root = path.resolve(__dirname, "../../.."), sha = expanded ? "165809fc9606ac1ff6b0df6eb9bee73286b415ea" : "9508d49277cf33ab7f85e65722e7c470930fff7e";
+  const pack = JSON.parse(fs.readFileSync(path.join(root, "apps/ios/GalaxySSI/Assets.xcassets/" + (expanded ? "HealthAtlasExpandedDetailStructures" : "HealthAtlasDetailStructures") + ".dataset/content.json")));
+  if (pack.source.androidPR !== revision || pack.source.mergeCommit !== sha || pack.plates.length !== (expanded ? 61 : 26)) throw Error("Detail source mismatch");
   let paths = 0, gradients = 0;
-  const frames = pack.plates.map(plate => {
+  const frames = pack.plates.filter(p => !expanded || p.asset.startsWith("HealthAtlasExpanded")).map(plate => {
     const raw = cp.execFileSync("git", ["show", sha + ":" + plate.drawable], {cwd: root, encoding: "utf8"});
     const items = require("./body-atlas-ordered-vector.cjs")(raw, {affine: true, clips: true});
     paths += items.length; gradients += items.filter(p => p["aapt:attr"]).length;
     return [path.basename(plate.drawable, ".xml").replace(/^health_atlas_/, ""), plate.asset, "art.pdf", 0];
   });
-  batches["--detail-4389"] = {name: "dedicated anatomy cutaways", androidPR: 4389, sha, paths, gradients,
+  if (frames.length !== (expanded ? 35 : 26)) throw Error("Unexpected detail artwork count");
+  batches[expanded ? "--expanded-4391" : "--detail-4389"] = {name: "dedicated anatomy cutaways", androidPR: revision, sha, paths, gradients,
     groups: true, affineGroups: true, clips: true, normalizeQuadratics: true, preserveFillRules: true, frames};
 }
 const selected = Object.keys(batches).filter(flag=>process.argv.includes(flag));
