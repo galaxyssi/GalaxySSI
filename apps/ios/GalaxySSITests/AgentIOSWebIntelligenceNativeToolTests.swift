@@ -2,6 +2,173 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testLearnedRoutingRequiresQualifiedRecordsAndModelSelectedTopics() throws {
+    let source = try learnedRoutingModel()
+    XCTAssertTrue(source.isSearchEligible)
+    XCTAssertEqual(source.publicValue()["search_available"], .bool(true))
+    XCTAssertTrue(AgentIOSWebSearchEnginePolicy.accepts([source.sourceID], learnedSources: [source]))
+    XCTAssertFalse(AgentIOSWebSearchEnginePolicy.accepts([source.sourceID]))
+    XCTAssertTrue(AgentIOSWebSearchEnginePolicy.canResolve([source.sourceID]))
+    var candidate = source
+    candidate.status = "candidate"
+    var disabled = source
+    disabled.status = "disabled"
+    var insufficient = source
+    insufficient.observations = 1
+    let image = try learnedRoutingModel(vertical: "image")
+    XCTAssertTrue(image.isValid)
+    XCTAssertEqual(image.publicValue()["search_available"], .bool(false))
+    XCTAssertEqual(image.status, "verified")
+    for unavailable in [candidate, disabled, insufficient, image] {
+      XCTAssertFalse(unavailable.isSearchEligible)
+      XCTAssertFalse(AgentIOSWebSearchEnginePolicy.accepts([unavailable.sourceID], learnedSources: [unavailable]))
+    }
+    XCTAssertEqual(source.searchSpec(index: 0)?.indexEngine, "duckduckgo")
+    XCTAssertEqual(source.searchSpec(index: 1)?.indexEngine, "bing")
+    XCTAssertEqual(source.searchSpec(index: 0)?.allowedHosts, [source.host])
+    let selected = AgentIOSWebIntelligenceQueryRouting.select(query: "Galaxy research", requestedVerticals: [],
+      requestedEngineIds: [], requestedCategories: ["RESEARCH"], learnedSources: [source, disabled])
+    XCTAssertEqual(selected.selected.map(\.id), [source.sourceID])
+    XCTAssertTrue(AgentIOSWebIntelligenceQueryRouting.select(query: "research learned.example", requestedVerticals: [],
+      requestedEngineIds: [], learnedSources: [source]).selected.isEmpty)
+  }
+
+  func testActualLearnedSearchFiltersDestinationsAndLearnsOnlyOnceThenClearRevokesRouting() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learned-route-\(UUID()).json")
+    let operations = OperationQueue()
+    defer { operations.waitUntilAllOperationsAreFinished(); try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 },
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let source = try seedLearnedRouting(cache, operations: operations)
+    let transport = LearnedRoutingSearchFixture()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(
+      provider: AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, cacheStore: cache, nowMillis: { 1000 })))
+    let input: AgentMcpJSONObject = ["query": .string("Galaxy research"), "limit": .int(1), "engines": .array([.string(source.sourceID)])]
+    let denied = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input, context: learnedRoutingContext(cache: false),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(denied.error?.code, "unsupported_search_engine")
+    XCTAssertTrue(transport.requests.isEmpty)
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input, context: learnedRoutingContext(),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["results"]?.arrayValue?.first?.objectValue?["url"], .string("https://learned.example/article"))
+    XCTAssertEqual(result.metadata["selected_learned_sources"], .array([.string(source.sourceID)]))
+    XCTAssertEqual(result.metadata["official_sources"], .array([]))
+    let request = try XCTUnwrap(transport.requests.first)
+    let query = URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "q" }?.value
+    XCTAssertEqual(query, "site:learned.example Galaxy research")
+    XCTAssertTrue(["www.bing.com", "html.duckduckgo.com"].contains(request.url.host ?? ""))
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertEqual(cache.learnedSources()?.first?.observations, source.observations + 1)
+    XCTAssertEqual(cache.sourceHealth()?[source.sourceID]?.attempts, 1)
+    let count = transport.requests.count
+    XCTAssertEqual(cache.clear(expiredOnly: false)["committed"], .bool(true))
+    let stale = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search, input: input, context: learnedRoutingContext(),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(stale.error?.code, "unsupported_search_engine")
+    XCTAssertEqual(transport.requests.count, count)
+  }
+
+  func testDirectRawSearchQueuesScopedLearningWithoutIntelligenceWrapper() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learned-raw-\(UUID()).json")
+    let operations = OperationQueue()
+    defer { operations.waitUntilAllOperationsAreFinished(); try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: LearnedRoutingSearchFixture(), sourceHealthStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: media))
+    let result = registry.invoke(AgentIOSWebMediaNativeToolCatalog.webSearch,
+      input: ["query": .string("Galaxy research"), "max_results": .int(1), "engines": .array([.string("bing")])],
+      context: learnedRoutingContext(), hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["learning"]?.objectValue?["status"], .string("queued"))
+    operations.waitUntilAllOperationsAreFinished()
+    XCTAssertEqual(cache.learnedSources()?.count, 1)
+    XCTAssertEqual(cache.learnedSources()?.first?.observations, 1)
+  }
+
+  func testLaterUnavailableLearnedEngineRejectsWholeResearchPlanBeforeSearching() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learned-plan-\(UUID()).json")
+    let operations = OperationQueue()
+    defer { operations.waitUntilAllOperationsAreFinished(); try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let source = try seedLearnedRouting(cache, operations: operations)
+    let media = BudgetWebMediaFixture()
+    let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(
+      provider: AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, cacheStore: cache)))
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.research,
+      input: ["query": .string("Galaxy research"), "query_plan": .array([
+        .object(["query": .string("first"), "engines": .array([.string(source.sourceID)])]),
+        .object(["query": .string("later"), "engines": .array([.string("learned_0000000000000000")])])])],
+      context: learnedRoutingContext(), hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertEqual(result.error?.code, "unsupported_search_engine")
+    XCTAssertTrue(media.inputs.isEmpty)
+  }
+
+  func testTopicScopedLearnedSearchDoesNotReuseUnscopedTextCache() throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("learned-topic-\(UUID()).json")
+    let operations = OperationQueue()
+    defer { operations.waitUntilAllOperationsAreFinished(); try? FileManager.default.removeItem(at: url) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 },
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
+    let source = try seedLearnedRouting(cache, operations: operations)
+    XCTAssertTrue(cache.putDocument(url: "https://stale.example/article", title: "Galaxy research", content: "Galaxy research stale text",
+      contentType: "text/plain", contentSHA256: String(repeating: "a", count: 64), retrievedAtMillis: 1000,
+      expiresAtMillis: Int64.max, metadata: ["text_decoding_lossless": "true"]))
+    let transport = LearnedRoutingSearchFixture()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: cache, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(
+      provider: AgentIOSURLSessionWebIntelligenceProvider(webMediaProvider: media, cacheStore: cache, nowMillis: { 1000 })))
+    let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
+      input: ["query": .string("Galaxy research"), "limit": .int(1), "engine_fanout": .int(1),
+        "use_cache": .bool(true), "categories": .array([.string("research")])], context: learnedRoutingContext(),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(transport.requests.count, 1)
+    XCTAssertEqual(result.output["results"]?.arrayValue?.first?.objectValue?["url"], .string("https://learned.example/article"))
+    XCTAssertEqual(result.metadata["selected_learned_sources"], .array([.string(source.sourceID)]))
+    XCTAssertEqual(result.output["cache"]?.objectValue?["hit"], .bool(false))
+  }
+
+  func testExplicitNativeSearchOrderIsRetainedWithoutDuplicateDispatch() throws {
+    let transport = LearnedRoutingSearchFixture()
+    let media = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil, nowMillis: { 1000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: media))
+    let result = registry.invoke(AgentIOSWebMediaNativeToolCatalog.webSearch,
+      input: ["query": .string("Galaxy research"), "engines": .array([.string("duckduckgo"), .string("bing"), .string("duckduckgo")])],
+      context: learnedRoutingContext(cache: false), hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(transport.requests.count, 2)
+    XCTAssertEqual(result.metadata["providers"], .array([.string("duckduckgo"), .string("bing")]))
+  }
+
+  private func learnedRoutingModel(vertical: String = "general") throws -> AgentIOSLearnedWebSource {
+    var model: AgentIOSLearnedWebSource?
+    for query in ["first", "second", "third", "first"] {
+      let observation = try XCTUnwrap(AgentIOSWebSourceLearningPolicy.observations(query: query, categories: ["research"],
+        results: [["url": .string("https://learned.example/article"), "vertical": .string(vertical)]]).first)
+      model = AgentIOSWebSourceLearningPolicy.evolve(model, observation: observation, now: 1000)
+    }
+    return try XCTUnwrap(model)
+  }
+
+  private func seedLearnedRouting(_ cache: AgentIOSWebIntelligenceCacheStore, operations: OperationQueue) throws -> AgentIOSLearnedWebSource {
+    for query in ["first", "second", "third", "first"] {
+      _ = cache.learnSourceCandidates(query: query, categories: ["research"], results: [["url": .string("https://learned.example/article")]])
+    }
+    operations.waitUntilAllOperationsAreFinished()
+    return try XCTUnwrap(cache.learnedSources()?.first)
+  }
+
+  private func learnedRoutingContext(cache: Bool = true) -> AgentNativeToolInvocationContext {
+    .init(grantedPermissions: Set([AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission,
+      AgentIOSWebIntelligenceNativeToolCatalog.networkPermission] + (cache ? [AgentIOSWebIntelligenceNativeToolCatalog.cachePermission] : [])),
+      grantedConsents: Set([AgentIOSWebMediaNativeToolCatalog.publicWebConsent, AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent] +
+        (cache ? [AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent] : [])))
+  }
+
   func testSourceHealthBackoffEmptyCancellationAndOverflowRules() {
     let failed = AgentIOSWebSourceReceipt(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
     var health = AgentIOSWebSourceHealth(sourceID: "bing")
@@ -882,6 +1049,24 @@ extension GalaxySSIStoreTests {
     )
   }
 
+}
+
+private final class LearnedRoutingSearchFixture: AgentIOSURLSessionWebTransporting {
+  private let lock = NSLock()
+  private var recorded: [AgentIOSURLSessionWebRequest] = []
+  var requests: [AgentIOSURLSessionWebRequest] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recorded
+  }
+  func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+    lock.lock()
+    recorded.append(request)
+    lock.unlock()
+    let html = #"<h2><a href="https://outside.example/article">Galaxy research external</a></h2><p>Galaxy research outside the requested host must be filtered.</p><h2><a href="https://learned.example/article">Galaxy research evidence</a></h2><p>Galaxy research has a detailed excerpt from the requested source.</p>"#
+    return .init(statusCode: 200, finalURL: request.url, headers: ["content-type": "text/html; charset=utf-8"],
+      body: Data(html.utf8), retrievedAtEpochMillis: 1000)
+  }
 }
 
 private final class SourceHealthSearchFixture: AgentIOSURLSessionWebTransporting {

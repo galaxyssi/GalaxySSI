@@ -283,7 +283,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var ocrProcessor: AgentIOSWebMediaOCRProcessing
   var dynamicRenderer: AgentIOSDynamicWebRendering
   var nowMillis: () -> Int64
-  var sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = nil
+  var sourceHealthStore: AgentIOSWebIntelligenceCacheStore?
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
@@ -292,6 +292,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     downloadWriter: AgentIOSWebMediaDownloadWriting = AgentIOSFileWebMediaDownloadWriter(),
     ocrProcessor: AgentIOSWebMediaOCRProcessing = AgentIOSWebMediaOCRPipeline(),
     dynamicRenderer: AgentIOSDynamicWebRendering = AgentIOSWKWebViewRenderer(),
+    sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared,
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
@@ -302,6 +303,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.downloadWriter = downloadWriter
     self.ocrProcessor = ocrProcessor
     self.dynamicRenderer = dynamicRenderer
+    self.sourceHealthStore = sourceHealthStore
     self.nowMillis = nowMillis
   }
 
@@ -389,14 +391,22 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(24))))
       let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
-      let engineIds = Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
+      let requestedEngines = (input["engines"]?.arrayValue ?? []).compactMap(\.stringValue)
+      let engineIds = Set(requestedEngines)
       let verticalIds = Set((input["verticals"]?.arrayValue ?? []).compactMap(\.stringValue))
       let imageSearch = verticalIds.contains("image") || engineIds.contains(where: { $0.hasSuffix("_image") })
       if imageSearch, (!engineIds.isEmpty && engineIds != ["sogou_image"]) ||
          (!verticalIds.isEmpty && verticalIds != ["image"]) {
         throw AgentIOSURLSessionWebError.unsupportedImageEngine
       }
-      guard AgentIOSWebSearchEnginePolicy.accepts(Array(engineIds)) else {
+      guard AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines) else {
+        throw AgentIOSURLSessionWebError.unsupportedSearchEngine
+      }
+      let healthStore = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) ? sourceHealthStore : nil
+      let sourceSnapshot = healthStore?.sourceRoutingSnapshot()
+      let learned = sourceSnapshot?.learnedSources ?? []
+      guard AgentIOSWebSearchEnginePolicy.accepts(requestedEngines, learnedSources: learned) else {
         throw AgentIOSURLSessionWebError.unsupportedSearchEngine
       }
       let timeoutMillis = try boundedTimeout(input, invocation: invocation)
@@ -406,19 +416,18 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         requestedVerticals: Set((input["verticals"]?.arrayValue ?? []).compactMap {
           AgentIOSWebIntelligenceVertical(rawValue: $0.stringValue ?? "")
         }),
-        requestedEngineIds: Set((input["engines"]?.arrayValue ?? []).compactMap(\.stringValue))
+        requestedEngineIds: engineIds,
+        requestedCategories: Set((input["categories"]?.arrayValue ?? []).compactMap(\.stringValue)),
+        learnedSources: imageSearch ? [] : learned
       )
       let candidates = try searchEndpoints(
         query: query,
         maxResults: maxResults,
         routing: routing,
         imageSearch: imageSearch,
-        requestedEngineIds: engineIds,
-        fanout: 32
+        requestedEngineIds: requestedEngines
       )
-      let healthStore = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
-        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) ? sourceHealthStore : nil
-      let health = healthStore?.sourceHealth(ids: Set(candidates.map(\.provider)))
+      let health = sourceSnapshot?.health
       let selection = AgentIOSWebSourceHealthRouting.select(providers: candidates.map(\.provider),
         preferred: Set(routing.selected.map(\.id)), health: health ?? [:], explicit: explicitSources,
         fanout: Int(min(max(input["engine_fanout"]?.intValue ?? 6, 1), 32)), now: nowMillis())
@@ -589,6 +598,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         return .object(value)
       })
       output["result_count"] = .int(Int64(merged.count))
+      if let healthStore {
+        output["learning"] = .object(healthStore.learnSourceCandidates(query: query,
+          categories: ((input["categories"]?.arrayValue ?? []) + (input["verticals"]?.arrayValue ?? [])).compactMap(\.stringValue),
+          results: (output["results"]?.arrayValue ?? []).compactMap(\.objectValue),
+          isCancelled: { invocation.isCancellationRequested }))
+      } else {
+        let scoped = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+          invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+        output["learning"] = .object(["status": .string(scoped ? "skipped_store_unavailable" : "skipped_cache_scope_required")])
+      }
       var resultMetadata = metadata(operation: .webSearch, method: .get)
       let successfulProviders = attempts.filter { !$0.results.isEmpty }.map(\.provider)
       let completedProviders = Set(attempts.map(\.provider))
@@ -604,8 +623,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         routing.inferredVerticals.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)
       )
       resultMetadata["official_sources"] = .array(
-        routing.selected.map(\.id).map(AgentMcpJSONValue.string)
+        routing.selected.filter { AgentIOSWebSearchEnginePolicy.supported.contains($0.id) }.map(\.id).map(AgentMcpJSONValue.string)
       )
+      resultMetadata["selected_learned_sources"] = .array(endpoints.filter {
+        !AgentIOSWebSearchEnginePolicy.supported.contains($0.provider)
+      }.map(\.provider).map(AgentMcpJSONValue.string))
       resultMetadata["parallel"] = .bool(true)
       let uncertainProviders = attempts.filter(disjoint).map(\.provider)
       resultMetadata["partial"] = .bool((!completed && !earlyCompleted) ||
@@ -1200,8 +1222,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     maxResults: Int,
     routing: AgentIOSWebIntelligenceSourceSelection,
     imageSearch: Bool,
-    requestedEngineIds: Set<String>,
-    fanout: Int
+    requestedEngineIds: [String]
   ) throws -> [AgentIOSWebSearchEndpoint] {
     if imageSearch {
       let components = searchComponents(scheme: "https", host: "pic.sogou.com", path: "/pics",
@@ -1219,12 +1240,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       let components = searchComponents(
         scheme: "https",
-        host: "www.bing.com",
-        path: "/search",
-        queryItems: [
-          URLQueryItem(name: "q", value: "site:\(host) \(query)"),
-          URLQueryItem(name: "count", value: String(maxResults))
-        ]
+        host: source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com",
+        path: source.indexEngine == "duckduckgo" ? "/html/" : "/search",
+        queryItems: [URLQueryItem(name: "q", value: "site:\(host) \(query)")] +
+          (source.indexEngine == "duckduckgo" ? [] : [URLQueryItem(name: "count", value: String(maxResults))])
       )
       guard let url = components.url else {
         throw AgentIOSURLSessionWebError.invalidURL
@@ -1275,9 +1294,11 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       )
     }
     if !requestedEngineIds.isEmpty {
-      endpoints = endpoints.filter { requestedEngineIds.contains($0.provider) }
+      let byID = Dictionary(uniqueKeysWithValues: endpoints.map { ($0.provider, $0) })
+      var seen = Set<String>()
+      return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }
     }
-    return Array(endpoints.prefix(min(max(fanout, 1), 32)))
+    return endpoints
   }
 
   private func searchComponents(

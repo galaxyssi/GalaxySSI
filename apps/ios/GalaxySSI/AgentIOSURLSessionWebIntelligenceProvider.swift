@@ -78,6 +78,15 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     }
   }
 
+  private func acceptsEngines(_ engines: [String], invocation: AgentNativeToolInvocation) -> Bool {
+    if AgentIOSWebSearchEnginePolicy.accepts(engines) { return true }
+    guard AgentIOSWebSearchEnginePolicy.canResolve(engines),
+      invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission),
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent),
+      let learned = cacheStore.learnedSources() else { return false }
+    return AgentIOSWebSearchEnginePolicy.accepts(engines, learnedSources: learned)
+  }
+
   func invoke(
     operation: AgentIOSWebIntelligenceOperation,
     input: AgentMcpJSONObject,
@@ -152,7 +161,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       actionMetadata["learned_sources"] = .array(sources.filter { status.isEmpty || $0.status == status }.map { .object($0.publicValue()) })
     case "source_health":
       let ids = Set(stringArray(input["engines"], maximum: 32))
-      guard AgentIOSWebSearchEnginePolicy.accepts(Array(ids)) else {
+      var known = AgentIOSWebSearchEnginePolicy.supported
+      if !ids.isSubset(of: known), AgentIOSWebSearchEnginePolicy.canResolve(Array(ids)),
+        let learned = cacheStore.learnedSources() {
+        known.formUnion(learned.map(\.sourceID))
+      }
+      guard ids.isSubset(of: known) else {
         return failure("unsupported_search_engine", "The requested health source is unavailable on iOS")
       }
       guard let health = cacheStore.sourceHealth(ids: ids) else {
@@ -361,12 +375,15 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let imageSearch = (input["verticals"]?.arrayValue ?? []).contains(.string("image")) ||
       (input["engines"]?.arrayValue ?? []).contains(where: { $0.stringValue?.hasSuffix("_image") == true })
     let requestedEngines = stringArray(input["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines)
-    guard AgentIOSWebSearchEnginePolicy.accepts(requestedEngines) else {
+    let requestedCategories = stringArray(input["categories"], maximum: 32)
+    let requestedVerticals = stringArray(input["verticals"], maximum: AgentIOSWebIntelligenceNativeToolCatalog.webVerticals.count)
+    guard acceptsEngines(requestedEngines, invocation: invocation) else {
       return failure(imageSearch ? "unsupported_image_engine" : "unsupported_search_engine",
         "The requested search engine is unavailable on iOS; no alternative was substituted")
     }
-    // Text cache entries lack image identity and explicit search-engine provenance.
-    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty
+    // Text cache entries lack image, topic and explicit search-engine provenance.
+    let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty &&
+      requestedCategories.isEmpty && requestedVerticals.isEmpty
     let cachedDocuments = useCache
       ? cacheStore.search(query: query, limit: limit, allowStale: false)
       : []
@@ -424,6 +441,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let learning: AgentMcpJSONObject
     if invocation.isCancellationRequested {
       learning = ["status": .string("skipped_cancelled")]
+    } else if webMediaProvider is AgentIOSURLSessionWebMediaToolProvider,
+      let nativeLearning = webResult.output["learning"]?.objectValue {
+      learning = nativeLearning
     } else if invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission),
       invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) {
       learning = cacheStore.learnSourceCandidates(query: query,
@@ -937,7 +957,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let rawPlanEngines = (input["query_plan"]?.arrayValue ?? []).flatMap {
       stringArray($0.objectValue?["engines"], maximum: AgentIOSWebResearchPlanCodec.maximumEngines)
     }
-    guard AgentIOSWebSearchEnginePolicy.accepts(globalEngines + rawPlanEngines + queryPlan.flatMap(\.engines)) else {
+    guard acceptsEngines(globalEngines + rawPlanEngines + queryPlan.flatMap(\.engines), invocation: invocation) else {
       return failure("unsupported_search_engine", "The research plan contains an unavailable iOS search engine; nothing was searched")
     }
     guard let profile = AgentIOSWebSearchProfile(rawValue: (input["profile"]?.stringValue ?? "balanced").lowercased()) else {
@@ -1415,7 +1435,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       if let unavailable = webResult.metadata["unavailable_sources"] {
         result["unavailable_sources"] = unavailable
       }
-      for key in ["circuits_skipped", "source_health_receipts", "source_health_available", "source_health_write_committed"] {
+      for key in ["circuits_skipped", "source_health_receipts", "source_health_available", "source_health_write_committed",
+                  "selected_learned_sources", "official_sources"] {
         if let value = webResult.metadata[key] { result[key] = value }
       }
     }

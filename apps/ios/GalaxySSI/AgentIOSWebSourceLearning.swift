@@ -16,6 +16,19 @@ struct AgentIOSLearnedWebSource: Codable, Equatable {
     min(Double(observations) / 6, 1) * 0.6 + min(Double(queryFingerprints.count) / 4, 1) * 0.4
   }
 
+  var isSearchEligible: Bool {
+    let broad = ["general", "knowledge"].contains(vertical)
+    return isValid && status == "verified" && vertical != "image" &&
+      observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)
+  }
+
+  func searchSpec(index: Int) -> AgentIOSWebIntelligenceSourceSpec? {
+    guard isSearchEligible, let kind = AgentIOSWebIntelligenceVertical(rawValue: vertical) else { return nil }
+    return AgentIOSWebIntelligenceSourceSpec(id: sourceID, title: host, vertical: kind, allowedHosts: [host],
+      authority: min(max(confidence, 0.55), 0.85), categoryTags: Set(categoryTags),
+      indexEngine: index % 2 == 0 ? "duckduckgo" : "bing")
+  }
+
   var isValid: Bool {
     AgentIOSWebSourceLearningPolicy.validHost(host) &&
       AgentIOSWebIntelligenceVertical(rawValue: vertical) != nil && vertical != "local" &&
@@ -34,6 +47,7 @@ struct AgentIOSLearnedWebSource: Codable, Equatable {
      "observations": .int(Int64(observations)), "distinct_queries": .int(Int64(queryFingerprints.count)),
      "confidence": .double(confidence), "first_seen_at_millis": .int(firstSeenAtMillis),
      "last_seen_at_millis": .int(lastSeenAtMillis),
+     "search_available": .bool(isSearchEligible),
      "verification_scope": .string("repeated_discovery_not_content_or_permission_verification")]
   }
 }

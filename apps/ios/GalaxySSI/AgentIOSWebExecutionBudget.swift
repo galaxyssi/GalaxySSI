@@ -48,8 +48,14 @@ enum AgentIOSWebSearchEnginePolicy {
     Set(["bing", "baidu", "duckduckgo", "sogou_image"] +
       AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.map(\.id))
   }
-  static func accepts(_ engines: [String]) -> Bool {
-    let allowed = supported
+  static func canResolve(_ engines: [String]) -> Bool {
+    engines.allSatisfy { supported.contains($0) || isLearnedID($0) }
+  }
+  private static func isLearnedID(_ value: String) -> Bool {
+    value.hasPrefix("learned_") && value.count == 24 && value.dropFirst(8).allSatisfy { "0123456789abcdef".contains($0) }
+  }
+  static func accepts(_ engines: [String], learnedSources: [AgentIOSLearnedWebSource] = []) -> Bool {
+    let allowed = supported.union(learnedSources.filter(\.isSearchEligible).map(\.sourceID))
     return engines.allSatisfy { allowed.contains($0) }
   }
 }

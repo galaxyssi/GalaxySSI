@@ -107,7 +107,7 @@ for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSou
 for (const token of ['native.sourceHealthStore = cacheStore', 'let webResult = searchProvider.invoke(',
   'case "source_health":', 'case "reset_source_health":', 'let reset = cacheStore.resetSourceHealth()',
   'cacheMetadata = cacheStore.stats().merging(reset)', 'result[key] = value']) assert(intelligence.includes(token), token);
-for (const token of ['? sourceHealthStore : nil', 'healthStore?.sourceHealth(ids: Set(candidates.map(\\.provider)))',
+for (const token of ['? sourceHealthStore : nil', 'healthStore?.sourceRoutingSnapshot()', 'let health = sourceSnapshot?.health',
   'AgentIOSWebSourceHealthRouting.select(', 'let endpoints = selection.selected.compactMap',
   '"search_sources_cooling_down"', 'let healthReceipts = attempts.compactMap(\\.healthReceipt)',
   'healthStore?.recordSourceReceipts(healthReceipts)', 'source_health_write_committed',
@@ -121,6 +121,32 @@ for (const name of ['testSourceHealthBackoffEmptyCancellationAndOverflowRules',
   'testActualNativeSearchUsesScopedHealthAndCacheHealthTools',
   'testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence',
   'testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts']) assert(cacheTests.includes('func ' + name + '('));
+for (const token of ['var isSearchEligible: Bool', 'isValid && status == "verified" && vertical != "image"',
+  'observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)',
+  'authority: min(max(confidence, 0.55), 0.85)', 'index % 2 == 0 ? "duckduckgo" : "bing"',
+  '"search_available": .bool(isSearchEligible)']) assert(learning.includes(token), token);
+for (const token of ['learnedSources.filter(\\.isSearchEligible)', 'requestedCategories.compactMap(',
+  '!categories.isDisjoint(with: $0.categoryTags)', 'let catalog = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources + learned']) assert(learningCatalog.includes(token), token);
+for (const token of ['sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared',
+  'AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines)',
+  'AgentIOSWebSearchEnginePolicy.accepts(requestedEngines, learnedSources: learned)',
+  'learnedSources: imageSearch ? [] : learned', 'source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com"',
+  'URLQueryItem(name: "q", value: "site:\\(host) \\(query)")',
+  'return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }',
+  'output["learning"] = .object(healthStore.learnSourceCandidates(', '"selected_learned_sources"']) assert(provider.includes(token), token);
+assert(!provider.includes('return Array(endpoints.prefix('), 'Candidate pool is not truncated before health filtering/fanout');
+for (const token of ['private func acceptsEngines(', 'AgentIOSWebSearchEnginePolicy.canResolve(engines)',
+  'AgentIOSWebSearchEnginePolicy.accepts(engines, learnedSources: learned)',
+  'requestedCategories.isEmpty && requestedVerticals.isEmpty',
+  '} else if webMediaProvider is AgentIOSURLSessionWebMediaToolProvider,',
+  'let nativeLearning = webResult.output["learning"]?.objectValue', 'learning = nativeLearning']) assert(intelligence.includes(token), token);
+assert(cacheStore.includes('func sourceRoutingSnapshot()'));
+for (const name of ['testLearnedRoutingRequiresQualifiedRecordsAndModelSelectedTopics',
+  'testActualLearnedSearchFiltersDestinationsAndLearnsOnlyOnceThenClearRevokesRouting',
+  'testDirectRawSearchQueuesScopedLearningWithoutIntelligenceWrapper',
+  'testLaterUnavailableLearnedEngineRejectsWholeResearchPlanBeforeSearching',
+  'testTopicScopedLearnedSearchDoesNotReuseUnscopedTextCache',
+  'testExplicitNativeSearchOrderIsRetainedWithoutDuplicateDispatch']) assert(cacheTests.includes('func ' + name + '('));
 for (const token of ['let useCache = (input["use_cache"]?.boolValue ?? false) && !imageSearch && requestedEngines.isEmpty',
   'item.result["lead_image_url"]?.stringValue ?? item.result["url"]?.stringValue',
   'result["images"] = .array(images)', 'evidence["images"] = .array(images)',
@@ -131,15 +157,15 @@ for (const token of ['systemUptime * 1_000', 'subtractingReportingOverflow(start
   'parent.isCancellationRequested || isCancelled() || self.expired',
   'self == .fast ? 6_000 : (self == .deep ? 35_000 : 15_000)']) assert(budget.includes(token));
 const research = intelligence.slice(intelligence.indexOf('  private func research('), intelligence.indexOf('  private func readableFetchResult('));
-for (const token of ['AgentIOSWebSearchEnginePolicy.accepts(globalEngines + rawPlanEngines + queryPlan.flatMap(\\.engines))',
+for (const token of ['acceptsEngines(globalEngines + rawPlanEngines + queryPlan.flatMap(\\.engines), invocation: invocation)',
   'let budget = AgentIOSWebExecutionBudget(', 'min(budget.remainingMillis, invocation.remainingTimeMillis)',
   '"status": .string("skipped_budget")', 'search(input: searchInput, invocation: child',
   'AgentIOSWebEvidenceReader(uptimeMillis: uptimeMillis)', 'results: remaining > 0 ? searchResults : []',
   'timeoutMillis: min(pageReadTimeout, remaining)', 'let childInvocation = try budget.invocation(',
   'else if executedQueries.count < queryPlan.count { status = "partial" }',
   'researchMetadata["shared_budget_exhausted"]']) assert(research.includes(token), token);
-assert(research.indexOf('AgentIOSWebSearchEnginePolicy.accepts(') < research.indexOf('for (index, item) in queryPlan.enumerated()'));
-assert(provider.includes('endpoints = endpoints.filter { requestedEngineIds.contains($0.provider) }'));
+assert(research.indexOf('acceptsEngines(') < research.indexOf('for (index, item) in queryPlan.enumerated()'));
+assert(provider.includes('let byID = Dictionary(uniqueKeysWithValues: endpoints.map { ($0.provider, $0) })'));
 assert(provider.includes('throw AgentIOSURLSessionWebError.unsupportedSearchEngine'));
 const completion = read(swift('AgentIOSWebSearchCompletionPolicy'));
 for (const token of ['guard !explicitSources, normalizedProfile != "deep", limit > 0',
@@ -323,12 +349,12 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: shared research deadline, safe cache batches, scoped deferred source learning and real listing/UI counts. Source-health receipts batch into one encrypted snapshot, scope-gated search skips open circuits unless explicit, and source_health/reset dispatch is implemented. Full clear invalidates queued learning. Learned routing, full catalog/ranker and indexed-storage performance incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete';
   if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
   if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
-  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: query-aware early completion and supported profiles; native health uses reference EWMA, reliability/latency/usefulness score and three-failure exponential circuit cooldown. Cancellation does not increment failures, empty counts as successful, explicit sources bypass circuit filtering. Existing specialist priority retained; full catalog/ranker and native acceptance incomplete';
+  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete';
   if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
   if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
   if (file.endsWith('/CloudToolBatchExecutor.kt')) return 'Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified';
@@ -340,7 +366,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/image evidence, query-aware completion, renderer/research/cloud caps, atomic cache/workspace commits; scoped deferred learning and native source health with batched encrypted receipts, circuit-aware selection, query/reset dispatch and live learning UI counts. Learned routing/full catalog/ranker, indexed-storage performance, other image adapters/relevance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/image evidence, renderer/research/cloud caps, atomic cache/workspace commits; actual raw/intelligence scoped learning with no duplicate observation, qualified domain-index routing, topic cache isolation and circuit-aware source health. Full catalog/ranker/exclusion and learned image adapters, indexed-storage performance, other media/relevance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

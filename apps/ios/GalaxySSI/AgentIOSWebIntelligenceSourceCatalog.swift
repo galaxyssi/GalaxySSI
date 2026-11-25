@@ -78,6 +78,8 @@ struct AgentIOSWebIntelligenceSourceSpec: Equatable {
   var vertical: AgentIOSWebIntelligenceVertical
   var allowedHosts: [String]
   var authority: Double
+  var categoryTags: Set<String> = []
+  var indexEngine = "bing"
 }
 
 struct AgentIOSWebIntelligenceSourceSelection: Equatable {
@@ -90,14 +92,21 @@ enum AgentIOSWebIntelligenceQueryRouting {
   static func select(
     query _: String,
     requestedVerticals: Set<AgentIOSWebIntelligenceVertical>,
-    requestedEngineIds: Set<String>
+    requestedEngineIds: Set<String>,
+    requestedCategories: Set<String> = [],
+    learnedSources: [AgentIOSLearnedWebSource] = []
   ) -> AgentIOSWebIntelligenceSourceSelection {
-    let explicit = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
+    let learned = learnedSources.filter(\.isSearchEligible).sorted { $0.sourceID < $1.sourceID }
+      .enumerated().compactMap { $0.element.searchSpec(index: $0.offset + AgentIOSWebIntelligenceSourceCatalog.sourceCount) }
+    let catalog = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources + learned
+    let categories = Set(requestedCategories.compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory))
+    let explicit = catalog.filter {
       requestedEngineIds.contains($0.id)
     }
     let candidates = explicit.isEmpty
-      ? AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources.filter {
-        requestedVerticals.contains($0.vertical)
+      ? catalog.filter {
+        requestedVerticals.contains($0.vertical) || categories.contains($0.vertical.rawValue) ||
+          !categories.isDisjoint(with: $0.categoryTags)
       }
       : explicit
     let selected = candidates.indices.sorted { left, right in
@@ -108,7 +117,7 @@ enum AgentIOSWebIntelligenceQueryRouting {
     return AgentIOSWebIntelligenceSourceSelection(
       selected: selected,
       inferredVerticals: [],
-      strategy: !requestedVerticals.isEmpty || !requestedEngineIds.isEmpty
+      strategy: !requestedVerticals.isEmpty || !requestedEngineIds.isEmpty || !categories.isEmpty
         ? "model_selected_topics"
         : "broad_unscoped"
     )

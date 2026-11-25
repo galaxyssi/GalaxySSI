@@ -309,6 +309,13 @@ final class AgentIOSWebIntelligenceCacheStore {
     }.map { ($0.sourceID, $0) })
   }
 
+  func sourceRoutingSnapshot() -> (learnedSources: [AgentIOSLearnedWebSource], health: [String: AgentIOSWebSourceHealth])? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let snapshot = readUnlocked() else { return nil }
+    return (snapshot.learnedSources ?? [], Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).map { ($0.sourceID, $0) }))
+  }
+
   @discardableResult
   func recordSourceReceipts(_ receipts: [AgentIOSWebSourceReceipt]) -> Bool {
     guard receipts.count <= AgentIOSWebSourceHealth.maximumSources, receipts.allSatisfy(\.isValid) else { return false }
