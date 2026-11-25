@@ -1,0 +1,407 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4401,
+    "mergeCommit": "e228e379f307fcd6c1eb93b289126e9c473ddf7e"
+  },
+  "models": [
+    {
+      "id": "arterialContinuity",
+      "inputs": [
+        {
+          "key": "arterial-lumen-diameter",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 24,
+          "scale": 1,
+          "label": "health_atlas_arterial_continuity_diameter",
+          "unit": "mm",
+          "digits": 0
+        },
+        {
+          "key": "arterial-volume-flow",
+          "minimum": 0,
+          "maximum": 150,
+          "initial": 70,
+          "scale": 1,
+          "label": "health_atlas_arterial_continuity_flow",
+          "unit": "mL/s",
+          "digits": 0
+        }
+      ],
+      "axis": 0,
+      "unit": "cm/s",
+      "minimum": 0,
+      "maximum": 200,
+      "sources": [
+        "https://openstax.org/books/university-physics-volume-1/pages/14-5-fluid-dynamics",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-5-circulatory-pathways"
+      ],
+      "title": "health_atlas_arterial_continuity_title",
+      "scope": "health_atlas_arterial_continuity_scope",
+      "formula": "health_atlas_arterial_continuity_formula",
+      "companionTitle": "health_atlas_arterial_continuity_area",
+      "entryIDs": [
+        "aorta",
+        "pulmonary-trunk"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "glialCapacitance",
+      "inputs": [
+        {
+          "key": "glial-capacitance-thickness",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 20,
+          "label": "health_atlas_glial_capacitance_thickness",
+          "unit": "×",
+          "digits": 2
+        },
+        {
+          "key": "glial-capacitance-area",
+          "minimum": 10,
+          "maximum": 40,
+          "initial": 20,
+          "scale": 20,
+          "label": "health_atlas_glial_capacitance_area",
+          "unit": "×",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "×",
+      "minimum": 0,
+      "maximum": 4,
+      "sources": [
+        "https://openstax.org/books/university-physics-volume-2/pages/8-1-capacitors-and-capacitance",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue"
+      ],
+      "title": "health_atlas_glial_capacitance_title",
+      "scope": "health_atlas_glial_capacitance_scope",
+      "formula": "health_atlas_glial_capacitance_formula",
+      "companionTitle": "health_atlas_glial_capacitance_per_area",
+      "entryIDs": [
+        "cell-schwann-cell",
+        "cell-oligodendrocyte"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "colonicWaterBalance",
+      "inputs": [
+        {
+          "key": "colonic-water-starting-volume",
+          "minimum": 100,
+          "maximum": 1000,
+          "initial": 500,
+          "scale": 1,
+          "label": "health_atlas_colonic_water_balance_starting_volume",
+          "unit": "mL",
+          "digits": 0
+        },
+        {
+          "key": "colonic-water-net-absorbed",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 80,
+          "scale": 1,
+          "label": "health_atlas_colonic_water_balance_net_absorbed",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "mL",
+      "minimum": 0,
+      "maximum": 1000,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/23-7-chemical-digestion-and-absorption-a-closer-look"
+      ],
+      "title": "health_atlas_colonic_water_balance_title",
+      "scope": "health_atlas_colonic_water_balance_scope",
+      "formula": "health_atlas_colonic_water_balance_formula",
+      "companionTitle": "health_atlas_colonic_water_balance_companion",
+      "entryIDs": [
+        "large-intestine",
+        "colon"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "lymphParticleTransport",
+      "inputs": [
+        {
+          "key": "lymph-particle-transport-flow",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 8,
+          "scale": 4,
+          "label": "health_atlas_lymph_particle_transport_flow",
+          "unit": "mL/min",
+          "digits": 2
+        },
+        {
+          "key": "lymph-particle-transport-concentration",
+          "minimum": 0,
+          "maximum": 24,
+          "initial": 12,
+          "scale": 4,
+          "label": "health_atlas_lymph_particle_transport_concentration",
+          "unit": "µg/mL",
+          "digits": 2
+        }
+      ],
+      "axis": 0,
+      "unit": "µg/min",
+      "minimum": 0,
+      "maximum": 30,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems"
+      ],
+      "title": "health_atlas_lymph_particle_transport_title",
+      "scope": "health_atlas_lymph_particle_transport_scope",
+      "formula": "health_atlas_lymph_particle_transport_formula",
+      "companionTitle": "health_atlas_lymph_particle_transport_companion",
+      "entryIDs": [
+        "lymph-nodes",
+        "thoracic-duct",
+        "cell-lymphatic-endothelial-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "endocrineDilution",
+      "inputs": [
+        {
+          "key": "endocrine-dilution-tracer-amount",
+          "minimum": 1,
+          "maximum": 12,
+          "initial": 6,
+          "scale": 1,
+          "label": "health_atlas_endocrine_dilution_amount",
+          "unit": "TU",
+          "digits": 0
+        },
+        {
+          "key": "endocrine-dilution-final-volume",
+          "minimum": 2,
+          "maximum": 12,
+          "initial": 4,
+          "scale": 1,
+          "label": "health_atlas_endocrine_dilution_volume",
+          "unit": "VU",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "TU/VU",
+      "minimum": 0,
+      "maximum": 6,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/17-1-an-overview-of-the-endocrine-system",
+        "https://openstax.org/books/chemistry-2e/pages/3-3-molarity"
+      ],
+      "title": "health_atlas_endocrine_dilution_title",
+      "scope": "health_atlas_endocrine_dilution_scope",
+      "formula": "health_atlas_endocrine_dilution_formula",
+      "companionTitle": "health_atlas_endocrine_dilution_companion",
+      "entryIDs": [
+        "adrenal-glands",
+        "cell-adrenocortical-cell",
+        "cell-chromaffin-cell",
+        "cell-somatotroph",
+        "cell-lactotroph",
+        "cell-corticotroph",
+        "cell-gonadotroph",
+        "pancreatic-islets",
+        "cell-pancreatic-beta-cell",
+        "cell-pancreatic-alpha-cell",
+        "cell-pancreatic-delta-cell",
+        "cell-pancreatic-pp-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "boneSection",
+      "inputs": [
+        {
+          "key": "bone-section-force",
+          "minimum": 0,
+          "maximum": 120,
+          "initial": 60,
+          "scale": 1,
+          "label": "health_atlas_bone_section_force",
+          "unit": "N",
+          "digits": 0
+        },
+        {
+          "key": "bone-section-wall-thickness",
+          "minimum": 10,
+          "maximum": 30,
+          "initial": 20,
+          "scale": 10,
+          "label": "health_atlas_bone_section_wall_thickness",
+          "unit": "mm",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "MPa",
+      "minimum": 0,
+      "maximum": 5,
+      "sources": [
+        "https://openstax.org/books/university-physics-volume-1/pages/12-3-stress-strain-and-elastic-modulus",
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure"
+      ],
+      "title": "health_atlas_bone_section_title",
+      "scope": "health_atlas_bone_section_scope",
+      "formula": "health_atlas_bone_section_formula",
+      "companionTitle": "health_atlas_bone_section_area",
+      "entryIDs": [
+        "tissue-compact-bone",
+        "clavicle",
+        "hand-bones",
+        "foot-bones"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "retinalConvergence",
+      "inputs": [
+        {
+          "key": "retinal-convergence-samples",
+          "minimum": 1,
+          "maximum": 16,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_retinal_convergence_samples",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "retinal-convergence-lit-percent",
+          "minimum": 0,
+          "maximum": 100,
+          "initial": 25,
+          "scale": 1,
+          "label": "health_atlas_retinal_convergence_lit_percent",
+          "unit": "%",
+          "digits": 0
+        }
+      ],
+      "axis": 1,
+      "unit": "",
+      "minimum": 0,
+      "maximum": 16,
+      "sources": [
+        "https://www.webvision.pitt.edu/book/part-viii-psychophysics-of-vision/visual-acuity/",
+        "https://elifesciences.org/articles/05241"
+      ],
+      "title": "health_atlas_retinal_convergence_title",
+      "scope": "health_atlas_retinal_convergence_scope",
+      "formula": "health_atlas_retinal_convergence_formula",
+      "companionTitle": "health_atlas_retinal_convergence_companion",
+      "entryIDs": [
+        "cell-retinal-ganglion-cell",
+        "cell-retinal-bipolar-cell"
+      ],
+      "digits": 2
+    },
+    {
+      "id": "muscleShortening",
+      "inputs": [
+        {
+          "key": "muscle-shortening-count",
+          "minimum": 200,
+          "maximum": 2000,
+          "initial": 1000,
+          "scale": 1,
+          "label": "health_atlas_muscle_shortening_count",
+          "unit": "",
+          "digits": 0
+        },
+        {
+          "key": "muscle-shortening-per-sarcomere",
+          "minimum": 0,
+          "maximum": 50,
+          "initial": 25,
+          "scale": 100,
+          "label": "health_atlas_muscle_shortening_per_sarcomere",
+          "unit": "µm",
+          "digits": 2
+        }
+      ],
+      "axis": 1,
+      "unit": "mm",
+      "minimum": 0,
+      "maximum": 1,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation"
+      ],
+      "title": "health_atlas_muscle_shortening_title",
+      "scope": "health_atlas_muscle_shortening_scope",
+      "formula": "health_atlas_muscle_shortening_formula",
+      "companionTitle": "health_atlas_muscle_shortening_remaining_length",
+      "entryIDs": [
+        "cell-skeletal-myocyte",
+        "tissue-skeletal-muscle",
+        "pectoralis-major",
+        "deltoid",
+        "triceps-brachii",
+        "rectus-abdominis",
+        "oblique-abdominal-muscles",
+        "trapezius",
+        "latissimus-dorsi",
+        "erector-spinae",
+        "gluteus-maximus",
+        "hamstrings"
+      ],
+      "digits": 3
+    },
+    {
+      "id": "keratinGrowth",
+      "inputs": [
+        {
+          "key": "keratin-growth-time",
+          "minimum": 0,
+          "maximum": 20,
+          "initial": 8,
+          "scale": 1,
+          "label": "health_atlas_keratin_growth_time",
+          "unit": "d",
+          "digits": 0
+        },
+        {
+          "key": "keratin-growth-rate",
+          "minimum": 2,
+          "maximum": 8,
+          "initial": 5,
+          "scale": 10,
+          "label": "health_atlas_keratin_growth_rate",
+          "unit": "mm/d",
+          "digits": 1
+        }
+      ],
+      "axis": 0,
+      "unit": "mm",
+      "minimum": 0,
+      "maximum": 16,
+      "sources": [
+        "https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin"
+      ],
+      "title": "health_atlas_keratin_growth_title",
+      "scope": "health_atlas_keratin_growth_scope",
+      "formula": "health_atlas_keratin_growth_formula",
+      "companionTitle": "health_atlas_keratin_growth_companion",
+      "entryIDs": [
+        "hair",
+        "hair-follicles",
+        "cell-hair-matrix-cell"
+      ],
+      "digits": 2
+    }
+  ]
+}

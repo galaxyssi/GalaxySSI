@@ -1114,7 +1114,7 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
       GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id).map { (entry.id, $0) }
     }
     let oxygenEnabled = GalaxySSIHealthAtlasPhysiology.Kind.allCases.contains { $0.rawValue == "oxygen" }
-    XCTAssertEqual(mapped.count, oxygenEnabled ? 136 : 134)
+    XCTAssertEqual(mapped.count, oxygenEnabled ? 178 : 176)
     XCTAssertEqual(Set(mapped.map(\.1)), Set(GalaxySSIHealthAtlasPhysiology.Kind.allCases))
     for teaching in GalaxySSIHealthAtlasTeachingModel.allCases {
       XCTAssertEqual(Set(mapped.filter { $0.1.teaching == teaching }.map(\.0)), teaching.entryIDs)
@@ -1146,6 +1146,29 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     let atrium = try XCTUnwrap(atlas.entry("left-atrium"))
     restored.binding(atrium).wrappedValue.physiologyInputs = Model(kind: .cardiacPhaseTime).inputs
     XCTAssertEqual(restored.entries["right-atrium"]?.physiologyInputs, expected["right-atrium"])
+  }
+
+  func testOrganTeachingRestoresIndependentInputsWithoutChangingPlaybackOrArtwork() throws {
+    let atlas = try completeCatalogue(), state = GalaxySSIHealthAtlasState()
+    typealias Model = GalaxySSIHealthAtlasPhysiology
+    let kinds: [Model.Kind] = [.arterialContinuity, .glialCapacitance, .colonicWaterBalance,
+      .lymphParticleTransport, .endocrineDilution, .boneSection, .retinalConvergence, .muscleShortening, .keratinGrowth]
+    var expected: [String: [Int]] = [:]
+    for kind in kinds {
+      for (index, id) in try XCTUnwrap(kind.teaching).entryIDs.sorted().enumerated() {
+        let entry = try XCTUnwrap(atlas.entry(id)), binding = state.binding(entry)
+        let model = Model(kind: kind), function = binding.wrappedValue.functionSelection
+        let artwork = binding.wrappedValue.artworkView
+        let value = index.isMultiple(of: 2) ? kind.inputs[kind.axis].range.lowerBound : kind.inputs[kind.axis].range.upperBound
+        binding.wrappedValue.physiologyInputs = model.changing(kind.axis, to: value)?.inputs
+        expected[id] = binding.wrappedValue.physiologyInputs
+        XCTAssertEqual(binding.wrappedValue.functionSelection, function)
+        XCTAssertEqual(binding.wrappedValue.artworkView, artwork)
+      }
+    }
+    XCTAssertEqual(expected.count, 42)
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+    for (id, inputs) in expected { XCTAssertEqual(restored.entries[id]?.physiologyInputs, inputs) }
   }
 
   func testFunctionCataloguePreservesIndependentChoicesAndChapterBoundaries() throws {

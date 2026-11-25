@@ -1,7 +1,7 @@
 // Declaration/source wiring checks only. Does not execute or type-check Swift or native UI.
 const fs = require("node:fs"), path = require("node:path"), cp = require("node:child_process"), crypto = require("node:crypto"), assert = require("node:assert/strict");
-const system = process.argv.includes("--system-4399"), revision = system ? 4399 : 4397;
-const root = path.resolve(__dirname, "../../.."), sha = system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82";
+const organ = process.argv.includes("--organ-4401"), system = process.argv.includes("--system-4399"), revision = organ ? 4401 : system ? 4399 : 4397;
+const root = path.resolve(__dirname, "../../.."), sha = organ ? "e228e379f307fcd6c1eb93b289126e9c473ddf7e" : system ? "de05fd51ba151789acd24dc4484d7f84d893aea3" : "40776e7a67ebfe48c76f98d392849edb9810ac82";
 const read = name => fs.readFileSync(path.join(root, "apps/ios", name), "utf8");
 const source = name => read("GalaxySSI/GalaxySSIHealthAtlas" + name + ".swift");
 const git = args => cp.execFileSync("git", args, {cwd: root, maxBuffer: 32_000_000});
@@ -13,8 +13,8 @@ for (const [i, [status, file]] of changed.entries()) assert.deepEqual(inventory.
   sha256: crypto.createHash("sha256").update(git(["show", sha + ":" + file])).digest("hex")});
 assert.equal(declarations.models.length, 9);
 const controls = declarations.models.flatMap(m => m.inputs), owners = declarations.models.flatMap(m => m.entryIDs);
-assert.equal(controls.length, system ? 18 : 24); assert.equal(new Set(controls.map(c => c.key)).size, controls.length);
-assert.equal(owners.length, system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
+assert.equal(controls.length, organ || system ? 18 : 24); assert.equal(new Set(controls.map(c => c.key)).size, controls.length);
+assert.equal(owners.length, organ ? 42 : system ? 35 : 34); assert.equal(new Set(owners).size, owners.length);
 const graph = JSON.parse(git(["show", sha + ":apps/android/app/src/main/assets/health/body-atlas.json"]));
 const graphIDs = new Set(graph.entries.map(e => e.id)); for (const id of owners) assert(graphIDs.has(id), id);
 const metadata = source("TeachingModel"), inputSource = source("TeachingControls"), values = source("TeachingValues"), physiology = source("Physiology");
@@ -55,7 +55,17 @@ for (const model of declarations.models) {
     assert(normalize(segment).includes(normalize(expected)), expected);
   }
 }
-const formulas = system ? {
+const formulas = organ ? {
+  arterialContinuity: ["values[1] / (.pi * pow(values[0] / 20, 2))", ".pi * pow(values[0] / 20, 2)"],
+  glialCapacitance: ["values[1] * (log1p(0.5) / log1p(values[0] * 0.5))", "log1p(0.5) / log1p(values[0] * 0.5)"],
+  colonicWaterBalance: ["values[0] - values[0] * (values[1] / 100)", "values[0] * (values[1] / 100)"],
+  lymphParticleTransport: ["values[1] * values[0]", "values[1] * values[0] * 5"],
+  endocrineDilution: ["values[0] / values[1]", "values[0]"],
+  boneSection: ["values[0] / (.pi * (25 - pow(5 - values[1], 2)))", ".pi * (25 - pow(5 - values[1], 2))"],
+  retinalConvergence: ["values[0] * (values[1] / 100)", "values[0] * (1 - values[1] / 100)"],
+  muscleShortening: ["values[0] * values[1] / 1000", "values[0] * (2.5 - values[1]) / 1000"],
+  keratinGrowth: ["values[0] * values[1]", "1 / values[1]"]
+} : system ? {
   diaphragmDisplacement: ["values[1] * values[0] / 10", "values[1] / 10"],
   cardiacPhaseTime: ["(60_000 / values[0]) * (values[1] / 100)", "60_000 / values[0]"],
   visualAngle: ["2 * atan(values[0] / (2 * values[1])) * 180 / .pi", "atan(values[0] / (2 * values[1])) * 180 / .pi"],
@@ -82,9 +92,10 @@ for (const [id, pair] of Object.entries(formulas)) for (const [index, expression
 }
 if (system) for (const suffix of ["diaphragm_demo_diagram", "diaphragm_demo_current", "diaphragm_demo_resting",
   "teaching_unit_cells", "teaching_unit_cycles", "teaching_unit_heart_rate"]) resourceKeys.add("health_atlas_" + suffix);
-assert.equal(resourceKeys.size, 60);
+if (organ) for (const suffix of ["diagram", "section", "speed"]) resourceKeys.add("health_atlas_arterial_continuity_" + suffix);
+assert.equal(resourceKeys.size, organ ? 57 : 60);
 for (const locale of ["en", "zh-Hans"]) {
-  const table = new Map([...read("GalaxySSI/" + locale + ".lproj/" + (system ? "AtlasSystemTeaching" : "AtlasTeaching") + ".strings").matchAll(/^"([^"]+)" = (".*");$/gm)].map(m => [m[1], JSON.parse(m[2])]));
+  const table = new Map([...read("GalaxySSI/" + locale + ".lproj/" + (organ ? "AtlasOrganTeaching" : system ? "AtlasSystemTeaching" : "AtlasTeaching") + ".strings").matchAll(/^"([^"]+)" = (".*");$/gm)].map(m => [m[1], JSON.parse(m[2])]));
   assert.deepEqual(new Set(table.keys()), resourceKeys); for (const value of table.values()) assert(value);
 }
 for (const token of ["-100 * expm1(-values[0] / values[1])", "100 * exp(-values[0] / values[1])", "max(0, values[0] - values[1] - values[2]) * values[3]",
@@ -118,4 +129,16 @@ if (system) {
   assert.equal((source("PhysiologyPanel").match(/PhysiologyText.displayUnit/g) || []).length, 3);
   assert(source("").includes('table: "AtlasSystemTeaching"'));
 }
-console.log(`Android #${revision} source: ${changed.length} hashes, nine declarations / ${controls.length} controls / ${owners.length} new owners / 60 bilingual keys; existing 67 route clauses unchanged. Not Swift execution or native acceptance.`);
+if (organ) {
+  for (const revision of [4397, 4399]) {
+    const archived = JSON.parse(read(`ANDROID_${revision}_MODEL_DECLARATIONS.json`)).models;
+    assert(owners.every(id => !archived.some(m => m.entryIDs.includes(id))), "Do not replace preceding teaching routes");
+  }
+  for (const token of ['case .arterialContinuity: art.arterialContinuity(model)', '"atlas-arterial-continuity"',
+    '"health_atlas_arterial_continuity_diagram"']) assert(source("MaterialResponseView").includes(token));
+  for (const token of ["model.input(0) * 1.15", "model.result / model.kind.bounds.upperBound", "0xBA8290", "0xEFC8CB",
+    "max(8, (end - start) * speed)", 'label("arterial_continuity_section", x, 145, 134)',
+    'label("arterial_continuity_speed", (start + end) / 2, 145, 172)']) assert(source("MaterialResponseDrawing").includes(token));
+  assert(source("").includes('table: "AtlasOrganTeaching"'));
+}
+console.log(`Android #${revision} source: ${changed.length} hashes, nine declarations / ${controls.length} controls / ${owners.length} new owners / ${resourceKeys.size} bilingual keys; existing 67 route clauses unchanged. Not Swift execution or native acceptance.`);

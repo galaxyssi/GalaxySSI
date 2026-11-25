@@ -1,0 +1,475 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4401,
+    "mergeCommit": "e228e379f307fcd6c1eb93b289126e9c473ddf7e"
+  },
+  "verification": "source-contracts-only-not-native-execution",
+  "counts": {
+    "android-version-only": 1,
+    "android-test-reference-not-executed": 14,
+    "bounded-organ-teaching-model": 9,
+    "reactive-arterial-section-and-speed": 1,
+    "additive-owner-routing-and-restoration": 1,
+    "native-arterial-material-placement": 1,
+    "exact-bilingual-resource-delta": 18
+  },
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "88f84d2eecc152793325b825f6582e480893bb727410254daee90ab57f513d7f",
+      "kind": "android-version-only",
+      "ios": [],
+      "note": "APK version metadata is platform-specific; no iOS version change or IPA."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasCellDeviceTest.kt",
+      "sourceSHA256": "1944b717d27775c5e268b8d6922f4e0f1927f77d581edd60fc485e50b9d8616a",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasElbowDeviceTest.kt",
+      "sourceSHA256": "15654413749df5a8a1b2232ca43cda5c755542a02d247d293f07d80a615a413c",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasPhysiologyDeviceTest.kt",
+      "sourceSHA256": "50332a93f2f70d9d6b7a88962a63b03355b61740dc89ac8b4152d4e261abc511",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/HealthAtlasVesselFlowDeviceTest.kt",
+      "sourceSHA256": "dd21d07ae4581404a4e3efde1dad4f1def2fbd7104c63bc5a772c79d05dbd087",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasArterialContinuityTeachingModel.kt",
+      "sourceSHA256": "fd59b9fbc1214d77e4ae417f65b6289b63a0876694f9886a06cc1f07fa292610",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasBoneSectionTeachingModel.kt",
+      "sourceSHA256": "b2de8acaf2858f2eee745a45c8baf1341aa30836bab4a4442fcb5acd72b960e6",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasColonicWaterBalanceTeachingModel.kt",
+      "sourceSHA256": "34c16ae39a9bfb8124b0d8da8fd824a2dc866f7a89f1469b41c99018dce770e3",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasEndocrineDilutionTeachingModel.kt",
+      "sourceSHA256": "ec9e04a18e8dc55c38885ad4e5c0ab969a690c4fd6cd228bf33d8c7050dde5c9",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasGlialCapacitanceTeachingModel.kt",
+      "sourceSHA256": "0fdb8049969aa9f65c9244c35be01a66a441594f20224a5e3b5d7067fae2b73f",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasKeratinGrowthTeachingModel.kt",
+      "sourceSHA256": "4b8fae1d16fd35d17abf281380d5766ce04eb38aa664275da09f42f67a2f3b9b",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasLymphParticleTransportTeachingModel.kt",
+      "sourceSHA256": "ecffbb7480dd2a203cc45292857bea7ccdec478583d2b8dc1a7014f650df27a4",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMaterialResponseView.kt",
+      "sourceSHA256": "471f7886a4ae4cfde7f479404a7ba904d3b850fd1d0dea427dcb9b908fe50904",
+      "kind": "reactive-arterial-section-and-speed",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasMaterialResponseDrawing.swift"
+      ],
+      "note": "Original 340x156 geometry, diameter-scaled lumen, wall, diameter marks, normalized speed ruler, positive-flow arrow and zero-flow dot, localized legends and accessible description. No pixel or gesture acceptance claimed."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasMuscleShorteningTeachingModel.kt",
+      "sourceSHA256": "24433c71f2e60cf1fa48786c486268510e1d839e89aed3f00e95082ad64f0085",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiology.kt",
+      "sourceSHA256": "336d9e38c5de28645c4ff13a681cbddf8e7292d3d2d00724ee6f27b3f8619416",
+      "kind": "additive-owner-routing-and-restoration",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasState.swift"
+      ],
+      "note": "42 new owners are disjoint from original literal routes and preceding teaching bindings. Existing per-entry restoration, sources, 121-point curves and reset remain shared; native coverage is not certified."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasPhysiologyPanel.kt",
+      "sourceSHA256": "ac2a4eb0bc69bd1fc3b6753eabf0a563b083a73250b3b91e8724c17faa59aab4",
+      "kind": "native-arterial-material-placement",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiology.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasPhysiologyPanel.swift"
+      ],
+      "note": "Arterial continuity joins existing material response placement; native sliders, output, companion, chart, sources and reset remain connected. Existing curve identifier already matches the corrected Android device-test tag."
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/HealthAtlasRetinalConvergenceTeachingModel.kt",
+      "sourceSHA256": "66cb7468cadc5edc6733776295a8433802e36588be676943d52c9b0fa25cee5f",
+      "kind": "bounded-organ-teaching-model",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingModel.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingControls.swift",
+        "apps/ios/GalaxySSI/GalaxySSIHealthAtlasTeachingValues.swift"
+      ],
+      "note": "Original Kotlin declarations fix ranges/defaults/scales/units/precision, axis/bounds, source URLs, scopes and owner IDs. Explicit native result/companion formulas preserve synthetic model dimensions. No patient data or native execution."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_arterial_continuity.xml",
+      "sourceSHA256": "abf4d7e62f384c8123db125322f9fcb1d9990e8e919e99c9509d7eb06afe1704",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_bone_section_teaching_model.xml",
+      "sourceSHA256": "e3068f505296aa7be96d4cbb4d446cc6067fc626a3d2d2f7bf0c2f3a1000b8cb",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_colonic_water_balance_teaching_model.xml",
+      "sourceSHA256": "5ac48139bfc9e8acbcc8fa8e64478bc51579cd1f3d83ba8db8e83fdb00fae0a6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_endocrine_dilution_teaching_model.xml",
+      "sourceSHA256": "d8bc67af66c05198e3688fe80af00e749d0c75fcbfc507960dc60cbe2baee9cc",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_glial_capacitance.xml",
+      "sourceSHA256": "dc654716e0855410701f40bae20652f4692aedf0afbb14878c061c7ec50162d0",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_keratin_growth.xml",
+      "sourceSHA256": "8dfd3098c91c9b107500158ac52ce0d8b92ea60ca58275e242b8655ce81fc938",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_lymph_particle_transport_teaching_model.xml",
+      "sourceSHA256": "fe33758c801c74ff30d162e445bfd86ec06e251369f1228838564f73ce85178d",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_muscle_shortening.xml",
+      "sourceSHA256": "c226d494aa65ad97a4f8a6e3f6ed9d80c4d312823237b5df05aef535d14f722f",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh/health_atlas_retinal_convergence_teaching_model.xml",
+      "sourceSHA256": "ed2e0e755cd9075e36760de7185efd38585f7bfb882f1f37ce45344851eb313a",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_arterial_continuity.xml",
+      "sourceSHA256": "09f7319dfa665eeb7bd2e60b2b2a3a0d67c689eeabc31aa5da0f1b288f5f8443",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_bone_section_teaching_model.xml",
+      "sourceSHA256": "142b9ea6829b94ffa905f25466d6cd8ca8c512b7ae90c8763372b1471583bbfc",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_colonic_water_balance_teaching_model.xml",
+      "sourceSHA256": "4555200dcfc0d4862bfd3c6676a86e29b1b8880a2d4222f47ab2c881822e6190",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_endocrine_dilution_teaching_model.xml",
+      "sourceSHA256": "2db83b401b245902fb122e0d32b9cff56b241dceecdfa0bdca5dcf99493e3a19",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_glial_capacitance.xml",
+      "sourceSHA256": "d9ebe59c05873968b016d9925b9fd466c98b963442aee56b444e0fb12865f355",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_keratin_growth.xml",
+      "sourceSHA256": "29b912ffaf4d5093a67e909210e4360c74eb181aeae9b4a81ed4823a85ef9ba1",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_lymph_particle_transport_teaching_model.xml",
+      "sourceSHA256": "c5ac6f27c5bfb2ec4649e45b6f720797589cd10dde61cf71856e75f9c56ce6bf",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_muscle_shortening.xml",
+      "sourceSHA256": "85d18e726e799bfc5aad5952515316105cdffc212dfc2041cfeef03c3e5800b6",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/health_atlas_retinal_convergence_teaching_model.xml",
+      "sourceSHA256": "719c5a344e16deafb5503d7cec0fb4167ed9dad94d4aebe0f8f1bb9c3d3c4c5a",
+      "kind": "exact-bilingual-resource-delta",
+      "ios": [
+        "apps/ios/GalaxySSI/en.lproj/AtlasOrganTeaching.strings",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/AtlasOrganTeaching.strings"
+      ],
+      "note": "57 matching English/Chinese pairs structurally extracted and registered in localized Xcode resources. Original mathematical symbols and disclaimers retained."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasArterialContinuityTeachingModelTest.kt",
+      "sourceSHA256": "a628bee92e55c9703ab893d368e7d9c32956b3b7c8ab271d5883e1bfdbc383f1",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasBoneSectionTeachingModelTest.kt",
+      "sourceSHA256": "177f3c4eda597d2442dcc7a4499d41efe65219807270849a207545d541894593",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasColonicWaterBalanceTeachingModelTest.kt",
+      "sourceSHA256": "360ba4d5a3e919a4e265ee6971e66aa802350bd8c9cb6b3c7fa677c916b33608",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasEndocrineDilutionTeachingModelTest.kt",
+      "sourceSHA256": "10e6d187c91925508dc37def9a2372a66c87374739d572a153a0a8ffbbe47042",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasGlialCapacitanceTeachingModelTest.kt",
+      "sourceSHA256": "55285fca7fb9aa6f0136fa38e625a87c2ea21506c985ca2383f19163616c03a9",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasKeratinGrowthTeachingModelTest.kt",
+      "sourceSHA256": "ccbf047163161ce73becdeb62d46b519e90576ace461434f2b398f4c23be2330",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasLymphParticleTransportTeachingModelTest.kt",
+      "sourceSHA256": "9078117ec2d81b12079be5f305782463892af4ba9b0bbb4e9633220be99c9dab",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasMuscleShorteningTeachingModelTest.kt",
+      "sourceSHA256": "75dd11be34474d27a8058f2127a86be9356227e766629cd7c63c4c0a28563073",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasPhysiologyTest.kt",
+      "sourceSHA256": "0cc21f3a3ce898ef35e61b096ddc67f641b85fb329d70ff3261858fba4890f74",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/HealthAtlasRetinalConvergenceTeachingModelTest.kt",
+      "sourceSHA256": "b3623ce31421a938357065fa10e51e92b126564463e35c12d9604096430f39b2",
+      "kind": "android-test-reference-not-executed",
+      "ios": [
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasPhysiologyTests.swift",
+        "apps/ios/GalaxySSITests/GalaxySSIHealthAtlasTests.swift"
+      ],
+      "note": "Inspected source contracts; native XCTest source covers all nine defaults, all new slider pairs, conservation, continuous retinal expectations, unit conversions, scoped routing and 42-owner independent state. Device curve tag corrections match existing iOS curve identifiers. No Android/XCTest/device execution or pixel acceptance."
+    }
+  ]
+}

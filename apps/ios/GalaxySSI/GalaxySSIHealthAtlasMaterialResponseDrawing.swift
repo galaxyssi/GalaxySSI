@@ -6,6 +6,24 @@ struct GalaxySSIHealthAtlasMaterialResponseDrawing {
   let language: String
   private static let blue: UInt32 = 0x3A778F, teal: UInt32 = 0x3F7770, rose: UInt32 = 0xB6757F
   private func color(_ value: UInt32) -> Color { GalaxySSIHealthAtlasIllustratedDrawing.color(value) }
+  func arterialContinuity(_ model: GalaxySSIHealthAtlasPhysiology) {
+    let x = 77.0, y = 67.0, radius = model.input(0) * 1.15
+    let speed = model.result / model.kind.bounds.upperBound, outer = radius + 8
+    oval(x - outer, y - outer, x + outer, y + outer, 0xBA8290)
+    oval(x - radius, y - radius, x + radius, y + radius, 0xEFC8CB)
+    line(x - radius, y, x + radius, y, 0x775565, 1.7)
+    for edge in [x - radius, x + radius] { line(edge, y - 4, edge, y + 4, 0x775565, 1.7) }
+    let start = 156.0, end = 315.0
+    line(start, y, end, y, 0xBFD6D7, 3)
+    for mark in 0...4 {
+      let tick = start + (end - start) * Double(mark) / 4
+      line(tick, y - 5, tick, y + 5, 0x759397, 1.5)
+    }
+    if speed > 0 { arrow(start, y, start + max(8, (end - start) * speed), y, Self.teal, 3.3) }
+    else { oval(start - 3, y - 3, start + 3, y + 3, Self.teal) }
+    label("arterial_continuity_section", x, 145, 134)
+    label("arterial_continuity_speed", (start + end) / 2, 145, 172)
+  }
   func diaphragm(_ model: GalaxySSIHealthAtlasPhysiology) {
     let halfWidth = 108 * sqrt(model.input(1) / 250)
     let left = 170 - halfWidth, right = 170 + halfWidth

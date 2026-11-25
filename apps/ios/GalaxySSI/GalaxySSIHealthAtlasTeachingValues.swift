@@ -30,6 +30,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .ductTransit: result = values[0] / values[1]
     case .oviductCiliaryCycles: result = values[0] * values[1]
     case .kneeMoment: result = values[0] * (values[1] / 100)
+    case .arterialContinuity: result = values[1] / (.pi * pow(values[0] / 20, 2))
+    case .glialCapacitance: result = values[1] * (log1p(0.5) / log1p(values[0] * 0.5))
+    case .colonicWaterBalance: result = values[0] - values[0] * (values[1] / 100)
+    case .lymphParticleTransport: result = values[1] * values[0]
+    case .endocrineDilution: result = values[0] / values[1]
+    case .boneSection: result = values[0] / (.pi * (25 - pow(5 - values[1], 2)))
+    case .retinalConvergence: result = values[0] * (values[1] / 100)
+    case .muscleShortening: result = values[0] * values[1] / 1000
+    case .keratinGrowth: result = values[0] * values[1]
     }
     return result.isFinite ? result : nil
   }
@@ -55,6 +64,15 @@ extension GalaxySSIHealthAtlasTeachingModel {
     case .ductTransit: result = 1 / values[1]
     case .oviductCiliaryCycles: result = 1000 / values[0]
     case .kneeMoment: result = values[1] / 100
+    case .arterialContinuity: result = .pi * pow(values[0] / 20, 2)
+    case .glialCapacitance: result = log1p(0.5) / log1p(values[0] * 0.5)
+    case .colonicWaterBalance: result = values[0] * (values[1] / 100)
+    case .lymphParticleTransport: result = values[1] * values[0] * 5
+    case .endocrineDilution: result = values[0]
+    case .boneSection: result = .pi * (25 - pow(5 - values[1], 2))
+    case .retinalConvergence: result = values[0] * (1 - values[1] / 100)
+    case .muscleShortening: result = values[0] * (2.5 - values[1]) / 1000
+    case .keratinGrowth: result = 1 / values[1]
     }
     return result.isFinite ? result : nil
   }

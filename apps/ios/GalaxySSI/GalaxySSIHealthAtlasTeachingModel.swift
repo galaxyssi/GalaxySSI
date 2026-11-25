@@ -1,11 +1,13 @@
 import Foundation
 
-/// Android #4397/#4399 synthetic teaching examples, never patient measurements or estimates.
+/// Synthetic teaching examples, never patient measurements or estimates.
 enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
   case capillaryExchange, valveFlux, glomerularFiltration, skinWaterBarrier, salivaryDelivery
   case tendonElongation, airwaySplit, peristalticTravel, cochlearFrequency
   case diaphragmDisplacement, cardiacPhaseTime, visualAngle, serialAbsorption, hormoneSignal
   case immuneComposition, ductTransit, oviductCiliaryCycles, kneeMoment
+  case arterialContinuity, glialCapacitance, colonicWaterBalance, lymphParticleTransport, endocrineDilution
+  case boneSection, retinalConvergence, muscleShortening, keratinGrowth
 
   struct Control: Sendable {
     let input: GalaxySSIHealthAtlasPhysiology.Input
@@ -17,7 +19,8 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     switch self {
     case .valveFlux, .skinWaterBarrier, .airwaySplit, .peristalticTravel,
          .cardiacPhaseTime, .visualAngle, .serialAbsorption, .hormoneSignal,
-         .immuneComposition, .oviductCiliaryCycles: return 1
+         .immuneComposition, .oviductCiliaryCycles, .colonicWaterBalance,
+         .endocrineDilution, .retinalConvergence, .muscleShortening: return 1
     default: return 0
     }
   }
@@ -40,6 +43,14 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .ductTransit: return "TU"
     case .oviductCiliaryCycles: return "cycles"
     case .kneeMoment: return "N\u{00b7}m"
+    case .arterialContinuity: return "cm/s"
+    case .glialCapacitance: return "\u{00d7}"
+    case .colonicWaterBalance: return "mL"
+    case .lymphParticleTransport: return "\u{00b5}g/min"
+    case .endocrineDilution: return "TU/VU"
+    case .boneSection: return "MPa"
+    case .retinalConvergence: return ""
+    case .muscleShortening, .keratinGrowth: return "mm"
     }
   }
   var bounds: ClosedRange<Double> {
@@ -60,12 +71,20 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .immuneComposition: return 0...500
     case .oviductCiliaryCycles: return 0...20
     case .kneeMoment: return 0...1.25
+    case .arterialContinuity: return 0...200
+    case .glialCapacitance: return 0...4
+    case .colonicWaterBalance: return 0...1000
+    case .lymphParticleTransport: return 0...30
+    case .endocrineDilution: return 0...6
+    case .boneSection: return 0...5
+    case .retinalConvergence, .keratinGrowth: return 0...16
+    case .muscleShortening: return 0...1
     }
   }
   var digits: Int {
     switch self {
     case .glomerularFiltration, .cardiacPhaseTime: return 1
-    case .tendonElongation: return 3
+    case .tendonElongation, .muscleShortening: return 3
     case .immuneComposition: return 0
     default: return 2
     }
@@ -90,6 +109,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .ductTransit: return "health_atlas_duct_transit"
     case .oviductCiliaryCycles: return "health_atlas_oviduct_ciliary_cycles"
     case .kneeMoment: return "health_atlas_knee_moment"
+    case .arterialContinuity: return "health_atlas_arterial_continuity"
+    case .glialCapacitance: return "health_atlas_glial_capacitance"
+    case .colonicWaterBalance: return "health_atlas_colonic_water_balance"
+    case .lymphParticleTransport: return "health_atlas_lymph_particle_transport"
+    case .endocrineDilution: return "health_atlas_endocrine_dilution"
+    case .boneSection: return "health_atlas_bone_section"
+    case .retinalConvergence: return "health_atlas_retinal_convergence"
+    case .muscleShortening: return "health_atlas_muscle_shortening"
+    case .keratinGrowth: return "health_atlas_keratin_growth"
     }
   }
   var title: String { resourcePrefix + "_title" }
@@ -108,6 +136,9 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .visualAngle: suffix = "half"
     case .hormoneSignal: suffix = "removed"
     case .kneeMoment: suffix = "arm_meters"
+    case .arterialContinuity, .boneSection: suffix = "area"
+    case .glialCapacitance: suffix = "per_area"
+    case .muscleShortening: suffix = "remaining_length"
     default: suffix = "companion"
     }
     return resourcePrefix + "_" + suffix
@@ -132,6 +163,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .ductTransit: return ["male", "epididymis", "vas-deferens", "ejaculatory-ducts"]
     case .oviductCiliaryCycles: return ["female", "uterine-tubes", "cell-ciliated-oviduct-cell"]
     case .kneeMoment: return ["patella", "quadriceps-femoris"]
+    case .arterialContinuity: return ["aorta", "pulmonary-trunk"]
+    case .glialCapacitance: return ["cell-schwann-cell", "cell-oligodendrocyte"]
+    case .colonicWaterBalance: return ["large-intestine", "colon"]
+    case .lymphParticleTransport: return ["lymph-nodes", "thoracic-duct", "cell-lymphatic-endothelial-cell"]
+    case .endocrineDilution: return ["adrenal-glands", "cell-adrenocortical-cell", "cell-chromaffin-cell", "cell-somatotroph", "cell-lactotroph", "cell-corticotroph", "cell-gonadotroph", "pancreatic-islets", "cell-pancreatic-beta-cell", "cell-pancreatic-alpha-cell", "cell-pancreatic-delta-cell", "cell-pancreatic-pp-cell"]
+    case .boneSection: return ["tissue-compact-bone", "clavicle", "hand-bones", "foot-bones"]
+    case .retinalConvergence: return ["cell-retinal-ganglion-cell", "cell-retinal-bipolar-cell"]
+    case .muscleShortening: return ["cell-skeletal-myocyte", "tissue-skeletal-muscle", "pectoralis-major", "deltoid", "triceps-brachii", "rectus-abdominis", "oblique-abdominal-muscles", "trapezius", "latissimus-dorsi", "erector-spinae", "gluteus-maximus", "hamstrings"]
+    case .keratinGrowth: return ["hair", "hair-follicles", "cell-hair-matrix-cell"]
     }
   }
   var sources: [URL] {
@@ -160,6 +200,15 @@ enum GalaxySSIHealthAtlasTeachingModel: String, CaseIterable, Sendable {
     case .ductTransit: values = ["https://www.ncbi.nlm.nih.gov/books/NBK538429/", "https://pubmed.ncbi.nlm.nih.gov/31033221/"]
     case .oviductCiliaryCycles: values = ["https://pubmed.ncbi.nlm.nih.gov/11870107/", "https://www.nature.com/articles/s41467-024-55440-2"]
     case .kneeMoment: values = ["https://pubmed.ncbi.nlm.nih.gov/26520912/"]
+    case .arterialContinuity: values = ["https://openstax.org/books/university-physics-volume-1/pages/14-5-fluid-dynamics", "https://openstax.org/books/anatomy-and-physiology-2e/pages/20-5-circulatory-pathways"]
+    case .glialCapacitance: values = ["https://openstax.org/books/university-physics-volume-2/pages/8-1-capacitors-and-capacitance", "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue"]
+    case .colonicWaterBalance: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/23-7-chemical-digestion-and-absorption-a-closer-look"]
+    case .lymphParticleTransport: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/21-1-anatomy-of-the-lymphatic-and-immune-systems"]
+    case .endocrineDilution: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/17-1-an-overview-of-the-endocrine-system", "https://openstax.org/books/chemistry-2e/pages/3-3-molarity"]
+    case .boneSection: values = ["https://openstax.org/books/university-physics-volume-1/pages/12-3-stress-strain-and-elastic-modulus", "https://openstax.org/books/anatomy-and-physiology-2e/pages/6-3-bone-structure"]
+    case .retinalConvergence: values = ["https://www.webvision.pitt.edu/book/part-viii-psychophysics-of-vision/visual-acuity/", "https://elifesciences.org/articles/05241"]
+    case .muscleShortening: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/10-3-muscle-fiber-contraction-and-relaxation"]
+    case .keratinGrowth: values = ["https://openstax.org/books/anatomy-and-physiology-2e/pages/5-2-accessory-structures-of-the-skin"]
     }
     return values.map { URL(string: $0)! }
   }
