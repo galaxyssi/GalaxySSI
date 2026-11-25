@@ -10,6 +10,7 @@
     <string name="health_activity_current">本期</string>
     <string name="health_activity_previous">上期</string>
     <string name="health_activity_missing">不含尚未结束的今天。缺失日期留空，不计为零；已记录总量可能只覆盖当天部分时间。活动历史持续保留，旧版未保存的日期无法补回。</string>
+    <string name="health_activity_point_value">%1$s · %2$s</string>
     <string name="health_activity_steps_unit">步</string>
     <string name="health_activity_minutes">分钟</string>
     <string name="health_activity_dates_invalid">请选择截至今天或更早的 1–366 个日期。</string>
