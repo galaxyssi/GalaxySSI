@@ -1038,7 +1038,8 @@ private struct GalaxySSIRichBlockView: View {
                 onLoaded: { loadedData in
                   inlineImageSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: loadedData)
                   if loadedData.count <= GalaxySSIImageClipboard.maximumBytes { loadedClipboardImageData = loadedData }
-                }
+                },
+                publicWebImage: block.metadata["markdown_image_source"] == block.uri
               ) {
                 GalaxySSIRichImageFailureView()
               }
@@ -2353,7 +2354,8 @@ private struct GalaxySSIRichBlockView: View {
       data: data,
       url: url,
       title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-      onSave: onSave
+      onSave: onSave,
+      publicWebImage: block.metadata["markdown_image_source"] == block.uri
     )
   }
 

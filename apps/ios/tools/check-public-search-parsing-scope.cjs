@@ -384,6 +384,7 @@ for (const name of ['testPublicSearchParserKeepsCardsAndSnippetsButNotNavigation
   'testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens']) assert(tests.includes('func ' + name + '('));
 const files = git('diff', '--name-only', android + '^1', android).trim().split('\n');
 const disposition = file => {
+  if (file.endsWith('/AgentMarkdownImageStore.kt')) return 'Partial iOS adaptation: encrypted 64-MiB/128-entry URL cache, 12-MiB streamed-body bound, eight shared producers with cancellation leases, manual bounded HTTPS redirects and isolated cookie/credential-free URLSession. DNS preflight is NOT connection pinning; complete address policy, native transport/decoder/cache fault and performance acceptance remain incomplete. Existing Files export retained, not Android MediaStore';
   if (file.endsWith('/AgentPublicWebSearchParser.kt')) return 'Adapted result-card DOM selection, excerpts, source verification detection, direct Baidu card URL and scoped redirect decoding using pinned SwiftSoup; native/network acceptance not run';
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
@@ -406,7 +407,7 @@ const disposition = file => {
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/image evidence with shared secure-preview presentation, real cloud image alias and bounded whole-URL candidate delivery; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/image evidence and bounded model delivery; partial encrypted Markdown image cache/streamed-body/cancellation lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Image DNS preflight is not connection pinning. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

@@ -206,19 +206,22 @@ struct GalaxySSIImageViewerItem: Identifiable {
   let url: URL?
   let title: String
   let onSave: (() -> Void)?
+  let publicWebImage: Bool
 
   init(
     id: String,
     data: Data?,
     url: URL?,
     title: String,
-    onSave: (() -> Void)? = nil
+    onSave: (() -> Void)? = nil,
+    publicWebImage: Bool = false
   ) {
     self.id = id
     self.data = data
     self.url = url
     self.title = title
     self.onSave = onSave
+    self.publicWebImage = publicWebImage
   }
 }
 
@@ -335,7 +338,7 @@ struct GalaxySSIImageLightboxView: View {
     if let data = originalData {
       GalaxySSIAnimatedImageView(data: data, decodeOffMain: true)
     } else if let url = item.url {
-      GalaxySSIAsyncAnimatedImageView(url: url, onLoaded: { loadedData = $0 }, decodeOffMain: true) {
+      GalaxySSIAsyncAnimatedImageView(url: url, onLoaded: { loadedData = $0 }, decodeOffMain: true, publicWebImage: item.publicWebImage) {
         VStack(spacing: 8) {
           Image(systemName: "photo")
             .font(.title2)
@@ -465,7 +468,8 @@ struct GalaxySSIImageThumbnailView: View {
         url: url,
         onLoaded: { data in
           remoteThumbnailSize = GalaxySSIImageResourceDecoder.galleryThumbnailSize(from: data)
-        }
+        },
+        publicWebImage: item.publicWebImage
       ) {
         Image(systemName: "photo")
           .foregroundColor(.galaxySSITextSecondary)
