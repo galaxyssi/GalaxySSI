@@ -4101,6 +4101,77 @@ final class GalaxySSIHealthAtlasTests: XCTestCase {
     }
   }
 
+  func testResearchTopicsUseSemanticCasesAndKeepMicroscopyPhysiology() throws {
+    let atlas = try completeCatalogue()
+    for entry in atlas.entries {
+      let topics = GalaxySSIHealthAtlasState.researchTopics(entry)
+      XCTAssertEqual(topics, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? [.drugs, .aging] : [.physiology, .drugs, .aging], entry.id)
+      XCTAssertEqual(topics.map(\.rawValue), GalaxySSIHealthAtlasState.usesInlineModels(entry) ? ["drugs", "aging"] : ["physiology", "drugs", "aging"])
+    }
+  }
+  func testResearchReturnRestoresFunctionInputsLessonAndPixelOffset() throws {
+    let atlas = try completeCatalogue(), catalogue = try GalaxySSIHealthAtlasFunctionCatalogue.bundled.get()
+    let state = GalaxySSIHealthAtlasState()
+    for id in ["heart", "cardio", "lungs", "nephron", "cell-podocyte", "tissue-skeletal-muscle"] {
+      let entry = try XCTUnwrap(atlas.entry(id)), binding = state.binding(entry)
+      binding.wrappedValue.tab = .function; binding.wrappedValue.modelsExpanded = true
+      binding.wrappedValue.simulation.phase = 0.625; binding.wrappedValue.simulation.speed = 1.5
+      if let kind = GalaxySSIHealthAtlasPhysiology.Kind.forEntry(id) { binding.wrappedValue.physiologyInputs = kind.inputs.map(\.initial) }
+      if let story = catalogue.choices(for: id).first { state.recordFunctionPhase(entryID: id, storyID: story.id, phase: 0.375) }
+      let before = state.functionSnapshot(entry)
+      state.openResearch(entry, returnScroll: 887.5)
+      XCTAssertEqual(binding.wrappedValue.research, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? .drugs : .physiology)
+      XCTAssertEqual(binding.wrappedValue.researchPresented, true)
+      XCTAssertEqual(binding.wrappedValue.researchReturnScroll, 887.5)
+      XCTAssertEqual(binding.wrappedValue.functionSelection, before.functionSelection)
+      binding.wrappedValue.research = .aging
+      binding.wrappedValue.aging = .init(topic: .senescence, step: 2)
+      let restored = GalaxySSIHealthAtlasState(); restored.restore(state.serialized, atlas: atlas)
+      XCTAssertEqual(restored.binding(entry).wrappedValue, binding.wrappedValue)
+      restored.closeResearch(entry)
+      let after = restored.binding(entry).wrappedValue
+      XCTAssertEqual(after.researchPresented, false); XCTAssertEqual(after.researchReturnScroll, 887.5)
+      XCTAssertEqual(after.tab, .function); XCTAssertEqual(after.modelsExpanded, true)
+      XCTAssertEqual(after.simulation, before.simulation); XCTAssertEqual(after.physiologyInputs, before.physiologyInputs)
+      XCTAssertEqual(after.functionSelection, before.functionSelection)
+      XCTAssertEqual(after.aging, .init(topic: .senescence, step: 2))
+      restored.openResearch(entry, returnScroll: 400)
+      XCTAssertEqual(restored.binding(entry).wrappedValue.research, GalaxySSIHealthAtlasState.usesInlineModels(entry) ? .drugs : .physiology)
+      XCTAssertEqual(restored.binding(entry).wrappedValue.aging, after.aging)
+    }
+  }
+  func testOnlyActiveLegacyPhysiologyResearchMigratesIntoInlineFunction() throws {
+    let atlas = try completeCatalogue(), legacy = GalaxySSIHealthAtlasState()
+    for entry in atlas.entries {
+      var selection = legacy.binding(entry).wrappedValue
+      selection.tab = .function; selection.research = .physiology; selection.researchPresented = true
+      selection.researchReturnScroll = 1234.5; selection.simulation.phase = 0.75
+      if let kind = GalaxySSIHealthAtlasPhysiology.Kind.forEntry(entry.id) { selection.physiologyInputs = kind.inputs.map(\.initial) }
+      legacy.entries[entry.id] = selection
+    }
+    let restored = GalaxySSIHealthAtlasState(); restored.restore(legacy.serialized, atlas: atlas)
+    for entry in atlas.entries {
+      let value = restored.binding(entry).wrappedValue, inline = GalaxySSIHealthAtlasState.usesInlineModels(entry)
+      XCTAssertEqual(value.tab, .function)
+      XCTAssertEqual(value.researchPresented, !inline); XCTAssertEqual(value.research, inline ? .drugs : .physiology)
+      XCTAssertEqual(value.modelsExpanded, inline ? true : nil)
+      XCTAssertEqual(value.researchReturnScroll, 1234.5); XCTAssertEqual(value.simulation.phase, 0.75)
+      XCTAssertEqual(value.physiologyInputs, legacy.entries[entry.id]?.physiologyInputs)
+      let preferenceOnly = GalaxySSIHealthAtlasState.migrated(.init(), entry: entry)
+      XCTAssertEqual(preferenceOnly.tab, .structure); XCTAssertNil(preferenceOnly.researchPresented)
+    }
+  }
+  func testResearchScrollMemoryIsBoundedAndCaptureDoesNotTriggerRestoration() {
+    let memory = GalaxySSIHealthAtlasScrollMemory(), initial = memory.revision
+    memory.capture(1024.5); XCTAssertEqual(memory.offset, 1024.5); XCTAssertEqual(memory.revision, initial)
+    memory.restore(887.5); XCTAssertEqual(memory.requestedOffset, 887.5); XCTAssertNotEqual(memory.revision, initial)
+    for invalid in [Double.nan, .infinity, -1] {
+      memory.capture(invalid); memory.restore(invalid)
+      XCTAssertEqual(memory.offset, 0); XCTAssertEqual(memory.requestedOffset, 0)
+    }
+    memory.restore(2_000_000); XCTAssertEqual(memory.requestedOffset, 1_000_000)
+  }
+
   func testOneUseHandoffIsBoundedOwnerBoundAndExpires() throws {
     let handoff = GalaxySSIHealthAtlasAgentHandoff()
     let token = try XCTUnwrap(handoff.prepare(owner: "a", conversation: "c", prompt: "Public teaching", now: 10))

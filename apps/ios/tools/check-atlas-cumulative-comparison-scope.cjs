@@ -36,7 +36,10 @@ for (const name of ["AgentContext", "AgentHandoff"]) {
   assert(current.includes("includeTotals: drugs.showComparisonTotals"));
   assert.equal(current.replaceAll(" includeTotals: drugs.showComparisonTotals,", ""), prior(name), "Only the selected comparison receives visible totals: " + name);
 }
-for (const name of ["State", "Detail", "ChapterClock", "FunctionPlayer"]) assert.equal(source(name), prior(name));
+// #4437 changes research navigation, not the cumulative model or guided clock.
+for (const name of ["ChapterClock", "FunctionPlayer"]) assert.equal(source(name), prior(name));
+const personalValues = s => s.split("struct GalaxySSIHealthAtlasValues:")[1];
+assert.equal(personalValues(source("Detail")), personalValues(prior("Detail")));
 for (const locale of ["en", "zh-Hans"]) {
   const table = new Map([...read("apps/ios/GalaxySSI/" + locale + ".lproj/AtlasCumulativeComparison.strings").matchAll(/^"([^"]+)" = (".*");$/gm)].map(m => [m[1], JSON.parse(m[2])]));
   assert.deepEqual(new Set(table.keys()), new Set(["title", "result", "basis"].map(k => "health_atlas_compare_total_" + k)));

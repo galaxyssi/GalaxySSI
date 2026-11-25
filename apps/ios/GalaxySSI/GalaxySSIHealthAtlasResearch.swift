@@ -8,7 +8,14 @@ struct GalaxySSIHealthAtlasResearch: View {
   let records: GalaxySSIHealthRecords
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.dismiss) private var dismiss
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.binding(entry) }
+  private var topics: [GalaxySSIHealthAtlasState.Research] { GalaxySSIHealthAtlasState.researchTopics(entry) }
+  private var title: String { t(GalaxySSIHealthAtlasState.usesInlineModels(entry) ? "targeted_research" : "research") }
+  private var topic: Binding<GalaxySSIHealthAtlasState.Research> {
+    Binding(get: { topics.contains(selection.wrappedValue.research) ? selection.wrappedValue.research : topics[0] },
+      set: { selection.wrappedValue.research = $0 })
+  }
   private var drugState: Binding<GalaxySSIHealthAtlasDrugState> {
     Binding(get: { GalaxySSIHealthAtlasDrugState.restore(selection.wrappedValue.drugInputs) ?? .init() },
       set: { selection.wrappedValue.drugInputs = $0.encoded })
@@ -16,10 +23,12 @@ struct GalaxySSIHealthAtlasResearch: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
-        Picker(t("research"), selection: selection.research) {
-          ForEach(GalaxySSIHealthAtlasState.Research.allCases, id: \.self) { Text(t($0.rawValue)).tag($0) }
-        }.pickerStyle(.segmented)
-        switch selection.wrappedValue.research {
+        Picker(title, selection: topic) {
+          ForEach(topics, id: \.self) {
+            Text(t($0.rawValue)).tag($0).accessibilityIdentifier("atlas-research-tab-" + $0.rawValue)
+          }
+        }.pickerStyle(.segmented).accessibilityIdentifier("atlas-research-tabs")
+        switch topic.wrappedValue {
         case .physiology:
           GalaxySSIHealthAtlasSimulationPanel(atlas: atlas, entry: entry, model: atlas.model(entry), simulation: selection.simulation,
             physiologyInputs: selection.physiologyInputs, previewPresented: $state.previewPresented,
@@ -35,9 +44,10 @@ struct GalaxySSIHealthAtlasResearch: View {
           aging
         }
         Link(t(atlas.model(entry).reference == nil ? "structure_source" : "reference_pubmed"), destination: atlas.model(entry).source)
+          .frame(minHeight: 44).accessibilityIdentifier(topic.wrappedValue == .physiology ? "atlas-source-physiology" : "atlas-source-research")
       }.padding()
     }
-    .navigationTitle(t("research")).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
+    .navigationTitle(title).navigationBarTitleDisplayMode(.inline).galaxySSIHealthTheme()
     .environmentObject(state.playback)
     .safeAreaInset(edge: .bottom) {
       GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,
@@ -46,6 +56,11 @@ struct GalaxySSIHealthAtlasResearch: View {
           state.previewPresented = $0
         })
         .padding(.horizontal)
+    }
+    .onAppear {
+      if GalaxySSIHealthAtlasState.usesInlineModels(entry), selection.wrappedValue.research == .physiology {
+        state.openNumericalModel(entry); state.closeResearch(entry); dismiss()
+      }
     }
   }
   private var drugs: some View {

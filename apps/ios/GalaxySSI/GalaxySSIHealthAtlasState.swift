@@ -22,6 +22,8 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     var functionSelection: GalaxySSIHealthAtlasFunctionSelection?
     var revealTrend: Bool?
     var modelsExpanded: Bool?
+    var researchPresented: Bool?
+    var researchReturnScroll: Double?
     var selectedStructureLayer: StructureLayer {
       get { StructureLayer(rawValue: structureLayer ?? "") ?? .organ }
       set { structureLayer = newValue.rawValue }
@@ -54,6 +56,24 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     else { next.tab = .simulation }
     entries[entry.id] = next
   }
+  static func researchTopics(_ entry: GalaxySSIHealthAtlas.Entry) -> [Research] {
+    usesInlineModels(entry) ? [.drugs, .aging] : Research.allCases
+  }
+  func openResearch(_ entry: GalaxySSIHealthAtlas.Entry, returnScroll: Double) {
+    playback.pause()
+    var next = functionSnapshot(entry)
+    next.research = Self.usesInlineModels(entry) ? .drugs : .physiology
+    next.researchReturnScroll = Self.safeScroll(returnScroll)
+    next.researchPresented = true
+    entries[entry.id] = next
+  }
+  func closeResearch(_ entry: GalaxySSIHealthAtlas.Entry) {
+    playback.pause()
+    var next = binding(entry).wrappedValue
+    next.researchPresented = false
+    entries[entry.id] = next
+  }
+  static func safeScroll(_ value: Double) -> Double { value.isFinite ? min(1_000_000, max(0, value)) : 0 }
 
   func wholeEntry(in atlas: GalaxySSIHealthAtlas) -> GalaxySSIHealthAtlas.Entry? {
     atlas.entry(wholeFocus) ?? atlas.entry("heart")
@@ -80,6 +100,11 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
   static func migrated(_ selection: Selection, entry: GalaxySSIHealthAtlas.Entry) -> Selection {
     var next = selection
     if usesInlineModels(entry), next.tab == .simulation { next.tab = .function; next.modelsExpanded = true }
+    if let offset = next.researchReturnScroll { next.researchReturnScroll = safeScroll(offset) }
+    if usesInlineModels(entry), next.researchPresented == true, next.research == .physiology {
+      next.tab = .function; next.modelsExpanded = true
+      next.researchPresented = false; next.research = .drugs
+    }
     return next
   }
   func restore(_ text: String, atlas: GalaxySSIHealthAtlas) {
