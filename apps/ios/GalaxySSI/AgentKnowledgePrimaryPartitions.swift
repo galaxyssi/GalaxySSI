@@ -64,6 +64,7 @@ final class AgentKnowledgePrimaryPartitions {
   private let afterRetiredUnlink: () throws -> Void
   private let afterAllocationIntent: (String) throws -> Void
   private let afterAllocationFile: (String) throws -> Void
+  private let afterCopyFrame: (Int) throws -> Void
   private var allocations: AgentKnowledgePrimaryAllocations { AgentKnowledgePrimaryAllocations(root: root) }
   private static let maximumSealedFrame = 192 * 1_024
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -75,7 +76,8 @@ final class AgentKnowledgePrimaryPartitions {
        readerSlots: AgentKnowledgePrimaryReaderSlots = .shared,
        afterAllocationIntent: @escaping (String) throws -> Void = { _ in },
        afterAllocationFile: @escaping (String) throws -> Void = { _ in },
-       readConnections: AgentKnowledgePrimaryReadConnections = .shared) {
+       readConnections: AgentKnowledgePrimaryReadConnections = .shared,
+       afterCopyFrame: @escaping (Int) throws -> Void = { _ in }) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -90,6 +92,7 @@ final class AgentKnowledgePrimaryPartitions {
     self.readConnections = readConnections
     self.afterAllocationIntent = afterAllocationIntent
     self.afterAllocationFile = afterAllocationFile
+    self.afterCopyFrame = afterCopyFrame
   }
 
   deinit {
@@ -137,6 +140,7 @@ final class AgentKnowledgePrimaryPartitions {
       "INSERT OR IGNORE INTO knowledge_primary_migration(id) VALUES(1)"
     ] { try execute(catalog, sql) }
     try AgentKnowledgePrimaryCompaction.setup(catalog)
+    try AgentKnowledgePrimaryCopyStore.setup(catalog)
     let marker = try prepare(catalog, "SELECT sealed FROM knowledge_primary_namespace WHERE id=1")
     defer { AgentKnowledgeSQLiteStatements.shared.release(marker) }
     let state = sqlite3_step(marker)
@@ -308,6 +312,10 @@ final class AgentKnowledgePrimaryPartitions {
     guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
     let partition = try text(lookup, column: 0)
     let encrypted = try blob(lookup, column: 1, maximum: 8 * 1_024)
+    return try decodeReference(itemHash: itemHash, partition: partition, encrypted: encrypted)
+  }
+
+  private func decodeReference(itemHash: String, partition: String, encrypted: Data) throws -> Reference {
     let reference = try JSONDecoder().decode(Reference.self,
       from: cipher.decrypt(encrypted, expectedPurpose: referencePurpose(itemHash)))
     guard reference.version == 1, Self.token(partition), partition == reference.partition, Self.token(reference.entry),
@@ -515,23 +523,30 @@ final class AgentKnowledgePrimaryPartitions {
       }
       writers.removeAll(); writeBatch = nil
     }
-    let moved = try AgentKnowledgePrimaryCompaction.advance(catalog, checkActive: checkActive) { key, source in
+    let moved = try AgentKnowledgePrimaryCompaction.advance(catalog, checkActive: checkActive,
+      resumeCopy: { try resumeCopy(catalog: catalog, batch: batch, checkActive: checkActive) }) { key, source in
       try relocate(itemHash: key, source: source, catalog: catalog, batch: batch, checkActive: checkActive)
     }
-    for bucket in writers.keys.sorted() { try flushWriter(bucket: bucket, checkActive: checkActive) }
+    for bucket in writers.keys.sorted() { try flushWriter(bucket: bucket, checkActive: { try Self.finishCheckpoint(checkActive) }) }
     if batch.hasWrites { try syncRoot(); try beforeCatalogPublication() }
     try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
-    try checkActive()
-    try Task.checkCancellation()
+    try Self.finishCheckpoint(checkActive)
     try execute(catalog, "COMMIT")
     committed = true
     return moved
   }
 
   private func relocate(itemHash: String, source: String, catalog: OpaquePointer, batch: WriteBatch,
-                        checkActive: () throws -> Void) throws {
+                        checkActive: () throws -> Void) throws -> Bool {
     guard let old = try reference(itemHash: itemHash, catalog: catalog), old.partition == source,
           let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    if old.frames > AgentKnowledgePrimaryCopyState.framePage {
+      try beginCopy(itemHash: itemHash, old: old, catalog: catalog, batch: batch)
+      return false
+    }
+    guard let original = try AgentKnowledgePrimaryCopyStore.original(catalog, key: itemHash, source: source) else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
     let bucket = prefix & 3
     let destination = try partition(catalog: catalog, bucket: bucket, checkActive: checkActive)
     guard destination != source else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -550,8 +565,8 @@ final class AgentKnowledgePrimaryPartitions {
     try readConnections.read(root: root, file: root.appendingPathComponent(source + ".sqlite"),
       directoryDescriptor: directoryDescriptor, checkActive: checkActive,
       open: { try open(source, create: false, readOnly: true) }) { reader in
-      try walkFrames(reader, reference: old, itemHash: itemHash, partition: source, checkActive: checkActive) { encoded, _, ordinal in
-        try checkActive()
+      try walkFrames(reader, reference: old, itemHash: itemHash, partition: source,
+        checkActive: { try Self.finishCheckpoint(checkActive) }) { encoded, _, ordinal in
         let sealed = try cipher.encrypt(encoded, purpose: framePurpose(itemHash, partition: destination, entry: entry, ordinal: ordinal))
         guard sealed.count <= Self.maximumSealedFrame, storedBytes <= Int64.max - Int64(sealed.count) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
@@ -566,21 +581,155 @@ final class AgentKnowledgePrimaryPartitions {
         storedBytes += Int64(sealed.count)
       }
     }
-    try Task.checkCancellation(); try checkActive()
+    try Self.finishCheckpoint(checkActive)
     let next = Reference(version: old.version, partition: destination, entry: entry, frames: old.frames,
       plainBytes: old.plainBytes, sha256: old.sha256)
     let sealed = try cipher.encrypt(JSONEncoder().encode(next), purpose: referencePurpose(itemHash))
     guard sealed.count <= 8 * 1_024 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    let update = try prepare(catalog, "UPDATE knowledge_primary_refs SET partition_id=?,sealed_ref=? WHERE item_hash=? AND partition_id=?")
+    let update = try prepare(catalog, "UPDATE knowledge_primary_refs SET partition_id=?,sealed_ref=? WHERE item_hash=? AND partition_id=? AND sealed_ref=?")
     defer { AgentKnowledgeSQLiteStatements.shared.release(update) }
     try bind(destination, index: 1, statement: update); try bind(sealed, index: 2, statement: update)
     try bind(itemHash, index: 3, statement: update); try bind(source, index: 4, statement: update)
+    try bind(original, index: 5, statement: update)
     guard sqlite3_step(update) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let stats = try prepare(catalog, "UPDATE knowledge_primary_partitions SET bytes=bytes+?,records=records+1 WHERE partition_id=? AND bytes<=? AND records<?")
     defer { AgentKnowledgeSQLiteStatements.shared.release(stats) }
     sqlite3_bind_int64(stats, 1, storedBytes); try bind(destination, index: 2, statement: stats)
     sqlite3_bind_int64(stats, 3, Int64.max - storedBytes); sqlite3_bind_int64(stats, 4, Int64.max)
     guard sqlite3_step(stats) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return true
+  }
+
+  // Only a cooperative time budget is deferrable while finishing a valid checkpoint.
+  private static func finishCheckpoint(_ checkActive: () throws -> Void) throws {
+    try Task.checkCancellation()
+    do { try checkActive() } catch is AgentKnowledgeStorageYield { }
+  }
+
+  private func beginCopy(itemHash: String, old: Reference, catalog: OpaquePointer, batch: WriteBatch) throws {
+    guard let original = try AgentKnowledgePrimaryCopyStore.original(catalog, key: itemHash, source: old.partition),
+          let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let destination = UUID().uuidString.lowercased()
+    try allocations.remember(destination, syncParent: syncRoot)
+    try afterAllocationIntent(destination)
+    let database = try open(destination, create: true, readOnly: false)
+    AgentKnowledgeSQLiteStatements.shared.close(database)
+    try syncRoot(); try afterAllocationFile(destination)
+    let insert = try prepare(catalog, "INSERT INTO knowledge_primary_partitions(partition_id,bucket,bytes,records,sealed) VALUES(?,?,0,1,1)")
+    defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
+    try bind(destination, index: 1, statement: insert); sqlite3_bind_int(insert, 2, Int32(prefix & 3))
+    guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+    let state = AgentKnowledgePrimaryCopyState()
+    try state.validate(old)
+    var job = AgentKnowledgePrimaryCopyStore.Job(key: itemHash, source: old.partition, destination: destination,
+      original: original, checkpoint: Data())
+    job.checkpoint = try sealCopy(state, job: job)
+    try AgentKnowledgePrimaryCopyStore.insert(catalog, job)
+    batch.hasWrites = true
+  }
+
+  private func copyPurpose(_ job: AgentKnowledgePrimaryCopyStore.Job) throws -> String {
+    try referencePurpose(job.key) + ":copy:v1:\(job.source):\(job.destination):\(Self.sha256(job.original))"
+  }
+  private func sealCopy(_ state: AgentKnowledgePrimaryCopyState, job: AgentKnowledgePrimaryCopyStore.Job) throws -> Data {
+    let encoded = try JSONEncoder().encode(state)
+    guard encoded.count <= 4_096 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let sealed = try cipher.encrypt(encoded, purpose: copyPurpose(job))
+    guard sealed.count <= 8_192 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return sealed
+  }
+
+  private func resumeCopy(catalog: OpaquePointer, batch: WriteBatch, checkActive: () throws -> Void) throws -> Int {
+    guard let job = try AgentKnowledgePrimaryCopyStore.load(catalog) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let old = try decodeReference(itemHash: job.key, partition: job.source, encrypted: job.original)
+    let encoded = try cipher.decrypt(job.checkpoint, expectedPurpose: copyPurpose(job))
+    guard encoded.count <= 4_096 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    var state = try JSONDecoder().decode(AgentKnowledgePrimaryCopyState.self, from: encoded)
+    try state.validate(old)
+    try AgentKnowledgePrimaryCopyStore.validateOwnership(catalog, job, bytes: state.storedBytes)
+    _ = try reference(itemHash: job.key, catalog: catalog)
+    if try AgentKnowledgePrimaryCopyStore.original(catalog, key: job.key, source: job.source) != job.original {
+      try AgentKnowledgePrimaryCopyStore.remove(catalog, job)
+      try AgentKnowledgePrimaryCompaction.retire(catalog, job.destination)
+      return 0
+    }
+    let target = Reference(version: old.version, partition: job.destination, entry: state.entry, frames: old.frames,
+      plainBytes: old.plainBytes, sha256: old.sha256)
+    if state.copied < old.frames {
+      guard let prefix = Int(job.key.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      let database = try writer(id: job.destination, bucket: prefix & 3)
+      try execute(database, "BEGIN IMMEDIATE TRANSACTION")
+      batch.pending.insert(job.destination); batch.hasWrites = true
+      let trim = try prepare(database, "DELETE FROM frames WHERE entry_id=? AND ordinal>=?")
+      defer { AgentKnowledgeSQLiteStatements.shared.release(trim) }
+      try bind(state.entry, index: 1, statement: trim); sqlite3_bind_int64(trim, 2, Int64(state.copied))
+      guard sqlite3_step(trim) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      let insert = try prepare(database, "INSERT INTO frames(entry_id,ordinal,sealed) VALUES(?,?,?)")
+      defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
+      let page = try copyFramePage(key: job.key, reference: old, start: state.copied, checkActive: checkActive) { compressed, ordinal in
+        let sealed = try cipher.encrypt(compressed, purpose: framePurpose(job.key, partition: job.destination, entry: state.entry, ordinal: ordinal))
+        guard sealed.count <= Self.maximumSealedFrame, state.storedBytes <= Int64.max - Int64(sealed.count),
+              sqlite3_reset(insert) == SQLITE_OK, sqlite3_clear_bindings(insert) == SQLITE_OK else {
+          AgentKnowledgeSQLiteStatements.shared.markFailed(insert); throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        try bind(state.entry, index: 1, statement: insert); sqlite3_bind_int64(insert, 2, Int64(ordinal))
+        try bind(sealed, index: 3, statement: insert)
+        guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+        state.storedBytes += Int64(sealed.count)
+        state.copiedHash = try AgentKnowledgePrimaryCopyState.chain(state.copiedHash, ordinal: ordinal, encoded: compressed)
+        try afterCopyFrame(ordinal)
+      }
+      state.copied += page.frames; state.copiedPlainBytes += page.bytes
+    } else if state.verified < old.frames {
+      let page = try copyFramePage(key: job.key, reference: target, start: state.verified, checkActive: checkActive) { compressed, ordinal in
+        state.verifiedHash = try AgentKnowledgePrimaryCopyState.chain(state.verifiedHash, ordinal: ordinal, encoded: compressed)
+      }
+      state.verified += page.frames; state.verifiedPlainBytes += page.bytes
+    }
+    try state.validate(old)
+    if state.verified == old.frames {
+      guard state.copiedHash == state.verifiedHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      let reference = try cipher.encrypt(JSONEncoder().encode(target), purpose: referencePurpose(job.key))
+      guard reference.count <= 8_192 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      try AgentKnowledgePrimaryCopyStore.publish(catalog, job, reference: reference)
+      try AgentKnowledgePrimaryCopyStore.remove(catalog, job)
+      return 1
+    }
+    try AgentKnowledgePrimaryCopyStore.checkpoint(catalog, job, sealed: sealCopy(state, job: job), bytes: state.storedBytes)
+    return 0
+  }
+
+  private func copyFramePage(key: String, reference: Reference, start: Int, checkActive: () throws -> Void,
+                             consume: (Data, Int) throws -> Void) throws -> (frames: Int, bytes: Int64) {
+    guard (0..<reference.frames).contains(start) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let slot = try readerSlots.acquire(checkActive: checkActive)
+    defer { slot.end() }
+    return try readConnections.read(root: root, file: root.appendingPathComponent(reference.partition + ".sqlite"),
+      directoryDescriptor: directoryDescriptor, checkActive: checkActive,
+      open: { try open(reference.partition, create: false, readOnly: true) }) { database in
+      let frames = try prepare(database, "SELECT ordinal,substr(sealed,1,196609) FROM frames WHERE entry_id=? AND ordinal>=? ORDER BY ordinal LIMIT 17")
+      defer { AgentKnowledgeSQLiteStatements.shared.release(frames) }
+      try bind(reference.entry, index: 1, statement: frames); sqlite3_bind_int64(frames, 2, Int64(start))
+      var count = 0, bytes: Int64 = 0
+      while count < AgentKnowledgePrimaryCopyState.framePage && start + count < reference.frames {
+        try Task.checkCancellation()
+        do { try checkActive() } catch let yield as AgentKnowledgeStorageYield { if count == 0 { throw yield }; break }
+        let ordinal = start + count
+        guard sqlite3_step(frames) == SQLITE_ROW, sqlite3_column_int64(frames, 0) == Int64(ordinal) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let encoded = try cipher.decrypt(blob(frames, column: 1, maximum: Self.maximumSealedFrame),
+          expectedPurpose: framePurpose(key, partition: reference.partition, entry: reference.entry, ordinal: ordinal))
+        let plain = try AgentKnowledgePrimaryFrameCodec.decode(encoded)
+        let expected = min(Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes),
+          reference.plainBytes - Int64(ordinal) * Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes))
+        guard Int64(plain.count) == expected else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        try consume(encoded, ordinal)
+        bytes += Int64(plain.count); count += 1
+      }
+      if start + count == reference.frames, sqlite3_step(frames) != SQLITE_DONE { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return (count, bytes)
+    }
   }
 
   private func reclaimExclusively(catalog: OpaquePointer, pageSize: Int, checkActive: () throws -> Void) throws -> ReclaimPage {
@@ -605,6 +754,7 @@ final class AgentKnowledgePrimaryPartitions {
       try bind(id, index: 1, statement: live)
       let state = sqlite3_step(live)
       guard state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      guard try !AgentKnowledgePrimaryCopyStore.references(catalog, id) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       try beforeRetiredUnlink()
       try checkActive()
       try unlinkRetired(id)
@@ -654,6 +804,7 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   private func allocationReferenced(_ id: String, catalog: OpaquePointer, includeRetired: Bool) throws -> Bool {
+    if try AgentKnowledgePrimaryCopyStore.references(catalog, id) { return true }
     let retired = includeRetired ? "UNION ALL SELECT 1 FROM knowledge_primary_retired WHERE partition_id=?" : ""
     let statement = try prepare(catalog, """
       SELECT 1 FROM knowledge_primary_partitions WHERE partition_id=? UNION ALL
