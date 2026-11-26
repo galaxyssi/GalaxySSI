@@ -1,6 +1,6 @@
 # Knowledge-gap Research Source Follow-up
 
-Baseline: main ca36efb28c5e2e72c620e20c4e88ccfe30e1549a after #4567. Independent iOS increment; no duplicate autonomous #4568 implementation or Android/Desktop changes.
+Baseline: main 2362b3ffe6a3114feb55e699c0054b794ebe9fac after #4568 merged during the policy-isolation correction. Independent iOS increment; no duplicate autonomous implementation or Android/Desktop changes. Compose both autonomous and gap checker hooks after resolving their shared reader conflict.
 
 ## Implemented
 
