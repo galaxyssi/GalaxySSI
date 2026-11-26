@@ -2,6 +2,103 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSDynamicWebRendererTests: XCTestCase {
+  func testSpecialUseAddressRangesMatchAndroidIncludingWholeSubnetEdges() {
+    for prefix in ["192.0.0", "192.0.2", "192.88.99", "198.51.100", "203.0.113"] {
+      for suffix in [0, 1, 127, 254, 255] {
+        let host = "\(prefix).\(suffix)"
+        XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+        XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host + "."), host)
+      }
+    }
+    for host in ["2001:db8::", "2001:db8::1", "2001:db8:ffff:ffff:ffff:ffff:ffff:ffff",
+                 "2001:0DB8:0000:0000:0000:0000:0000:0001"] {
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost("[\(host)]"), host)
+    }
+  }
+
+  func testSpecialUseAddressRulesPreserveAdjacentPublicRanges() {
+    for host in ["191.255.255.255", "192.0.1.255", "192.0.3.0", "192.88.98.255", "192.88.100.0",
+                 "198.51.99.255", "198.51.101.0", "203.0.112.255", "203.0.114.0",
+                 "2001:db7:ffff::1", "2001:db9::1", "2001:4860:4860::8888"] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+    for host in ["192.0.2.example.com", "documentation.example", "db8.example.com"] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+  }
+
+  func testSpecialUseIPv4CannotBypassClassificationThroughMappedOrNAT64Forms() {
+    for host in ["::ffff:192.0.0.1", "::ffff:192.0.2.1", "::ffff:c058:6301", "::ffff:c633:6401",
+                 "::ffff:cb00:7101", "64:ff9b::c000:1", "64:ff9b::c000:201", "64:ff9b::c058:6301",
+                 "64:ff9b::c633:6401", "64:ff9b::cb00:7101"] {
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+    for host in ["::ffff:8.8.8.8", "64:ff9b::808:808"] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+  }
+
+  func testSpecialUseAddressesAreRejectedByRendererSubresourceAndImagePolicies() throws {
+    for host in ["192.0.0.1", "192.0.2.1", "192.88.99.1", "198.51.100.1", "203.0.113.1",
+                 "[2001:db8::1]", "[::ffff:192.0.2.1]", "[64:ff9b::cb00:7101]"] {
+      let url = "https://\(host)/image.png"
+      XCTAssertFalse(AgentIOSWebRenderURLPolicy.allows(url), url)
+      XCTAssertFalse(AgentIOSWebRenderURLPolicy.allowsSubresource(url), url)
+      XCTAssertFalse(AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(url), url)
+      XCTAssertThrowsError(try AgentMarkdownImageStore.publicURL(XCTUnwrap(URL(string: url))), url)
+    }
+  }
+
+  func testSpecialUseLiteralRequestsNeverReachInjectedTransportOrRenderer() throws {
+    var calls = 0
+    let transport = StubTransport { request in
+      calls += 1
+      return self.response(url: request.url, body: self.html("Unexpected transport"))
+    }
+    let renderer = StubRenderer(result: .success(rendered("Unexpected renderer")))
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, dynamicRenderer: renderer,
+      sourceHealthStore: nil, nowMillis: { 1_000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
+      grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent])
+    for tool in [AgentIOSWebMediaNativeToolCatalog.webFetch, AgentIOSWebMediaNativeToolCatalog.webOpen] {
+      for host in ["192.0.0.1", "192.0.2.1", "192.88.99.1", "198.51.100.1", "203.0.113.1", "[2001:db8::1]"] {
+        let result = registry.invoke(tool, input: ["url": .string("https://\(host)/page")], context: context,
+          hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 }))
+        XCTAssertFalse(result.isSuccess, host)
+        XCTAssertEqual(result.error?.code, "local_host_blocked", host)
+      }
+    }
+    XCTAssertEqual(calls, 0)
+    XCTAssertEqual(renderer.calls, 0)
+  }
+
+  func testSpecialUseRedirectStopsBeforeSecondTransportRequest() throws {
+    for host in ["192.0.2.1", "192.88.99.1", "198.51.100.1", "203.0.113.1", "[2001:db8::1]"] {
+      var calls = 0
+      let transport = StubTransport { request in
+        calls += 1
+        return AgentIOSURLSessionWebResponse(statusCode: 302, finalURL: request.url,
+          headers: ["location": "https://\(host)/private"], body: Data(), retrievedAtEpochMillis: 1_000)
+      }
+      let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil, nowMillis: { 1_000 })
+      let registry = try AgentNativeToolRegistry().registerExecutables(
+        AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider))
+      let result = registry.invoke(AgentIOSWebMediaNativeToolCatalog.webFetch,
+        input: ["url": .string("https://example.com/start")],
+        context: AgentNativeToolInvocationContext(
+          grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
+          grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent]),
+        hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 }))
+      XCTAssertFalse(result.isSuccess, host)
+      XCTAssertEqual(result.error?.code, "local_host_blocked", host)
+      XCTAssertEqual(calls, 1, host)
+    }
+  }
+
   func testPublicAddressClassificationRejectsEquivalentAndScopedIPv6Forms() throws {
     for host in ["::", "::1", "0:0:0:0:0:0:0:1", "fe80::1", "fe90::1", "febf::1", "fec0::1", "feff::1",
       "fc00::1", "fdab::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "0:0:0:0:0:ffff:a00:1",

@@ -31,12 +31,16 @@ enum AgentIOSPublicAddressPolicy {
   }
 
   private static func blocksIPv4(_ bytes: [UInt8]) -> Bool {
-    let first = bytes[0], second = bytes[1]
+    let first = bytes[0], second = bytes[1], third = bytes[2]
     if first == 0 || first == 10 || first == 127 || first >= 224 { return true }
     if first == 100 && (64...127).contains(second) { return true }
     if first == 169 && second == 254 { return true }
     if first == 172 && (16...31).contains(second) { return true }
     if first == 192 && second == 168 { return true }
+    if first == 192 && second == 0 && (third == 0 || third == 2) { return true }
+    if first == 192 && second == 88 && third == 99 { return true }
+    if first == 198 && second == 51 && third == 100 { return true }
+    if first == 203 && second == 0 && third == 113 { return true }
     return first == 198 && (18...19).contains(second)
   }
 
@@ -44,6 +48,7 @@ enum AgentIOSPublicAddressPolicy {
     if bytes[0] == 0xff || bytes[0] & 0xfe == 0xfc { return true }
     // fe80::/10 link-local and deprecated fec0::/10 site-local, not just fe80:.
     if bytes[0] == 0xfe && (bytes[1] & 0xc0 == 0x80 || bytes[1] & 0xc0 == 0xc0) { return true }
+    if bytes[0] == 0x20 && bytes[1] == 0x01 && bytes[2] == 0x0d && bytes[3] == 0xb8 { return true }
     if bytes.prefix(10).allSatisfy({ $0 == 0 }), bytes[10] == 0xff, bytes[11] == 0xff {
       return blocksIPv4(Array(bytes.suffix(4)))
     }
