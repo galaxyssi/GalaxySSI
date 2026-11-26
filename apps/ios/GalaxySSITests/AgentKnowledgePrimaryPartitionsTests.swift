@@ -69,7 +69,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       var raw: OpaquePointer?
       guard sqlite3_open(url.path, &raw) == SQLITE_OK, let raw else { throw AgentKnowledgeDatabaseError.unavailable }
       catalog = raw
-      try sql("PRAGMA journal_mode=WAL")
+      try AgentKnowledgePrimaryDurability.configure(catalog, role: .catalog)
       try sql("CREATE TABLE knowledge_items(item_hash TEXT PRIMARY KEY,encrypted_payload BLOB NOT NULL)")
       try sql("CREATE TABLE knowledge_external_payloads(item_hash TEXT PRIMARY KEY,file_name TEXT NOT NULL UNIQUE,plaintext_bytes INTEGER NOT NULL,plaintext_sha256 TEXT NOT NULL)")
       store = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: secrets, partitionBytes: bytes, partitionRecords: records,
@@ -641,6 +641,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     let catalog = try XCTUnwrap(raw)
     defer { sqlite3_close_v2(catalog) }
     let moved = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: f.secrets)
+    try AgentKnowledgePrimaryDurability.configure(catalog, role: .catalog)
     try moved.setup(catalog: catalog)
     XCTAssertEqual(try moved.read(itemHash: f.key, catalog: catalog), data)
   }

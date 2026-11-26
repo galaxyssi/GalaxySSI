@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-knowledge-primary-durability-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -14,6 +14,7 @@ const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPa
   'AgentKnowledgePrimaryReaderSlots.swift', 'AgentKnowledgePrimaryReaderSlotsTests.swift'];
 const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n';
 function retained(file, source) {
+  source = require('./check-knowledge-primary-durability-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line => !names.some(name => line.includes(name))).join('\n')
     .split(' com.galaxyssi.chat.ios.knowledge-storage').join('');
   if (file.endsWith('GalaxySSIViews.swift')) return source
