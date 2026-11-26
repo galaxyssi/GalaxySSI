@@ -127,7 +127,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",
       "sha256": "f3f178578b0f7a3f5497de82de0067e6502d77f06366ac9d531f5422a7313173",
-      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration"
+      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Successful creation now measures monotonic preparation and actual atomic write separately, excluding post-commit notification. Failed writes, conflicts, updates and other mutations do not emit creation success. Typed private hashed correlation only. Five added fixture methods are source only. Native fault/concurrency/logging acceptance and indexed-storage/performance parity not verified; no encryption migration"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",

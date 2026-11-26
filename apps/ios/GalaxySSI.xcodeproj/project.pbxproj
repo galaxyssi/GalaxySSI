@@ -914,6 +914,7 @@
     C3007B400000000000000001 /* AgentIOSWebSourceHealthDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B400000000000000002 /* AgentIOSWebSourceHealthDatabase.swift */; };
     C3007B400000000000000003 /* AgentIOSWebSourceHealthDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B400000000000000004 /* AgentIOSWebSourceHealthDatabaseTests.swift */; };
     C3007B500000000000000001 /* AgentIOSWebCacheIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B500000000000000002 /* AgentIOSWebCacheIndex.swift */; };
+    C3007B600000000000000001 /* AgentWorkspaceCreationTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B600000000000000002 /* AgentWorkspaceCreationTiming.swift */; };
     C3007B500000000000000003 /* AgentIOSWebCacheIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B500000000000000004 /* AgentIOSWebCacheIndexTests.swift */; };
     C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */; };
     C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */; };
@@ -4222,6 +4223,7 @@
     C3007B400000000000000002 /* AgentIOSWebSourceHealthDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealthDatabase.swift; sourceTree = "<group>"; };
     C3007B400000000000000004 /* AgentIOSWebSourceHealthDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealthDatabaseTests.swift; sourceTree = "<group>"; };
     C3007B500000000000000002 /* AgentIOSWebCacheIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCacheIndex.swift; sourceTree = "<group>"; };
+    C3007B600000000000000002 /* AgentWorkspaceCreationTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCreationTiming.swift; sourceTree = "<group>"; };
     C3007B500000000000000004 /* AgentIOSWebCacheIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCacheIndexTests.swift; sourceTree = "<group>"; };
     C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExecutionBudget.swift; sourceTree = "<group>"; };
     C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceLearning.swift; sourceTree = "<group>"; };
@@ -5359,6 +5361,7 @@
         C3007B300000000000000002 /* CloudModelRoundTiming.swift */,
         C3007B400000000000000002 /* AgentIOSWebSourceHealthDatabase.swift */,
         C3007B500000000000000002 /* AgentIOSWebCacheIndex.swift */,
+        C3007B600000000000000002 /* AgentWorkspaceCreationTiming.swift */,
         C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */,
         C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
         C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */,
@@ -8117,6 +8120,7 @@
         C3007B300000000000000001 /* CloudModelRoundTiming.swift in Sources */,
         C3007B400000000000000001 /* AgentIOSWebSourceHealthDatabase.swift in Sources */,
         C3007B500000000000000001 /* AgentIOSWebCacheIndex.swift in Sources */,
+        C3007B600000000000000001 /* AgentWorkspaceCreationTiming.swift in Sources */,
         C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */,
         C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
         C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */,

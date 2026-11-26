@@ -3,6 +3,95 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentWorkspacePersistentStoreTests: XCTestCase {
+  func testWorkspaceCreationTimingSeparatesPreparationWriteAndNotification() throws {
+    let fileURL = try temporaryFileURL()
+    defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+    var ticks: Int64 = 0
+    var samples: [AgentWorkspaceCreationTiming.Sample] = []
+    let store = FileAgentWorkspaceStore(fileURL: fileURL, clock: { 2_000 }, readFile: { url in
+      ticks += 11
+      return try Data(contentsOf: url)
+    }, writeFile: { data, url in
+      ticks += 7
+      try data.write(to: url, options: .atomic)
+    }, timingClock: { ticks }, timingSink: { samples.append($0) })
+    let observer = NotificationCenter.default.addObserver(forName: .galaxySSIWorkspaceDidPersist, object: nil, queue: nil) {
+      if ($0.object as? FileAgentWorkspaceStore) === store { ticks += 1_000 }
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+    let saved = try store.upsert(workspace("timed", status: .running))
+    let sample = try XCTUnwrap(samples.first)
+    XCTAssertEqual(samples.count, 1)
+    XCTAssertEqual(sample.preparationMillis, 11)
+    XCTAssertEqual(sample.commitMillis, 7)
+    XCTAssertEqual(sample.taskHash, AgentWorkspaceCreationTiming.sample(taskId: saved.taskId,
+      started: 0, commitStarted: 11, committed: 18).taskHash)
+    XCTAssertEqual(FileAgentWorkspaceStore(fileURL: fileURL).find(saved.workspaceId), saved)
+  }
+
+  func testWorkspaceCreationTimingDoesNotMislabelUpdatesOrOtherMutations() throws {
+    let fileURL = try temporaryFileURL()
+    defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+    var samples: [AgentWorkspaceCreationTiming.Sample] = []
+    let store = FileAgentWorkspaceStore(fileURL: fileURL, clock: { 2_000 }, timingClock: { 0 },
+      timingSink: { samples.append($0) })
+    var saved = try store.upsert(workspace("timed", status: .running))
+    saved = try store.upsert(saved)
+    saved = try XCTUnwrap(store.appendEvent(workspaceId: saved.workspaceId,
+      event: .init(kind: AgentTaskEventKinds.progress, message: "progress"), expectedRevision: saved.revision))
+    saved = try XCTUnwrap(store.checkpoint(workspaceId: saved.workspaceId, checkpointId: "checkpoint",
+      expectedRevision: saved.revision))
+    saved = try XCTUnwrap(store.requestCancel(saved.workspaceId, expectedRevision: saved.revision, timestampMillis: 3_000))
+    XCTAssertThrowsError(try store.upsert(saved, expectedRevision: 0))
+    XCTAssertTrue(try store.delete(saved.workspaceId, expectedRevision: saved.revision))
+    store.clear()
+    XCTAssertEqual(samples.count, 1)
+  }
+
+  func testWorkspaceCreationTimingDoesNotPublishFailedCommits() throws {
+    let fileURL = try temporaryFileURL()
+    defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+    var reject = true
+    var samples: [AgentWorkspaceCreationTiming.Sample] = []
+    let store = FileAgentWorkspaceStore(fileURL: fileURL, writeFile: { data, url in
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      try data.write(to: url, options: .atomic)
+    }, timingClock: { 0 }, timingSink: { samples.append($0) })
+    XCTAssertThrowsError(try store.upsert(workspace("timed")))
+    XCTAssertTrue(samples.isEmpty)
+    XCTAssertNil(store.find("workspace-timed"))
+    reject = false
+    _ = try store.upsert(workspace("timed"))
+    XCTAssertEqual(samples.count, 1)
+  }
+
+  func testWorkspaceCreationTimingKeepsLegacyRevisionZeroAsAnUpdate() throws {
+    let fileURL = try temporaryFileURL()
+    defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+    let legacy = workspace("legacy")
+    try Data(AgentWorkspaceJsonCodec.encodeList([legacy]).utf8).write(to: fileURL, options: .atomic)
+    var samples: [AgentWorkspaceCreationTiming.Sample] = []
+    let store = FileAgentWorkspaceStore(fileURL: fileURL, timingClock: { 0 }, timingSink: { samples.append($0) })
+    var padded = legacy
+    padded.workspaceId = "  " + legacy.workspaceId + "  "
+    XCTAssertEqual(try store.upsert(padded).revision, 1)
+    XCTAssertTrue(samples.isEmpty)
+  }
+
+  func testWorkspaceCreationTimingBoundsAndPrivateCorrelation() {
+    let sample = AgentWorkspaceCreationTiming.sample(taskId: "private task / goal", started: Int64.min,
+      commitStarted: Int64.max, committed: Int64.min)
+    XCTAssertEqual(sample.preparationMillis, Int64.max)
+    XCTAssertEqual(sample.commitMillis, 0)
+    XCTAssertEqual(sample.taskHash.count, 24)
+    XCTAssertNotNil(sample.taskHash.range(of: #"^[a-f0-9]{24}$"#, options: .regularExpression))
+    XCTAssertFalse(String(describing: sample).contains("private task"))
+    XCTAssertNotEqual(sample.taskHash, AgentWorkspaceCreationTiming.sample(taskId: "different", started: 0,
+      commitStarted: 0, committed: 0).taskHash)
+    XCTAssertEqual(AgentWorkspaceCreationTiming.sample(taskId: "", started: 50,
+      commitStarted: 20, committed: 20).preparationMillis, 0)
+  }
+
   func testFailedWorkspaceCommitPreservesRecordsRecoveryAndNotifications() throws {
     let fileURL = try temporaryFileURL()
     defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
