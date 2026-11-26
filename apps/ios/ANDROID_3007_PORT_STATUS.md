@@ -165,7 +165,44 @@ not executed. check-public-address-policy-scope.cjs checks the narrow delegation
 earlier scope guards normalize only these explicit hooks before retaining their
 original comparisons. No HTTP/TLS/header/credential/redirect policy is relaxed.
 
+## Provider Round Diagnostics
+
+The pinned CloudModelStreaming.kt adds four local diagnostic spans: request
+preparation/input UTF-16 characters, first text/tool delta, provider-round finish,
+and citation-repair validation. These now run on the actual iOS common SSE and
+compatible JSON loop. The current configured deadlines, final synthesis behavior,
+tool admission and per-completion observation/recovery callbacks remain unchanged;
+historical fixed Android time budgets are not restored over newer user settings.
+
+Use a separate injectable DispatchTime monotonic clock, not the engine's existing
+wall-clock event timestamp callback. A request's first activity and terminal
+outcome are recorded once per round; connection/usage events and duplicate deltas
+cannot invent another first activity. Distinguish completed, failed, interrupted
+and cancelled provider outcomes. Citation-repair validation measures its own
+call after the provider span, not model time. Clamp reversed injected clocks and
+saturate subtraction overflow. Compatibility retries keep their own route/round.
+
+The default sink is local OSLog web-latency. Its typed samples contain only stage,
+route, round, final-round flag, nonnegative elapsed/count fields, closed activity/
+outcome enums, repair presence and a private, hashed request correlation value.
+No prompt, answer, tool arguments/output, endpoint, header or key is recorded;
+there is no new persistent diagnostic store or network export. This is provider
+activity, not first visible UI text, executed tools, citation acceptance or an
+end-to-end latency measurement. Preparation failures before a request exists and
+the injected legacy sender are not mislabeled as an executed provider span.
+
+Eight additional fixture methods are source only, not executed: four recorder
+contracts plus four actual engine-path fixtures for ordinary streaming,
+unsupported-stream/JSON fallback, failed/interrupted rounds, and tool activity
+followed by citation validation. check-model-round-timing-scope.cjs restores only
+the declared passive hooks before comparing the entire engine with its prior
+head, preserving all existing data disclosure, collaboration, citation, deadline,
+preview, recovery, tools and reply behavior outside those hooks.
+
 ## Remaining Work
+
+The following incremental subsections retain their historical scope at the time
+of each change. The current remaining scope is summarized after those records.
 
 ### Complete Indexed Catalog Follow-up
 
@@ -251,7 +288,7 @@ original comparisons. No HTTP/TLS/header/credential/redirect policy is relaxed.
 - A ninth source scope guard checks the pinned Android selection/fusion branches and declared new source hooks, with prior guards restoring only those hooks before their own comparisons. Source/project/grammar checks do not prove native typechecking, API/markup availability, image retrieval/visual relevance, cancellation races or UI/device acceptance.
 - Remaining: indexed storage/workspace performance and larger storage/evidence limits, other media behaviors, transcript/context paths, model-loop spans/UI timing, connection-IP pinning/ranges and native/live/fault/performance acceptance. No native build/XCTest, CI watching, IPA, version or Android/Desktop edits. This does not complete #3007 or the full backlog.
 
-The full Android PR also changes source-health/workspace indexed-storage performance, transcript/context paths, model tool-loop spans and UI timing. Those remain explicitly incomplete, as do real media, learning/routing/workspace fault/concurrency, model/transport budget and native renderer recovery acceptance. Source integration and fixtures are not runtime acceptance.
+Current remaining scope: source-health/workspace indexed storage and larger corpus/result limits, broader transcript/context paths, other media/relevance behavior, UI/end-to-end timing and connection-IP pinning/complete special-purpose address classification. The four provider-round diagnostic spans are now wired in source, not measured or native-accepted. Real media, learning/routing/workspace fault/concurrency, model/transport budget and renderer recovery acceptance remain unverified. Source integration and fixtures are not runtime acceptance.
 
 `check-public-search-parsing-scope.cjs` pins all Android changed files and checks actual parser/evidence/project wiring, renderer lifecycle and configured cloud round/tool deadline wiring, while retaining raw HTTP policy, URL/auth restrictions, configurable limit definitions, coordination/admission/recall, annotation, finalization schemas and main service code against the predecessor. These are source contracts, not Swift type checking or runtime acceptance. Windows has no Xcode: no dependency resolution/build/XCTest, live search, WebKit failure/recovery, UI, network latency or device claims. Android measurements do not transfer to iOS.
 

@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache and feature-hash similarity. Image DNS preflight is not connection pinning. Indexed storage/workspace/large-corpus limits, other media/relevance, timing spans and native acceptance remain incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache, feature-hash similarity and four monotonic provider-round diagnostic spans. Image DNS preflight is not connection pinning. Indexed storage/workspace/large-corpus limits, other media/relevance, UI/end-to-end timing and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -147,7 +147,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelStreaming.kt",
       "sha256": "48336b28d74adeea19ccfae927048043d1f39cdb9c9bea10fb45a6fb671b094b",
-      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain"
+      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Local OSLog diagnostics now record preparation/input length, once-only first activity, provider completion state and separate citation-repair validation with an independent monotonic clock and private hashed correlation, never prose/arguments/credentials. Existing evidence/recovery/permissions retained. Native timing, UI/end-to-end and broader acceptance remain unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudToolBatchExecutor.kt",

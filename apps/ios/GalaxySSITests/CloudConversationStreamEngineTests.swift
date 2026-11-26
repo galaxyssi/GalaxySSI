@@ -2,6 +2,95 @@ import XCTest
 @testable import GalaxySSI
 
 final class CloudConversationStreamEngineTests: XCTestCase {
+  @MainActor
+  func testModelTimingFollowsActualProviderEventsWithoutChangingTheAnswer() async throws {
+    let fixture = try makeFixture(), timing = CloudModelRoundTimingRecorder()
+    let stream = RecordingModelStreamClient(events: [
+      .connected(.init(requestId: "r", httpStatus: 200, connectedAtElapsedMs: 1)),
+      .textDelta(.init(requestId: "r", sequence: 1, text: "Hello", receivedAtElapsedMs: 2)),
+      .textDelta(.init(requestId: "r", sequence: 2, text: " there", receivedAtElapsedMs: 3)),
+      .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 4))
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore(), timingSink: timing.append)
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "not-a-loggable-identity"))
+    XCTAssertEqual(textDeltas(events).map(\.text).joined(), "Hello there")
+    XCTAssertEqual(timing.samples.map(\.stage), [.request, .firstActivity, .finished])
+    XCTAssertEqual(timing.samples[0].inputCharacters, stream.requests[0].bodyJson.utf16.count)
+    XCTAssertEqual(timing.samples[1].activity, .text)
+    XCTAssertEqual(timing.samples[2].completion, .completed)
+    XCTAssertTrue(timing.samples.allSatisfy { $0.route == .streaming && $0.round == 0 })
+    XCTAssertFalse(String(describing: timing.samples).contains("not-a-loggable-identity"))
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testModelTimingSeparatesUnsupportedStreamAndCompatibilityRounds() async throws {
+    let fixture = try makeFixture(), timing = CloudModelRoundTimingRecorder()
+    let stream = RecordingModelStreamClient(eventBatches: [
+      [.failed(.init(requestId: "r", error: .init(code: "STREAM_UNSUPPORTED", message: "No SSE")))],
+      [.textDelta(.init(requestId: "r", sequence: 1, text: "Compatible reply", receivedAtElapsedMs: 1)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 2))]
+    ])
+    let engine = CloudConversationStreamEngine(streamClient: stream,
+      disclosureStore: InMemoryAgentDataDisclosureStore(), timingSink: timing.append)
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "compatibility-timing"))
+    let ended = timing.samples.filter { $0.stage == .finished }
+    XCTAssertEqual(ended.map(\.round), [0, 1])
+    XCTAssertEqual(ended.map(\.route), [.streaming, .compatibility])
+    XCTAssertEqual(ended.map(\.completion), [.failed, .completed])
+    XCTAssertEqual(Set(ended.map(\.requestHash)).count, 1)
+    XCTAssertEqual(timing.samples.filter { $0.stage == .firstActivity }.map(\.round), [1])
+    XCTAssertEqual(stream.requests.map(\.transport), [.sse, .completeJSON])
+    XCTAssertEqual(textDeltas(events).last?.text, "Compatible reply")
+    XCTAssertNotNil(completed(events))
+  }
+
+  @MainActor
+  func testModelTimingRecordsFailedAndInterruptedProviderRounds() async throws {
+    let cases: [([ModelStreamEvent], CloudModelRoundTiming.Completion)] = [
+      ([.failed(.init(requestId: "r", error: .init(code: "STREAM_FAILED", message: "fixture")))], .failed),
+      ([.connected(.init(requestId: "r", httpStatus: 200, connectedAtElapsedMs: 1))], .interrupted)
+    ]
+    for (frames, expected) in cases {
+      let fixture = try makeFixture(), timing = CloudModelRoundTimingRecorder()
+      let engine = CloudConversationStreamEngine(streamClient: RecordingModelStreamClient(events: frames),
+        disclosureStore: InMemoryAgentDataDisclosureStore(), timingSink: timing.append)
+      let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+        turns: fixture.turns, requestId: "terminal-timing"))
+      XCTAssertNotNil(failed(events))
+      XCTAssertEqual(timing.samples.map(\.stage), [.request, .finished])
+      XCTAssertEqual(timing.samples.last?.completion, expected)
+    }
+  }
+
+  @MainActor
+  func testModelTimingRecordsToolActivityThenCitationValidationOnRealEnginePath() async throws {
+    let fixture = try makeFixture(), timing = CloudModelRoundTimingRecorder()
+    let pack = AgentIOSWebEvidencePack.build(query: "report", status: "completed",
+      documents: [["url": .string("https://example.test/report"), "content": .string("Observed source body")]],
+      results: [], receipts: [], generatedAtMillis: 1)
+    let executor = RecordingConversationToolExecutor(result: AgentMcpJSONCodec.stringify(["evidence_pack": .object(pack)]))
+    let answer = "The report describes the result [source](https://example.test/report)."
+    let stream = RecordingModelStreamClient(eventBatches: [toolRound(index: 0, callId: "search", query: "report"),
+      [.textDelta(.init(requestId: "r", sequence: 1, text: answer, receivedAtElapsedMs: 2)),
+       .completed(.init(requestId: "r", finishReason: "stop", completedAtElapsedMs: 3))]])
+    let engine = CloudConversationStreamEngine(streamClient: stream, toolExecutor: executor,
+      disclosureStore: InMemoryAgentDataDisclosureStore(), timingSink: timing.append)
+    let events = try await collect(engine.streamConversation(contact: fixture.contact, store: fixture.store,
+      turns: fixture.turns, requestId: "citation-timing"))
+    XCTAssertEqual(timing.samples.filter { $0.stage == .firstActivity }.map(\.activity), [.tool, .text])
+    let validation = try XCTUnwrap(timing.samples.last { $0.stage == .citationValidation })
+    XCTAssertFalse(try XCTUnwrap(validation.requiresRepair))
+    XCTAssertEqual(validation.round, 1)
+    XCTAssertEqual(timing.samples.filter { $0.stage == .finished }.count, 2)
+    XCTAssertEqual(executor.calls.count, 1)
+    XCTAssertEqual(textDeltas(events).last?.text, answer)
+    XCTAssertNotNil(completed(events))
+  }
+
   func testConfiguredResearchBudgetCapsActiveRoundsButRetainsFinalSynthesisLimit() {
     var clock: Int64 = 1
     let budget = CloudResearchRuntimeBudget(limits: .init(activeMillis: 1000, toolMillis: 500, modelMillis: 800),

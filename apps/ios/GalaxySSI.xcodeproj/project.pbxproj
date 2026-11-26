@@ -909,6 +909,8 @@
     E50000000000000000003007 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000003007 /* SwiftSoup */; };
     C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */; };
     C3007B200000000000000001 /* AgentIOSPublicAddressPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */; };
+    C3007B300000000000000001 /* CloudModelRoundTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B300000000000000002 /* CloudModelRoundTiming.swift */; };
+    C3007B300000000000000003 /* CloudModelRoundTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B300000000000000004 /* CloudModelRoundTimingTests.swift */; };
     C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */; };
     C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */; };
     C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */; };
@@ -4211,6 +4213,8 @@
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicSearchParser.swift; sourceTree = "<group>"; };
     C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicAddressPolicy.swift; sourceTree = "<group>"; };
+    C3007B300000000000000002 /* CloudModelRoundTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRoundTiming.swift; sourceTree = "<group>"; };
+    C3007B300000000000000004 /* CloudModelRoundTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelRoundTimingTests.swift; sourceTree = "<group>"; };
     C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExecutionBudget.swift; sourceTree = "<group>"; };
     C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceLearning.swift; sourceTree = "<group>"; };
     C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealth.swift; sourceTree = "<group>"; };
@@ -5344,6 +5348,7 @@
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */,
         C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */,
+        C3007B300000000000000002 /* CloudModelRoundTiming.swift */,
         C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */,
         C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
         C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */,
@@ -6536,6 +6541,7 @@
         A20000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift */,
         A20000000000000000000786 /* CloudModelClientStreamingTests.swift */,
         A20000000000000000000788 /* CloudConversationStreamEngineTests.swift */,
+        C3007B300000000000000004 /* CloudModelRoundTimingTests.swift */,
         A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */,
         A20000000000000000000793 /* CloudModelConversationContextTests.swift */,
         A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */,
@@ -8096,6 +8102,7 @@
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */,
         C3007B200000000000000001 /* AgentIOSPublicAddressPolicy.swift in Sources */,
+        C3007B300000000000000001 /* CloudModelRoundTiming.swift in Sources */,
         C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */,
         C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
         C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */,
@@ -8870,6 +8877,7 @@
         A10000000000000000000784 /* URLSessionCloudModelStreamClientTests.swift in Sources */,
         A10000000000000000000786 /* CloudModelClientStreamingTests.swift in Sources */,
         A10000000000000000000788 /* CloudConversationStreamEngineTests.swift in Sources */,
+        C3007B300000000000000003 /* CloudModelRoundTimingTests.swift in Sources */,
         A10000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift in Sources */,
         A10000000000000000000793 /* CloudModelConversationContextTests.swift in Sources */,
         A10000000000000000000236 /* AgentModelPlannerContactResolverTests.swift in Sources */,
