@@ -1,5 +1,24 @@
 package com.galaxyssi.chat
 
+/** Pre-fix sessions can already be waiting for a remote review of a verified timer. */
+@Synchronized
+internal fun MobileNativeAgent.finishWaitingTimerReview(source: Long): AgentUiState? {
+    val waiting = lastActionResult ?: return null
+    if (phase != AgentPhase.WAITING_RESPONSE || waiting.metadata["source_message_id"]?.toLongOrNull() != source)
+        return null
+    val plan = currentPlan ?: return null
+    val timer = AgentVerifiedTimerStart.waitingStart(plan.actions, waiting.actionId) ?: return null
+    val key = AgentPlanNodeKey.from(sessionId, plan, timer) ?: return null
+    val receipt = try { planNodeJournal.read(key) } catch (e: Exception) {
+        if (e is java.util.concurrent.CancellationException) throw e
+        return null
+    }?.takeIf { it.verified }?.result ?: return null
+    val completion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+        currentGoal, plan.actionHistory + plan.actions, timer, receipt, plan.completionRequirements, plan.actions
+    ) { nativeToolRegistry.lookup(it)?.descriptor } ?: return null
+    return reconcileExecutionLoop(completeVerifiedProjectOutcome(plan, timer, receipt, completion))
+}
+
 internal fun MobileNativeAgent.executeJournaledPlanAction(
     key: AgentPlanNodeKey,
     execute: () -> AgentActionResult
@@ -34,7 +53,21 @@ internal fun MobileNativeAgent.resumePersistedPlanObservations(): Boolean {
         persistSession()
     }
     if (recovered.isNotEmpty()) {
-        currentPlan = continueObservedOutcomes(requireNotNull(currentPlan), recovered, resumingPausedTask = true)
+        val observedPlan = requireNotNull(currentPlan)
+        recovered.singleOrNull()?.let { (action, result) ->
+            if (action.parameters["tool_id"] == AgentVerifiedTimerStart.toolId) {
+                val completion = AgentSupervisedProjectCompletionPolicy.verifiedTerminalOutcome(
+                    currentGoal, observedPlan.actionHistory + observedPlan.actions, action, result,
+                    observedPlan.completionRequirements, observedPlan.actions
+                ) { nativeToolRegistry.lookup(it)?.descriptor }
+                if (completion != null) {
+                    completeVerifiedProjectOutcome(observedPlan, action, result, completion)
+                    persistSession()
+                    return true
+                }
+            }
+        }
+        currentPlan = continueObservedOutcomes(observedPlan, recovered, resumingPausedTask = true)
         saveTaskRecord()
         persistSession()
     }
