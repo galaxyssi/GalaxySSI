@@ -202,6 +202,8 @@ final class MessageCoordinator: ObservableObject {
   private var globalAutonomousResponseToken: UUID?
   private var nativeConnectorResponseToken: UUID?
   private var nativeConnectorDispatches = Set<String>()
+  private var nativeConnectorObservationJobs: [String: (token: UUID, clock: String, task: Task<Void, Never>)] = [:]
+  private var nativeConnectorObservationLastWake: [String: Int64] = [:]
   private var agentHomeDisplayContactIdsByTurnId: [String: String] = [:]
   private var capturePermissionRequests = AgentCapturePermissionRequests()
   private var capturePermissionsReady: [String: UUID] = [:]
@@ -1184,6 +1186,7 @@ final class MessageCoordinator: ObservableObject {
     journalMqttPoll?.cancel()
     if let runtime = journalMqttRuntime { Task { @MainActor in await runtime.stop() } }
     desktopReplyRecoveryTask?.cancel()
+    nativeConnectorObservationJobs.values.forEach { $0.task.cancel() }
     legacyArtifactRecoveryTask?.cancel()
     pairingDeliveryTask?.cancel()
     pairingConfirmationTimeoutTask?.cancel()
@@ -14698,6 +14701,85 @@ final class MessageCoordinator: ObservableObject {
     return (task, outgoing, waiting, pending)
   }
 
+  private func nativeConnectorObservationContext(action: AgentAction, pending: AgentActionResult)
+    -> (dispatch: AgentIOSConnectorDispatch, pending: AgentActionResult, record: AgentManagedResponseRecord, contact: GalaxySSIContact)? {
+    guard UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
+          !store.agentSafetySettings.executionPaused, store.agentSafetySettings.taskExecutionMode != .planOnly,
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
+          let dispatch = AgentIOSConnectorDispatch(action: action, receipt: pending),
+          !PhoneExecutionAuthority.isCancelled(taskId: dispatch.turnId),
+          let current = queuedNativeConnectorContext(dispatch, requireExecution: false), current.task.phase == .waitingResponse,
+          current.task.activePlan?.executionMode != .planOnly,
+          current.task.lastNativeActionResult?.actionId == current.pending.actionId,
+          current.task.lastNativeActionResult?.metadata["control_plane_run_id"] == dispatch.owner,
+          current.waiting.parameters[AgentIOSConnectorDispatch.permissionKey] == store.agentSafetySettings.permissionMode.rawValue,
+          store.agentSession(id: dispatch.conversationId)?.privateMode == false,
+          let contact = store.contact(id: dispatch.contactId), AgentDesktopReplyDiscoveryPolicy.isDesktopEndpoint(contact),
+          store.serverLinks.filter({ $0.paired && $0.desktopId == contact.desktopId }).count == 1,
+          let record = try? managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner), record.state == .pending,
+          record.ownerRunId == dispatch.owner, record.sourceMessageId == dispatch.sourceMessageId,
+          record.agentId == current.pending.metadata["control_plane_agent_id"],
+          record.contactId == dispatch.contactId, record.conversationId == dispatch.conversationId,
+          record.turnId == dispatch.turnId, record.taskId == dispatch.taskId,
+          record.executionGeneration == Int64(current.pending.metadata["execution_generation"] ?? "") else { return nil }
+    return (dispatch, current.pending, record, contact)
+  }
+
+  private func scheduleNativeConnectorObservation(action: AgentAction, pending: AgentActionResult) {
+    var prepared = action
+    prepared.parameters.removeValue(forKey: AgentNativeConnectorContinuation.receiptKey)
+    prepared.parameters.removeValue(forKey: AgentNativeConnectorContinuation.sourceKey)
+    let scoped = prepared
+    guard let dispatch = AgentIOSConnectorDispatch(action: scoped, receipt: pending) else { return }
+    let key = [dispatch.owner, String(dispatch.sourceMessageId), action.parameters[AgentIOSConnectorDispatch.profileKey] ?? ""].joined(separator: "|")
+    guard let context = nativeConnectorObservationContext(action: scoped, pending: pending),
+          let wake = AgentNativeConnectorObservationWakePolicy.next(metadata: context.pending.metadata,
+            nowMillis: AgentControlPlaneClock.nowMillis(), lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
+      nativeConnectorObservationJobs.removeValue(forKey: key)?.task.cancel()
+      nativeConnectorObservationLastWake.removeValue(forKey: key)
+      return
+    }
+    if nativeConnectorObservationJobs[key]?.clock == wake.clock { return }
+    nativeConnectorObservationJobs.removeValue(forKey: key)?.task.cancel()
+    guard nativeConnectorObservationJobs.count < 200 else {
+      nativeConnectorObservationLastWake.removeValue(forKey: key)
+      return
+    }
+    let token = UUID()
+    let job = Task { @MainActor [weak self] in
+      do { try await Task.sleep(nanoseconds: UInt64(wake.delayMillis) * 1_000_000) } catch { return }
+      guard !Task.isCancelled, let self, self.nativeConnectorObservationJobs[key]?.token == token else { return }
+      self.nativeConnectorObservationJobs.removeValue(forKey: key)
+      await self.observeWaitingNativeConnector(action: scoped, pending: pending, key: key)
+    }
+    nativeConnectorObservationJobs[key] = (token, wake.clock, job)
+  }
+
+  private func observeWaitingNativeConnector(action: AgentAction, pending: AgentActionResult, key: String) async {
+    guard !Task.isCancelled, let context = nativeConnectorObservationContext(action: action, pending: pending),
+          let wake = AgentNativeConnectorObservationWakePolicy.next(metadata: context.pending.metadata,
+            nowMillis: AgentControlPlaneClock.nowMillis(), lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
+      nativeConnectorObservationLastWake.removeValue(forKey: key)
+      return
+    }
+    if wake.delayMillis > 0 { scheduleNativeConnectorObservation(action: action, pending: pending); return }
+    nativeConnectorObservationLastWake[key] = AgentControlPlaneClock.nowMillis()
+    let dispatch = context.dispatch
+    if let identity = taskIdentityStore.identity(contactId: dispatch.contactId, sourceMessageId: String(dispatch.sourceMessageId)),
+       identity.conversationId == dispatch.conversationId, identity.turnId == dispatch.turnId, identity.taskId == dispatch.taskId,
+       store.serverLinks.filter({ $0.paired && $0.desktopId == context.contact.desktopId &&
+         $0.routes.clientRouteId == identity.clientRouteId }).count == 1,
+       let binding = AgentDesktopReplyBinding.managed(record: context.record, desktopId: context.contact.desktopId,
+         agentId: context.contact.connectorAgentId, identity: identity),
+       currentManagedDesktopReply(binding) != nil,
+       desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+       desktopReplyRecovery.track(binding, now: max(1, context.record.createdAtMillis)),
+       desktopReplyRecovery.record(for: binding) != nil {
+      await sweepDesktopReplyRecovery()
+    }
+    if !Task.isCancelled { scheduleNativeConnectorObservation(action: action, pending: pending) }
+  }
+
   private func recordNativeConnectorObservation(_ observation: AgentDesktopReplyRecoveryRecord) {
     guard UIApplication.shared.isProtectedDataAvailable,
           desktopReplyRecoveryOwner == store.profile.identityFingerprint,
@@ -14735,7 +14817,9 @@ final class MessageCoordinator: ObservableObject {
         fallback: "Waiting for the original connector result.")
     }
     updated.updatedAtMillis = max(task.updatedAtMillis, observation.lastResponseAt)
-    _ = store.commitOwnedAgentTaskState(expected: task, updated: updated)
+    if store.commitOwnedAgentTaskState(expected: task, updated: updated) {
+      scheduleNativeConnectorObservation(action: retained, pending: observed)
+    }
   }
 
   private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord) -> Bool {
@@ -15217,6 +15301,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
     task = updated
+    scheduleNativeConnectorObservation(action: waiting, pending: pendingResult)
     localRecordedRunStore.recordNativeExecution([.init(action: waiting, result: pendingResult)],
       task: task, outgoing: outgoing, status: .running)
     store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId,
@@ -15297,8 +15382,12 @@ final class MessageCoordinator: ObservableObject {
             let sourceID = action.parameters[AgentNativeConnectorContinuation.sourceKey].flatMap(UUID.init(uuidString:)),
             let outgoing = store.persistedMessage(id: sourceID, contactId: "hermes"),
             AgentNativeConnectorContinuation.waitingAction(action, result: pending, task: task, outgoing: outgoing) != nil,
-            let record = try? managedDesktopReplyLedger.recoveryRecord(owner: run),
-            let settled = AgentNativeConnectorContinuation.settle(pending, record: record) else { continue }
+            let record = try? managedDesktopReplyLedger.recoveryRecord(owner: run) else { continue }
+      if record.state == .pending {
+        scheduleNativeConnectorObservation(action: action, pending: pending)
+        continue
+      }
+      guard let settled = AgentNativeConnectorContinuation.settle(pending, record: record) else { continue }
       let previous = task
       task.lastNativeActionResult = settled
       task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
