@@ -22,6 +22,51 @@ struct GalaxySSIGlobalAutonomousExecutionResult: Equatable {
   }
 }
 
+enum GlobalAutonomousSourceScope {
+  static func inheritedSources(_ task: GlobalCognitionTask) -> Set<String>? {
+    guard task.status == .completed, let contextIds = task.contextConversationIds,
+          let sources = GlobalBackgroundCognitionScope.sourceConversationIds(task) else { return nil }
+    return sources.union(contextIds)
+  }
+
+  static func allows(_ run: GlobalAutonomousRun, scope: GlobalRealtimePlanningScope) -> Bool {
+    guard scope.canRead, let sources = run.sourceConversationIds,
+          !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(run.lastError),
+          run.sourceConversationId.isEmpty || sources.contains(run.sourceConversationId) else { return false }
+    return sources.isSubset(of: scope.allowedConversationIds)
+  }
+
+  static func matches(_ response: AgentConnectorResponse, run: GlobalAutonomousRun) -> Bool {
+    guard response.sourceMessageId > 0, response.taskId.isEmpty || response.taskId == run.id else { return false }
+    if run.status == .replanning, run.review.status == .running,
+       run.review.sourceMessageId == response.sourceMessageId {
+      return !run.review.resourceId.isEmpty && response.contactId == run.review.resourceId &&
+        (response.conversationId.isEmpty || response.conversationId == "global-autonomous-review:\(run.id)") &&
+        (response.turnId.isEmpty || response.turnId == "revision:\(run.revision + 1)")
+    }
+    let actions = run.actions.filter { $0.status == .running && $0.sourceMessageId == response.sourceMessageId }
+    guard run.status == .running, actions.count == 1, let action = actions.first else { return false }
+    return !action.resourceId.isEmpty && response.contactId == action.resourceId &&
+      (response.conversationId.isEmpty || response.conversationId == "global-autonomous:\(run.id)") &&
+      (response.turnId.isEmpty || response.turnId == action.id)
+  }
+
+  @MainActor
+  static func liveScope(_ store: GalaxySSIStore) -> GlobalRealtimePlanningScope {
+    GlobalRealtimePlanningScope(enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.autonomousPreparationEnabled,
+      conversations: store.agentSessions(includeArchived: true))
+  }
+
+  @MainActor
+  static func resourceAuthorized(_ id: String, store: GalaxySSIStore) -> Bool {
+    if id == "phone-local-model" { return true }
+    guard let contact = store.contact(id: id), !contact.deleted else { return false }
+    if contact.deliveryMode == .cloudAPI { return store.globalAgentSettings.allowCloudCognition }
+    return store.globalAgentSettings.allowPairedAgentCognition && contact.trustState == .verified &&
+      contact.deliveryMode.isGalaxySSILinkFamily
+  }
+}
+
 enum GalaxySSIGlobalAutonomousRunPlanner {
   @discardableResult
   static func upsertRun(
@@ -29,11 +74,13 @@ enum GalaxySSIGlobalAutonomousRunPlanner {
     task: GlobalCognitionTask,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GlobalAutonomousRun? {
-    guard task.status == .completed, !task.result.actions.isEmpty else { return nil }
-    if let existing = store.autonomousRuns().first(where: {
+    guard !task.result.actions.isEmpty, let sources = GlobalAutonomousSourceScope.inheritedSources(task) else { return nil }
+    let existingRuns = store.autonomousRuns()
+    guard store.lastErrorDescription.isEmpty else { return nil }
+    if let existing = existingRuns.first(where: {
       $0.sourceCognitionTaskId == task.id && $0.status != .failed
     }) {
-      return existing
+      return existing.sourceEventId == task.sourceEvent.id && existing.sourceConversationIds == sources ? existing : nil
     }
 
     let proposed = Array(task.result.actions.prefix(12)).map {
@@ -47,20 +94,44 @@ enum GalaxySSIGlobalAutonomousRunPlanner {
     let run = GlobalAutonomousRun(
       sourceCognitionTaskId: task.id,
       sourceEventId: task.sourceEvent.id,
-      sourceConversationId: task.sourceEvent.conversationId,
+      sourceConversationId: sources.contains(task.sourceEvent.conversationId) ? task.sourceEvent.conversationId : "",
       topic: task.result.topic.ifBlank(task.baselineUnderstanding.topic),
       goal: String(goal.prefix(2_000)),
       actions: actions,
       causalEventIds: task.sourceEvent.causalEventIds.union([task.sourceEvent.id]),
       createdAtMillis: nowMillis,
-      updatedAtMillis: nowMillis
+      updatedAtMillis: nowMillis,
+      sourceConversationIds: sources
     )
     store.upsertAutonomousRun(run)
-    return run
+    return store.lastErrorDescription.isEmpty ? run : nil
   }
 }
 
 extension GalaxySSIGlobalAgentRuntimeBridge {
+  static func permitsAutonomousRequest(store: GalaxySSIStore, request: GalaxySSIGlobalAutonomousDispatchRequest) -> Bool {
+    let deliberation = GlobalAgentDeliberationStore()
+    let runs = deliberation.autonomousRuns().filter { $0.id == request.runId }
+    guard deliberation.lastErrorDescription.isEmpty, runs.count == 1, let run = runs.first,
+          GlobalAutonomousSourceScope.allows(run, scope: GlobalAutonomousSourceScope.liveScope(store)) else { return false }
+    let response = AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: request.resourceId,
+      content: "", conversationId: request.conversationId, turnId: request.turnId, taskId: request.runId,
+      receivedAtMillis: 0)
+    guard GlobalAutonomousSourceScope.matches(response, run: run),
+          (request.actionId.isEmpty ? run.status == .replanning : request.actionId == request.turnId) else { return false }
+    if request.transport == .onDeviceModel {
+      return request.resourceId == "phone-local-model" && request.contactId.isEmpty
+    }
+    guard request.contactId == request.resourceId, let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
+    switch request.transport {
+    case .pairedAgent:
+      return store.globalAgentSettings.allowPairedAgentCognition && contact.trustState == .verified && contact.deliveryMode.isGalaxySSILinkFamily
+    case .cloudModel:
+      return store.globalAgentSettings.allowCloudCognition && contact.deliveryMode == .cloudAPI
+    case .onDeviceModel: return false
+    }
+  }
+
   @discardableResult
   static func processAutonomousCycle(
     store: GalaxySSIStore,
@@ -71,7 +142,9 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     guard settings.enabled, settings.autonomousPreparationEnabled else { return nil }
 
     let deliberationStore = GlobalAgentDeliberationStore()
-    guard let claim = deliberationStore.claimAutonomousWork(nowMillis: nowMillis) else {
+    let scope = GlobalAutonomousSourceScope.liveScope(store)
+    guard let claim = deliberationStore.claimAutonomousWork(nowMillis: nowMillis,
+      eligible: { GlobalAutonomousSourceScope.allows($0, scope: scope) }) else {
       return nil
     }
     var run = claim.run
@@ -373,11 +446,14 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     action: GlobalAutonomousAction,
     nowMillis: Int64
   ) -> GlobalResearchTask? {
+    guard let sources = run.sourceConversationIds else { return nil }
     let researchStore = GalaxySSIGlobalResearchRuntimeStore()
     var state = researchStore.state()
+    guard researchStore.lastErrorDescription.isEmpty else { return nil }
     let id = "autonomous-research:\(run.id):\(action.id)"
     if let existing = state.task(id: id) {
-      return existing
+      return existing.sourceConversationIds == sources && existing.sourceEventId == run.sourceEventId &&
+        existing.sourceConversationId == run.sourceConversationId ? existing : nil
     }
     let question = action.goal.ifBlank(run.goal)
     guard !question.isBlank else { return nil }
@@ -393,11 +469,12 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
       status: .queued,
       monitorIntervalMillis: action.kind == .startMonitor ? 24 * 60 * 60 * 1_000 : 0,
       createdAtMillis: nowMillis,
-      updatedAtMillis: nowMillis
+      updatedAtMillis: nowMillis,
+      sourceConversationIds: sources
     )
     state.upsert(task)
     researchStore.save(state)
-    return task
+    return researchStore.lastErrorDescription.isEmpty ? task : nil
   }
 
   private static func waitForResearchEvidence(

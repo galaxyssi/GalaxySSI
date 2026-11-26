@@ -8,20 +8,25 @@ struct GlobalBackgroundCognitionScope {
   }
 
   func allowsSource(_ task: GlobalCognitionTask) -> Bool {
-    guard conversations.canRead, task.sourceEvent.sensitivity != .sessionPrivate,
-          !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(task.lastError) else { return false }
+    guard conversations.canRead, let ids = Self.sourceConversationIds(task) else { return false }
+    return ids.isSubset(of: conversations.allowedConversationIds)
+  }
+
+  static func sourceConversationIds(_ task: GlobalCognitionTask) -> Set<String>? {
+    guard task.sourceEvent.sensitivity != .sessionPrivate,
+          !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(task.lastError) else { return nil }
     var ids = Set((task.sourceEvent.metadata["source_conversation_ids"] ?? "")
       .split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     let primary = task.sourceEvent.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
     let goalId = task.longHorizonGoalId
     if !goalId.isEmpty {
       guard task.sourceEvent.metadata["long_horizon_goal_id"] == goalId,
-            task.sourceEvent.metadata["source_conversation_ids"] != nil else { return false }
+            task.sourceEvent.metadata["source_conversation_ids"] != nil else { return nil }
     }
     let syntheticGoal = !goalId.isEmpty && primary == "global-goal:\(goalId)" &&
       task.sourceEvent.metadata["origin"] == "global_long_horizon_scheduler"
     if !primary.isEmpty && !syntheticGoal { ids.insert(primary) }
-    return ids.isSubset(of: conversations.allowedConversationIds)
+    return ids
   }
 
   func allowsRunning(_ task: GlobalCognitionTask) -> Bool {
