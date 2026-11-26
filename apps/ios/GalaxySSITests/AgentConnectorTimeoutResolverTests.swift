@@ -2,6 +2,88 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentConnectorTimeoutResolverTests: XCTestCase {
+  func testObservationDeadlineUsesStageSpecificAnchors() {
+    let metadata = ["resource_started_at": "1000", "transport_accepted_at": "12000",
+      "remote_task_status_updated_at": "23000"]
+    XCTAssertEqual(AgentConnectorTimingPolicy.deadlineStartMillis(stage: .notAccepted, metadata: metadata), 1000)
+    XCTAssertEqual(AgentConnectorTimingPolicy.deadlineStartMillis(stage: .notRunning, metadata: metadata), 12000)
+    XCTAssertEqual(AgentConnectorTimingPolicy.deadlineStartMillis(stage: .readOnlyStale, metadata: metadata), 23000)
+    var malformed = metadata
+    malformed["remote_task_status_updated_at"] = "invalid"
+    XCTAssertEqual(AgentConnectorTimingPolicy.deadlineStartMillis(stage: .readOnlyStale, metadata: malformed), 12000)
+    XCTAssertEqual(AgentConnectorTimingPolicy.deadlineStartMillis(stage: .notRunning, metadata: [:]), 0)
+  }
+
+  func testObservationAcceptanceBoundaryIsInformationalOnly() {
+    let metadata = ["awaiting_response": "true", "resource_started_at": "1000",
+      "manual_target_locked": "true", "remaining_fallback_ids": "cloud"]
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 15_999).isEmpty)
+    let observed = AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 16_000)
+    XCTAssertEqual(observed["native_connector_observation_timeout_stage"], "NOT_ACCEPTED")
+    XCTAssertEqual(observed["native_connector_observation_elapsed_ms"], "15000")
+    XCTAssertEqual(observed["native_connector_observation_deadline_ms"], "15000")
+    XCTAssertEqual(observed.count, 4)
+    XCTAssertTrue(observed.keys.allSatisfy { $0.hasPrefix("native_connector_observation_") })
+    XCTAssertEqual(metadata["awaiting_response"], "true")
+    XCTAssertEqual(metadata["manual_target_locked"], "true")
+    XCTAssertNil(observed["timeout_stage"])
+    XCTAssertNil(observed["non_retriable"])
+  }
+
+  func testObservationRunningWindowStartsAtTransportAcceptance() {
+    let metadata = ["awaiting_response": "true", "resource_started_at": "1000",
+      "transport_accepted_at": "50000", "remote_task_status": "queued"]
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 94_999).isEmpty)
+    let observed = AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 95_000)
+    XCTAssertEqual(observed["native_connector_observation_timeout_stage"], "NOT_RUNNING")
+    XCTAssertEqual(observed["native_connector_observation_started_at"], "50000")
+    XCTAssertEqual(observed["native_connector_observation_elapsed_ms"], "45000")
+  }
+
+  func testObservationLiveWindowUsesHeartbeatWithoutFailingOrdinaryRuns() {
+    var metadata = ["awaiting_response": "true", "transport_accepted_at": "1000",
+      "remote_task_status_updated_at": "90000", "remote_task_status": "running",
+      "routing_requires_live_data": "true"]
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 149_999).isEmpty)
+    XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata,
+      nowMillis: 150_000)["native_connector_observation_timeout_stage"], "READ_ONLY_STALE")
+    metadata["routing_requires_live_data"] = "false"
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 900_000).isEmpty)
+    metadata["routing_requires_live_data"] = "true"
+    for status in ["completed", "failed", "cancelled", "waiting_input", "waiting_approval", "unknown"] {
+      metadata["remote_task_status"] = status
+      XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 900_000).isEmpty)
+    }
+  }
+
+  func testObservationRejectsMissingFutureAndInvalidClocks() {
+    for start in ["", "invalid", "0", "-1", "9223372036854775807"] {
+      let metadata = ["awaiting_response": "true", "resource_started_at": start]
+      XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 50_000).isEmpty)
+    }
+    let metadata = ["awaiting_response": "false", "resource_started_at": "1000"]
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 50_000).isEmpty)
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: ["awaiting_response": "true",
+      "resource_started_at": "1000"], nowMillis: -1).isEmpty)
+  }
+
+  func testObservationAttachmentWindowsRemainLongerThanInteractive() {
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000", "has_attachments": "true"]
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 60_999).isEmpty)
+    XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata,
+      nowMillis: 61_000)["native_connector_observation_deadline_ms"], "60000")
+    metadata["transport_accepted_at"] = "1000"
+    metadata["remote_task_status"] = "accepted"
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 90_999).isEmpty)
+    XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata,
+      nowMillis: 91_000)["native_connector_observation_deadline_ms"], "90000")
+    metadata["remote_task_status"] = "running"
+    metadata["routing_requires_live_data"] = "true"
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata, nowMillis: 180_999).isEmpty)
+    XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: metadata,
+      nowMillis: 181_000)["native_connector_observation_deadline_ms"], "180000")
+  }
+
   func testResolverFailsAcceptedStatusOnNotRunningWhenFallbackExists() {
     let pending = AgentActionResult(
       actionId: "action",
