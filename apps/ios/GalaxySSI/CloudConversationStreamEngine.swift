@@ -272,6 +272,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
     let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let routingUsageAllowed = await MainActor.run {
+      store.profile.identityFingerprint == disclosureOwner && AgentRoutingUsageEligibility.allows(store.agentSession(id: conversationId))
+    }
     let fallbackLanguage = await MainActor.run { store.languagePolicy.interfaceLanguage }
     let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     var previewPresentation = CloudCitationPreviewPresentation()
@@ -384,6 +387,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var roundCompleted = false
         var roundFailure: ModelStreamFailed?
         var observedUsage: ModelUsage?
+        var routingUsageValid = true
         var reportedModel: String?
         func receiveProviderRound() async throws {
           var providerCancelled = false
@@ -471,6 +475,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )
 
               case .usage(let value):
+                routingUsageValid = routingUsageValid && value.requestId == roundRequest.requestId && AgentRoutingUsageStore.validUsage(value.usage)
                 if value.usage.inputTokens >= 0, value.usage.outputTokens >= 0,
                    (0...value.usage.inputTokens).contains(value.usage.cachedInputTokens) {
                   observedUsage = value.usage
@@ -585,6 +590,15 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           return
         }
 
+        if routingUsageAllowed, routingUsageValid, let usage = observedUsage, !Task.isCancelled {
+          await MainActor.run {
+            guard !Task.isCancelled, store.profile.identityFingerprint == disclosureOwner,
+                  AgentRoutingUsageEligibility.allows(store.agentSession(id: conversationId)) else { return }
+            _ = AgentRoutingUsageStore(owner: disclosureOwner, defaults: store.defaults, secrets: store.secrets)
+              .record(resourceId: contact.id, conversationId: conversationId, observationId: roundId,
+                usage: usage, nowMillis: AgentControlPlaneClock.nowMillis())
+          }
+        }
         let visibleTail = inlineProtocolGuard.finishVisibleText()
         if !goalAssessmentOnly && !visibleTail.isEmpty && !bufferForCitationVerification {
           emittedText = true

@@ -8,7 +8,7 @@ const base = 'c7fe57aedc90de24c31b6e86f4b7c04db6e8e49f';
 const android = 'e7c6af6ef3eed21c7fb697b4458d1cf742833dc4';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const read = file => require('./check-routing-health-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+  require('./check-routing-usage-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')));
 const before = file => git('show', `${base}:${file}`).replace(/\r\n/g, '\n');
 const hook = '    observed.metadata.merge(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,\n' +
   '      nowMillis: AgentControlPlaneClock.nowMillis())) { _, latest in latest }\n';

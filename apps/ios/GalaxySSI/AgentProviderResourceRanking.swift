@@ -68,7 +68,8 @@ enum AgentProviderResourceRanking {
     requirements: AgentTaskRequirements,
     environment: AgentRuntimeEnvironment,
     hasPairedDesktop: Bool = false,
-    health: AgentRoutingResourceHealth? = nil
+    health: AgentRoutingResourceHealth? = nil,
+    observedUsage: AgentRoutingUsageSummary? = nil
   ) -> AgentResourceCandidate {
     var score = AgentCapabilityRoutingPolicy.fitScore(requirements, available: resource.capabilities)
     var reasons = ["available_reasoning_resource"] +
@@ -133,6 +134,15 @@ enum AgentProviderResourceRanking {
     if requirements.mode == .fast, resource.latency <= .fast { score += 120 }
     if requirements.mode == .economy, resource.cost <= .low { score += 120 }
     if requirements.mode == .quality, resource.quality == .frontier { score += 160 }
+    if let observedUsage, observedUsage.samples > 0 {
+      let multiplier = requirements.mode == .economy ? 2 : 1
+      score -= Int(min(max(0, observedUsage.averageTotalTokens) / 1_000, 60)) * multiplier
+      reasons.append("observed_average_tokens:\(observedUsage.averageTotalTokens)")
+      if observedUsage.reportedCostSamples > 0, let cost = observedUsage.averageReportedCostMicros {
+        score -= Int(min(max(0, cost) / 5_000, 120)) * multiplier
+        reasons.append("observed_average_reported_cost_micros:\(cost)")
+      }
+    }
     let preference = preferenceBonus(targetId: resource.targetId, requirements: requirements, hasPairedDesktop: hasPairedDesktop)
     score += preference
     reasons.append("preference_bonus:\(preference)")
