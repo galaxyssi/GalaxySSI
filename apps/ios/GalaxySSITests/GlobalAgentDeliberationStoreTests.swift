@@ -4,6 +4,131 @@ import XCTest
 final class GlobalAgentDeliberationStoreTests: XCTestCase {
   private var fileURL: URL!
 
+  func testAutonomousSourcesIncludeMetadataAndSelectedCognitionContext() {
+    var source = task("source", status: .completed)
+    source.sourceEvent.metadata["source_conversation_ids"] = "secondary, conversation,secondary"
+    XCTAssertNil(GlobalAutonomousSourceScope.inheritedSources(source))
+    source.contextConversationIds = ["context"]
+    XCTAssertEqual(GlobalAutonomousSourceScope.inheritedSources(source), ["conversation", "secondary", "context"])
+    source.sourceEvent.sensitivity = .sessionPrivate
+    XCTAssertNil(GlobalAutonomousSourceScope.inheritedSources(source))
+    source.sourceEvent.sensitivity = .personal
+    source.lastError = GlobalAgentEvidenceLifecyclePolicy.invalidatedReason
+    XCTAssertNil(GlobalAutonomousSourceScope.inheritedSources(source))
+  }
+
+  func testAutonomousPlannerPersistsProvenSourcesAndReturnsExistingRun() throws {
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    var source = task("source", status: .completed)
+    source.contextConversationIds = ["context"]
+    source.result.actions = [action("prepare")]
+    let planned = try XCTUnwrap(GalaxySSIGlobalAutonomousRunPlanner.upsertRun(store: store, task: source, nowMillis: 200))
+    XCTAssertEqual(planned.sourceConversationIds, ["conversation", "context"])
+    XCTAssertEqual(store.autonomousRuns().single, planned)
+    XCTAssertEqual(GalaxySSIGlobalAutonomousRunPlanner.upsertRun(store: store, task: source, nowMillis: 300), planned)
+  }
+
+  func testAutonomousPlannerDoesNotAuthorizeLegacyOrChangedSourceRuns() {
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    var source = task("source", status: .completed)
+    source.result.actions = [action("prepare")]
+    XCTAssertNil(GalaxySSIGlobalAutonomousRunPlanner.upsertRun(store: store, task: source))
+    source.contextConversationIds = []
+    var legacy = run("legacy", actions: [action("prepare")])
+    legacy.sourceCognitionTaskId = source.id
+    legacy.sourceEventId = source.sourceEvent.id
+    store.saveAutonomousRuns([legacy])
+    XCTAssertNil(GalaxySSIGlobalAutonomousRunPlanner.upsertRun(store: store, task: source))
+    XCTAssertNil(store.autonomousRuns().single?.sourceConversationIds)
+    source.status = .queued
+    XCTAssertNil(GlobalAutonomousSourceScope.inheritedSources(source))
+  }
+
+  func testAutonomousProofRoundtripAndLegacyDecode() throws {
+    var candidate = run("roundtrip", actions: [action("prepare")])
+    candidate.sourceConversationIds = ["conversation", "secondary"]
+    let bytes = try JSONEncoder().encode(candidate)
+    XCTAssertEqual(try JSONDecoder().decode(GlobalAutonomousRun.self, from: bytes), candidate)
+    var json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    json.removeValue(forKey: "sourceConversationIds")
+    let legacy = try JSONDecoder().decode(GlobalAutonomousRun.self, from: JSONSerialization.data(withJSONObject: json))
+    XCTAssertNil(legacy.sourceConversationIds)
+    XCTAssertFalse(GlobalAutonomousSourceScope.allows(legacy, scope: autonomousScope()))
+  }
+
+  func testAutonomousScopeRejectsPrivatePausedRemovedAndUncoveredPrimary() {
+    var candidate = run("scope", actions: [action("prepare")])
+    candidate.sourceConversationIds = ["conversation"]
+    XCTAssertTrue(GlobalAutonomousSourceScope.allows(candidate, scope: autonomousScope()))
+    for denied in ["private", "paused", "removed"] {
+      candidate.sourceConversationIds = ["conversation", denied]
+      XCTAssertFalse(GlobalAutonomousSourceScope.allows(candidate, scope: autonomousScope()))
+    }
+    candidate.sourceConversationIds = []
+    XCTAssertFalse(GlobalAutonomousSourceScope.allows(candidate, scope: autonomousScope()))
+    candidate.sourceConversationId = ""
+    XCTAssertTrue(GlobalAutonomousSourceScope.allows(candidate, scope: autonomousScope()))
+    XCTAssertFalse(GlobalAutonomousSourceScope.allows(candidate,
+      scope: GlobalRealtimePlanningScope(enabled: false, conversations: [])))
+  }
+
+  func testAutonomousClaimSkipsDeniedRunWithoutRecoveringItsLease() throws {
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    var denied = run("denied", actions: [action("old", status: .running, resourceId: "old", leaseExpiresAtMillis: 100)], status: .running)
+    denied.sourceConversationIds = ["conversation", "private"]
+    var allowed = run("allowed", actions: [action("prepare")])
+    allowed.sourceConversationIds = ["conversation"]
+    store.saveAutonomousRuns([denied, allowed])
+    let scope = autonomousScope()
+    let claim = try XCTUnwrap(store.claimAutonomousWork(nowMillis: 200,
+      eligible: { GlobalAutonomousSourceScope.allows($0, scope: scope) }))
+    XCTAssertEqual(claim.run.id, "allowed")
+    XCTAssertEqual(claim.run.sourceConversationIds, allowed.sourceConversationIds)
+    XCTAssertEqual(store.autonomousRuns().first { $0.id == "denied" }, denied)
+  }
+
+  func testAutonomousActionResponseMatchesPositiveOwnerAndLegacyScope() {
+    var step = action("prepare", status: .running, resourceId: "model")
+    step.sourceMessageId = 123
+    let candidate = run("owner", actions: [step], status: .running)
+    let response = AgentConnectorResponse(sourceMessageId: 123, contactId: "model", content: "Result", receivedAtMillis: 200)
+    XCTAssertTrue(GlobalAutonomousSourceScope.matches(response, run: candidate))
+    var wrong = response; wrong.sourceMessageId = 0
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(wrong, run: candidate))
+    wrong = response; wrong.contactId = "other"
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(wrong, run: candidate))
+    wrong = response; wrong.taskId = "other"
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(wrong, run: candidate))
+    wrong = response; wrong.conversationId = "other"
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(wrong, run: candidate))
+    wrong = response; wrong.turnId = "other"
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(wrong, run: candidate))
+    var duplicate = candidate; duplicate.actions.append(step)
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(response, run: duplicate))
+  }
+
+  func testAutonomousReviewResponseRequiresCurrentRevisionScope() {
+    var candidate = run("review", actions: [], status: .replanning)
+    candidate.review.status = .running
+    candidate.review.sourceMessageId = 123
+    candidate.review.resourceId = "model"
+    var response = AgentConnectorResponse(sourceMessageId: 123, contactId: "model", content: "Review",
+      conversationId: "global-autonomous-review:review", turnId: "revision:2", taskId: "review", receivedAtMillis: 200)
+    XCTAssertTrue(GlobalAutonomousSourceScope.matches(response, run: candidate))
+    response.turnId = "revision:1"
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(response, run: candidate))
+    response.turnId = "revision:2"; candidate.review.status = .completed
+    XCTAssertFalse(GlobalAutonomousSourceScope.matches(response, run: candidate))
+  }
+
+  private func autonomousScope() -> GlobalRealtimePlanningScope {
+    GlobalRealtimePlanningScope(enabled: true, conversations: [
+      AgentConversation(id: "conversation", title: "Main", createdAt: 1, updatedAt: 1),
+      AgentConversation(id: "private", title: "Private", createdAt: 1, updatedAt: 1, privateMode: true),
+      AgentConversation(id: "paused", title: "Paused", createdAt: 1, updatedAt: 1, trackingPaused: true)
+    ])
+  }
+
   override func setUp() {
     super.setUp()
     fileURL = FileManager.default.temporaryDirectory

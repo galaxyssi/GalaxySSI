@@ -538,7 +538,7 @@ final class MessageCoordinator: ObservableObject {
         _ = GalaxySSIGlobalAgentRuntimeBridge.consumeResearchResponse(store: self.store, response: response)
         let consumedAutonomous = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResearchResponse(
           response,
-          settings: self.store.globalAgentSettings
+          appStore: self.store
         )
         if consumedAutonomous {
           self.refreshAgentHomeState()
@@ -559,7 +559,7 @@ final class MessageCoordinator: ObservableObject {
         guard let self else { return }
         let consumed = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
           response,
-          settings: self.store.globalAgentSettings
+          appStore: self.store
         )
         if consumed {
           self.refreshAgentHomeState()
@@ -1271,11 +1271,11 @@ final class MessageCoordinator: ObservableObject {
     guard let request = result.dispatchRequest else { return true }
     if await dispatchGlobalAutonomousRequest(request) { return true }
     // A paused or expired worker leaves its durable lease for ordinary recovery.
-    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    guard !Task.isCancelled, GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: store, request: request) else { return false }
     _ = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResponse(
       AgentConnectorResponse(
         sourceMessageId: request.sourceMessageId,
-        contactId: request.contactId,
+        contactId: request.contactId.ifBlank(request.resourceId),
         content: "Global autonomous request could not be dispatched",
         conversationId: request.conversationId,
         turnId: request.turnId,
@@ -1283,7 +1283,7 @@ final class MessageCoordinator: ObservableObject {
         success: false,
         receivedAtMillis: nowMillis
       ),
-      settings: store.globalAgentSettings,
+      appStore: store,
       nowMillis: nowMillis
     )
     return false
@@ -1292,7 +1292,7 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalAutonomousRequest(
     _ request: GalaxySSIGlobalAutonomousDispatchRequest
   ) async -> Bool {
-    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    guard !Task.isCancelled, GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: store, request: request) else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1304,7 +1304,8 @@ final class MessageCoordinator: ObservableObject {
         taskId: request.runId,
         systemPrompt: request.systemPrompt,
         prompt: request.prompt,
-        nowMillis: nowMillis
+        nowMillis: nowMillis,
+        stillAuthorized: { GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: self.store, request: request) }
       )
     case .pairedAgent:
       guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
@@ -1371,10 +1372,12 @@ final class MessageCoordinator: ObservableObject {
           images: [],
           requestId: "global-autonomous-\(request.sourceMessageId)"
         ) {
-          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+          guard !Task.isCancelled, store.globalAgentSettings.enabled, store.globalAgentSettings.autonomousPreparationEnabled,
+                store.globalAgentSettings.allowCloudCognition else { return false }
           switch event {
           case .textDelta(let delta): accumulated += delta.text
           case .failed(let failure):
+            guard GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: store, request: request) else { return false }
             _ = connectorResponseBus.publish(AgentConnectorResponse(
               sourceMessageId: request.sourceMessageId,
               contactId: contact.id,
@@ -1391,7 +1394,7 @@ final class MessageCoordinator: ObservableObject {
           }
         }
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return false }
+        guard !content.isEmpty, GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: store, request: request) else { return false }
         _ = connectorResponseBus.publish(AgentConnectorResponse(
           sourceMessageId: request.sourceMessageId,
           contactId: contact.id,
@@ -1446,7 +1449,7 @@ final class MessageCoordinator: ObservableObject {
         )
         let consumedAutonomous = GalaxySSIGlobalAgentRuntimeBridge.consumeAutonomousResearchResponse(
           failure,
-          settings: store.globalAgentSettings,
+          appStore: store,
           nowMillis: nowMillis
         )
         if consumedAutonomous {

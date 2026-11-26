@@ -432,15 +432,21 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
   @discardableResult
   static func consumeAutonomousResponse(
     _ response: AgentConnectorResponse,
-    settings: GlobalAgentSettings = .default,
+    appStore: GalaxySSIStore,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
+    let settings = appStore.globalAgentSettings
+    let scope = GlobalAutonomousSourceScope.liveScope(appStore)
+    guard scope.canRead, response.sourceMessageId > 0 else { return false }
     let store = GlobalAgentDeliberationStore()
     if let reviewRun = store.autonomousRuns().first(where: {
       $0.status == .replanning &&
         $0.review.status == .running &&
         $0.review.sourceMessageId == response.sourceMessageId
     }) {
+      guard store.lastErrorDescription.isEmpty, GlobalAutonomousSourceScope.allows(reviewRun, scope: scope),
+            GlobalAutonomousSourceScope.matches(response, run: reviewRun),
+            GlobalAutonomousSourceScope.resourceAuthorized(response.contactId, store: appStore) else { return false }
       return consumePlanReview(
         run: reviewRun,
         response: response,
@@ -457,6 +463,10 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     }) else {
       return false
     }
+
+    guard store.lastErrorDescription.isEmpty, GlobalAutonomousSourceScope.allows(run, scope: scope),
+          GlobalAutonomousSourceScope.matches(response, run: run),
+          GlobalAutonomousSourceScope.resourceAuthorized(response.contactId, store: appStore) else { return false }
 
     GalaxySSIGlobalAutonomousBudgetRuntime.complete(
       runId: run.id,

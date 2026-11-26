@@ -237,14 +237,15 @@ final class GlobalAgentDeliberationStore {
     }
   }
 
-  func claimAutonomousWork(nowMillis: Int64 = GlobalRealtimeClock.nowMillis()) -> GlobalAutonomousWorkClaim? {
+  func claimAutonomousWork(nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    eligible: (GlobalAutonomousRun) -> Bool = { _ in true }) -> GlobalAutonomousWorkClaim? {
     locked {
       var snapshot = load()
       var runs = snapshot.autonomousRuns.map {
-        GlobalAutonomousRunPolicy.recoverIfStale(run: $0, nowMillis: nowMillis)
+        eligible($0) ? GlobalAutonomousRunPolicy.recoverIfStale(run: $0, nowMillis: nowMillis) : $0
       }
       guard let index = runs.firstIndex(where: { run in
-        reviewReady(run, nowMillis: nowMillis) || actionReady(run, nowMillis: nowMillis)
+        eligible(run) && (reviewReady(run, nowMillis: nowMillis) || actionReady(run, nowMillis: nowMillis))
       }) else {
         snapshot.autonomousRuns = boundedRuns(runs)
         persist(snapshot)
@@ -267,6 +268,7 @@ final class GlobalAgentDeliberationStore {
       runs[index] = claimed
       snapshot.autonomousRuns = boundedRuns(runs)
       persist(snapshot)
+      guard lastErrorDescription.isEmpty else { return nil }
       return GlobalAutonomousWorkClaim(
         run: claimed,
         actionId: reservation?.actionId ?? "",

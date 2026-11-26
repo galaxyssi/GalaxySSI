@@ -4,9 +4,12 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
   @discardableResult
   static func consumeAutonomousResearchResponse(
     _ response: AgentConnectorResponse,
-    settings: GlobalAgentSettings = .default,
+    appStore: GalaxySSIStore,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
+    let settings = appStore.globalAgentSettings
+    let scope = GlobalAutonomousSourceScope.liveScope(appStore)
+    guard scope.canRead, response.sourceMessageId > 0, settings.autonomousResearchEnabled else { return false }
     let researchStore = GalaxySSIGlobalResearchRuntimeStore()
     let state = researchStore.state()
     guard let task = state.tasks.first(where: { candidate in
@@ -25,8 +28,13 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
           let action = run.actions.first(where: { $0.id == actionId }) else {
       return false
     }
+    guard researchStore.lastErrorDescription.isEmpty, deliberationStore.lastErrorDescription.isEmpty,
+          GlobalAutonomousSourceScope.allows(run, scope: scope), task.sourceEventId == run.sourceEventId,
+          task.sourceConversationId == run.sourceConversationId,
+          action.status == .running, action.resourceId == task.id else { return false }
 
-    let result = task.result.ifBlank(task.lastError).ifBlank(response.content)
+    let result = task.result.ifBlank(task.lastError)
+    guard !result.isBlank else { return false }
     let evidence = GlobalActionEvidence(
       kind: .researchLedger,
       summary: String(result.prefix(2_000)),
