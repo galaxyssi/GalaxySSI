@@ -88,14 +88,14 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
       return sqlite3_column_int64(statement, 0)
     }
-    func write(_ plain: Data, key: String? = nil) throws {
+    func write(_ plain: Data, key: String? = nil, checkActive: () throws -> Void = {}) throws {
       let key = key ?? self.key
       try sql("BEGIN IMMEDIATE TRANSACTION")
       var committed = false
       defer { if !committed { try? sql("ROLLBACK") } }
       try sql("DELETE FROM knowledge_items WHERE item_hash='\(key)'")
       try sql("INSERT INTO knowledge_items VALUES('\(key)',x'00')")
-      try store.append(plain, itemHash: key, catalog: catalog)
+      try store.append(plain, itemHash: key, catalog: catalog, checkActive: checkActive)
       try sql("COMMIT")
       committed = true
     }
@@ -163,6 +163,20 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     try f.store.setup(catalog: f.catalog)
     XCTAssertThrowsError(try f.write(Data("unpublished".utf8)))
     XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), original)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_refs"), 1)
+  }
+
+  func testCancellationBetweenFramesDoesNotPublishAReplacement() throws {
+    let f = try Fixture()
+    let old = Data("committed original".utf8)
+    try f.write(old)
+    var checks = 0
+    XCTAssertThrowsError(try f.write(Data(repeating: 65, count: 200_000), checkActive: {
+      checks += 1
+      if checks == 3 { throw CancellationError() }
+    }))
+    XCTAssertEqual(checks, 3)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), old)
     XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_refs"), 1)
   }
 

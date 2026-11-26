@@ -120,9 +120,10 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   // Caller owns a catalog write transaction. Immutable frames commit before any reference is published.
-  func append(_ plain: Data, itemHash: String, catalog: OpaquePointer) throws {
+  func append(_ plain: Data, itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws {
     writerLock.lock()
     defer { writerLock.unlock() }
+    try checkActive()
     try ensureSharedLease()
     guard Self.digest(itemHash), !plain.isEmpty, sqlite3_get_autocommit(catalog) == 0,
           let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -140,6 +141,7 @@ final class AgentKnowledgePrimaryPartitions {
       defer { sqlite3_finalize(statement) }
       while offset < plain.count {
         try Task.checkCancellation()
+        try checkActive()
         let end = offset + min(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes, plain.count - offset)
         let encoded = try AgentKnowledgePrimaryFrameCodec.encode(plain.subdata(in: offset..<end))
         let sealed = try cipher.encrypt(encoded, purpose: framePurpose(itemHash, partition: id, entry: entry, ordinal: frameCount))
@@ -155,6 +157,8 @@ final class AgentKnowledgePrimaryPartitions {
         offset = end
         frameCount += 1
       }
+      try checkActive()
+      try Task.checkCancellation()
       try execute(database, "COMMIT")
       committed = true
     } catch {
@@ -164,6 +168,7 @@ final class AgentKnowledgePrimaryPartitions {
     }
     try beforeCatalogPublication()
     try Task.checkCancellation()
+    try checkActive()
     let reference = Reference(version: 1, partition: id, entry: entry, frames: frameCount,
       plainBytes: Int64(plain.count), sha256: Self.sha256(plain))
     let sealedReference = try cipher.encrypt(JSONEncoder().encode(reference), purpose: referencePurpose(itemHash))
@@ -183,14 +188,15 @@ final class AgentKnowledgePrimaryPartitions {
     guard sqlite3_step(update) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.corruptRecord }
   }
 
-  func read(itemHash: String, catalog: OpaquePointer) throws -> Data? {
+  func read(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
     readerLock.lock()
     defer { readerLock.unlock() }
     try ensureSharedLease()
-    return try readPayload(itemHash: itemHash, catalog: catalog)
+    return try readPayload(itemHash: itemHash, catalog: catalog, checkActive: checkActive)
   }
 
-  private func readPayload(itemHash: String, catalog: OpaquePointer) throws -> Data? {
+  private func readPayload(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
+    try checkActive()
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
     defer { sqlite3_finalize(lookup) }
@@ -214,6 +220,7 @@ final class AgentKnowledgePrimaryPartitions {
     var result = Data(), ordinal = 0
     while true {
       try Task.checkCancellation()
+      try checkActive()
       let step = sqlite3_step(frames)
       if step == SQLITE_DONE { break }
       guard step == SQLITE_ROW, ordinal < reference.frames, sqlite3_column_int64(frames, 0) == Int64(ordinal) else {
@@ -246,13 +253,14 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   // Caller serializes catalog access, outside any transaction. Never waits for another snapshot.
-  func reclaim(catalog: OpaquePointer, pageSize: Int = 8) throws -> ReclaimPage {
+  func reclaim(catalog: OpaquePointer, pageSize: Int = 8, checkActive: () throws -> Void = {}) throws -> ReclaimPage {
+    try checkActive()
     guard (1...32).contains(pageSize), sqlite3_get_autocommit(catalog) != 0 else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     if try reclaimPending(catalog) == false { return ReclaimPage(removed: 0, complete: true, deferred: false) }
     return try withExclusiveAccess(catalog: catalog) {
-      try reclaimExclusively(catalog: catalog, pageSize: pageSize)
+      try reclaimExclusively(catalog: catalog, pageSize: pageSize, checkActive: checkActive)
     } ?? ReclaimPage(removed: 0, complete: false, deferred: true)
   }
 
@@ -279,7 +287,8 @@ final class AgentKnowledgePrimaryPartitions {
     return try operation()
   }
 
-  func reclaimLegacyCopies(catalog: OpaquePointer, pageSize: Int = 8) throws -> LegacyReclaimPage {
+  func reclaimLegacyCopies(catalog: OpaquePointer, pageSize: Int = 8, checkActive: () throws -> Void = {}) throws -> LegacyReclaimPage {
+    try checkActive()
     guard (1...32).contains(pageSize) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     return try withExclusiveAccess(catalog: catalog) {
       try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
@@ -306,8 +315,9 @@ final class AgentKnowledgePrimaryPartitions {
       var released = 0
       for key in keys.prefix(pageSize) {
         try Task.checkCancellation()
+        try checkActive()
         // Do not discard the last usable copy on a malformed reference, missing file or bad frame.
-        if try readPayload(itemHash: key, catalog: catalog) == nil { continue }
+        if try readPayload(itemHash: key, catalog: catalog, checkActive: checkActive) == nil { continue }
         let remove = try prepare(catalog, "DELETE FROM knowledge_external_payloads WHERE item_hash=?")
         defer { sqlite3_finalize(remove) }
         try bind(key, index: 1, statement: remove)
@@ -321,13 +331,16 @@ final class AgentKnowledgePrimaryPartitions {
       defer { sqlite3_finalize(advance) }
       try bind(finished ? "" : (keys.prefix(pageSize).last ?? cursor), index: 1, statement: advance)
       guard sqlite3_step(advance) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
+      try checkActive()
+      try Task.checkCancellation()
       try execute(catalog, "COMMIT")
       committed = true
       return LegacyReclaimPage(visited: visited, released: released, complete: finished, deferred: false)
     } ?? LegacyReclaimPage(visited: 0, released: 0, complete: false, deferred: true)
   }
 
-  private func reclaimExclusively(catalog: OpaquePointer, pageSize: Int) throws -> ReclaimPage {
+  private func reclaimExclusively(catalog: OpaquePointer, pageSize: Int, checkActive: () throws -> Void) throws -> ReclaimPage {
+    try checkActive()
     try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
     var committed = false
     defer { if !committed { try? execute(catalog, "ROLLBACK") } }
@@ -344,6 +357,8 @@ final class AgentKnowledgePrimaryPartitions {
       DELETE FROM knowledge_primary_partitions WHERE partition_id IN(SELECT partition_id FROM knowledge_primary_retired)
       AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=knowledge_primary_partitions.partition_id)
       """)
+    try checkActive()
+    try Task.checkCancellation()
     try execute(catalog, "COMMIT")
     committed = true
     let queued = try prepare(catalog, "SELECT partition_id FROM knowledge_primary_retired ORDER BY partition_id LIMIT ?")
@@ -360,12 +375,14 @@ final class AgentKnowledgePrimaryPartitions {
     }
     for id in ids {
       try Task.checkCancellation()
+      try checkActive()
       let live = try prepare(catalog, "SELECT 1 FROM knowledge_primary_refs WHERE partition_id=? LIMIT 1")
       defer { sqlite3_finalize(live) }
       try bind(id, index: 1, statement: live)
       let state = sqlite3_step(live)
       guard state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
       try beforeRetiredUnlink()
+      try checkActive()
       try unlinkRetired(id)
       try afterRetiredUnlink()
       let remove = try prepare(catalog, "DELETE FROM knowledge_primary_retired WHERE partition_id=?")

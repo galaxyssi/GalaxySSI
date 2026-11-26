@@ -49,16 +49,17 @@ updates get a distinct entry ID; old snapshot references keep their original
 frames. No atomic transaction across multiple SQLite files or power-loss proof
 is claimed.
 
-Actual coordinator startup starts an idempotent, weakly owned serial utility
-worker. It advances eight-record pages with a persisted cursor and yields between
-pages. Database construction alone does not start it, so explicit read/snapshot
-and fixture instances do not acquire a background worker. A page owns one catalog
+App launch registers an independent physical-storage BGProcessingTask; runtime
+binding persists periodic intent without requiring an installed embedding model.
+System-granted utility slices advance eight-record pages with a persisted cursor.
+Database construction alone does not start a worker, and the previous continuous
+foreground startup migration loop is removed. A page owns one catalog
 write transaction, validates the original complete record, appends and reads back
 the new primary data before replacing the inline body with a sentinel. Cursor
 publication shares that transaction. A failed/cancelled page rolls back its
-catalog changes. Storage errors stop the worker; another explicit start or cold
-startup can resume from the committed cursor. This is not Android WorkManager
-or an iOS OS-background-execution guarantee.
+catalog changes. Storage errors/expired grants retain pending intent for a later
+system request. This is not Android WorkManager or a guaranteed iOS execution
+interval; individual maintenance APIs remain available for explicit local work.
 
 Only physical ownership changes: no source/header revision, FTS tokens, native
 index token or vector feed/provenance writes are added to migration. Legacy
@@ -70,10 +71,9 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Remaining implementation
 
-- Periodic idle maintenance from Android's fifteen-minute WorkManager job is not
-  ported. This worker currently runs on coordinator startup or an explicit start.
-  Young orphaned legacy files may remain until a later start after their age gate.
-  No iOS background execution or timing guarantee is claimed.
+- The system background adapter is implemented, but actual OS grant/delivery,
+  lifecycle cancellation and energy behavior are unverified on-device. The
+  fifteen-minute earliest date is not an exact or guaranteed execution interval.
 - Unknown primary orphan discovery and mixed-live compaction were not delivered
   by the pinned Android PR either.
 - Physical commits are currently per record, before catalog publication. Native
@@ -86,7 +86,7 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Source evidence
 
-Nineteen XCTest methods are authored only, NOT executed: compressed/raw/binary frame
+Twenty primary-store XCTest methods are authored only, NOT executed: compressed/raw/binary frame
 bounds, Unicode multi-frame/reopen, rotation across four buckets, failed catalog
 publication, old snapshot retention, swapped/corrupt references, missing/corrupt
 frames, container relocation, resumed old inline/file migration with unchanged
@@ -101,6 +101,11 @@ Four more cover checkpointed legacy-reference pages and reopen after skipping a
 legacy-only record, rollback on primary corruption, actual export/migration/file
 cleanup interleaving, age gates and nonregular/symlink preservation. No native
 execution of these fixtures is claimed.
+An additional primary method injects cancellation between frames and checks that
+the previous catalog reference/body survive. Six separate maintenance methods
+cover idle/energy policy, monotonic deadlines, expired/successful completion
+ownership, bounded actual-database migration/cleanup without an embedding runtime,
+and cancellation/resumption. None of these twenty-six methods were executed.
 
 `check-knowledge-primary-partitions-scope.cjs` verifies pinned production sources,
 complete retained coordinator/catalog code outside declared hooks, actual writer/
@@ -118,8 +123,8 @@ hold their own shared lease until after rollback and SQLite handle closure, so
 the same store cannot unlink a partition still needed by one of its old snapshots.
 The catalog-serialized reclaimer closes cached writers before attempting a
 nonblocking exclusive conversion. Other stores (including idle live instances)
-or pinned snapshots conservatively defer reclamation; the worker retries after
-five seconds instead of spinning. All reads/writes recheck the shared lease if a
+or pinned snapshots conservatively defer reclamation; the worker yields its slice
+and requests a later system grant instead of spinning. All reads/writes recheck the shared lease if a
 failed conversion or downgrade dropped it. The lock file is never retired.
 
 Under the exclusive lease, at most eight known, wholly unreferenced partitions
@@ -161,3 +166,36 @@ also recheck shared access after a failed lease conversion.
 The legacy file page still enumerates/sorts the existing directory before taking
 its bounded candidate slice. That inherited directory-memory cost is not claimed
 to be a bounded whole-corpus scan or a performance improvement.
+
+## Periodic system maintenance
+
+The dedicated `com.galaxyssi.chat.ios.knowledge-storage` task is registered at
+application launch and permitted in both build configurations, using the existing
+processing background mode. It does not share semantic-index enablement, model
+installation, downloads or cancellation preferences. Database binding retains a
+weak reference; cold grants look up only an existing validated history/catalog,
+never create a history identity just to perform maintenance.
+
+Each request persists intent before submitting, requires no network/external
+power, and sets an earliest begin date fifteen minutes ahead. A successful empty
+pass still submits a later request: newly written/deleted records and aging files
+can produce future physical work. System submission refusal leaves intent for
+the next launch/background transition. Requests are best-effort, not timers.
+
+Execution requires the background application state and available protected data,
+and yields during low-power mode or serious/critical thermal pressure. Foreground
+entry or protected-data loss cancels the active grant and its detached utility
+task. System expiration uses the same completion/cancellation owner. A generation
+ticket prevents a late completion from overwriting a newly bound database's
+request, and the existing completion guard prevents duplicate task completion.
+
+One grant performs at most eight stage rounds (each at most one migration,
+legacy-reference, partition-retirement and legacy-file page) and has a ten-second
+monotonic cooperative budget. Checks run between pages, records/frames and before
+catalog/physical publication. Expiration cancels both wrapper and detached tasks;
+persisted cursors/retirement queues survive interruption. The budget is not a hard
+preemption guarantee for an in-flight SQLite/filesystem call; inherited directory
+enumeration remains noninterruptible until it returns. No model or network call
+is part of physical maintenance. OS delivery and native behavior remain untested.
+
+Scheduling reference: [Apple earliestBeginDate documentation](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate).

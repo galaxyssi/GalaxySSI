@@ -74,9 +74,6 @@ final class AgentKnowledgeDatabase {
   private let sourcePreviewNamespace: String
   private let payloadDirectory: URL
   private let primaryPayloads: AgentKnowledgePrimaryPartitions
-  private let primaryMigrationQueue = DispatchQueue(label: "galaxyssi.knowledge.primary-migration", qos: .utility)
-  private let primaryMigrationControl = NSLock()
-  private var primaryMigrationRunning = false
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
@@ -1234,8 +1231,9 @@ final class AgentKnowledgeDatabase {
     var complete: Bool
   }
 
-  func maintainPrimaryPayloads(pageSize: Int = 8) throws -> PrimaryMigrationPage {
+  func maintainPrimaryPayloads(pageSize: Int = 8, checkActive: () throws -> Void = {}) throws -> PrimaryMigrationPage {
     try locked {
+      try checkActive()
       try primaryPayloads.checkSharedAccess()
       guard (1...32).contains(pageSize), let database, execute("BEGIN IMMEDIATE TRANSACTION") else {
         throw AgentKnowledgeDatabaseError.unavailable
@@ -1277,6 +1275,7 @@ final class AgentKnowledgeDatabase {
       var moved = 0
       for (hash, encrypted) in rows.prefix(pageSize) {
         try Task.checkCancellation()
+        try checkActive()
         guard let present = prepare("SELECT 1 FROM knowledge_primary_refs WHERE item_hash=?") else {
           throw AgentKnowledgeDatabaseError.unavailable
         }
@@ -1289,8 +1288,8 @@ final class AgentKnowledgeDatabase {
               let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plain), keyedHash(item.id) == hash else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
-        try primaryPayloads.append(plain, itemHash: hash, catalog: database)
-        guard try primaryPayloads.read(itemHash: hash, catalog: database) == plain,
+        try primaryPayloads.append(plain, itemHash: hash, catalog: database, checkActive: checkActive)
+        guard try primaryPayloads.read(itemHash: hash, catalog: database, checkActive: checkActive) == plain,
               let update = prepare("UPDATE knowledge_items SET encrypted_payload=x'00' WHERE item_hash=?") else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
@@ -1308,62 +1307,49 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int(stateUpdate, 2, finished ? 1 : 0)
       let saved = sqlite3_step(stateUpdate) == SQLITE_DONE && sqlite3_changes(database) == 1
       sqlite3_finalize(stateUpdate)
+      try checkActive()
+      try Task.checkCancellation()
       guard saved, execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
       committed = true
       return PrimaryMigrationPage(visited: visited, moved: moved, complete: finished)
     }
   }
 
-  func startPrimaryPayloadMigration() {
-    primaryMigrationControl.lock()
-    defer { primaryMigrationControl.unlock() }
-    guard !primaryMigrationRunning, database != nil else { return }
-    primaryMigrationRunning = true
-    schedulePrimaryPayloadMigration()
-  }
-
-  func reclaimPrimaryPartitions(pageSize: Int = 8) throws -> AgentKnowledgePrimaryPartitions.ReclaimPage {
+  func reclaimPrimaryPartitions(pageSize: Int = 8, checkActive: () throws -> Void = {}) throws -> AgentKnowledgePrimaryPartitions.ReclaimPage {
     try locked {
       guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
-      return try primaryPayloads.reclaim(catalog: database, pageSize: pageSize)
+      return try primaryPayloads.reclaim(catalog: database, pageSize: pageSize, checkActive: checkActive)
     }
   }
 
-  func reclaimPrimaryLegacyCopies(pageSize: Int = 8) throws -> AgentKnowledgePrimaryPartitions.LegacyReclaimPage {
+  func reclaimPrimaryLegacyCopies(pageSize: Int = 8, checkActive: () throws -> Void = {}) throws -> AgentKnowledgePrimaryPartitions.LegacyReclaimPage {
     try locked {
       guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
-      return try primaryPayloads.reclaimLegacyCopies(catalog: database, pageSize: pageSize)
+      return try primaryPayloads.reclaimLegacyCopies(catalog: database, pageSize: pageSize, checkActive: checkActive)
     }
   }
 
-  private func schedulePrimaryPayloadMigration(delay: DispatchTimeInterval = .milliseconds(100)) {
-    primaryMigrationQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
-      guard let self else { return }
-      do {
-        let page = try self.maintainPrimaryPayloads(pageSize: 8)
-        if !page.complete { self.schedulePrimaryPayloadMigration(); return }
-        let legacy = try self.reclaimPrimaryLegacyCopies(pageSize: 8)
-        if !legacy.complete {
-          self.schedulePrimaryPayloadMigration(delay: legacy.deferred ? .seconds(5) : .milliseconds(100))
-          return
-        }
-        let reclaim = try self.reclaimPrimaryPartitions(pageSize: 8)
-        if !reclaim.complete {
-          self.schedulePrimaryPayloadMigration(delay: reclaim.deferred ? .seconds(5) : .milliseconds(100))
-          return
-        }
-        let files = try self.reclaimExternalPayloadFiles(pageSize: 16)
-        if !files.complete {
-          self.schedulePrimaryPayloadMigration(delay: files.deferred ? .seconds(5) : .milliseconds(100))
-          return
-        }
-      } catch {
-        // Durable migration/retirement cursors remain retryable on the next explicit start.
-      }
-      self.primaryMigrationControl.lock()
-      self.primaryMigrationRunning = false
-      self.primaryMigrationControl.unlock()
+  // One system-granted slice; true means durable work remains, including a busy snapshot lease.
+  func maintainPrimaryStorageSlice(maximumPages: Int = 8, checkActive: () throws -> Void = {}) throws -> Bool {
+    guard (1...32).contains(maximumPages) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    for _ in 0..<maximumPages {
+      try Task.checkCancellation()
+      try checkActive()
+      if try maintainPrimaryPayloads(pageSize: 8, checkActive: checkActive).complete == false { continue }
+      try checkActive()
+      let legacy = try reclaimPrimaryLegacyCopies(pageSize: 8, checkActive: checkActive)
+      if legacy.deferred { return true }
+      if !legacy.complete { continue }
+      try checkActive()
+      let primary = try reclaimPrimaryPartitions(pageSize: 8, checkActive: checkActive)
+      if primary.deferred { return true }
+      if !primary.complete { continue }
+      try checkActive()
+      let files = try reclaimExternalPayloadFiles(pageSize: 16, checkActive: checkActive)
+      if files.deferred { return true }
+      if files.complete { return false }
     }
+    return true
   }
 
   @discardableResult
@@ -1466,21 +1452,25 @@ final class AgentKnowledgeDatabase {
   @discardableResult
   func reclaimExternalPayloadFiles(
     pageSize: Int = 32,
-    minimumAge: TimeInterval = 3_600
+    minimumAge: TimeInterval = 3_600,
+    checkActive: () throws -> Void = {}
   ) throws -> ExternalPayloadReclamation {
     try locked {
       guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
       return try primaryPayloads.withExclusiveAccess(catalog: database) {
-        try reclaimExternalPayloadFilesExclusively(pageSize: pageSize, minimumAge: minimumAge)
+        try reclaimExternalPayloadFilesExclusively(pageSize: pageSize, minimumAge: minimumAge, checkActive: checkActive)
       } ?? ExternalPayloadReclamation(removedFiles: 0, removedBytes: 0, complete: false, deferred: true)
     }
   }
 
   private func reclaimExternalPayloadFilesExclusively(
     pageSize: Int,
-    minimumAge: TimeInterval
+    minimumAge: TimeInterval,
+    checkActive: () throws -> Void
   ) throws -> ExternalPayloadReclamation {
     do {
+      try Task.checkCancellation()
+      try checkActive()
       let limit = min(max(pageSize, 1), 128)
       guard try FileManager.default.attributesOfItem(atPath: payloadDirectory.path)[.type] as? FileAttributeType == .typeDirectory else {
         throw AgentKnowledgeDatabaseError.corruptRecord
@@ -1501,10 +1491,13 @@ final class AgentKnowledgeDatabase {
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
         .prefix(limit + 1)
       let page = Array(names.prefix(limit))
+      try checkActive()
       var removedFiles = 0
       var removedBytes: Int64 = 0
       let cutoff = Date().addingTimeInterval(-max(0, minimumAge))
       for url in page {
+        try Task.checkCancellation()
+        try checkActive()
         let fileName = url.lastPathComponent
         guard fileName.range(of: #"^[a-f0-9]{64}-[a-f0-9]{16}\.saenc$"#, options: .regularExpression) != nil,
               let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
@@ -1525,6 +1518,7 @@ final class AgentKnowledgeDatabase {
       }
       let finished = names.count <= limit
       let next = finished ? "" : (page.last?.lastPathComponent ?? cursor)
+      try checkActive()
       guard let update = prepare(
         "UPDATE knowledge_external_payload_reclamation SET after_file_name = ? WHERE id = 1"
       ) else { throw AgentKnowledgeDatabaseError.unavailable }

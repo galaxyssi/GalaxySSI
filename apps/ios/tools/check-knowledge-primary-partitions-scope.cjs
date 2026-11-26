@@ -9,13 +9,15 @@ function section(source, start, end) {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
-const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPartitions.swift', 'AgentKnowledgePrimaryPartitionsTests.swift'];
-const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n' +
-  '  private let primaryMigrationQueue = DispatchQueue(label: "galaxyssi.knowledge.primary-migration", qos: .utility)\n' +
-  '  private let primaryMigrationControl = NSLock()\n' +
-  '  private var primaryMigrationRunning = false\n';
+const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPartitions.swift', 'AgentKnowledgePrimaryPartitionsTests.swift',
+  'AgentKnowledgeStorageBackground.swift', 'AgentKnowledgeStorageMaintenanceTests.swift'];
+const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n';
 function retained(file, source) {
-  if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line => !names.some(name => line.includes(name))).join('\n');
+  if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line => !names.some(name => line.includes(name))).join('\n')
+    .split(' com.galaxyssi.chat.ios.knowledge-storage').join('');
+  if (file.endsWith('GalaxySSIViews.swift')) return source
+    .replace('    AgentKnowledgeStorageBackground.register()\n', '')
+    .replace('    AgentKnowledgeStorageBackground.bind(database: store.agentKnowledgeDatabase)\n', '');
   if (file.endsWith('GalaxySSIServices.swift')) return source.replace('    store.agentKnowledgeDatabase.startPrimaryPayloadMigration()\n', '');
   if (file.endsWith('AgentKnowledgeDatabase.swift') && source.includes('  struct PrimaryMigrationPage:')) {
     const original = old(file);
@@ -39,12 +41,17 @@ function retained(file, source) {
       section(original, '    let external = readExternalPayload(itemHash: itemHash, database: sqlite3_db_handle(statement))', decodeEnd));
     const reclaimStart = '  @discardableResult\n  func reclaimExternalPayloadFiles(', reclaimEnd = '  @discardableResult\n  func replaceAll(';
     const actualReclaim = section(source, reclaimStart, reclaimEnd);
+    const checkedReclaim = actualReclaim
+      .replace('    minimumAge: TimeInterval = 3_600,\n    checkActive: () throws -> Void = {}', '    minimumAge: TimeInterval = 3_600')
+      .replace('    minimumAge: TimeInterval,\n    checkActive: () throws -> Void', '    minimumAge: TimeInterval')
+      .replace('minimumAge: minimumAge, checkActive: checkActive)', 'minimumAge: minimumAge)')
+      .split('\n').filter(line => !['try Task.checkCancellation()', 'try checkActive()'].includes(line.trim())).join('\n');
     const helperPrefix = '  private func reclaimExternalPayloadFilesExclusively(\n    pageSize: Int,\n    minimumAge: TimeInterval\n  ) throws -> ExternalPayloadReclamation {\n    do {\n';
-    const helperOffset = actualReclaim.indexOf(helperPrefix);
+    const helperOffset = checkedReclaim.indexOf(helperPrefix);
     assert(helperOffset > 0);
-    const wrapper = actualReclaim.slice(0, helperOffset);
+    const wrapper = checkedReclaim.slice(0, helperOffset);
     assert.equal(wrapper, '  @discardableResult\n  func reclaimExternalPayloadFiles(\n    pageSize: Int = 32,\n    minimumAge: TimeInterval = 3_600\n  ) throws -> ExternalPayloadReclamation {\n    try locked {\n      guard let database else { throw AgentKnowledgeDatabaseError.unavailable }\n      return try primaryPayloads.withExclusiveAccess(catalog: database) {\n        try reclaimExternalPayloadFilesExclusively(pageSize: pageSize, minimumAge: minimumAge)\n      } ?? ExternalPayloadReclamation(removedFiles: 0, removedBytes: 0, complete: false, deferred: true)\n    }\n  }\n\n');
-    const restoredReclaim = actualReclaim.slice(helperOffset)
+    const restoredReclaim = checkedReclaim.slice(helperOffset)
       .replace(helperPrefix, '  @discardableResult\n  func reclaimExternalPayloadFiles(\n    pageSize: Int = 32,\n    minimumAge: TimeInterval = 3_600\n  ) throws -> ExternalPayloadReclamation {\n    try locked {\n')
       .replace('      guard try FileManager.default.attributesOfItem(atPath: payloadDirectory.path)[.type] as? FileAttributeType == .typeDirectory else {\n        throw AgentKnowledgeDatabaseError.corruptRecord\n      }\n', '')
       .replace('let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),\n              values.isRegularFile == true, values.isSymbolicLink == false,',
@@ -72,7 +79,7 @@ function retained(file, source) {
   return source;
 }
 function validate() {
-  for (const file of [app + 'AgentKnowledgeDatabase.swift', app + 'GalaxySSIServices.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj',
+  for (const file of [app + 'AgentKnowledgeDatabase.swift', app + 'GalaxySSIServices.swift', app + 'GalaxySSIViews.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj',
     'apps/ios/GalaxySSITests/AgentKnowledgeDatabaseTests.swift', 'apps/ios/GalaxySSITests/AgentKnowledgeAsyncRAGTests.swift',
     'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const inventory = JSON.parse(read('apps/ios/ANDROID_3037_SOURCE_INVENTORY.json'));
@@ -88,11 +95,13 @@ function validate() {
   const decode = section(database, '  private func decode(\n', '  private func insertExternalPayload(');
   assert(decode.includes('if let primary = try primaryPayloads.read(itemHash: itemHash, catalog: catalog)'));
   assert(!decode.includes('try? primaryPayloads.read'));
-  const worker = section(database, '  func startPrimaryPayloadMigration(', '  @discardableResult\n  func maintainExternalPayloads(');
-  for (const token of ['guard !primaryMigrationRunning, database != nil', '.milliseconds(100)', '[weak self]',
-    'self.maintainPrimaryPayloads(pageSize: 8)', 'self.primaryMigrationRunning = false']) assert(worker.includes(token), token);
-  assert.equal(read(app + 'GalaxySSIServices.swift').split('    store.agentKnowledgeDatabase.startPrimaryPayloadMigration()\n').length, 2);
-  const migration = section(database, '  func maintainPrimaryPayloads(', '  func startPrimaryPayloadMigration(');
+  const worker = section(database, '  func maintainPrimaryStorageSlice(', '  @discardableResult\n  func maintainExternalPayloads(');
+  for (const token of ['maximumPages: Int = 8', '(1...32).contains(maximumPages)', 'for _ in 0..<maximumPages',
+    'maintainPrimaryPayloads(pageSize: 8, checkActive: checkActive)', 'reclaimPrimaryLegacyCopies(pageSize: 8, checkActive: checkActive)',
+    'reclaimPrimaryPartitions(pageSize: 8, checkActive: checkActive)', 'reclaimExternalPayloadFiles(pageSize: 16, checkActive: checkActive)',
+    'if legacy.deferred { return true }', 'if primary.deferred { return true }', 'if files.deferred { return true }']) assert(worker.includes(token), token);
+  assert(!database.includes('primaryMigrationQueue') && !database.includes('schedulePrimaryPayloadMigration('));
+  const migration = section(database, '  func maintainPrimaryPayloads(', '  func reclaimPrimaryPartitions(');
   for (const token of ['execute("BEGIN IMMEDIATE TRANSACTION")', 'pageSize: Int = 8', 'try primaryPayloads.append(',
     'try primaryPayloads.read(', 'UPDATE knowledge_items SET encrypted_payload=x\'00\'', 'UPDATE knowledge_primary_migration',
     'defer { if !committed { _ = execute("ROLLBACK") } }']) assert(migration.includes(token), token);
@@ -126,19 +135,37 @@ function validate() {
   assert(exclusive.indexOf('Self.flock(accessDescriptor, LOCK_EX)') < exclusive.indexOf('return try operation()'));
   const legacy = section(storage, '  func reclaimLegacyCopies(', '  private func reclaimExclusively(');
   for (const token of ['withExclusiveAccess(catalog: catalog)', 'pageSize: Int = 8', 'WHERE item_hash>? ORDER BY item_hash LIMIT ?',
-    'sqlite3_bind_int(select, 2, Int32(pageSize + 1))', 'keys.prefix(pageSize)', 'try readPayload(itemHash: key, catalog: catalog)',
+    'sqlite3_bind_int(select, 2, Int32(pageSize + 1))', 'keys.prefix(pageSize)', 'try readPayload(itemHash: key, catalog: catalog, checkActive: checkActive)',
     'DELETE FROM knowledge_external_payloads', 'UPDATE knowledge_primary_legacy_reclaim', 'try execute(catalog, "COMMIT")']) assert(legacy.includes(token), token);
   assert(legacy.indexOf('try readPayload(') < legacy.indexOf('DELETE FROM knowledge_external_payloads'));
   assert(!legacy.includes('DELETE FROM knowledge_items') && !legacy.includes('removeItem('));
-  for (const token of ['self.reclaimPrimaryLegacyCopies(pageSize: 8)', 'self.reclaimExternalPayloadFiles(pageSize: 16)',
-    'legacy.deferred ? .seconds(5)', 'files.deferred ? .seconds(5)']) assert(worker.includes(token), token);
   assert.equal(database.split('let primarySnapshotLease = try primaryPayloads.snapshotLease()').length, 3);
-  for (const token of ['self.reclaimPrimaryPartitions(pageSize: 8)', 'reclaim.deferred ? .seconds(5) : .milliseconds(100)']) assert(worker.includes(token), token);
+  const background = read(app + names[3]);
+  for (const token of ['BGProcessingTaskRequest(identifier: taskIdentifier)', 'Date().addingTimeInterval(15 * 60)',
+    'requiresNetworkConnectivity = false', 'requiresExternalPower = false', 'UserDefaults.standard.set(pending, forKey: pendingKey)',
+    'generation != expectedGeneration', 'schedule(pending: pending, expectedGeneration: ticket)',
+    'GalaxySSIStore.existingAgentKnowledgeDatabase()', 'Task.detached(priority: .utility)', 'maximumPages: 8',
+    'UIApplication.didBecomeActiveNotification', 'UIApplication.protectedDataWillBecomeUnavailableNotification',
+    'control.onCancellation { worker.cancel() }', 'control.onCancellation { work.cancel() }',
+    'task.expirationHandler = { control.finish(success: false, pending: true) }',
+    'control.finish(success: true, pending: true)', 'isLowPowerModeEnabled', 'thermalState']) assert(background.includes(token), token);
+  for (const token of ['!foreground && protectedData && !lowPower', '(thermal == .nominal || thermal == .fair)',
+    'now >= started, now < deadline', 'seconds: TimeInterval = 10', 'UIApplication.shared.applicationState != .background',
+    'UIApplication.willEnterForegroundNotification']) assert(background.includes(token), token);
+  assert(storage.includes('while offset < plain.count {\n        try Task.checkCancellation()\n        try checkActive()'));
+  assert(storage.includes('while true {\n      try Task.checkCancellation()\n      try checkActive()'));
+  assert(migration.includes('catalog: database, checkActive: checkActive)'));
+  for (const token of ['AgentKnowledgeSemanticController', 'EmbeddingRuntime', 'startDownload(', 'GalaxySSIStore()']) assert(!background.includes(token), token);
+  const views = read(app + 'GalaxySSIViews.swift');
+  assert.equal(views.split('    AgentKnowledgeStorageBackground.register()\n').length, 2);
+  assert.equal(views.split('    AgentKnowledgeStorageBackground.bind(database: store.agentKnowledgeDatabase)\n').length, 2);
+  const maintenanceTests = read('apps/ios/GalaxySSITests/' + names[4]);
+  assert.equal((maintenanceTests.match(/  func test/g) || []).length, 6);
   const codec = read(app + names[0]);
   for (const token of ['maximumPlainBytes = 64 * 1_024', 'maximumEncodedBytes = 128 * 1_024', 'COMPRESSION_ZLIB',
     'frame.plainBytes + 1', 'guard count == frame.plainBytes', 'codec: compressed ? "zlib" : "raw"']) assert(codec.includes(token), token);
   const tests = read('apps/ios/GalaxySSITests/' + names[2]);
-  assert.equal((tests.match(/  func test/g) || []).length, 19);
+  assert.equal((tests.match(/  func test/g) || []).length, 20);
   for (const token of ['testCatalogPublicationFailureLeavesThePreviousRecordReadable', 'testOldCatalogSnapshotStillReadsTheOriginalImmutableFrames',
     'testMissingAndCorruptedFramesRejectAnOtherwiseValidReference', 'testPersistentNamespaceSurvivesAContainerPathChange',
     'testPrimaryMigrationResumesWithoutChangingSourcesVectorsOrLogicalRecords',
@@ -146,10 +173,11 @@ function validate() {
     'testRetirementQueueResumesBeforeAndAfterPhysicalUnlink', 'testReclaimRejectsLiveReferencesTraversalAndSymlinkTargets',
     'testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile', 'testLegacyReferenceReleaseIsPagedVerifiedAndSnapshotDeferred',
     'testLegacyReferenceReleaseRollsBackIfAnyPrimaryIsCorrupt', 'testExportPinsLegacyFilesThroughMigrationAndLaterReclamation',
-    'testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge']) assert(tests.includes(token), token);
+    'testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge', 'testCancellationBetweenFramesDoesNotPublishAReplacement']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
+  assert.equal(project.split(' com.galaxyssi.chat.ios.knowledge-storage').length, 3);
   for (const name of names) assert.equal(project.split('\n').filter(line => line.includes(name)).length, 4, name);
-  console.log('Pinned Android #3037 storage, primary writer/read/migration/reclamation hooks, verified legacy release, retained logical/vector code and nineteen authored fixtures source contracts passed; no native acceptance.');
+  console.log('Pinned Android #3037 storage, periodic system maintenance, primary/legacy hooks, retained logical/vector code and twenty primary plus six maintenance authored fixture source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();
