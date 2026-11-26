@@ -249,6 +249,9 @@ final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTranspor
     if let urlError = error as? URLError, urlError.code == .cancelled {
       throw AgentIOSURLSessionWebError.cancelled
     }
+    if let urlError = error as? URLError, urlError.code == .timedOut {
+      throw AgentIOSURLSessionWebError.timeout
+    }
     if let error {
       throw AgentIOSURLSessionWebError.transportFailed(error.localizedDescription)
     }

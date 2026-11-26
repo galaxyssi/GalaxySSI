@@ -10,6 +10,7 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retainedEncodedMedia(source) {
+  source = require('./check-web-tool-failure-scope.cjs').retainedFailureMedia(source);
   const hook = '    components.host = host.lowercased()\n    components.fragment = nil\n    if components.percentEncodedPath.isEmpty { components.percentEncodedPath = "/" }\n';
   if (!source.includes(hook)) return source;
   source = once(source, hook, '');

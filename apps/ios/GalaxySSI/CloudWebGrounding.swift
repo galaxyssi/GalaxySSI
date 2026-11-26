@@ -523,11 +523,7 @@ enum CloudWebGrounding {
       }
       return boundedModelJson(modelPayload(result: result, operation: operation, toolName: name))
     } catch {
-      return boundedModelJson([
-        "status": .string("failed"),
-        "tool": .string(String(name.prefix(80))),
-        "error": .string(String(error.localizedDescription.prefix(300)))
-      ])
+      return boundedModelJson(CloudWebToolFailurePolicy.failure(tool: name, error: error))
     }
   }
 
@@ -1133,7 +1129,7 @@ enum CloudWebGrounding {
         "details": .object(error.details)
       ])
     }
-    return payload
+    return CloudWebToolFailurePolicy.applying(to: payload, status: result.status, code: result.error?.code)
   }
 
   private static func parseInlineArguments(_ body: String) -> AgentMcpJSONObject {
