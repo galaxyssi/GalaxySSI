@@ -1,6 +1,12 @@
 import Foundation
 
 enum GlobalResearchSourceScope {
+  static func allowsContext(_ request: GlobalResearchDispatchRequest, scope: GlobalRealtimePlanningScope) -> Bool {
+    guard scope.canRead, let sources = request.contextConversationIds,
+          sources.isSubset(of: scope.allowedConversationIds) else { return false }
+    return !PublicAttentionResearchPolicy.isPublicTask(request.taskId) || sources.isEmpty
+  }
+
   static func sourceIds(from cognition: GlobalCognitionTask) -> Set<String>? {
     guard cognition.sourceEvent.sensitivity != .sessionPrivate,
           !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(cognition.lastError) else { return nil }
@@ -176,6 +182,7 @@ struct GlobalResearchDispatchRequest: Codable, Equatable, Identifiable {
   var prompt: String
   var estimatedInputTokens: Int64
   var createdAtMillis: Int64
+  var contextConversationIds: Set<String>?
 
   init(
     id: String = UUID().uuidString,
@@ -193,7 +200,8 @@ struct GlobalResearchDispatchRequest: Codable, Equatable, Identifiable {
     systemPrompt: String,
     prompt: String,
     estimatedInputTokens: Int64,
-    createdAtMillis: Int64
+    createdAtMillis: Int64,
+    contextConversationIds: Set<String>? = nil
   ) {
     self.id = id
     self.taskId = taskId
@@ -211,6 +219,7 @@ struct GlobalResearchDispatchRequest: Codable, Equatable, Identifiable {
     self.prompt = String(prompt.prefix(GlobalResearchExecutorLimits.maxSynthesisPromptCharacters))
     self.estimatedInputTokens = max(estimatedInputTokens, 0)
     self.createdAtMillis = max(createdAtMillis, 0)
+    self.contextConversationIds = contextConversationIds
   }
 
   enum CodingKeys: String, CodingKey {
@@ -230,6 +239,7 @@ struct GlobalResearchDispatchRequest: Codable, Equatable, Identifiable {
     case prompt
     case estimatedInputTokens = "estimated_input_tokens"
     case createdAtMillis = "created_at_millis"
+    case contextConversationIds = "context_conversation_ids"
   }
 }
 
@@ -264,17 +274,20 @@ struct GlobalResearchExecutionContext: Codable, Equatable {
   var realtimeContext: String
   var worldContext: String
   var causalEventIdsWithRetractedEvidence: Set<String>
+  var conversationIds: Set<String>?
 
   init(
     conversationContext: String = "",
     realtimeContext: String = "",
     worldContext: String = "",
-    causalEventIdsWithRetractedEvidence: Set<String> = []
+    causalEventIdsWithRetractedEvidence: Set<String> = [],
+    conversationIds: Set<String>? = nil
   ) {
     self.conversationContext = String(conversationContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters))
     self.realtimeContext = String(realtimeContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters))
     self.worldContext = String(worldContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters))
     self.causalEventIdsWithRetractedEvidence = Set(causalEventIdsWithRetractedEvidence.filter { !$0.isBlank })
+    self.conversationIds = conversationIds
   }
 
   enum CodingKeys: String, CodingKey {
@@ -282,6 +295,7 @@ struct GlobalResearchExecutionContext: Codable, Equatable {
     case realtimeContext = "realtime_context"
     case worldContext = "world_context"
     case causalEventIdsWithRetractedEvidence = "causal_event_ids_with_retracted_evidence"
+    case conversationIds = "conversation_ids"
   }
 
   func hasRetractedEvidence(_ ids: Set<String>) -> Bool {
