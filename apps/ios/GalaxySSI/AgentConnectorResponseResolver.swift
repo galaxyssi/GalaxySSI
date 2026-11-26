@@ -186,3 +186,58 @@ enum AgentConnectorResponseResolver {
     value.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 }
+
+enum AgentNativeConnectorRichReplyPolicy {
+  static func validated(result: AgentActionResult, action: AgentAction, outgoing: ChatMessage,
+                        task: AgentTaskRecord, profile: String, record: AgentManagedResponseRecord?) -> String? {
+    let turn = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    guard action.kind == .callConnector, action.id == result.actionId, result.success,
+          outgoing.isMine, outgoing.contactId == "hermes", !outgoing.readOnlyAnalysis,
+          !outgoing.conversationId.isBlank, task.sessionId == outgoing.conversationId, task.taskId == turn,
+          action.parameters["_galaxyssi_conversation_id"] == outgoing.conversationId,
+          action.parameters["_galaxyssi_turn_id"] == turn, action.parameters["_galaxyssi_task_id"] == task.taskId,
+          action.parameters[AgentIOSConnectorDispatch.sourceKey] == outgoing.id.uuidString,
+          !profile.isBlank, action.parameters[AgentIOSConnectorDispatch.profileKey] == profile,
+          (action.parameters["_galaxyssi_agent_team_spec"] ?? "").isBlank,
+          result.metadata["awaiting_response"] == "false", result.metadata["connector_disposition"] == "response",
+          result.metadata["effect_outcome_unknown"] != "true",
+          let record, record.state != .pending, let response = record.response, response.success,
+          response.deliveryFailureCode.isEmpty, response.taskStatus.isEmpty || response.taskStatus == "completed",
+          record.sourceMessageId > 0, record.sourceMessageId <= 9_007_199_254_740_991,
+          !record.agentId.isBlank, !record.taskId.isBlank,
+          AgentRemoteOutcomePolicy.validGeneration(record.executionGeneration), record.contactId == action.parameters["connector_id"],
+          record.conversationId == outgoing.conversationId, record.turnId == turn,
+          record.ownerRunId == AgentControlPlaneActionExecutor.connectorRunId(action: action, agentId: record.agentId),
+          result.metadata["control_plane_run_id"] == record.ownerRunId,
+          result.metadata["control_plane_agent_id"] == record.agentId,
+          result.metadata["source_message_id"] == String(record.sourceMessageId),
+          result.metadata["contact_id"] == record.contactId, result.metadata["conversation_id"] == record.conversationId,
+          result.metadata["turn_id"] == record.turnId, result.metadata["task_id"] == record.taskId,
+          Int64(result.metadata["execution_generation"] ?? "") == record.executionGeneration,
+          response.sourceMessageId == record.sourceMessageId, response.contactId == record.contactId,
+          response.conversationId == record.conversationId, response.turnId == record.turnId,
+          response.taskId == record.taskId, response.executionGeneration == record.executionGeneration,
+          response.content == result.message, response.richOutputJson == result.metadata["rich_output"] else { return nil }
+    let rich = AgentRichContentCodec.normalize(response.richOutputJson)
+    return rich.isEmpty ? nil : rich
+  }
+}
+
+enum AgentManagedArtifactScopePolicy {
+  static func authorizes(_ manifest: [String: Any], record: AgentManagedResponseRecord?) -> Bool {
+    let source = manifest.string("source_message_id")
+    guard let numeric = Int64(source), numeric > 0, numeric <= 9_007_199_254_740_991, String(numeric) == source,
+          let generation = try? MqttRouteProtocol.integer(manifest, "execution_generation"),
+          AgentRemoteOutcomePolicy.validGeneration(generation),
+          let record, !record.ownerRunId.isBlank, !record.contactId.isBlank, !record.taskId.isBlank,
+          record.sourceMessageId == numeric, record.executionGeneration == generation,
+          record.contactId == manifest.string("contact_id"), record.conversationId == manifest.string("conversation_id"),
+          record.turnId == manifest.string("turn_id"), record.taskId == manifest.string("task_id") else { return false }
+    if record.state == .pending { return record.response == nil }
+    guard let response = record.response, response.success, response.deliveryFailureCode.isEmpty,
+          response.taskStatus.isEmpty || response.taskStatus == "completed" else { return false }
+    return response.sourceMessageId == numeric && response.contactId == record.contactId &&
+      response.conversationId == record.conversationId && response.turnId == record.turnId &&
+      response.taskId == record.taskId && response.executionGeneration == generation
+  }
+}
