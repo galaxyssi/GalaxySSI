@@ -1,7 +1,8 @@
 // Source contracts only; not native execution, billing or privacy acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = '387929097036560b483482e3590451190e7640db';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-pre-shadow-routing-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const git = (...args) => cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024});
 const old = file => git('show', `${base}:${file}`).replace(/\r\n/g, '\n');
 function once(source, from, to = '') { assert.equal(source.split(from).length, 2, from); return source.replace(from, to); }
@@ -21,6 +22,7 @@ const commitHook = '        if routingUsageAllowed, routingUsageValid, let usage
   '                usage: usage, nowMillis: AgentControlPlaneClock.nowMillis())\n' +
   '          }\n        }\n';
 function retained(file, source) {
+  source = require('./check-pre-shadow-routing-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentRoutingUsageStore.swift') && !line.includes('AgentRoutingUsageStoreTests.swift')).join('\n');
   if (file.endsWith('AgentProviderResourceRanking.swift') && source.includes('observedUsage: AgentRoutingUsageSummary? = nil')) {

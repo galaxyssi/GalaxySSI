@@ -1101,7 +1101,7 @@ const requiredSourceSnippets = [
   [models, "AgentConnectorRouteSelection"],
   [models, "AgentConnectorRouteSelector"],
   [models, "recoverable_connector_status"],
-  [models, "eligible_reasoning_fallback"],
+  [models, "AgentProviderResourceRanking.prepareForQuality"],
   [models, "AgentResourceCatalog"],
   [models, "systemToolType"],
   [models, "nativeCapabilities"],

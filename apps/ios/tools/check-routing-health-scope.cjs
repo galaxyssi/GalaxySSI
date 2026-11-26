@@ -25,6 +25,7 @@ const replayHook = '    let replayTargets = automaticRoutingTargets(goal: source
   '      hasPairedDesktop: store.serverLinks.contains { $0.paired },\n' +
   '      routingHealth: automaticRoutingHealth(targets: replayTargets))\n';
 function retained(file, source) {
+  source = require('./check-routing-usage-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentRoutingHealthSnapshot.swift') && !line.includes('AgentRoutingHealthSnapshotTests.swift')).join('\n');
   if (file.endsWith('AgentProviderHealth.swift') && source.includes(ledgerHook)) {

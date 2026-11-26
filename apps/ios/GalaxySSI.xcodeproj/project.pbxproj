@@ -2106,6 +2106,7 @@
     A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
+    A10000000000000000003E16 /* AgentPreShadowRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */; };
     A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */; };
     A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */; };
     A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */; };
@@ -4401,6 +4402,7 @@
     A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreShadowRoutingTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingHealthSnapshotTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingUsageStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityObservationsTests.swift; sourceTree = "<group>"; };
@@ -6567,6 +6569,7 @@
         A20000000000000000000892 /* LanguagePolicySettingsTests.swift */,
         A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */,
         A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */,
+        A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */,
         A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */,
         A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */,
         A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */,
@@ -8989,6 +8992,7 @@
         A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */,
         A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */,
         A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */,
+        A10000000000000000003E16 /* AgentPreShadowRoutingTests.swift in Sources */,
         A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */,
         A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */,
         A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */,

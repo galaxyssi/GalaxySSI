@@ -894,8 +894,16 @@ enum AgentConnectorRouteSelector {
         requirements: requirements, hasPairedDesktop: hasPairedDesktop, routingHealth: routingHealth, routingUsage: routingUsage
       )
     }
-    if let current = routingDecision, !routingGoal.isBlank {
-      routingDecision = AgentQualityRoutingService.adjustedDecision(goal: routingGoal, decision: current)
+    if let current = routingDecision {
+      let selfModel = UserDefaultsAgentSelfModelStore.shared.snapshot()
+      let prepared = AgentProviderResourceRanking.prepareForQuality(decision: current,
+        eligibleTargetIds: Set(eligibleById.keys), preferredTargetId: preferredTarget?.id ?? "") { resourceId in
+        AgentSelfModelReducer.calibration(model: selfModel, goal: routingGoal,
+          resourceId: resourceId, requirements: requirements).scoreAdjustment
+      }
+      guard prepared.primary != nil else { return nil }
+      routingDecision = routingGoal.isBlank ? prepared :
+        AgentQualityRoutingService.adjustedDecision(goal: routingGoal, decision: prepared)
     }
     let decisionCandidates: [AgentResourceCandidate]
     if let routingDecision {
@@ -913,55 +921,20 @@ enum AgentConnectorRouteSelector {
         candidate.reasons.append(AgentCapabilityRoutingPolicy.sourceEvidence(requirements))
         return candidate
       }
-    let routedOrder = Dictionary(uniqueKeysWithValues: routedCandidates.enumerated().map {
-      ($0.element.resource.targetId, $0.offset)
-    })
-    let calibratedCandidates = routedCandidates.sorted { lhs, rhs in
-      let leftAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: routingGoal,
-        resourceId: lhs.resource.targetId,
-        requirements: requirements
-      )
-      let rightAdjustment = AgentSelfModelReducer.calibrationAdjustment(
-        goal: routingGoal,
-        resourceId: rhs.resource.targetId,
-        requirements: requirements
-      )
-      let leftScore = lhs.score + leftAdjustment
-      let rightScore = rhs.score + rightAdjustment
-      return leftScore == rightScore
-        ? (routedOrder[lhs.resource.targetId] ?? .max) < (routedOrder[rhs.resource.targetId] ?? .max)
-        : leftScore > rightScore
-    }
+    let calibratedCandidates = routedCandidates
     let routedTarget = calibratedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first
     let selectedTarget = preferredTarget ?? routedTarget ?? baselineTarget
 
     guard let routingDecision else {
       return AgentConnectorRouteSelection(target: selectedTarget, decision: nil)
     }
-    let selectedCandidate = calibratedCandidates.first { $0.resource.targetId == selectedTarget.id } ??
-      routingDecision.catalog.first { $0.targetId == selectedTarget.id }.map { resource in
-        AgentResourceCandidate(
-          resource: resource,
-          score: 0,
-          reasons: [
-            selectedTarget.status == .disconnected ?
-              "recoverable_connector_status" :
-              "eligible_reasoning_fallback",
-            AgentCapabilityRoutingPolicy.sourceEvidence(requirements)
-          ]
-        )
-      }
-    let connectorDecision = selectedCandidate.map { primary in
-      AgentRoutingDecision(
-        requirements: routingDecision.requirements,
-        primary: primary,
-        fallbacks: AgentProviderResourceRanking.fallbackCandidates(primary: primary.resource, candidates: calibratedCandidates),
-        environment: routingDecision.environment,
-        catalog: routingDecision.catalog,
-        taskBudget: routingDecision.taskBudget
-      )
+    guard var selectedCandidate = calibratedCandidates.first(where: { $0.resource.targetId == selectedTarget.id }) else { return nil }
+    if selectedTarget.status == .disconnected, !selectedCandidate.reasons.contains("recoverable_connector_status") {
+      selectedCandidate.reasons.append("recoverable_connector_status")
     }
+    var connectorDecision = routingDecision
+    connectorDecision.primary = selectedCandidate
+    connectorDecision.fallbacks = Array(calibratedCandidates.filter { $0.resource.targetId != selectedTarget.id }.prefix(6))
     return AgentConnectorRouteSelection(target: selectedTarget, decision: connectorDecision)
   }
 

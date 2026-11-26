@@ -152,6 +152,37 @@ enum AgentProviderResourceRanking {
     return AgentResourceCandidate(resource: resource, score: score, reasons: reasons)
   }
 
+  static func prepareForQuality(decision: AgentRoutingDecision, eligibleTargetIds: Set<String>,
+                                preferredTargetId: String, calibration: (String) -> Int) -> AgentRoutingDecision {
+    var seen = Set<String>()
+    let candidates = ([decision.primary].compactMap { $0 } + decision.fallbacks).filter {
+      !$0.resource.targetId.isBlank && eligibleTargetIds.contains($0.resource.targetId) &&
+        seen.insert($0.resource.targetId).inserted
+    }
+    let ranked = candidates.enumerated().map { index, original -> (index: Int, candidate: AgentResourceCandidate) in
+      var candidate = original
+      let adjustment = calibration(candidate.resource.targetId)
+      let baselinePrefix = "routing_self_calibration_baseline:"
+      let baseline = candidate.reasons.first { $0.hasPrefix(baselinePrefix) }
+        .flatMap { Int($0.dropFirst(baselinePrefix.count)) } ?? candidate.score
+      let sum = baseline.addingReportingOverflow(adjustment)
+      candidate.score = sum.overflow ? (adjustment < 0 ? Int.min : Int.max) : sum.partialValue
+      candidate.reasons.removeAll {
+        $0.hasPrefix("routing_self_calibration_adjustment:") || $0.hasPrefix(baselinePrefix)
+      }
+      candidate.reasons.append("\(baselinePrefix)\(baseline)")
+      candidate.reasons.append("routing_self_calibration_adjustment:\(adjustment)")
+      return (index, candidate)
+    }.sorted { left, right in
+      left.candidate.score == right.candidate.score ? left.index < right.index : left.candidate.score > right.candidate.score
+    }.map(\.candidate)
+    let primary = ranked.first { $0.resource.targetId == preferredTargetId } ?? ranked.first
+    var prepared = decision
+    prepared.primary = primary
+    prepared.fallbacks = primary.map { fallbackCandidates(primary: $0.resource, candidates: ranked) } ?? []
+    return prepared
+  }
+
   // Persisted provider telemetry may be non-finite; clamp before converting to Int.
   private static func penalty(_ value: Double, maximum: Int) -> Int {
     guard !value.isNaN, value > 0 else { return 0 }
