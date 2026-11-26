@@ -2,6 +2,79 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalRealtimeContextTests: XCTestCase {
+  func testProjectionRetainsCompleteSourceUnionsForEveryWorkKind() {
+    var cognition = self.cognition("c", "a", "Cognition", 1_000)
+    cognition.sourceEvent.metadata["source_conversation_ids"] = "b"
+    cognition.contextConversationIds = ["context"]
+    var research = self.research("r", "a", "Research", 1_000)
+    research.sourceConversationIds = ["a", "b"]
+    var run = self.run(id: "run", conversationId: "a", goal: "Run", status: .queued, updatedAtMillis: 1_000)
+    run.sourceConversationIds = ["a", "b"]
+    var goal = self.goal("goal", "a", .blocked, 1_000); goal.sourceConversationIds = ["a", "b"]
+    let items = GlobalRealtimeContextPolicy.project(cognitionTasks: [cognition], researchTasks: [research],
+      autonomousRuns: [run], longHorizonGoals: [goal], nowMillis: 1_000)
+    XCTAssertEqual(items.first { $0.key == "cognition:c" }?.conversationIds, ["a", "b", "context"])
+    for key in ["research:r", "run:run", "goal:goal"] {
+      XCTAssertEqual(items.first { $0.key == key }?.conversationIds, ["a", "b"])
+    }
+  }
+
+  func testExcludedSecondarySourceCannotBeSubtractedFromSharedWork() {
+    var cognition = self.cognition("c", "a", "Mixed", 1_000); cognition.contextConversationIds = ["private"]
+    var research = self.research("r", "a", "Mixed", 1_000); research.sourceConversationIds = ["a", "private"]
+    var run = self.run(id: "run", conversationId: "a", goal: "Mixed", status: .queued, updatedAtMillis: 1_000)
+    run.sourceConversationIds = ["a", "private"]
+    var goal = self.goal("goal", "a", .blocked, 1_000); goal.sourceConversationIds = ["a", "private"]
+    XCTAssertTrue(GlobalRealtimeContextPolicy.project(cognitionTasks: [cognition], researchTasks: [research],
+      autonomousRuns: [run], longHorizonGoals: [goal], excludedConversationIds: ["private"], nowMillis: 1_000).isEmpty)
+  }
+
+  func testPrivateCognitionSensitivityCannotEnterUnscopedProjection() {
+    var cognition = self.cognition("c", "a", "Private", 1_000)
+    cognition.sourceEvent.sensitivity = .sessionPrivate
+    XCTAssertTrue(GlobalRealtimeContextPolicy.project(cognitionTasks: [cognition], researchTasks: [],
+      autonomousRuns: [], longHorizonGoals: [], nowMillis: 1_000).isEmpty)
+  }
+
+  func testScopedProviderRejectsLegacyResearchAndRunsWithoutInventingProof() {
+    let legacy = research("r", "a", "Legacy research", 1_000)
+    let run = self.run(id: "run", conversationId: "a", goal: "Legacy run", status: .queued, updatedAtMillis: 1_000)
+    let provider = GlobalRealtimeContextProvider(cognitionTasksSource: { [] }, researchTasksSource: { [legacy] },
+      autonomousRunsSource: { [run] }, longHorizonGoalsSource: { [] }, continuitySource: { nil })
+    let query = "Show all tasks and current status"
+    let unscoped = provider.build(query: query, currentConversationId: "a", nowMillis: 1_000)
+    XCTAssertTrue(unscoped.contains("Legacy research")); XCTAssertTrue(unscoped.contains("Legacy run"))
+    let scoped = provider.buildProjection(query: query, currentConversationId: "a", excludedConversationIds: [],
+      allowedConversationIds: ["a"], nowMillis: 1_000)
+    XCTAssertTrue(scoped.text.isEmpty); XCTAssertTrue(scoped.conversationIds.isEmpty)
+  }
+
+  func testWarmProviderRechecksCompleteSourceSetBeforeSelection() {
+    var research = self.research("r", "a", "Shared research", 1_000); research.sourceConversationIds = ["a", "b"]
+    let saved = research, queue = DispatchQueue(label: "source-union-cache")
+    var reads = 0
+    let provider = GlobalRealtimeContextProvider(cognitionTasksSource: { [] }, researchTasksSource: { reads += 1; return [saved] },
+      autonomousRunsSource: { [] }, longHorizonGoalsSource: { [] }, continuitySource: { nil }, refreshQueue: queue)
+    provider.prewarm(nowMillis: 1_000); queue.sync {}
+    let query = "Show all tasks and current status"
+    XCTAssertTrue(provider.buildNonBlocking(query: query, currentConversationId: "a", nowMillis: 1_000,
+      allowedConversationIds: ["a", "b"]).contains("Shared research"))
+    XCTAssertEqual(provider.buildNonBlocking(query: query, currentConversationId: "a", excludedConversationIds: ["b"],
+      nowMillis: 1_000, allowedConversationIds: ["a"]), "")
+    XCTAssertEqual(reads, 1)
+  }
+
+  func testSelectedProjectionCapturesSecondarySourcesNotEveryAllowedConversation() {
+    var research = self.research("r", "a", "Selected research", 1_000); research.sourceConversationIds = ["a", "b"]
+    let saved = research, other = goal("other", "c", .blocked, 1_000)
+    let provider = GlobalRealtimeContextProvider(cognitionTasksSource: { [] }, researchTasksSource: { [saved] },
+      autonomousRunsSource: { [] }, longHorizonGoalsSource: { [other] }, continuitySource: { nil })
+    let projected = provider.buildProjection(query: "Show all tasks and current status", currentConversationId: "a",
+      excludedConversationIds: [], allowedConversationIds: ["a", "b", "c", "unrelated"], maximumItems: 1, nowMillis: 1_000)
+    XCTAssertTrue(projected.text.contains("Selected research"))
+    XCTAssertEqual(projected.conversationIds, ["a", "b"])
+  }
+
   func testProjectionKeepsLiveAndRecentStateWhileExcludingStaleOrDeletedWork() {
     let now = 10 * hour
     let liveCognition = cognition("cognition-live", "conversation-a", "Runtime architecture", now - 1_000)

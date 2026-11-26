@@ -5,7 +5,7 @@ const base = 'ca36efb28c5e2e72c620e20c4e88ccfe30e1549a';
 const isolationBase = 'bb1b6b938450781de6b0580d839cb7ffb16617c7';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-autonomous-source-scope.cjs').retained(f,
-  clean(fs.readFileSync(path.join(root, f), 'utf8')));
+  require('./check-research-context-provenance.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {

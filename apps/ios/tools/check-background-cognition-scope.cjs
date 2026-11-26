@@ -4,7 +4,8 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '49c2522d05cef989f00fcde7474bb38d117bc7fb';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-research-source-scope.cjs').retained(f,
-  require('./check-autonomous-source-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
+  require('./check-autonomous-source-scope.cjs').retained(f,
+    require('./check-research-context-provenance.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8')))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {

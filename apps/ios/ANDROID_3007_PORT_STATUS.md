@@ -535,3 +535,7 @@ Current remaining scope: unplanned/capture/browser/cloud-loop execution persiste
 ## Knowledge-gap Source Follow-up
 
 See ANDROID_3007_KNOWLEDGE_GAP_SOURCE_FOLLOWUP.md for new request-origin source recording, complete merged membership and research production without synthetic-source authorization. Missing legacy or broader context provenance remains untrusted; no full privacy/runtime acceptance or #3007 completion is claimed.
+
+## Research Context Sources
+
+See ANDROID_3007_RESEARCH_CONTEXT_PROVENANCE.md for complete projection source unions, selected-context dispatch metadata, current boundary revalidation and accepted result dependencies retained on research tasks/autonomous runs. Metadata is not full historical/media/tool provenance or native privacy acceptance; #3007 remains incomplete.

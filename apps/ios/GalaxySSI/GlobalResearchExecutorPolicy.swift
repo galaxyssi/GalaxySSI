@@ -339,7 +339,8 @@ enum GlobalResearchExecutorPolicy {
       systemPrompt: GlobalResearchPromptBuilder.researchSystemPrompt,
       prompt: prompt,
       estimatedInputTokens: estimatedTokens,
-      createdAtMillis: nowMillis
+      createdAtMillis: nowMillis,
+      contextConversationIds: PublicAttentionResearchPolicy.isPublicTask(running.id) ? [] : context.conversationIds
     )
     next.dispatchRequests.append(request)
     return UnitDispatchOutcome(state: next, task: running)
@@ -694,7 +695,8 @@ enum GlobalResearchExecutorPolicy {
       systemPrompt: GlobalResearchPromptBuilder.synthesisSystemPrompt,
       prompt: prompt,
       estimatedInputTokens: estimatedTokens,
-      createdAtMillis: nowMillis
+      createdAtMillis: nowMillis,
+      contextConversationIds: PublicAttentionResearchPolicy.isPublicTask(synthesizing.id) ? [] : context.conversationIds
     ))
     return GlobalResearchExecutorStep(
       state: next,
