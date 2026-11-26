@@ -54,7 +54,8 @@ function validateSearchCapacity() {
       name + ': transport, credentials, permission, ranking, research, output budgeting and encrypted storage remain unchanged outside declared capacity hooks');
   for (const name of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSWebMediaNativeTools', 'AgentIOSWebSearchFusion',
     'AgentIOSPublicSearchParser', 'AgentIOSImageSearchRequestPolicy', 'AgentIOSWebEvidencePack', 'AgentIOSWebEvidenceReader',
-    'AgentIOSWebCacheIndex', 'AgentIOSWebExecutionBudget']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    'AgentIOSWebCacheIndex', 'AgentIOSWebExecutionBudget']) assert.equal(name === 'AgentIOSWebIntelligenceNativeTools'
+      ? require('./check-web-page-diff-scope.cjs').retainedDiffCatalog(read(app + name + '.swift')) : read(app + name + '.swift'), old(app + name + '.swift'), name);
   const limits = read(app + 'AgentIOSWebSearchCapacity.swift');
   for (const token of ['maximumResults = 100', 'defaultResults = 10', 'maximumCachedResponseBytes = 2_000_000',
     'case webMedia, intelligence', 'self == .intelligence', ': 24', '? 4_096 : 1_024', ': 20']) assert(limits.includes(token), token);

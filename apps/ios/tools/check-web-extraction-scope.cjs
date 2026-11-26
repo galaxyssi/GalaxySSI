@@ -11,6 +11,7 @@ function section(source, start, end) {
   return source.slice(first, last);
 }
 function retainedExtractionProvider(source) {
+  source = require('./check-web-page-diff-scope.cjs').retainedDiffProvider(source);
   if (!source.includes('AgentIOSWebLocalExtraction.structured(')) return source;
   return source.replace(section(source, '  private func extract(', '  private func crawl('),
     section(old(app + 'AgentIOSURLSessionWebIntelligenceProvider.swift'), '  private func extract(', '  private func crawl('));
@@ -21,7 +22,8 @@ function validateWebExtraction() {
     'Only extract changes; existing fetch, search, crawl, cache, research, permissions, model budget and transport kernels retained');
   for (const name of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSURLSessionWebMediaProvider', 'AgentIOSWebEvidencePack',
     'AgentIOSWebIntelligenceCache', 'AgentIOSWebCacheIndex', 'AgentIOSWebExecutionBudget', 'AgentIOSPublicArticleParser'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(name === 'AgentIOSWebIntelligenceNativeTools' ? require('./check-web-page-diff-scope.cjs')
+      .retainedDiffCatalog(read(app + name + '.swift')) : read(app + name + '.swift'), old(app + name + '.swift'), name);
   const extract = section(provider, '  private func extract(', '  private func crawl(');
   for (const token of ['try invocation.checkpoint()', 'if !url.isEmpty', 'guard cacheScope else',
     'grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)',

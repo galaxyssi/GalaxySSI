@@ -36,7 +36,8 @@ function validateWebCrawl() {
     'Only structured DOM navigation selection/count changed; HTTP/DNS/header/credential/redirect/bytes/decoder/render behavior retained');
   for (const file of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSWebIntelligenceCache', 'AgentIOSWebCacheIndex',
     'AgentIOSWebExecutionBudget', 'AgentIOSWebEvidencePack', 'AgentIOSGenericArticleParser', 'AgentIOSPublicAddressPolicy'])
-    assert.equal(read(app + file + '.swift'), show(base, app + file + '.swift'), file);
+    assert.equal(file === 'AgentIOSWebIntelligenceNativeTools' ? require('./check-web-page-diff-scope.cjs')
+      .retainedDiffCatalog(read(app + file + '.swift')) : read(app + file + '.swift'), show(base, app + file + '.swift'), file);
   const crawl = section(provider, '  private func crawl(', '  private func research(');
   for (const token of ['AgentIOSWebCrawlPolicy(input: input)', 'AgentIOSWebCrawlDeadline(durationMillis: policy.timeoutMillis, startedAtMillis: started, now: uptimeMillis)',
     'grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)',

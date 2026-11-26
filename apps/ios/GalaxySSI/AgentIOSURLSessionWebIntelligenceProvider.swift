@@ -331,6 +331,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       }
       watchMetadata["removed"] = .bool(removed)
     case "check", "check_due":
+      guard invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission),
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent) else {
+        return failure("public_web_scope_required", "Checking saved page watches requires public web permission and consent")
+      }
       guard let watches = cacheStore.watchSnapshot() else {
         return failure("cache_unavailable", "The saved web watches could not be read.", retryable: true)
       }
@@ -739,48 +743,64 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
-    let url = string(input, "url", limit: 4_096)
-    guard !url.isEmpty else {
-      return failure("invalid_url", "Web intelligence diff requires a URL")
-    }
-    let previous = cacheStore.document(url: url, allowStale: true)
-    let webResult = webMediaProvider.invoke(
-      operation: .webOpen,
-      input: webFetchInput(input, url: url, invocation: invocation),
-      invocation: invocation
-    )
-    guard webResult.isSuccess else { return webResult }
-    let committed = cacheFetchedDocument(webResult, requestedURL: url, input: input)
-    var result = readableFetchOutput(
-      operation: .diff,
-      requestedURL: url,
-      webResult: webResult,
-      invocation: invocation,
-      status: "partial"
-    )
-    var cache = result["cache"]?.objectValue ?? [:]
-    cache["write_committed"] = .bool(committed)
-    result["cache"] = .object(cache)
-    let currentSHA256 = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256([
-      "url": .string(url),
-      "text": webResult.output["text"] ?? .string("")
-    ]))
-    let changed = previous?.contentSHA256 != currentSHA256.stringValue
-    result["comparison"] = .string(previous == nil ? "no_prior_snapshot" : "cached_snapshot")
-    result["changed"] = .bool(changed)
-    result["previous_sha256"] = .string(previous?.contentSHA256 ?? "")
-    result["current_sha256"] = currentSHA256
-    result["diff"] = .object([
-      "changed": .bool(changed),
-      "previous_sha256": .string(previous?.contentSHA256 ?? ""),
-      "current_sha256": currentSHA256,
-      "summary": .string(changed ? "Cached page content changed" : "Cached page content did not change")
-    ])
-    return AgentNativeToolExecutionResult.success(
-      output: result,
-      message: changed ? "Fetched current public page state; cached content changed" : "Fetched current public page state; cached content did not change",
-      metadata: metadata(operation: .diff, webResult: webResult)
-    )
+    do {
+      try invocation.checkpoint()
+      guard invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission),
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent) else {
+        return failure("public_web_scope_required", "Page comparison requires public web permission and consent")
+      }
+      let url = string(input, "url", limit: 4_096)
+      guard !url.isEmpty else { return failure("invalid_url", "Web intelligence diff requires a URL") }
+      let cacheScope = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+      let saved = cacheScope ? cacheStore.document(url: url, allowStale: true) : nil
+      let previous = saved.flatMap { document in
+        document.contentType != "text/x-galaxyssi-search-result" && AgentIOSWebTextDecoder.reusable(content: document.content, metadata: document.metadata)
+          ? document : nil
+      }
+      let timeout = int64(input, "timeout_ms", defaultValue: 15_000, minimum: 1_000, maximum: 60_000)
+      let budget = AgentIOSWebExecutionBudget(durationMillis: timeout, now: uptimeMillis)
+      let child = try budget.invocation(parent: invocation, input: input, timeoutMillis: timeout, nowMillis: nowMillis)
+      var fetchInput = input
+      fetchInput["timeout_ms"] = .int(timeout)
+      let webResult = webMediaProvider.invoke(operation: .webOpen, input: webFetchInput(fetchInput, url: url, invocation: child), invocation: child)
+      guard webResult.isSuccess else { return webResult }
+      guard webResult.output["text_decoding_lossless"] != .bool(false) else {
+        return failure("web_text_decoding_failed", "The current page could not be decoded without loss; prior snapshot retained")
+      }
+      let currentSHA256 = webResult.output["html_sha256"] ?? webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256([
+        "url": .string(url), "text": webResult.output["text"] ?? .string("")]))
+      let changed = previous == nil || previous?.contentSHA256 != currentSHA256.stringValue
+      let content = boundedText(webResult.output["text"]?.stringValue ?? "", maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
+      let summary = changed ? try AgentIOSWebPageDiff.summarize(previous: previous?.content ?? "", current: content,
+        checkpoint: { try child.checkpoint() }) : AgentIOSWebPageDiff.Report(text: "", removedLines: 0, addedLines: 0, truncated: false)
+      try child.checkpoint()
+      fetchInput["cache_ttl_ms"] = .int(6 * 60 * 60_000)
+      let committed = cacheScope && cacheFetchedDocument(webResult, requestedURL: url, input: fetchInput)
+      var result = readableFetchOutput(operation: .diff, requestedURL: url, webResult: webResult, invocation: invocation,
+        status: "completed", includeCacheMetadata: cacheScope)
+      if cacheScope {
+        var cache = result["cache"]?.objectValue ?? [:]
+        cache["write_committed"] = .bool(committed); result["cache"] = .object(cache)
+      }
+      result["comparison"] = .string(previous == nil ? "no_prior_snapshot" : "cached_snapshot")
+      result["changed"] = .bool(changed)
+      result["previous_sha256"] = .string(previous?.contentSHA256 ?? "")
+      result["current_sha256"] = currentSHA256
+      result["diff"] = .object(["changed": .bool(changed), "previous_sha256": .string(previous?.contentSHA256 ?? ""),
+        "current_sha256": currentSHA256, "summary": .string(summary.text), "summary_mode": .string("trimmed_line_set"),
+        "removed_line_count": .int(Int64(summary.removedLines)), "added_line_count": .int(Int64(summary.addedLines)),
+        "summary_truncated": .bool(summary.truncated)])
+      var details = result["metadata"]?.objectValue ?? [:]
+      details["previous_available"] = .bool(previous != nil); details["cache_scope"] = .bool(cacheScope)
+      result["metadata"] = .object(details)
+      return .success(output: result, message: changed ? "Current page differs from the prior snapshot" : "Page snapshot is unchanged",
+        metadata: metadata(operation: .diff, webResult: webResult))
+    } catch AgentNativeToolInvocationError.cancelled {
+      return failure("cancelled", "Page comparison was cancelled", retryable: true)
+    } catch AgentNativeToolInvocationError.timedOut {
+      return failure("timeout", "Page comparison timed out", retryable: true)
+    } catch { return failure("diff_failed", "Page comparison could not complete; prior snapshot retained", retryable: true) }
   }
 
   private func extract(
@@ -1338,7 +1358,8 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     requestedURL: String,
     webResult: AgentNativeToolExecutionResult,
     invocation: AgentNativeToolInvocation,
-    status: String
+    status: String,
+    includeCacheMetadata: Bool = true
   ) -> AgentMcpJSONObject {
     let text = boundedText(webResult.output["text"]?.stringValue ?? "", maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
     let receipt = sourceReceipt(from: webResult.output, fallbackURL: requestedURL)
@@ -1362,10 +1383,12 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     if let article = webResult.output["article"]?.objectValue {
       output["article"] = .object(article)
     }
-    output["cache"] = .object(cacheStore.cacheMetadata().merging([
-      "hit": .bool(false),
-      "shared_fetch": .bool(false)
-    ]) { _, next in next })
+    if includeCacheMetadata {
+      output["cache"] = .object(cacheStore.cacheMetadata().merging([
+        "hit": .bool(false),
+        "shared_fetch": .bool(false)
+      ]) { _, next in next })
+    }
     return output
   }
 

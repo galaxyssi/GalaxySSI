@@ -318,7 +318,7 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "url": stringSchema(minLength: 8, maxLength: 4_096),
         "force": boolSchema(),
         "max_bytes": integerSchema(minimum: 1_024, maximum: maxFetchBytes),
-        "timeout_ms": integerSchema(minimum: 1_000, maximum: 120_000),
+        "timeout_ms": integerSchema(minimum: 1_000, maximum: operation == .diff ? 60_000 : 120_000),
         "cache_ttl_ms": integerSchema(minimum: 60_000, maximum: maxCacheTtlMillis)
       ]
       if operation == .fetch {
@@ -345,7 +345,7 @@ enum AgentIOSWebIntelligenceNativeToolCatalog {
         "title": stringSchema(minLength: 0, maxLength: 2_048),
         "fields": stringArraySchema(maxItems: 100, maxLength: 128),
         "force": boolSchema(),
-        "timeout_ms": integerSchema(minimum: 1_000, maximum: 120_000)
+        "timeout_ms": integerSchema(minimum: 1_000, maximum: 60_000)
       ])
     case .cache:
       return objectSchema([
