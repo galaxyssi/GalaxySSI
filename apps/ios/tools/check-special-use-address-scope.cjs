@@ -48,7 +48,7 @@ function validate() {
     const file = app + name + '.swift'; assert.equal(read(file), show(base, file), name);
   }
   const project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
-  assert.equal(read(project), show(base, project));
+  assert.equal(require('./check-pre-shadow-routing-scope.cjs').retained(project, read(project)), show(base, project));
   assert(read(project).includes('AgentIOSDynamicWebRendererTests.swift in Sources'));
   for (const name of ['check-encoded-web-request-scope.cjs', 'check-web-crawl-scope.cjs']) {
     const file = 'apps/ios/tools/' + name;

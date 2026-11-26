@@ -6,6 +6,10 @@ Android reference: `e7c6af6ef3eed21c7fb697b4458d1cf742833dc4`,
 `MainActivityConnectorTimeoutRecovery.kt`. It validates an observation against
 the original pending request, records task status and persists the session before
 continuing observation. iOS base: `4c7529b9c` (includes #4578).
+Before publication, main `2e4db3d46` (merged #4579) was also integrated. Its
+historical project comparison now uses the existing normalization for the
+explicit pre-shadow and owned-observation test references; all other project
+content remains checked. No address rules or their fixtures are changed here.
 
 iOS previously persisted authenticated status-query results in the Desktop
 recovery ledger without updating the original native connector wait receipt.

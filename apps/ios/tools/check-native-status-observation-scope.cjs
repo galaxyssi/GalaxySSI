@@ -74,6 +74,9 @@ function validate() {
     "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-native-status-observation-scope.cjs').retained(file, source);\n", '');
   assert.equal(stripGuard, show(base, oldGuard));
+  const addressGuard = 'apps/ios/tools/check-special-use-address-scope.cjs';
+  assert.equal(read(addressGuard).replace("require('./check-pre-shadow-routing-scope.cjs').retained(project, read(project))",
+    'read(project)'), show('2e4db3d46', addressGuard));
   console.log('Exact owned Desktop status projection, durable wait retention and monotonic observation source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
