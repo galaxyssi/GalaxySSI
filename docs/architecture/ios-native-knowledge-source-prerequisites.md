@@ -54,20 +54,41 @@ transactions, whose iOS execution has not been verified here.
 | KnowledgeNativeBridge, JNI owner/arrays/mod | C ABI and synchronous Swift bridge added; Xcode framework build/link/embed configured but uncompiled |
 | KnowledgeNativeWire | Swift decoder preserves Rust binary records, pending progress and match provenance with strict lengths/flags/bounds |
 | KnowledgeNativeFiles key wrapping | Per-database ThisDeviceOnly Keychain root, HKDF spec/epoch keys, keyed directories, complete protection, backup exclusion and reset/invalidation sources added; native storage acceptance unverified |
-| KnowledgeModelWork bounded durable successors | Embedding worker pumps source/replay slices, resumes on launch/foreground, and releases runtime/handles at 30-second idle; OS-managed background successors still required |
+| KnowledgeModelWork bounded durable successors | BGProcessingTask registration, persistent intent, bounded successors and independent expiring leases added; OS grants and device recovery remain unverified |
 | memory-native Cargo files, lib.rs and replay format | Android engine unchanged; iOS crate uses exact 0.6.0 path dependency and derived lockfile; native framework configuration is connected but unbuilt |
 | Android Gradle, setup action, three workflows, build-memory-native.mjs | Android inputs untouched; iOS-only locked framework build/export isolation/CodeSignOnCopy configured, not executed |
-| Two Android device fixtures | Not executable on iOS; thirty-nine Swift fixture methods authored, not run; replay-driver/RAG fixtures simulate semantic boundaries |
+| Two Android device fixtures | Not executable on iOS; forty-eight Swift fixture methods authored, not run; replay-driver/RAG fixtures simulate semantic boundaries |
 | Three Android architecture documents / README | Reference only; no transferred Android device/performance claims |
 
-Still required for full parity/acceptance: OS-managed durable background
-successors, Cargo dependency resolution,
+Still required for full parity/acceptance: OS-managed background execution and
+recovery acceptance, Cargo dependency resolution,
 compiled ABI/lifecycle acceptance, framework packaging/signing/installation
 validation and real graph/recovery/latency/scale acceptance. Default semantic UI
 queries, existing Agent knowledge read/RAG commands and the embedding worker now
 consume the native driver in source. Automatic injection into unrelated remote
 model calls is not introduced or claimed.
 No native framework, build, device, latency or scale acceptance is claimed here.
+
+## System Background Work
+
+The app delegate registers a permitted BGProcessingTask before launch completes.
+The durable pending flag survives process exit and failed OS submissions. Each
+grant opens only an existing history namespace, requires protected data and an
+already installed, opted-in model, verifies its digest and owns a separate model
+runtime. No background model download or foreground search consumer is started.
+One slice enrolls at most 16 sources, produces at most 16 missing chunks across
+four documents and replays at most four native pages. Exact incomplete producer
+checkpoints survive interruption; changed source/specification/range and complete
+legacy records are reindexed for publication. Committed native progress is reused.
+
+A lease permits that grant's index owner without changing activeToken's foreground
+gate. Expiration, disable/reset, protected-data loss and foreground reentry revoke
+it. Expiration cancels Swift work, retires native handles, schedules a successor
+and completes exactly once. Generation tickets prevent late grants from rearming
+work after cancellation or a newer foreground completion. A denied OS request
+retains intent for another foreground/launch opportunity, not a promise to run at
+the requested time. Model close waits for an in-flight embedding call to return;
+this source wiring is not proof of bounded cancellation latency on device.
 
 ## Verification Scope
 
@@ -110,6 +131,13 @@ successful runtime results. The modified Services block parses independently
 with zero errors; the complete legacy file retains its 96 parser ERROR nodes,
 unchanged from the pre-edit baseline. These are not Swift compiler results.
 Swift grammar parsing and project structure checks are not Xcode type checking.
+`node apps/ios/tools/check-knowledge-native-background-scope.cjs` checks early
+registration, processing mode/identifiers, opt-in/protection gates, independent
+leases, exactly-once completion, generation-fenced successors and bounded producer
+wiring. Nine additional Swift fixture methods cover completion races, late cancel
+hooks, foreground/lock lease boundaries, exact partial producer reuse, incompatible
+and complete legacy records, and cold lookup without creating a history identity.
+They are authored source only; neither BGTaskScheduler nor XCTest was executed.
 XCTest fixture source covers repeated chunks, surrogate boundaries, old storage,
 transaction rejection, restart/model cursor isolation, bounded source lookup,
 130-chunk replay with reopen, legacy eligibility, exact event identity, deletion/

@@ -1817,6 +1817,8 @@
     F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */; };
     F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */; };
     F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */; };
+    F30050000000000000000018 /* AgentKnowledgeBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */; };
+    F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */; };
     A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */; };
     A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */; };
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
@@ -4030,6 +4032,8 @@
     F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativePublicationTests.swift; sourceTree = "<group>"; };
     F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndexTests.swift; sourceTree = "<group>"; };
     F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeAsyncRAGTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeBackgroundScheduler.swift; sourceTree = "<group>"; };
+    F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeBackgroundTests.swift; sourceTree = "<group>"; };
     A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
@@ -5546,6 +5550,7 @@
         F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */,
         F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */,
         F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */,
+        F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */,
         A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
         E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
@@ -6429,6 +6434,7 @@
         F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */,
         F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */,
         F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */,
+        F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
         E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
@@ -7788,6 +7794,7 @@
         F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */,
         F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */,
         F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */,
+        F30050000000000000000018 /* AgentKnowledgeBackgroundScheduler.swift in Sources */,
         A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
         E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,
@@ -8770,6 +8777,7 @@
         F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */,
         F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */,
         F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */,
+        F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,
         E29320000000000000000003 /* AgentKnowledgeSemanticModelTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
@@ -9239,7 +9247,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -9307,7 +9315,7 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";

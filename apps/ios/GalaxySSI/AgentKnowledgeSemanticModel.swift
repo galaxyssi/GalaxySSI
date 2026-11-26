@@ -239,7 +239,8 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     database: AgentKnowledgeDatabase,
     defaults: UserDefaults = .standard,
     secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-    storage: AgentKnowledgeSemanticModelStorage = AgentKnowledgeSemanticModelStorage()
+    storage: AgentKnowledgeSemanticModelStorage = AgentKnowledgeSemanticModelStorage(),
+    automaticallyStart: Bool = true
   ) {
     self.database = database
     self.defaults = defaults
@@ -249,6 +250,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     state.installed = storage.installed
     state.downloadedBytes = storage.partialBytes
     if !state.installed && state.phase == .ready { state.phase = .notInstalled }
+    guard automaticallyStart else { return }
     for name in [UIApplication.didBecomeActiveNotification, UIApplication.willResignActiveNotification,
       UIApplication.protectedDataWillBecomeUnavailableNotification] {
       nativeObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -327,6 +329,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         state.phase = .verifying
         let storage = self.storage
         try await Task.detached(priority: .utility) { try storage.importFile(url) }.value
+        try Task.checkCancellation()
         state.installed = true
         state.enabled = true
         state.phase = .ready
@@ -334,6 +337,9 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         persist()
         work = nil
         startIndexing()
+      } catch is CancellationError {
+        state.phase = state.installed ? (state.enabled ? .ready : .disabled) : .notInstalled
+        work = nil
       } catch {
         state.phase = .failed
         state.error = String(error.localizedDescription.prefix(180))
@@ -344,12 +350,22 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   }
 
   func setEnabled(_ enabled: Bool) {
+    if !enabled {
+      AgentKnowledgeBackgroundScheduler.cancel()
+      work?.cancel()
+      state.enabled = false
+      state.phase = .disabled
+      persist()
+      Task { await closeRuntime() }
+      return
+    }
     guard work == nil else { return }
     work = Task { [weak self] in
       guard let self else { return }
       do {
         let storage = self.storage
         if enabled { try await Task.detached(priority: .utility) { try storage.verifyInstalled() }.value }
+        try Task.checkCancellation()
         state.enabled = enabled
         state.installed = storage.installed
         state.phase = enabled ? .ready : .disabled
@@ -368,11 +384,14 @@ final class AgentKnowledgeSemanticController: ObservableObject {
 
   func startIndexing() {
     guard state.enabled, state.installed, work == nil else { return }
+    AgentKnowledgeBackgroundScheduler.schedule(pending: true)
+    guard canUseNativeIndex else { return }
     idleCleanupTask?.cancel()
     idleCleanupTask = nil
     work = Task { [weak self] in
       guard let self else { return }
       var interrupted = false
+      var successor = true
       do {
         state.phase = .indexing
         state.error = ""
@@ -394,7 +413,10 @@ final class AgentKnowledgeSemanticController: ObservableObject {
           let replayPending: Bool
           if canUseNativeIndex { replayPending = try await search.advanceReplay() }
           else { replayPending = false }
-          if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete && !replayPending { break }
+          if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete && !replayPending {
+            successor = !canUseNativeIndex
+            break
+          }
           await Task.yield()
         }
         try refreshCounts()
@@ -414,6 +436,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         }
       }
       work = nil
+      AgentKnowledgeBackgroundScheduler.schedule(pending: state.enabled && state.installed && successor)
       if Task.isCancelled || interrupted, canUseNativeIndex, database.nativeFiles.activeToken() != nil,
         state.enabled, state.installed { startIndexing() }
       else { scheduleIdleCleanup() }
@@ -462,6 +485,7 @@ final class AgentKnowledgeSemanticController: ObservableObject {
   }
 
   func destroyPrivateData() {
+    AgentKnowledgeBackgroundScheduler.cancel()
     work?.cancel()
     countWork?.cancel()
     database.nativeFiles.invalidate()
@@ -485,6 +509,44 @@ final class AgentKnowledgeSemanticController: ObservableObject {
       contextTokens: AgentKnowledgeEmbeddingModel.contextTokens,
       chunkingContract: AgentKnowledgeEmbeddingChunker.contract
     )
+  }
+
+  // One system-granted slice; do not instantiate the foreground search consumer
+  // or reopen its UI permissions. Every exit closes the independently owned runtime.
+  func runBackgroundSlice(lease: AgentKnowledgeNativeFiles.BackgroundLease) async throws -> Bool {
+    guard state.enabled, state.installed, UIApplication.shared.isProtectedDataAvailable else { throw CancellationError() }
+    let check: () throws -> Void = {
+      try Task.checkCancellation()
+      guard lease.isValid else { throw CancellationError() }
+    }
+    try check()
+    let storage = self.storage
+    try await Task.detached(priority: .utility) { try storage.verifyInstalled() }.value
+    try check()
+    let opened = try await GalaxySSIEmbeddingRuntime.open(modelURL: storage.modelURL,
+      contextTokens: provenance.contextTokens, threads: min(max(ProcessInfo.processInfo.activeProcessorCount - 1, 1), 4))
+    let spec = provenance, database = self.database
+    let native = AgentKnowledgeNativeIndex(database: database, provenance: spec, backgroundLease: lease)
+    defer { native.close() }
+    do {
+      try check()
+      let enrolled = try await Task.detached(priority: .utility) {
+        try database.maintainNativeVectorEnrollment(provenance: spec, pageSize: 16)
+      }.value
+      try check()
+      let producer = AgentKnowledgeVectorIndexer(database: database, runtime: opened, provenance: spec, activeCheck: check)
+      _ = try await producer.indexPending(pageSize: 4, maximumChunks: 16)
+      try check()
+      _ = try await Task.detached(priority: .utility) { try native.advance(maxPages: 4, token: lease.token) }.value
+      try check()
+      let sourcePending = try database.vectorWorkPending(modelSHA256: spec.modelSHA256)
+      let pending = !enrolled || sourcePending || native.needsReplay
+      await opened.close()
+      return pending
+    } catch {
+      await opened.close()
+      throw error
+    }
   }
 
   private func ensureRuntime() async throws -> GalaxySSIEmbeddingRuntime {

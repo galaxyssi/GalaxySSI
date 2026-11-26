@@ -323,21 +323,51 @@ enum AgentKnowledgeEmbeddingChunker {
 }
 
 final class AgentKnowledgeVectorIndexer {
+  // Complete legacy records without a publication must be republished, not
+  // mistaken for a resumable producer. Only an exact, incomplete source survives.
+  static func resumableCheckpoints(_ checkpoints: [AgentKnowledgeVectorCheckpoint], item: AgentKnowledgeItem,
+    provenance: AgentKnowledgeVectorProvenance, chunks: [String]) -> [Int: AgentKnowledgeVectorCheckpoint] {
+    guard !checkpoints.isEmpty, checkpoints.count < chunks.count else { return [:] }
+    let revision = AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)
+    var offsets: [NSRange] = [], cursor = 0
+    for chunk in chunks {
+      guard let range = AgentKnowledgeVectorCheckpoint.locateSourceRange(chunk: chunk, content: item.content,
+        afterUTF16: cursor) else { return [:] }
+      offsets.append(range)
+      cursor = range.location + range.length
+    }
+    var result: [Int: AgentKnowledgeVectorCheckpoint] = [:]
+    for checkpoint in checkpoints {
+      let ordinal = checkpoint.chunkIndex
+      guard checkpoint.isValid, checkpoint.itemId == item.id, checkpoint.sourceRevision == revision,
+        checkpoint.provenance == provenance, checkpoint.chunkCount == chunks.count,
+        offsets.indices.contains(ordinal), result[ordinal] == nil,
+        checkpoint.sourceStartUTF16 == offsets[ordinal].location,
+        checkpoint.sourceEndUTF16 == offsets[ordinal].location + offsets[ordinal].length else { return [:] }
+      result[ordinal] = checkpoint
+    }
+    return result
+  }
+
   private let database: AgentKnowledgeDatabase
   private let runtime: GalaxySSIEmbeddingRuntime
   private let provenance: AgentKnowledgeVectorProvenance
+  private let activeCheck: () throws -> Void
 
   init(
     database: AgentKnowledgeDatabase,
     runtime: GalaxySSIEmbeddingRuntime,
-    provenance: AgentKnowledgeVectorProvenance
+    provenance: AgentKnowledgeVectorProvenance,
+    activeCheck: @escaping () throws -> Void = {}
   ) {
     self.database = database
     self.runtime = runtime
     self.provenance = provenance
+    self.activeCheck = activeCheck
   }
 
-  func indexPending(pageSize: Int = 32) async throws -> Int {
+  func indexPending(pageSize: Int = 32, maximumChunks: Int = .max) async throws -> Int {
+    var remainingChunks = max(maximumChunks, 0)
     let pending = try database.pendingVectorItems(
       modelSHA256: provenance.modelSHA256,
       limit: min(max(pageSize, 1), 64)
@@ -345,21 +375,37 @@ final class AgentKnowledgeVectorIndexer {
     var indexed = 0
     for item in pending {
       try Task.checkCancellation()
-      guard database.clearVectorCheckpoints(itemId: item.id, modelSHA256: provenance.modelSHA256) else {
-        throw AgentKnowledgeDatabaseError.unavailable
-      }
+      try activeCheck()
       let chunks = try await AgentKnowledgeEmbeddingChunker.chunks(
         item.content,
         maximumTokens: provenance.contextTokens,
-        tokenCount: { try await self.runtime.tokenCount($0) }
+        tokenCount: {
+          try self.activeCheck()
+          let count = try await self.runtime.tokenCount($0)
+          try self.activeCheck()
+          return count
+        }
       )
+      try Task.checkCancellation()
+      try activeCheck()
+      let existing = try database.vectorCheckpoints(itemId: item.id, modelSHA256: provenance.modelSHA256)
+      let resumed = Self.resumableCheckpoints(existing, item: item, provenance: provenance, chunks: chunks)
+      if resumed.isEmpty,
+        !database.clearVectorCheckpoints(itemId: item.id, modelSHA256: provenance.modelSHA256) {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
       var sourceCursor = 0
       for (index, chunk) in chunks.enumerated() {
         try Task.checkCancellation()
+        try activeCheck()
         guard let offsets = AgentKnowledgeVectorCheckpoint.locateSourceRange(
           chunk: chunk, content: item.content, afterUTF16: sourceCursor) else { throw AgentKnowledgeDatabaseError.corruptRecord }
         sourceCursor = offsets.location + offsets.length
+        if resumed[index] != nil { continue }
+        guard remainingChunks > 0 else { return indexed }
         let vector = try await runtime.embed(chunk)
+        try Task.checkCancellation()
+        try activeCheck()
         let checkpoint = AgentKnowledgeVectorCheckpoint(
           itemId: item.id,
           sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: item),
@@ -378,6 +424,7 @@ final class AgentKnowledgeVectorIndexer {
         guard database.storeVectorCheckpoint(checkpoint) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
+        remainingChunks -= 1
       }
       indexed += 1
     }

@@ -830,6 +830,13 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func vectorWorkPending(modelSHA256: String) throws -> Bool {
+    try locked {
+      let enrollment = try vectorEnrollmentPending(modelSHA256: modelSHA256)
+      return try enrollment || !vectorQueueIsEmpty(modelHash: keyedHash(modelSHA256.lowercased()))
+    }
+  }
+
   func vectorEnrollmentPending(modelSHA256: String) throws -> Bool {
     try locked {
       let modelHash = keyedHash(modelSHA256.lowercased())

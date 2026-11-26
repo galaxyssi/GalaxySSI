@@ -15,6 +15,7 @@ final class AgentKnowledgeNativeIndex {
   typealias Factory = (AgentKnowledgeVectorFeedStamp, UInt64, [Float]?) throws -> AgentKnowledgeNativeSession?
   private let database: AgentKnowledgeDatabase
   private let provenance: AgentKnowledgeVectorProvenance
+  private let backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease?
   private let factory: Factory
   private var session: AgentKnowledgeNativeSession?
   private let cancellationLock = NSLock()
@@ -25,11 +26,13 @@ final class AgentKnowledgeNativeIndex {
   private(set) var readyStamp: AgentKnowledgeVectorFeedStamp?
   private(set) var needsReplay = false
 
-  init(database: AgentKnowledgeDatabase, provenance: AgentKnowledgeVectorProvenance, factory: Factory? = nil) {
+  init(database: AgentKnowledgeDatabase, provenance: AgentKnowledgeVectorProvenance,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil, factory: Factory? = nil) {
     self.database = database
     self.provenance = provenance
+    self.backgroundLease = backgroundLease
     self.factory = factory ?? { [files = database.nativeFiles] stamp, token, root in
-      try files.open(provenance: provenance, epoch: stamp.epoch, token: token, root: root)
+      try files.open(provenance: provenance, epoch: stamp.epoch, token: token, root: root, backgroundLease: backgroundLease)
         .map { $0 as AgentKnowledgeNativeSession }
     }
   }
@@ -130,7 +133,12 @@ final class AgentKnowledgeNativeIndex {
   }
 
   private func active(_ token: UInt64) throws {
-    guard !cancellationCheck(), database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    guard !cancellationCheck() else { throw CancellationError() }
+    if let backgroundLease {
+      guard backgroundLease.token == token, backgroundLease.isValid else { throw CancellationError() }
+    } else {
+      guard database.nativeFiles.activeToken() == token else { throw CancellationError() }
+    }
   }
 
   private func markReady(checkpoint: AgentKnowledgeNativeCheckpoint, token: UInt64) throws -> Bool {

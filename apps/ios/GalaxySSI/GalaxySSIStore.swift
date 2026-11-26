@@ -3397,6 +3397,15 @@ final class GalaxySSIStore: ObservableObject {
       .appendingPathComponent("chat-history-\(identifier).sqlite", isDirectory: false)
   }
 
+  static func existingAgentKnowledgeDatabase(defaults: UserDefaults = .standard,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared) -> AgentKnowledgeDatabase? {
+    guard let identifier = defaults.string(forKey: "galaxyssi_agent_conversation_database_id_v1"),
+      UUID(uuidString: identifier) != nil else { return nil }
+    let url = agentKnowledgeDatabaseURL(defaults: defaults)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+  }
+
   private static func agentKnowledgeDatabaseURL(defaults: UserDefaults) -> URL {
     let conversationURL = agentConversationDatabaseURL(defaults: defaults)
     let identifier = conversationURL.deletingPathExtension().lastPathComponent

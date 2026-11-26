@@ -5,6 +5,15 @@ import UIKit
 // The database owns one file store. Native index work uses its serial utility queue;
 // privacy invalidation may run concurrently and fences late opens by generation.
 final class AgentKnowledgeNativeFiles {
+  final class BackgroundLease {
+    fileprivate weak var owner: AgentKnowledgeNativeFiles?
+    fileprivate let id = UUID()
+    let token: UInt64
+    fileprivate init(owner: AgentKnowledgeNativeFiles, token: UInt64) { self.owner = owner; self.token = token }
+    var isValid: Bool { owner?.validBackgroundLease(self) == true }
+    func end() { owner?.endBackgroundLease(self) }
+    deinit { end() }
+  }
   private struct Identity: Codable {
     var schema = 1
     var database: String
@@ -13,7 +22,8 @@ final class AgentKnowledgeNativeFiles {
   }
   private final class WeakBridge {
     weak var bridge: AgentKnowledgeNativeBridge?
-    init(_ bridge: AgentKnowledgeNativeBridge) { self.bridge = bridge }
+    let leaseID: UUID?
+    init(_ bridge: AgentKnowledgeNativeBridge, leaseID: UUID?) { self.bridge = bridge; self.leaseID = leaseID }
   }
 
   private static let keyLock = NSRecursiveLock()
@@ -26,6 +36,7 @@ final class AgentKnowledgeNativeFiles {
   private var suspended = false
   private var protectedUnavailable = false
   private var bridges: [WeakBridge] = []
+  private var backgroundLeases = Set<UUID>()
   private var observers: [NSObjectProtocol] = []
 
   init(databaseURL: URL, secrets: GalaxySSISecretStore) {
@@ -59,14 +70,53 @@ final class AgentKnowledgeNativeFiles {
     return destroying || suspended || protectedUnavailable ? nil : generation
   }
 
+  // Only the authorized system task asks for this capability after checking
+  // opt-in and UIKit protected-data availability. It never enables UI queries.
+  func beginBackgroundLease() throws -> BackgroundLease {
+    Self.keyLock.lock()
+    defer { Self.keyLock.unlock() }
+    guard !destroying, !protectedUnavailable else { throw CancellationError() }
+    let lease = BackgroundLease(owner: self, token: generation)
+    backgroundLeases.insert(lease.id)
+    return lease
+  }
+
+  private func validBackgroundLease(_ lease: BackgroundLease) -> Bool {
+    Self.keyLock.lock()
+    defer { Self.keyLock.unlock() }
+    return !destroying && !protectedUnavailable && lease.owner === self && lease.token == generation && backgroundLeases.contains(lease.id)
+  }
+
+  private func endBackgroundLease(_ lease: BackgroundLease) {
+    Self.keyLock.lock()
+    backgroundLeases.remove(lease.id)
+    let active = bridges.filter { $0.leaseID == lease.id }.compactMap(\.bridge)
+    bridges.removeAll { $0.leaseID == lease.id }
+    Self.keyLock.unlock()
+    for bridge in active { bridge.cancel(); bridge.close() }
+  }
+
+  private func allows(_ expected: UInt64, lease: BackgroundLease?) -> Bool {
+    guard !destroying, !protectedUnavailable, generation == expected else { return false }
+    if let lease { return validBackgroundLease(lease) }
+    return !suspended
+  }
+
   private func transition(_ name: Notification.Name) {
     Self.keyLock.lock()
+    var retired: [AgentKnowledgeNativeBridge] = []
     if name == UIApplication.willResignActiveNotification { suspended = true }
-    if name == UIApplication.didBecomeActiveNotification { suspended = false }
+    if name == UIApplication.didBecomeActiveNotification {
+      suspended = false
+      retired = bridges.filter { $0.leaseID != nil }.compactMap(\.bridge)
+      bridges.removeAll { $0.leaseID != nil }
+      backgroundLeases.removeAll()
+    }
     if name == UIApplication.protectedDataWillBecomeUnavailableNotification { protectedUnavailable = true }
     if name == UIApplication.protectedDataDidBecomeAvailableNotification { protectedUnavailable = false }
     let cancel = suspended || protectedUnavailable
     Self.keyLock.unlock()
+    for bridge in retired { bridge.cancel(); bridge.close() }
     if cancel { invalidate() }
   }
 
@@ -77,7 +127,8 @@ final class AgentKnowledgeNativeFiles {
   }
 
   func open(provenance: AgentKnowledgeVectorProvenance, epoch: String, token expected: UInt64,
-    cacheBytes: Int = 16 * 1_024 * 1_024, root: [Float]? = nil) throws -> AgentKnowledgeNativeBridge? {
+    cacheBytes: Int = 16 * 1_024 * 1_024, root: [Float]? = nil,
+    backgroundLease: BackgroundLease? = nil) throws -> AgentKnowledgeNativeBridge? {
     let identity = try identity(provenance: provenance, epoch: epoch)
     var directory = rootDirectory
     var key = Data()
@@ -85,7 +136,7 @@ final class AgentKnowledgeNativeFiles {
     let exists: Bool
     Self.keyLock.lock()
     do {
-      guard !destroying, !suspended, !protectedUnavailable, generation == expected else { throw CancellationError() }
+      guard allows(expected, lease: backgroundLease) else { throw CancellationError() }
       try rejectSymbolicLink(rootDirectory)
       if root == nil && !FileManager.default.fileExists(atPath: rootDirectory.path) {
         Self.keyLock.unlock()
@@ -111,13 +162,13 @@ final class AgentKnowledgeNativeFiles {
     let bridge = try AgentKnowledgeNativeBridge(directory: directory, key: key, identity: identity, epoch: epoch,
       dimensions: provenance.dimensions, cacheBytes: cacheBytes, root: exists ? nil : root)
     Self.keyLock.lock()
-    guard !destroying, !suspended, !protectedUnavailable, generation == expected else {
+    guard allows(expected, lease: backgroundLease) else {
       Self.keyLock.unlock()
       bridge.close()
       throw CancellationError()
     }
     bridges.removeAll { $0.bridge == nil }
-    bridges.append(WeakBridge(bridge))
+    bridges.append(WeakBridge(bridge, leaseID: backgroundLease?.id))
     Self.keyLock.unlock()
     return bridge
   }
@@ -125,6 +176,7 @@ final class AgentKnowledgeNativeFiles {
   func invalidate() {
     Self.keyLock.lock()
     generation &+= 1
+    backgroundLeases.removeAll()
     let active = bridges.compactMap(\.bridge)
     bridges.removeAll()
     Self.keyLock.unlock()
