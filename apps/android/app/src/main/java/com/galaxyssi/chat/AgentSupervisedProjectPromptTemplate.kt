@@ -36,14 +36,16 @@ internal object AgentSupervisedProjectPromptTemplate {
         temporarilyBlockedToolIds: Set<String> = emptySet(),
         detailedToolIds: Set<String>? = null,
         phoneControl: Boolean = false,
-        developmentContext: Boolean = true
+        developmentContext: Boolean = true,
+        recentlyUsedToolIds: Set<String> = emptySet()
     ): String {
         val toolManifest = AgentSupervisedProjectToolInventory.render(
             context = context,
             maximumSchemaCharacters = maximumSchemaCharacters,
             temporarilyBlockedToolIds = temporarilyBlockedToolIds,
             detailedToolIds = detailedToolIds,
-            phoneControl = phoneControl
+            phoneControl = phoneControl,
+            onDemandTools = recentlyUsedToolIds.takeUnless { developmentContext || phoneControl }
         )
         return compiledPrefixes.getOrCompute(PrefixKey(toolManifest, evidenceExpected, temporarilyBlockedToolIds, phoneControl, developmentContext)) {
             buildString {
@@ -51,7 +53,7 @@ internal object AgentSupervisedProjectPromptTemplate {
                     append(AgentPhoneInteractionPrompt.render(evidenceExpected))
                     append(AgentVisualOutputContract.COMPACT_PROMPT).append('\n')
                     append("Available phone tools:\n").append(toolManifest)
-                    append("Working-set policy: compact signatures remain callable; inspect galaxyssi.tools.describe for full input_schema. Call only listed tools.\n")
+                    append("Working-set policy: use the available signatures directly; inspect galaxyssi.tools.describe for full input_schema when needed.\n")
                     return@buildString
                 }
                 if (phoneControl) {

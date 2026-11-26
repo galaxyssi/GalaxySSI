@@ -1604,7 +1604,7 @@ object GalaxySSIMqttClient {
                 topic, packets.first().toByteArray(Charsets.UTF_8), linkSecret) ?: return false else null
             val delivery = if (durableMessageId.isNullOrBlank() || receiptAttempt != null) null else {
                 runCatching { peerRoutes?.prepareDelivery(topic, JSONObject(wirePayload), durableMessageId,
-                    MqttTrafficPolicy.parse(transportTraffic)) }
+                    MqttTrafficPolicy.parse(transportTraffic))?.copy(interactiveFinal = serverLink != null && transportTraffic == "final") }
                     .onFailure { Log.w(TAG, "MQTT attempt preparation deferred: ${it.javaClass.simpleName}") }
                     .getOrNull() ?: return false
             }

@@ -167,7 +167,8 @@ internal class MqttMultipathPolicy(
     @Synchronized fun plan(
         peer: String, messageId: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>,
         now: Long, ingress: String? = null, attempted: Set<String> = emptySet(),
-        authorizedPaths: Map<String, Long>? = null, includeCongested: Boolean = false
+        authorizedPaths: Map<String, Long>? = null, includeCongested: Boolean = false,
+        interactiveFinal: Boolean = false
     ): List<Dispatch> {
         chunks.expire(now)
         if (messageId.isBlank() || wireBytes !in 1..MqttBrokerCatalog.PACKET_BYTES) return emptyList()
@@ -199,6 +200,13 @@ internal class MqttMultipathPolicy(
         }
         val first = candidates.first()
         val result = mutableListOf(Dispatch(first, paths.getValue(first).generation, 0))
+        // An encrypted text request can exceed the small-packet bucket even without attachments.
+        if (interactiveFinal && traffic == Traffic.FINAL && wireBytes <= 256 * 1024) {
+            candidates.drop(1).forEachIndexed { index, broker ->
+                result.add(Dispatch(broker, paths.getValue(broker).generation, 250L * (index + 1)))
+            }
+            return result
+        }
         if (small && traffic in setOf(Traffic.MESSAGE, Traffic.FINAL) && candidates.size > 1) {
             val primarySamples = samples(peer, first, now)
             val values = (if (primarySamples.size >= MqttBrokerCatalog.HEDGE_MIN_SAMPLES) primarySamples

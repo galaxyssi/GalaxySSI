@@ -4063,6 +4063,8 @@ def _agent_task_payload(
                 "user_visible": True,
             }
             payload["partial_result"] = cumulative_partial
+            if task.get("_supervised_answer_preview") is True:
+                cumulative_partial["format"] = "supervised_answer_preview_v1"
             payload["event_type"] = "partial_result"
             payload["event_id"] = cumulative_partial["event_id"]
             payload["payload"] = cumulative_partial
@@ -4095,7 +4097,9 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
     status = str(pending.task.get("status") or "").strip().lower()
     route = str(pending.wire_payload.get("_client_route_id") or "")
     progress_id = str(uuid.uuid4()) if status == "running" and route else ""
-    pending.flow_limited = bool(progress_id and not task_progress_window.reserve(route, progress_id))
+    visible_body = agent_output_delta_enabled() and _task_event_is_coalescible(pending.task)
+    pending.flow_limited = bool(progress_id and not task_progress_window.reserve(
+        route, progress_id, visible_body=visible_body))
     if pending.flow_limited:
         _ensure_outbound_retry_thread()
         return False
@@ -4120,6 +4124,11 @@ def _publish_task_event_with_credit(mqttc, pending: _PendingTaskEvent, progress_
     }
     if progress_id:
         payload["message_id"] = progress_id
+        if payload.get("event_type") == "partial_result" and not pending.replay_progress:
+            # These diagnostic snapshots travel with the final outcome. The live
+            # body only needs its existing execution identity and cumulative sequence.
+            for field in ("delivery_trace", "latency", "execution_view"):
+                payload.pop(field, None)
     published = bool(
         _publish_phone_payload(
             mqttc,
@@ -5121,6 +5130,15 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         status = str(task.get("status") or "").strip().lower()
         if private_report and status not in TERMINAL_STATES:
             return
+        if structured_connector_response and status == "running" and task.get("partial_result"):
+            from agent_answer_preview import supervised_answer_preview
+            partial = task["partial_result"]
+            text = supervised_answer_preview(partial.get("text")) if isinstance(partial, dict) else ""
+            if not text:
+                return
+            # Only the ephemeral projection changes; the authoritative final
+            # contract is still parsed and verified by the phone.
+            task = {**task, "partial_result": {**partial, "text": text}, "_supervised_answer_preview": True}
         from agent_task_terminal_outcome import persist_terminal_outcome
         from agent_task_result_archive import archive
 
@@ -8656,6 +8674,9 @@ def _publish_to_registered_client(
         if not durable:
             from mqtt_query_delivery import transient_traffic
             traffic = transient_traffic(payload.get("type"))
+            if (payload.get("type") == "agent_task_event" and payload.get("event_type") == "partial_result"
+                    and payload.get("task_status") == "running" and payload.get("partial_result")):
+                traffic = "control"
             return _publish_mqtt_wire_payload(
                 mqttc,
                 topic,
