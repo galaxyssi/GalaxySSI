@@ -1,7 +1,7 @@
 // Source contracts only; not Swift compilation or native privacy acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'bb1b6b938450781de6b0580d839cb7ffb16617c7';
+const base = '0bdfc81662cc27f638f0b3360f13c399ad2ba704';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
