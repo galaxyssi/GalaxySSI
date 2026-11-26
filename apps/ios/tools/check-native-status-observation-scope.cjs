@@ -2,7 +2,8 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = '4c7529b9c';
 const app = 'apps/ios/GalaxySSI/';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-managed-raw-attachments-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const show = (ref, file) => cp.execFileSync('git', ['show', `${ref}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -12,6 +13,7 @@ function section(source, start, end) {
 const statusAnchor = '\n// The caller must supply an already authenticated, durably accepted recovery observation.';
 const translation = '"galaxyssi.agent.connector.waiting_original_result" = "\u6b63\u5728\u7b49\u5f85\u539f\u8fde\u63a5\u5668\u4efb\u52a1\u7684\u7ed3\u679c\u3002";\n';
 function retained(file, source) {
+  source = require('./check-managed-raw-attachments-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentNativeConnectorStatusObservationTests.swift')).join('\n');
   if (file.endsWith('AgentConnectorTaskStatusRecorder.swift') && source.includes(statusAnchor)) return source.slice(0, source.indexOf(statusAnchor));

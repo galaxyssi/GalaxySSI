@@ -14743,10 +14743,10 @@ final class MessageCoordinator: ObservableObject {
         guard completed, !text.isBlank else { throw GalaxySSIError.invalidPayload("The cloud connector did not return a completed response.") }
         publishNativeConnectorResponse(dispatch.response(text, success: true), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
       } else {
-        guard attachments.isEmpty, let contact = store.contact(id: dispatch.contactId),
+        guard let contact = store.contact(id: dispatch.contactId),
               contact.type == "agent", contact.trustState == .verified, contact.deliveryMode.isGalaxySSILinkFamily,
               !contact.desktopId.isBlank, !contact.connectorAgentId.isBlank else {
-          throw GalaxySSIError.invalidPayload("A verified paired text connector is required; raw attachments were not sent.")
+          throw GalaxySSIError.invalidPayload("A verified paired connector is required. Nothing was sent.")
         }
         let links = store.serverLinks.filter { $0.paired && $0.desktopId == contact.desktopId }
         guard links.count == 1, let link = links.first else { throw GalaxySSIError.notPaired }
@@ -14768,7 +14768,7 @@ final class MessageCoordinator: ObservableObject {
         }
         let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: contact.id,
           desktopId: contact.desktopId, providerId: contact.galaxySSIId, title: contact.displayName, text: dispatch.executionPrompt,
-          attachments: [], conversationId: dispatch.conversationId, taskId: dispatch.taskId, turnId: dispatch.turnId)
+          attachments: attachments.map { AgentDataDisclosureAttachment($0) }, conversationId: dispatch.conversationId, taskId: dispatch.taskId, turnId: dispatch.turnId)
         guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: contact.displayName) }
         var payload: [String: Any] = ["type": "text", "message_id": dispatch.owner, "content": dispatch.executionPrompt,
           "source_message_id": String(dispatch.sourceMessageId), "client_message_id": String(dispatch.sourceMessageId),
@@ -14781,10 +14781,31 @@ final class MessageCoordinator: ObservableObject {
         if let invocation {
           payload["agent_invocation"] = invocation
         }
-        started = true
         do {
-          _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
-            clientSourceMessageId: String(dispatch.sourceMessageId), contactId: contact.id)
+          if attachments.isEmpty {
+            started = true
+            _ = try enqueueLinkPayload(payload, link: link, topic: link.routes.upTopic,
+              clientSourceMessageId: String(dispatch.sourceMessageId), contactId: contact.id)
+          } else {
+            guard attachments.count <= 10, Set(attachments.map(\.id)).count == attachments.count,
+                  let bodyID = UUID(uuidString: dispatch.taskId) else { throw GalaxySSIError.invalidPayload("Invalid scoped connector attachments.") }
+            let profile = mediaNetworkProfileProvider()
+            let scope = try AgentAttachmentTransferScope(contactId: contact.id, desktopId: link.desktopId,
+              clientRouteId: link.routes.clientRouteId, conversationId: dispatch.conversationId,
+              taskId: dispatch.taskId, turnId: dispatch.turnId, clientMessageId: String(dispatch.sourceMessageId))
+            let prepared = try attachmentTransferStore.prepare(scope: scope, attachments: attachments,
+              mediaProfile: profile, preserveOriginalBytes: true)
+            guard prepared.count == attachments.count else { throw GalaxySSIError.invalidPayload("Connector attachment preparation was incomplete.") }
+            guard persistNativeConnectorAttachmentIntent(dispatch, bodyID: bodyID.uuidString, attachments: prepared) else {
+              throw GalaxySSIError.invalidPayload("The original connector attachment intent could not be saved. Nothing was sent.")
+            }
+            payload["message_id"] = bodyID.uuidString
+            payload["attachments"] = prepared.map { $0.descriptor() }
+            AgentMediaLinkPayloadPolicy.payloadMetadata(attachments: attachments, profile: profile).forEach { payload[$0.key] = $0.value }
+            beginPeerAttachmentTransfers(prepared, outgoing: context.outgoing, contact: store.contact(id: context.outgoing.contactId) ?? contact)
+            started = true
+            try await enqueueNativeConnectorAttachments(payload, prepared: prepared, dispatch: dispatch, link: link, contact: contact)
+          }
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .queued)
           scheduleOutboxFlushFromStore()
         } catch {
@@ -14804,6 +14825,134 @@ final class MessageCoordinator: ObservableObject {
   private func nativeConnectorResponseOutbox() -> UserDefaultsAgentConnectorResponseStore {
     UserDefaultsAgentConnectorResponseStore(defaults: store.defaults,
       storageKey: "galaxyssi_ios_native_connector_responses.\(store.profile.identityFingerprint)", secrets: store.secrets)
+  }
+
+  private func enqueueNativeConnectorAttachments(_ payload: [String: Any], prepared: [AgentPreparedOutboundAttachment],
+                                                 dispatch: AgentIOSConnectorDispatch, link: ServerLink, contact: GalaxySSIContact) async throws {
+    try Task.checkCancellation()
+    if let runtime = journalMqttRuntime {
+      let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
+      let destinations = projection.currentDestinations().filter { $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes }
+      guard destinations.count == 1, let target = destinations.first else { throw MqttRouteError.identityChanged }
+      let binding = try MqttBusinessIdentity(target.peer.binding).binding
+      let blobs = try await blobOutgoingCoordinator.registerJournal(prepared, link: link, binding: binding, contactID: contact.id)
+      try Task.checkCancellation()
+      guard nativeManagedAttachmentOwner(source: String(dispatch.sourceMessageId), contact: contact,
+        identity: AgentTaskIdentity(clientRouteId: link.routes.clientRouteId, conversationId: dispatch.conversationId,
+          taskId: dispatch.taskId, turnId: dispatch.turnId), target: target) != nil else { throw MqttRouteError.identityChanged }
+      _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId, attachments: prepared,
+        blobTransfers: blobs, ownerContactID: "hermes")
+      if !blobs.isEmpty { await blobOutgoingCoordinator.wake() }
+    } else {
+      guard usesLegacyMqtt, queuedNativeConnectorContext(dispatch) != nil else { throw GalaxySSIError.transportUnavailable }
+      let declarations = try makeOutboundAttachmentDeliveryRequests(prepared, link: link,
+        sourceMessageId: String(dispatch.sourceMessageId), contactId: contact.id)
+      guard deliveryStore.enqueueDeferredAttachmentTask(LinkDeliveryEnqueueRequest(messageId: payload.string("message_id"),
+        topic: link.routes.upTopic, wirePayload: "", requiresValidatedNetwork: prepared.contains { $0.requiresValidatedNetwork },
+        blockedByAttachmentTransferIds: prepared.map(\.transferId), clientSourceMessageId: String(dispatch.sourceMessageId),
+        contactId: contact.id), payload: String(decoding: try GalaxySSILinkProtocol.jsonData(payload), as: UTF8.self), attachments: declarations)
+      else { throw GalaxySSIError.transportUnavailable }
+    }
+  }
+
+  private func persistNativeConnectorAttachmentIntent(_ dispatch: AgentIOSConnectorDispatch, bodyID: String, attachments: [AgentPreparedOutboundAttachment]) -> Bool {
+    guard let context = queuedNativeConnectorContext(dispatch), var plan = context.task.activePlan,
+          let index = plan.actions.firstIndex(where: { $0.id == dispatch.action.id }),
+          let encoded = try? JSONEncoder().encode(attachments.map(\.attachmentId)),
+          let manifest = try? JSONSerialization.data(withJSONObject: attachments.map { $0.descriptor() }, options: [.sortedKeys]) else { return false }
+    var pending = context.pending
+    let manifestText = String(decoding: manifest, as: UTF8.self)
+    guard pending.metadata["native_connector_attachment_body_id"].map({ $0 == bodyID }) ?? true,
+          pending.metadata["native_connector_attachment_manifest_json"].map({ $0 == manifestText }) ?? true else { return false }
+    pending.metadata["has_attachments"] = "true"
+    pending.metadata["native_connector_attachment_body_id"] = bodyID
+    pending.metadata["native_connector_attachment_ids_json"] = String(decoding: encoded, as: UTF8.self)
+    pending.metadata["native_connector_attachment_manifest_json"] = manifestText
+    guard let waiting = AgentNativeConnectorContinuation.waitingAction(context.waiting, result: pending, task: context.task, outgoing: context.outgoing) else { return false }
+    var task = context.task
+    plan.actions[index] = waiting
+    task.activePlan = plan
+    task.planContext = AgentTaskPlanContext(plan: plan)
+    task.lastNativeActionResult = pending
+    if task.pendingAction?.id == waiting.id { task.pendingAction = waiting }
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    return store.commitOwnedAgentTaskState(expected: context.task, updated: task)
+  }
+
+  private func nativeManagedAttachmentOwner(source: String, contact: GalaxySSIContact, identity: AgentTaskIdentity,
+    target: MqttPeerChatProjection.Destination) -> (dispatch: AgentIOSConnectorDispatch, outgoing: ChatMessage, mode: AgentTaskExecutionMode)? {
+    guard UUID(uuidString: source) == nil, let numeric = Int64(source), numeric > 0, String(numeric) == source,
+          contact.trustState == .verified, contact.desktopId == target.peer.remoteSignalName,
+          target.routeId == identity.clientRouteId,
+          let record = try? managedDesktopReplyLedger.recoveryRecord(matching: AgentConnectorResponse(sourceMessageId: numeric,
+            contactId: contact.id, conversationId: identity.conversationId, turnId: identity.turnId, taskId: identity.taskId)),
+          record.state == .pending, record.sourceMessageId == numeric, record.contactId == contact.id,
+          record.conversationId == identity.conversationId, record.turnId == identity.turnId, record.taskId == identity.taskId,
+          let task = store.agentTask(id: record.turnId),
+          let matches = task.activePlan?.actions.filter({ AgentNativeConnectorContinuation.pendingResult($0)?.metadata["control_plane_run_id"] == record.ownerRunId }),
+          matches.count == 1, let waiting = matches.first,
+          let pending = AgentNativeConnectorContinuation.pendingResult(waiting),
+          task.lastNativeActionResult?.actionId == pending.actionId,
+          task.lastNativeActionResult?.metadata["control_plane_run_id"] == record.ownerRunId,
+          let dispatch = AgentIOSConnectorDispatch(action: waiting, receipt: pending), dispatch.sourceMessageId == numeric, dispatch.contactId == contact.id,
+          pending.metadata["native_connector_attachment_body_id"] == UUID(uuidString: dispatch.taskId)?.uuidString,
+          pending.metadata["has_attachments"] == "true",
+          pending.metadata["native_connector_attachment_manifest_json"]?.isEmpty == false,
+          let context = queuedNativeConnectorContext(dispatch),
+          !attachmentDeliveryFailureStore.observations().contains(where: {
+            $0.sourceMessageId == source && $0.contactId == contact.id && $0.desktopId == contact.desktopId &&
+              $0.clientRouteId == identity.clientRouteId && $0.conversationId == identity.conversationId &&
+              $0.taskId == identity.taskId && $0.turnId == identity.turnId
+          }) else { return nil }
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let budget = AgentTaskBudgetPolicy.evaluate(budget: store.agentTaskBudget, usage: AgentTaskBudgetUsage(usageEstimated: true),
+      environment: AgentTaskBudgetEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated, networkMetered: probe.metered), networkRequired: true, trustedNetworkTarget: true)
+    guard budget.allowed, store.agentSafetySettings.connectorCallsAllowed else { return nil }
+    return (dispatch, context.outgoing, context.task.activePlan?.executionMode ?? store.agentSafetySettings.taskExecutionMode)
+  }
+
+  private func resolveNativeManagedAttachmentOwner(_ payload: [String: Any], contact: GalaxySSIContact,
+    identity: AgentTaskIdentity, target: MqttPeerChatProjection.Destination) -> MqttDesktopConnectorProjection.TaskOwner? {
+    guard let current = nativeManagedAttachmentOwner(source: payload.string("source_message_id"), contact: contact, identity: identity, target: target),
+          payload.string("content") == current.dispatch.executionPrompt, payload.string("sender") == store.profile.galaxySSIId,
+          payload.string("message_id") == UUID(uuidString: current.dispatch.taskId)?.uuidString,
+          payload.string("execution_mode") == current.mode.rawValue, (try? MqttRouteProtocol.integer(payload, "execution_generation")) == 1,
+          let context = queuedNativeConnectorContext(current.dispatch),
+          let rawIDs = context.pending.metadata["native_connector_attachment_ids_json"],
+          let expectedIDs = try? JSONDecoder().decode([String].self, from: Data(rawIDs.utf8)),
+          let descriptors = payload["attachments"] as? [[String: Any]], !descriptors.isEmpty,
+          descriptors.map({ $0.string("id") }) == expectedIDs,
+          let manifest = try? JSONSerialization.data(withJSONObject: descriptors, options: [.sortedKeys]),
+          context.pending.metadata["native_connector_attachment_manifest_json"] == String(decoding: manifest, as: UTF8.self) else { return nil }
+    let model = current.dispatch.action.parameters["model_id"] ?? ""
+    let rawEffort = (current.dispatch.action.parameters["reasoning_effort"] ?? "auto").ifBlank("auto")
+    guard let effort = AgentModelReasoningEffort(rawValue: rawEffort),
+          model.isBlank || contact.connectorInvocationProfile.models.contains(where: { $0.id == model }),
+          effort == .automatic || contact.connectorInvocationProfile.reasoningEfforts.contains(effort),
+          (payload["agent_invocation"] as? [String: String]) == AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: effort) else { return nil }
+    return .init(message: current.outgoing, managedOwnerRunID: current.dispatch.owner)
+  }
+
+  private func drainNativeConnectorAttachmentFailures() {
+    for failure in attachmentDeliveryFailureStore.observations() {
+      guard let source = Int64(failure.sourceMessageId), source > 0,
+            let record = try? managedDesktopReplyLedger.recoveryRecord(matching: AgentConnectorResponse(sourceMessageId: source,
+              contactId: failure.contactId, conversationId: failure.conversationId, turnId: failure.turnId, taskId: failure.taskId)),
+            record.state == .pending, let task = store.agentTask(id: record.turnId),
+            let waiting = task.activePlan?.actions.first(where: { AgentNativeConnectorContinuation.pendingResult($0)?.metadata["control_plane_run_id"] == record.ownerRunId }),
+            let pending = AgentNativeConnectorContinuation.pendingResult(waiting),
+            let dispatch = AgentIOSConnectorDispatch(action: waiting, receipt: pending), queuedNativeConnectorContext(dispatch, requireExecution: false) != nil,
+            taskIdentityStore.identity(contactId: failure.contactId, sourceMessageId: failure.sourceMessageId) ==
+              AgentTaskIdentity(clientRouteId: failure.clientRouteId, conversationId: failure.conversationId, taskId: failure.taskId, turnId: failure.turnId),
+            store.serverLinks.contains(where: { $0.paired && $0.desktopId == failure.desktopId && $0.routes.clientRouteId == failure.clientRouteId }),
+            AgentAttachmentDeliveryFailureContract.isTerminal(failure.errorCode) else { continue }
+      let response = AgentConnectorResponse(sourceMessageId: source, contactId: failure.contactId,
+        content: AgentAttachmentDeliveryFailureContract.observation(failure.errorCode), conversationId: failure.conversationId,
+        turnId: failure.turnId, taskId: failure.taskId, success: false, receivedAtMillis: AgentControlPlaneClock.nowMillis(),
+        executionGeneration: record.executionGeneration, deliveryFailureCode: failure.errorCode)
+      publishNativeConnectorResponse(response, profile: waiting.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
+    }
   }
 
   private func publishNativeConnectorResponse(_ response: AgentConnectorResponse, profile: String) {
@@ -14973,6 +15122,7 @@ final class MessageCoordinator: ObservableObject {
           !store.agentSafetySettings.executionPaused,
           store.agentSafetySettings.taskExecutionMode != .planOnly,
           ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode) else { return }
+    drainNativeConnectorAttachmentFailures()
     for var task in store.recentAgentTasks(limit: 200) where task.phase == .waitingResponse ||
       (task.phase == .blocked && task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true") {
       guard !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
@@ -17852,6 +18002,15 @@ final class MessageCoordinator: ObservableObject {
         else { return false }
         return binding.route.connector.desktopId == target.peer.remoteSignalName &&
           binding.route.desktopFingerprint == target.routes.remoteFingerprint
+      }, resolveManagedAttachmentOwner: { [weak self] payload, contact, identity, target in
+        self?.resolveNativeManagedAttachmentOwner(payload, contact: contact, identity: identity, target: target)
+      }, recordManagedAttachmentFailure: { [weak self] payload, transfer in
+        guard let self, UIApplication.shared.isProtectedDataAvailable,
+              self.desktopReplyRecoveryOwner == self.store.profile.identityFingerprint else { throw MqttRouteError.identityChanged }
+        _ = try self.attachmentDeliveryFailureStore.record(receipt: payload, attachment: transfer)
+        Task { @MainActor [weak self] in self?.resumeWaitingNativeConnectors() }
+      }, managedAttachmentSourceIsCurrent: { [weak self] source, contact, identity, target in
+        self?.nativeManagedAttachmentOwner(source: source, contact: contact, identity: identity, target: target) != nil
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,

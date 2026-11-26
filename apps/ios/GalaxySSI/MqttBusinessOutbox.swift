@@ -174,7 +174,7 @@ final class MqttBusinessOutbox {
       guard var saved = try read(key), saved.identity == identity,
             saved.message.blockedByAttachmentTransferIds.contains(transferID) else { return false }
       guard let request = saved.deferredRequest, request.attachmentDependencies.contains(transferID),
-            request.sourceMessageID == messageID || UUID(uuidString: request.sourceMessageID)?.uuidString == messageID
+            try MqttAttachmentBodyIdentity.matches(request, bodyID: messageID)
       else { throw MqttChunkStorageError.corruptState }
       saved.message.blockedByAttachmentTransferIds.removeAll { $0 == transferID }
       try write(saved, key: key)
