@@ -1,0 +1,16 @@
+{
+  "androidPR": 3037,
+  "androidCommit": "7b8b6d2a840e8db70deca680233603113d53f36b",
+  "incrementalBase": "8a794e82ebe8f09790e41139295ffb7ac1ee9701",
+  "scope": "Actual iOS authoritative partition writes/reads, encrypted bounded frames, stable sealed namespace, immutable snapshots and resumable migration. Retirement and bulk transaction optimization remain incomplete; native fixtures not executed.",
+  "productionFiles": [
+    {"name": "AgentKnowledgeDatabase", "sha256": "8334f99654d054d15149118315d9c633fa7610729222426a2f14e467fa4deedf", "disposition": "New writes and snapshot-aware reads use primary references; retain old formats when no primary reference exists; do not fall back after primary corruption"},
+    {"name": "KnowledgePayloadMigration", "sha256": "d043aa26573273c4cbf713608e85bb03cebfac043a8966125dfd1ed90480648e", "disposition": "Old inline/per-file read and maintenance remain; native primary migration retains old external copies for existing snapshots"},
+    {"name": "KnowledgePayloadWork", "sha256": "4a8eee51e00b51247bb35d477b1d769bbea0c517a99cfff950b5aa21fb526270", "disposition": "Actual coordinator startup starts a weak, serial utility worker with eight-record pages and persisted cursor; no Android WorkManager or OS background guarantee"},
+    {"name": "KnowledgePrimaryFrameCodec", "sha256": "444955d3372659b78cb250e2d7a0b5b70447b10a843d282398ee866fdcd5e510", "disposition": "Native byte-frame ZLIB/raw codec with bounded expansion and AEAD; internal format is not Android GZIP or a wire format"},
+    {"name": "KnowledgePrimaryMigration", "sha256": "0ccee583eb474923e0a91354e5654e08497e49c5525c17678a3d99d277599a32", "disposition": "One catalog write transaction per page, verify staged complete plaintext before sentinel/cursor publication, preserve logical/vector state"},
+    {"name": "KnowledgePrimaryPartitions", "sha256": "d088b22c5f7dce52b623acd263f5e2493f0beeb2b794e0e59657c01bd2e76414", "disposition": "Four HMAC-key buckets, approximately 64 MiB/65536 appended-record targets, max four writer connections and one serialized reader per store; physical frames commit before catalog publication; per-record commit batching not yet optimized"},
+    {"name": "KnowledgePrimaryReclaim", "sha256": "9e96a9d1037a2a174d4a87358775bf35598d34728f887f2d422ba9e95c4b2d24", "disposition": "Not ported in this increment: immutable old partitions/legacy copies are deliberately retained until snapshot-safe reclamation is implemented"},
+    {"name": "KnowledgePrimarySchema", "sha256": "5571fb4ec361b162d4d8e7583a353f1ef62d43ce608e54c7396a8b95c887168c", "disposition": "Native authenticated namespace/reference tables, bucket rotation/index, delete trigger and migration cursor; source/FTS/vector schemas retained"}
+  ]
+}

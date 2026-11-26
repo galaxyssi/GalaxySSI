@@ -2273,6 +2273,9 @@
     A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */; };
     A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */; };
     A10000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */; };
+    A10000000000000000003E33 /* AgentKnowledgePrimaryFrameCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E33 /* AgentKnowledgePrimaryFrameCodec.swift */; };
+    A10000000000000000003E34 /* AgentKnowledgePrimaryPartitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E34 /* AgentKnowledgePrimaryPartitions.swift */; };
+    A10000000000000000003E35 /* AgentKnowledgePrimaryPartitionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E35 /* AgentKnowledgePrimaryPartitionsTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4602,6 +4605,9 @@
     A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedAnswerPreviewTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVerifiedTimerStartTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneLocalModelResourceTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E33 /* AgentKnowledgePrimaryFrameCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryFrameCodec.swift; sourceTree = "<group>"; };
+    A20000000000000000003E34 /* AgentKnowledgePrimaryPartitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryPartitions.swift; sourceTree = "<group>"; };
+    A20000000000000000003E35 /* AgentKnowledgePrimaryPartitionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryPartitionsTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5566,6 +5572,8 @@
         A20000000000000000003E25 /* AgentSupervisedAnswerPreview.swift */,
         A20000000000000000003E28 /* AgentVerifiedTimerStart.swift */,
         A20000000000000000003E30 /* AgentAutomaticRoutingContext.swift */,
+        A20000000000000000003E33 /* AgentKnowledgePrimaryFrameCodec.swift */,
+        A20000000000000000003E34 /* AgentKnowledgePrimaryPartitions.swift */,
 		D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
@@ -6613,6 +6621,7 @@
         A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */,
         A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */,
         A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */,
+        A20000000000000000003E35 /* AgentKnowledgePrimaryPartitionsTests.swift */,
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
@@ -8424,6 +8433,8 @@
         A10000000000000000003E25 /* AgentSupervisedAnswerPreview.swift in Sources */,
         A10000000000000000003E28 /* AgentVerifiedTimerStart.swift in Sources */,
         A10000000000000000003E30 /* AgentAutomaticRoutingContext.swift in Sources */,
+        A10000000000000000003E33 /* AgentKnowledgePrimaryFrameCodec.swift in Sources */,
+        A10000000000000000003E34 /* AgentKnowledgePrimaryPartitions.swift in Sources */,
 		D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
@@ -9052,6 +9063,7 @@
         A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */,
         A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */,
         A10000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift in Sources */,
+        A10000000000000000003E35 /* AgentKnowledgePrimaryPartitionsTests.swift in Sources */,
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,

@@ -73,6 +73,10 @@ final class AgentKnowledgeDatabase {
   private let sourcePreviewCipher: GalaxySSIAttachmentAtRestCipher
   private let sourcePreviewNamespace: String
   private let payloadDirectory: URL
+  private let primaryPayloads: AgentKnowledgePrimaryPartitions
+  private let primaryMigrationQueue = DispatchQueue(label: "galaxyssi.knowledge.primary-migration", qos: .utility)
+  private let primaryMigrationControl = NSLock()
+  private var primaryMigrationRunning = false
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
@@ -96,6 +100,7 @@ final class AgentKnowledgeDatabase {
       .map { String(format: "%02x", $0) }
       .joined()
     payloadDirectory = URL(fileURLWithPath: fileURL.path + ".payloads", isDirectory: true)
+    primaryPayloads = AgentKnowledgePrimaryPartitions(catalogURL: fileURL, secrets: secrets)
     open()
   }
 
@@ -1219,6 +1224,112 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  struct PrimaryMigrationPage: Equatable {
+    var visited: Int
+    var moved: Int
+    var complete: Bool
+  }
+
+  func maintainPrimaryPayloads(pageSize: Int = 8) throws -> PrimaryMigrationPage {
+    try locked {
+      guard (1...32).contains(pageSize), let database, execute("BEGIN IMMEDIATE TRANSACTION") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard let state = prepare("SELECT after_item_hash,complete FROM knowledge_primary_migration WHERE id=1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      guard sqlite3_step(state) == SQLITE_ROW, let cursorText = sqlite3_column_text(state, 0) else {
+        sqlite3_finalize(state)
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let cursor = String(cString: cursorText), complete = sqlite3_column_int(state, 1)
+      sqlite3_finalize(state)
+      guard (cursor.isEmpty || cursor.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil),
+            (0...1).contains(complete) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      if complete == 1 {
+        guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+        committed = true
+        return PrimaryMigrationPage(visited: 0, moved: 0, complete: true)
+      }
+      guard let page = prepare("SELECT item_hash,encrypted_payload FROM knowledge_items WHERE item_hash>? ORDER BY item_hash LIMIT ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(cursor, at: 1, to: page)
+      sqlite3_bind_int(page, 2, Int32(pageSize + 1))
+      var rows: [(String, Data)] = []
+      while true {
+        let step = sqlite3_step(page)
+        if step == SQLITE_DONE { break }
+        guard step == SQLITE_ROW, let hash = sqlite3_column_text(page, 0), let encrypted = blob(page, column: 1) else {
+          sqlite3_finalize(page)
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        rows.append((String(cString: hash), encrypted))
+      }
+      sqlite3_finalize(page)
+      var moved = 0
+      for (hash, encrypted) in rows.prefix(pageSize) {
+        try Task.checkCancellation()
+        guard let present = prepare("SELECT 1 FROM knowledge_primary_refs WHERE item_hash=?") else {
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+        bind(hash, at: 1, to: present)
+        let found = sqlite3_step(present)
+        sqlite3_finalize(present)
+        if found == SQLITE_ROW { continue }
+        guard found == SQLITE_DONE,
+              let plain = readExternalPayload(itemHash: hash, database: database) ?? (try? cipher.decrypt(encrypted, expectedPurpose: purpose(hash))),
+              let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plain), keyedHash(item.id) == hash else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        try primaryPayloads.append(plain, itemHash: hash, catalog: database)
+        guard try primaryPayloads.read(itemHash: hash, catalog: database) == plain,
+              let update = prepare("UPDATE knowledge_items SET encrypted_payload=x'00' WHERE item_hash=?") else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        bind(hash, at: 1, to: update)
+        let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
+        sqlite3_finalize(update)
+        guard updated else { throw AgentKnowledgeDatabaseError.unavailable }
+        moved += 1
+      }
+      let visited = min(rows.count, pageSize), finished = rows.count <= pageSize
+      guard let stateUpdate = prepare("UPDATE knowledge_primary_migration SET after_item_hash=?,complete=? WHERE id=1") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      bind(visited > 0 ? rows[visited - 1].0 : cursor, at: 1, to: stateUpdate)
+      sqlite3_bind_int(stateUpdate, 2, finished ? 1 : 0)
+      let saved = sqlite3_step(stateUpdate) == SQLITE_DONE && sqlite3_changes(database) == 1
+      sqlite3_finalize(stateUpdate)
+      guard saved, execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+      committed = true
+      return PrimaryMigrationPage(visited: visited, moved: moved, complete: finished)
+    }
+  }
+
+  func startPrimaryPayloadMigration() {
+    primaryMigrationControl.lock()
+    defer { primaryMigrationControl.unlock() }
+    guard !primaryMigrationRunning, database != nil else { return }
+    primaryMigrationRunning = true
+    schedulePrimaryPayloadMigration()
+  }
+
+  private func schedulePrimaryPayloadMigration() {
+    primaryMigrationQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+      guard let self else { return }
+      guard let page = try? self.maintainPrimaryPayloads(pageSize: 8), !page.complete else {
+        self.primaryMigrationControl.lock()
+        self.primaryMigrationRunning = false
+        self.primaryMigrationControl.unlock()
+        return
+      }
+      self.schedulePrimaryPayloadMigration()
+    }
+  }
+
   @discardableResult
   func maintainExternalPayloads(pageSize: Int = 4) throws -> Bool {
     try locked {
@@ -1246,7 +1357,8 @@ final class AgentKnowledgeDatabase {
       guard execute("BEGIN IMMEDIATE TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
       guard let page = prepare("""
         SELECT item_hash, encrypted_payload FROM knowledge_items
-        WHERE item_hash > ? ORDER BY item_hash ASC LIMIT ?
+        WHERE item_hash > ? AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs p WHERE p.item_hash=knowledge_items.item_hash)
+        ORDER BY item_hash ASC LIMIT ?
         """) else {
         _ = execute("ROLLBACK")
         throw AgentKnowledgeDatabaseError.unavailable
@@ -1434,16 +1546,7 @@ final class AgentKnowledgeDatabase {
   private func insert(_ item: AgentKnowledgeItem) -> Bool {
     let itemHash = keyedHash(item.id)
     guard let plaintext = try? JSONEncoder.galaxySSI.encode(item) else { return false }
-    let external = plaintext.count >= 8 * 1_024 ||
-      (scalar("SELECT items FROM knowledge_item_count_state WHERE id = 1") ?? 0) >= 16_384
-    let encrypted: Data
-    if external {
-      encrypted = Data([0])
-    } else if let inline = try? cipher.encrypt(plaintext, purpose: purpose(itemHash)) {
-      encrypted = inline
-    } else {
-      return false
-    }
+    let encrypted = Data([0])
     guard let statement = prepare("""
             INSERT INTO knowledge_items(item_hash, source_hash, updated_at, encrypted_payload)
             VALUES (?, ?, ?, ?)
@@ -1456,7 +1559,9 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_blob(statement, 4, bytes.baseAddress, Int32(encrypted.count), Self.transient)
     }
     guard sqlite3_step(statement) == SQLITE_DONE else { return false }
-    if external, !insertExternalPayload(plaintext, itemHash: itemHash) { return false }
+    guard let database else { return false }
+    do { try primaryPayloads.append(plaintext, itemHash: itemHash, catalog: database) }
+    catch { return false }
     guard let indexStatement = prepare(
       "INSERT INTO knowledge_fts(item_hash, tokens) VALUES (?, ?)"
     ) else { return false }
@@ -1628,6 +1733,9 @@ final class AgentKnowledgeDatabase {
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_item_recent ON knowledge_items(updated_at DESC, item_hash ASC)")
     setupExternalPayloads()
+    guard let database else { return }
+    do { try primaryPayloads.setup(catalog: database) }
+    catch { sqlite3_close_v2(database); self.database = nil; return }
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_source_headers (
         source_hash TEXT PRIMARY KEY NOT NULL,
@@ -2620,9 +2728,16 @@ final class AgentKnowledgeDatabase {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     let itemHash = String(cString: hashText)
-    let external = readExternalPayload(itemHash: itemHash, database: sqlite3_db_handle(statement))
-    guard let plaintext = external ?? (try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash))),
-          let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
+    guard let catalog = sqlite3_db_handle(statement) else { throw AgentKnowledgeDatabaseError.unavailable }
+    let plaintext: Data
+    if let primary = try primaryPayloads.read(itemHash: itemHash, catalog: catalog) {
+      plaintext = primary
+    } else {
+      guard let legacy = readExternalPayload(itemHash: itemHash, database: catalog) ??
+        (try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash))) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      plaintext = legacy
+    }
+    guard let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
           keyedHash(item.id) == itemHash else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }

@@ -766,6 +766,7 @@ final class MessageCoordinator: ObservableObject {
     recoverSupervisedBrowserWaits()
     startAutomationScheduler()
     backgroundCognitionScheduler.start()
+    store.agentKnowledgeDatabase.startPrimaryPayloadMigration()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
       self?.refreshAgentHomeState()
     }
