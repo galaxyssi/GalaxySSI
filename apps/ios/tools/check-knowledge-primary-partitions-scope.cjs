@@ -86,6 +86,9 @@ function validate() {
     'reference.frames', 'Self.sha256(result) == reference.sha256']) assert(storage.includes(token), token);
   assert(storage.indexOf('try execute(database, "COMMIT")') < storage.indexOf('try beforeCatalogPublication()'));
   assert(storage.indexOf('try beforeCatalogPublication()') < storage.indexOf('INSERT INTO knowledge_primary_refs'));
+  const rotation = section(storage, '  private func partition(catalog:', '  private func writer(id:');
+  assert(rotation.indexOf('writers.removeValue(forKey: bucket)') >= 0 &&
+    rotation.indexOf('writers.removeValue(forKey: bucket)') < rotation.indexOf('try open(id, create: true, readOnly: false)'));
   assert(storage.includes('resources.isExcludedFromBackup = false'));
   assert(storage.includes('catalogURL.lastPathComponent') && storage.includes('CREATE TABLE IF NOT EXISTS knowledge_primary_namespace'));
   for (const token of ['private let writerLock = NSLock()', 'private let readerLock = NSLock()',

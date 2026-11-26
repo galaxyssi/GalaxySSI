@@ -206,6 +206,7 @@ final class AgentKnowledgePrimaryPartitions {
       try bind(id, index: 1, statement: seal)
       guard sqlite3_step(seal) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     } else if status != SQLITE_DONE { throw AgentKnowledgeDatabaseError.unavailable }
+    if let prior = writers.removeValue(forKey: bucket) { sqlite3_close_v2(prior.database) }
     let id = UUID().uuidString.lowercased()
     let database = try open(id, create: true, readOnly: false)
     sqlite3_close_v2(database)
