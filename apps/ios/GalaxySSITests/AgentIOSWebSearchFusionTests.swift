@@ -221,7 +221,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .failure(code: "failed", message: "fixture"), ttlMillis: 60_000))
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .success(), ttlMillis: 60_000))
     var oversized = cachedFixture()
-    oversized.output["padding"] = .string(String(repeating: "x", count: 262_145))
+    oversized.output["padding"] = .string(String(repeating: "x", count: AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1))
     XCTAssertFalse(cache.putSearchResponse(key: key, result: oversized, ttlMillis: 60_000))
   }
 

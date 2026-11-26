@@ -236,7 +236,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     if matches.count < max(3, limit / 2), input["search_web"]?.boolValue ?? true, networkAllowed {
       let searched = search(input: [
         "query": .string(String(decoding: query.utf16.prefix(4_096), as: UTF16.self)),
-        "limit": .int(Int64(min(limit, 24))), "engine_fanout": .int(12),
+        "limit": .int(Int64(limit)), "engine_fanout": .int(12),
         "timeout_ms": .int(min(input["timeout_ms"]?.intValue ?? 15_000, invocation.remainingTimeMillis))
       ], invocation: invocation, operation: .search)
       networkAttempted = networkAttempted || (searched.metadata["network_attempted"]?.boolValue ?? true)
@@ -402,9 +402,10 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     let limit = int(
       input,
       "limit",
-      defaultValue: int(input, "evidence_limit", defaultValue: 5, minimum: 1, maximum: 24),
+      defaultValue: int(input, "evidence_limit", defaultValue: AgentIOSWebSearchCapacity.defaultResults,
+        minimum: 1, maximum: AgentIOSWebSearchCapacity.maximumResults),
       minimum: 1,
-      maximum: 24
+      maximum: AgentIOSWebSearchCapacity.maximumResults
     )
     let imageSearch = (input["verticals"]?.arrayValue ?? []).contains(.string("image")) ||
       (input["engines"]?.arrayValue ?? []).contains(where: { $0.stringValue?.hasSuffix("_image") == true })
@@ -434,6 +435,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       "url_normalization": .string("ios_canonical_evidence_v1"),
       "image_routing": .string("ios_mixed_media_subject_v3"),
       "web_routing": .string("ios_mixed_typed_cards_v6"),
+      "result_policy": .string("ios_intelligence_capacity_v1"),
       "provider": .string(webMediaProvider.implementationId),
       "credential_scope": .string(credentialScope)
     ])
@@ -467,6 +469,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var searchProvider = webMediaProvider
     if var native = webMediaProvider as? AgentIOSURLSessionWebMediaToolProvider {
       native.sourceHealthStore = cacheStore
+      native.searchScope = .intelligence
       searchProvider = native
     }
     let webResult = searchProvider.invoke(

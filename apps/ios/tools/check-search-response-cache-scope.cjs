@@ -92,7 +92,7 @@ if (require.main === module) {
     'testExactSearchIdentitySeparatesQueryProfileFanoutAndTopics', 'testForcedRefreshUnconsentedSearchAndCredentialRotationDoNotHitOldResponse',
     'testSearchResponseExpiryAndClearInvalidateInFlightGeneration', 'testSearchResponseBoundsRejectEmptyFailedAndOversizedEntries',
     'testSearchResponseFailedWriteAndCorruptReadDoNotErasePriorData', 'testLegacySnapshotWithoutSearchResponsesRemainsReadableAndRetained',
-    'XCTAssertEqual(second.output["source_receipts"], first.output["source_receipts"])', '262_145']) assert(tests.includes(token), token);
+    'XCTAssertEqual(second.output["source_receipts"], first.output["source_receipts"])', 'AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1']) assert(tests.includes(token), token);
   for (const file of ['AgentIOSURLSessionWebMediaProvider.swift', 'AgentIOSWebIntelligenceSourceCatalog.swift',
     'AgentIOSWebSourceHealth.swift', 'AgentIOSPublicSearchParser.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSWebSearchFusion.swift', 'AgentIOSWebExecutionBudget.swift'])

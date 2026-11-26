@@ -15,6 +15,7 @@ function section(source, first, last) {
   return source.slice(begin, end);
 }
 function retainedAddressProvider(source) {
+  source = require('./check-search-result-capacity-scope.cjs').retainedCapacityMedia(source);
   const hook = '  private func isLocalOrPrivateHost(_ host: String) -> Bool {\n    AgentIOSPublicAddressPolicy.blocksHost(host)\n  }\n\n';
   if (!source.includes('AgentIOSPublicAddressPolicy.blocksHost(host)')) return source;
   const prior = section(old('AgentIOSURLSessionWebMediaProvider'),

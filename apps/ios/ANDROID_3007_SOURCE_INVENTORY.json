@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed atomic generic workspace and cache stores, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache, feature-hash similarity and monotonic provider/workspace diagnostics. Health task store remains separately sealed. Image DNS preflight is not connection pinning. Remaining public-result/media limits, broader context paths, other media/relevance, UI/end-to-end timing and native acceptance remain incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed atomic generic workspace and cache stores, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion/routing with reference intelligence default-10/max-100 capacity, typed media versus learned-topic pages, bounded exact response cache, feature-hash similarity and monotonic diagnostics. Health tasks remain separately sealed. Image DNS preflight is not connection pinning. Cache bounds/crawl/page/media parity, broader context paths, UI/end-to-end timing and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -107,7 +107,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains now use protected purpose-bound encrypted SQLite indexes: point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Document/search/learned clear and persisted cache-generation rotation share one transaction; watches and health remain. Import is fenced and the old file is retired after committed migration, with cleanup failure reported. Similarity scans one body at a time with bounded retained hits, not ANN. Public result/media limits and native SQL/crypto/backup/recovery/performance acceptance remain incomplete"
+      "disposition": "Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains use protected purpose-bound encrypted SQLite indexes, point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Shared document/search/learned clear rotates persisted generation; watches/health remain. Fenced import retires the old file after commit. Similarity streams bodies, not ANN. Intelligence search now propagates default 10/max 100 through native text/image/mixed dispatch, evidence and exact cache; sparse remote supplementation no longer clamps to 24. Raw WebMedia and research limits remain unchanged; typed scope is native-only and cache identity is revised. Cache retains 32 complete responses with 2MB per response, not unlimited parity. Crawl/page/media behaviors and all native SQL/crypto/network/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

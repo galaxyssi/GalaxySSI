@@ -5,6 +5,7 @@ const base = 'b8a15bb0a25d2e9605161305c382f061fd581c05';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const isIndexedCache = source => source.includes('  private func cacheIndexUnlocked()');
 function retainedMetadataProvider(source) {
+  source = require('./check-search-result-capacity-scope.cjs').retainedCapacityProvider(source);
   if (!source.includes('struct AgentIOSURLSessionWebIntelligenceProvider') || !source.includes('cacheStore.cacheMetadata()')) return source;
   return source.replaceAll('cacheStore.cacheMetadata()', 'cacheStore.stats()')
     .replace('    case "status":\n      cacheMetadata = cacheStore.stats()', '    case "status":\n      break');
@@ -19,7 +20,7 @@ function validateIndexedCache() {
     prior.slice(0, prior.indexOf('final class AgentIOSWebIntelligenceCacheStore')), 'Document/watch public projections retained');
   assert.equal(section(cache, '  private struct Snapshot:', '  private struct SearchResponse:'),
     section(prior, '  private struct Snapshot:', '  private struct SearchResponse:'), 'Legacy decoder schemas retained');
-  assert.equal(section(cache, '  private struct SearchResponse:', '  func searchResponse('),
+  assert.equal(section(require('./check-search-result-capacity-scope.cjs').retainedCapacityCache(cache), '  private struct SearchResponse:', '  func searchResponse('),
     section(prior, '  private struct SearchResponse:', '  func searchResponse('), 'Exact response validation and bounds retained');
   for (const token of ['static let maxDocuments = 2_000', 'snapshot.documents.count <= 64',
     'cacheIndexUnlocked().entry(.search, id: key)', 'cacheIndexUnlocked().entry(.document, id: cleanURL)',

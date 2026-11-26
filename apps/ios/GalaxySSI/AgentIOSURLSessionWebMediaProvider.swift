@@ -288,6 +288,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var monotonicNowNanoseconds: () -> UInt64
   var sourceHealthStore: AgentIOSWebIntelligenceCacheStore?
   var imageCredentials: AgentIOSWebIntelligenceCredentials
+  var searchScope: AgentIOSWebSearchCapacity.Scope = .webMedia
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
@@ -391,12 +392,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
     do {
-      let query = string(input, "query", limit: 1_024)
+      let query = string(input, "query", limit: searchScope.queryCharacters)
       guard !query.isEmpty else {
         throw AgentIOSURLSessionWebError.invalidSearchQuery
       }
       let requestedMaxResults = input["max_results"]?.intValue ?? 5
-      let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(24))))
+      let maxResults = Int(max(Int64(1), min(requestedMaxResults, searchScope.maximumResults)))
       let profile = (input["profile"]?.stringValue ?? "balanced").lowercased()
       let explicitSources = !(input["engines"]?.arrayValue ?? []).isEmpty
       let requestedEngines = (input["engines"]?.arrayValue ?? []).compactMap(\.stringValue)
@@ -500,7 +501,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
             if endpoint.imageSearch {
-              results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query, invocation: searchInvocation)
+              results = try imageSearchResults(endpoint: endpoint, resource: resource, query: query,
+                limit: searchScope.imageCandidates(maxResults), invocation: searchInvocation)
             } else if let parser = endpoint.jsonParser {
               results = try AgentIOSJSONWebSearchAdapter.parse(resource.body, source: parser, limit: maxResults)
             } else if endpoint.specialistParser == "arxiv" {
@@ -1281,7 +1283,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
             queryItems: [URLQueryItem(name: "query", value: query)])
         case "brave_image":
           components = searchComponents(scheme: "https", host: "api.search.brave.com", path: "/res/v1/images/search",
-            queryItems: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "20"),
+            queryItems: [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: String(searchScope.imageCandidates(maxResults))),
               URLQueryItem(name: "safesearch", value: "moderate")])
         case "duckduckgo_image":
           components = searchComponents(scheme: "https", host: "duckduckgo.com", path: "/",
@@ -1385,10 +1387,10 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   }
 
   private func imageSearchResults(endpoint: AgentIOSWebSearchEndpoint, resource: AgentIOSURLSessionWebResource,
-                                  query: String, invocation: AgentNativeToolInvocation) throws -> [AgentIOSWebSearchResult] {
+                                  query: String, limit: Int, invocation: AgentNativeToolInvocation) throws -> [AgentIOSWebSearchResult] {
     switch endpoint.provider {
-    case "sogou_image": return try AgentIOSPublicSearchParser.sogouImages(decodedText(resource).text, limit: 20)
-    case "brave_image": return try AgentIOSPublicSearchParser.imageRows(resource.body, brave: true, limit: 20)
+    case "sogou_image": return try AgentIOSPublicSearchParser.sogouImages(decodedText(resource).text, limit: limit)
+    case "brave_image": return try AgentIOSPublicSearchParser.imageRows(resource.body, brave: true, limit: limit)
     case "duckduckgo_image":
       let token = try AgentIOSImageSearchRequestPolicy.duckDuckGoToken(decodedText(resource).text)
       let components = searchComponents(scheme: "https", host: "duckduckgo.com", path: "/i.js", queryItems: [
@@ -1406,7 +1408,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       let response = try requestResource(requestedURL: try validatedPublicHTTPSURL(url.absoluteString), method: .get,
         maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes, timeoutMillis: remaining, invocation: child,
         imagePolicy: AgentIOSImageSearchRequestPolicy(source: endpoint.provider, landing: endpoint.url))
-      return try AgentIOSPublicSearchParser.imageRows(response.body, brave: false, limit: 20)
+      return try AgentIOSPublicSearchParser.imageRows(response.body, brave: false, limit: limit)
     default: throw AgentIOSURLSessionWebError.unsupportedImageEngine
     }
   }
