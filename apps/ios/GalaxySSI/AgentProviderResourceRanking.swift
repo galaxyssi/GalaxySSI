@@ -4,7 +4,8 @@ enum AgentProviderResourceRanking {
   static func candidate(
     resource: AgentResourceDescriptor,
     requirements: AgentTaskRequirements,
-    environment: AgentRuntimeEnvironment
+    environment: AgentRuntimeEnvironment,
+    health: AgentRoutingResourceHealth? = nil
   ) -> AgentResourceCandidate {
     var score = AgentCapabilityRoutingPolicy.fitScore(requirements, available: resource.capabilities)
     var reasons = ["available_reasoning_resource"] +
@@ -14,9 +15,26 @@ enum AgentProviderResourceRanking {
     score -= resource.cost.rank * (requirements.mode == .economy ? 80 : 20)
     if let performance = resource.providerProfile?.performance, performance.attempts > 0 {
       let failurePenalty = penalty(performance.failureRate * 220, maximum: 220)
-      let latencyPenalty = penalty(performance.ewmaLatencyMs / (requirements.mode == .fast ? 40 : 120), maximum: 180)
+      let latencyPenalty = (health?.targetLatencyMillis ?? 0) > 0 ? 0 :
+        penalty(performance.ewmaLatencyMs / (requirements.mode == .fast ? 40 : 120), maximum: 180)
       score -= failurePenalty + latencyPenalty
       reasons += ["provider_failure_penalty:\(failurePenalty)", "provider_latency_penalty:\(latencyPenalty)"]
+    }
+    if let reliability = AgentRoutingResourceHealth.reliability(health?.target) {
+      score += reliability
+      reasons.append("observed_adapter_reliability:\(reliability)")
+    }
+    if let reliability = AgentRoutingResourceHealth.reliability(health?.domain) {
+      score += reliability / 2
+      reasons.append("observed_domain_reliability:\(reliability)")
+    }
+    if let latency = health?.targetLatencyMillis, latency > 0 {
+      score -= Int(min(latency / (requirements.mode == .fast ? 40 : 120), 180))
+      reasons.append("observed_adapter_latency_ms:\(latency)")
+    }
+    if let latency = health?.domainLatencyMillis, latency > 0 {
+      score -= Int(min(latency / 180, 120))
+      reasons.append("observed_domain_latency_ms:\(latency)")
     }
     if requirements.dataSensitivity == .confidential {
       switch resource.trust {

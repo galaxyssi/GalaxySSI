@@ -851,7 +851,8 @@ enum AgentConnectorRouteSelector {
     decision: AgentRoutingDecision?,
     preferredTargetId: String = "",
     goal: String = "",
-    preserveHealthyPrimary: Bool = false
+    preserveHealthyPrimary: Bool = false,
+    routingHealth: AgentRoutingHealthSnapshot? = nil
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
@@ -859,6 +860,7 @@ enum AgentConnectorRouteSelector {
     let requirements = decision?.requirements ?? AgentTaskRequirementAnalyzer.analyze(routingGoal)
     let reasoningTargets = targets.filter {
       (admittedTargetIds?.contains($0.id) ?? true) &&
+      (routingHealth?.allows(targetId: $0.id) ?? true) &&
       hasReasoningCapability($0) && AgentCapabilityRoutingPolicy.missingRequired(
         requirements, available: Set($0.capabilities)
       ).isEmpty
@@ -878,7 +880,7 @@ enum AgentConnectorRouteSelector {
        let preferredTarget, preferredTarget.status == .available {
       let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
         goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
-        requirements: requirements)
+        requirements: requirements, routingHealth: routingHealth)
       return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
     }
     var routingDecision = decision
@@ -887,7 +889,7 @@ enum AgentConnectorRouteSelector {
         goal: routingGoal,
         targets: eligible,
         primaryTargetId: baselineTarget.id,
-        requirements: requirements
+        requirements: requirements, routingHealth: routingHealth
       )
     }
     if let current = routingDecision, !routingGoal.isBlank {
