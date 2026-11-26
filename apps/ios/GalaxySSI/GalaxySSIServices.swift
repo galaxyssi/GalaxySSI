@@ -12621,24 +12621,34 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     selectedProviderOnly: Bool = false
   ) -> AgentConversationContext {
+    let started = AgentPlanningContextTiming.monotonicMillis()
     let session = store.agentSession(id: outgoing.conversationId)
-    return AgentConversationContext(
+    let metadataRead = AgentPlanningContextTiming.monotonicMillis()
+    let summary = recentLocalConversationContext(
+      contactId: outgoing.contactId,
+      excluding: outgoing.id,
+      conversationId: outgoing.conversationId
+    )
+    let historyRead = AgentPlanningContextTiming.monotonicMillis()
+    let globalContext = selectedProviderOnly ? "" : GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
+      store: store,
+      query: requestText,
       conversationId: outgoing.conversationId,
-      summary: recentLocalConversationContext(
-        contactId: outgoing.contactId,
-        excluding: outgoing.id,
-        conversationId: outgoing.conversationId
-      ),
+      turnId: outgoing.turnId
+    )
+    let globalRead = AgentPlanningContextTiming.monotonicMillis()
+    let context = AgentConversationContext(
+      conversationId: outgoing.conversationId,
+      summary: summary,
       turns: [],
       privateMode: session?.privateMode ?? true,
-      globalContext: selectedProviderOnly ? "" : GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
-        store: store,
-        query: requestText,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
-      ),
+      globalContext: globalContext,
       trackingPaused: session?.trackingPaused ?? false
     )
+    AgentPlanningContextTiming.log(.sample(turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+      started: started, metadataRead: metadataRead, historyRead: historyRead, globalRead: globalRead,
+      finished: AgentPlanningContextTiming.monotonicMillis()))
+    return context
   }
 
   private func initialPlannerConfigurationSha256(conversationId: String) -> String {

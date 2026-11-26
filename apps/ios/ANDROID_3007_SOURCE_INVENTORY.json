@@ -132,7 +132,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
       "sha256": "106ba129ed70b93ed47005298dc863ff5caa91b32f1df3a408844c2a64bd64af",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Reviewed the changed localDeviceRouteId fast profile-read concern. Existing iOS profile is a MainActor Published stored value, not a reconstructing JSON/disk getter; do not duplicate the Android helper or change Signal/MQTT identities. This is source-path evidence only, not full device-route equivalence: local workspace device attribution/initialization-repair behavior still needs separate comparison. No native performance/identity acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudImageSearchEvidence.kt",
@@ -182,7 +182,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
       "sha256": "247dedf770e7160055d62f066200186e58d2ba669b5b01757e527c5bd97ed7f3",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial: actual iOS initialPlanningConversation now records separate monotonic metadata/history/global/assembly and total read spans via typed private-hash OSLog. Keep one scoped metadata lookup, exact existing history/global expressions/order, privacy defaults and selected-provider global-context suppression. Four fixture methods authored only. Android worker queue/hydration timing, native routing latency/UI acceptance and broader context indexing remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt",

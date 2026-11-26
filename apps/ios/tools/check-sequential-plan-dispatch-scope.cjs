@@ -12,6 +12,7 @@ function section(source, first, last) {
   return source.slice(start, end);
 }
 function retainedSequentialServices(source) {
+  source = require('./check-planning-context-timing-scope.cjs').retainedPlanningServices(source);
   if (!source.includes('AgentSequentialPlanNodeDispatch.replay(')) return source;
   const prior = show(base, app + 'GalaxySSIServices.swift');
   source = source.replace(section(source, '  private func executeLocalNativeAction(\n', '  private func refreshAutomaticConnectorAction('),
