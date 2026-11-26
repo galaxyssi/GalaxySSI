@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../../..');
-const base = 'cb3f7c6aadf6884b7fd9fb76d8bdf0a151f507cb';
+const base = 'ab1df6efb94ebbf7bffa19e86859a4e6dd4bd3cf';
 const android = 'e7c6af6ef3eed21c7fb697b4458d1cf742833dc4';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const clean = source => source.replace(/\r\n/g, '\n');
@@ -19,10 +19,23 @@ const probe = '    let environment = environment ?? {\n' +
   '      return AgentRuntimeEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable,\n' +
   '        networkValidated: probe.validated, networkMetered: probe.metered)\n' +
   '    }()\n';
-const projection = '      AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment)\n';
+const projection = '      AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment,\n' +
+  '        hasPairedDesktop: hasPairedDesktop)\n';
+const pairedArgument = ',\n      hasPairedDesktop: store.serverLinks.contains { $0.paired }';
+const fallbackProjection = '        fallbacks: AgentProviderResourceRanking.fallbackCandidates(primary: primary.resource, candidates: calibratedCandidates),';
 function retained(file, source) {
+  if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) {
+    return source.split('\n').filter(line => !line.includes('AgentProviderResourceRanking.swift')).join('\n');
+  }
+  if (file.endsWith('GalaxySSIServices.swift')) return source.replaceAll(pairedArgument, '');
+  if (file.endsWith('AgentNetworkRoutingModels.swift') && source.includes(fallbackProjection)) {
+    source = once(source, '    preserveHealthyPrimary: Bool = false,\n    hasPairedDesktop: Bool = false',
+      '    preserveHealthyPrimary: Bool = false');
+    source = source.replaceAll('requirements: requirements, hasPairedDesktop: hasPairedDesktop', 'requirements: requirements');
+    return once(source, fallbackProjection, '        fallbacks: calibratedCandidates.filter { $0.resource.targetId != selectedTarget.id },');
+  }
   if (!file.endsWith('AgentQualityRouting.swift') || !source.includes(projection)) return source;
-  source = once(source, '    requirements: AgentTaskRequirements? = nil,\n    environment: AgentRuntimeEnvironment? = nil',
+  source = once(source, '    requirements: AgentTaskRequirements? = nil,\n    environment: AgentRuntimeEnvironment? = nil,\n    hasPairedDesktop: Bool = false',
     '    requirements: AgentTaskRequirements? = nil');
   source = once(source, probe, '');
   source = once(source, projection, '      AgentResourceCandidate(\n' +
@@ -48,39 +61,51 @@ function validate() {
   const reference = git('show', `${android}:apps/android/app/src/main/java/com/galaxyssi/chat/AgentResourceRouter.kt`);
   for (const token of ['55 else 22', '75 else 25', '80 else 20', 'PHONE_SYSTEM -> 220', 'CLOUD_CONFIGURED -> -160',
     'score += 140 else score -= 120', 'score -= 300', 'failureRate * 220.0', 'coerceAtMost(180)',
-    'score -= 70', 'score -= 180', 'score += 160']) assert(reference.includes(token), token);
+    'score -= 70', 'score -= 180', 'score += 160', 'val fallbackLimit = 6',
+    'AgentFailoverPolicy.fallbackTier(primary?.resource, it.resource)', 'private fun preferredTargetOrder(',
+    '0 -> 180', '1 -> 130', '2 -> 90', '3 -> 50']) assert(reference.includes(token), token);
   for (const token of ['AgentCapabilityRoutingPolicy.fitScore(', '? 55 : 22', '? 75 : 25', '? 80 : 20',
     'performance.attempts > 0', 'penalty(performance.failureRate * 220, maximum: 220)',
     'maximum: 180', 'case .phoneSystem: score += 220', 'case .cloudConfigured: score -= 160',
     'resource.supportsBackground ? 140 : -120', 'resource.contextWindowTokens > 0',
     'environment.networkMetered, resource.location == .cloud', 'score -= 70', 'score -= 180',
     'min(requirements.estimatedInputTokens / 100, 120)', 'requirements.mode == .quality, resource.quality == .frontier',
-    'guard !value.isNaN, value > 0', 'value >= Double(maximum) ? maximum : Int(value)']) assert(policy.includes(token), token);
+    'guard !value.isNaN, value > 0', 'value >= Double(maximum) ? maximum : Int(value)',
+    'let preference = preferenceBonus(', 'reasons.append("preference_bonus:',
+    'hasPairedDesktop ? ["codex"]', 'canonicalPreferenceId(targetId)', 'case 0: return 180',
+    'case 1: return 130', 'case 2: return 90', 'case 3: return 50', 'default: return 20',
+    'AgentFailoverPolicy.fallbackTier(primary: primaryResource', 'seen.insert($0.resource.targetId).inserted',
+    'leftTier == rightTier ? left.offset < right.offset : leftTier < rightTier', '.prefix(6).map(\\.element)']) assert(policy.includes(token), token);
   for (const token of ['UserDefaults', 'Task {', 'publish(', 'acquire(', 'circuitOpen', 'health:90',
     'averageTotalTokens', 'remaining_fallback_ids', 'authorized']) assert(!policy.includes(token), token);
   for (const file of ['AgentNetworkRoutingModels.swift', 'AgentTaskBudgetModels.swift',
     'AgentConnectorTimeoutResolver.swift', 'AgentControlPlaneActionExecutorModels.swift',
     'AgentProviderProfileCatalog.swift', 'AgentSelfModel.swift']) {
     const target = 'apps/ios/GalaxySSI/' + file;
-    assert.equal(read(target), old(target), file);
+    assert.equal(retained(target, read(target)), old(target), file);
   }
   const servicesFile = 'apps/ios/GalaxySSI/GalaxySSIServices.swift';
-  const first = '  private func automaticRoutingTargets(', last = '  private func selectedLocalModel(';
-  assert.equal(section(read(servicesFile), first, last), section(old(servicesFile), first, last));
+  const services = read(servicesFile);
+  assert.equal(services.split(pairedArgument).length, 4);
+  assert.equal(retained(servicesFile, services), old(servicesFile));
   const selector = section(read('apps/ios/GalaxySSI/AgentNetworkRoutingModels.swift'),
     'enum AgentConnectorRouteSelector {', 'enum AgentResourceCatalog {');
   assert(selector.includes('preserveHealthyPrimary, decision == nil'));
   assert(selector.indexOf('targets: [preferredTarget]') < selector.indexOf('var routingDecision = decision'));
   assert(selector.includes('routingDecision = AgentQualityRoutingService.baselineDecision('));
   assert(selector.includes('let leftScore = lhs.score + leftAdjustment'));
+  assert(selector.includes(fallbackProjection));
+  assert.equal((selector.match(/requirements: requirements, hasPairedDesktop: hasPairedDesktop/g) || []).length, 2);
   const fixtureFile = 'apps/ios/GalaxySSITests/AgentRoutingCapabilityTests.swift';
   const fixtures = read(fixtureFile);
   const additions = section(fixtures, '  func testProviderRankingAppliesAndroidQualityLatencyAndEconomyWeights()',
     '  func testGlobalCapabilityObservationExtractorAuthorizationAndSafetyUseLocalOnlyProjection()');
-  assert.equal((additions.match(/  func testProviderRanking/g) || []).length, 6);
-  for (const token of ['.nan', '.infinity', '519', '800', '475', '589', '319', '639', '279', '380', '260',
+  assert.equal((additions.match(/  func testProviderRanking/g) || []).length, 11);
+  for (const token of ['.nan', '.infinity', '699', '980', '655', '589', '319', '769', '409', '380', '260',
     'score - metered.score, 70', 'score - unvalidated.score, 180', 'capabilitySource: .declared',
-    'AgentConnectorRouteSelector.select(', 'preserveHealthyPrimary: true']) assert(additions.includes(token), token);
+    'AgentConnectorRouteSelector.select(', 'preserveHealthyPrimary: true', 'hasPairedDesktop: false',
+    'hasPairedDesktop: true', 'result.count, 6', 'selected.decision?.fallbacks.count, 6',
+    '["cloud", "phone", "other", "private", "same"]', 'candidate.resource.trust, .unknown']) assert(additions.includes(token), token);
   assert.equal(once(fixtures, additions, ''), old(fixtureFile));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const project = read(projectFile);

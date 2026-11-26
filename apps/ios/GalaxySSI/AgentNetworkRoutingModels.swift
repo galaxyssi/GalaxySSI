@@ -851,7 +851,8 @@ enum AgentConnectorRouteSelector {
     decision: AgentRoutingDecision?,
     preferredTargetId: String = "",
     goal: String = "",
-    preserveHealthyPrimary: Bool = false
+    preserveHealthyPrimary: Bool = false,
+    hasPairedDesktop: Bool = false
   ) -> AgentConnectorRouteSelection? {
     let routingGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)
     if let decision, decision.primary == nil, decision.fallbacks.isEmpty { return nil }
@@ -878,7 +879,7 @@ enum AgentConnectorRouteSelector {
        let preferredTarget, preferredTarget.status == .available {
       let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
         goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
-        requirements: requirements)
+        requirements: requirements, hasPairedDesktop: hasPairedDesktop)
       return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
     }
     var routingDecision = decision
@@ -887,7 +888,7 @@ enum AgentConnectorRouteSelector {
         goal: routingGoal,
         targets: eligible,
         primaryTargetId: baselineTarget.id,
-        requirements: requirements
+        requirements: requirements, hasPairedDesktop: hasPairedDesktop
       )
     }
     if let current = routingDecision, !routingGoal.isBlank {
@@ -952,7 +953,7 @@ enum AgentConnectorRouteSelector {
       AgentRoutingDecision(
         requirements: routingDecision.requirements,
         primary: primary,
-        fallbacks: calibratedCandidates.filter { $0.resource.targetId != selectedTarget.id },
+        fallbacks: AgentProviderResourceRanking.fallbackCandidates(primary: primary.resource, candidates: calibratedCandidates),
         environment: routingDecision.environment,
         catalog: routingDecision.catalog,
         taskBudget: routingDecision.taskBudget

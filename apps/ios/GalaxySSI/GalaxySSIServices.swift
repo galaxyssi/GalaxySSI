@@ -6723,7 +6723,8 @@ final class MessageCoordinator: ObservableObject {
     let preferredTargetId = (store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
       .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
     return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
-      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true)
+      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired })
   }
 
   private func selectedLocalModel(
@@ -14467,7 +14468,8 @@ final class MessageCoordinator: ObservableObject {
           AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return action }
     let targets = automaticRoutingTargets(goal: goal)
     let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
-      preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true)
+      preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired })
     return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
   }
 
@@ -15527,7 +15529,8 @@ final class MessageCoordinator: ObservableObject {
     let currentRoute = AgentConnectorRouteSelector.select(
       targets: targets,
       decision: nil,
-      goal: goal
+      goal: goal,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired }
     )
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
       currentRoute.map { [$0.target.id] } ?? []

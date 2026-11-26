@@ -49,7 +49,7 @@ const normalizedModels = (models.slice(0, start) + models.slice(end)).replace(
 assert.equal(normalizedModels, before(modelsFile), 'only timing policy may change');
 
 const servicesFile = 'apps/ios/GalaxySSI/GalaxySSIServices.swift';
-const services = read(servicesFile);
+const services = require('./check-provider-resource-ranking-scope.cjs').retained(servicesFile, read(servicesFile));
 assert.equal(services.split(hook).length, 2);
 assert(services.includes('observed.metadata["native_connector_observation_overdue"] = "true"\n' + hook));
 assert.equal(services.replace(hook, ''), before(servicesFile), 'ownership, probing and retirement paths remain unchanged');
@@ -72,7 +72,7 @@ for (const file of ['AgentConnectorTimeoutResolver.swift', 'AgentConnectorTransp
   'AgentRemoteTaskStatusPolicy.swift', 'AgentControlPlaneActionExecutorModels.swift',
   'AgentConnectorResponseResolver.swift', 'AgentNetworkRoutingModels.swift']) {
   const target = `apps/ios/GalaxySSI/${file}`;
-  assert.equal(read(target), before(target), file);
+  assert.equal(require('./check-provider-resource-ranking-scope.cjs').retained(target, read(target)), before(target), file);
 }
 console.log('Connector observation timing source scope passed; no Swift fixtures or native runtime executed.');
 }
