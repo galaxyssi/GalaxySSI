@@ -3,6 +3,19 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelPlanParserTests: XCTestCase {
+  func testTimerCompletionDeclarationRequiresLiteralBooleanTrue() throws {
+    let tool = try nativeToolDescriptor(id: AgentVerifiedTimerStart.toolId)
+    for marker in ["true", "false", "\"true\"", "1"] {
+      let raw = """
+      {"actions":[{"kind":"CALL_NATIVE_TOOL","completes_goal":\(marker),"description":"Start timer",
+        "parameters":{"tool_id":"\(tool.id)","arguments":{"target":"timer","parameters":{"timer_seconds":60}}}}]}
+      """
+      let plan = try AgentModelPlanParser.parseWithDiagnostics(request: request(nativeTools: [tool]), raw: raw,
+        settings: AgentModelPlannerSettings(), context: context()).get()
+      XCTAssertEqual(plan.actions.first?.parameters[AgentVerifiedTimerStart.terminalParameter], marker == "true" ? "true" : nil)
+    }
+  }
+
   func testCompletionDiagnosticsDistinguishTargetAndMissingObservations() {
     for (target, code, field) in [("wrong-target", "invalid_completion_target", "actions[0].target"),
                                   ("task-complete", "completion_before_observation", "actions")] {

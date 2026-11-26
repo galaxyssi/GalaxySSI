@@ -2266,7 +2266,9 @@
     A10000000000000000003E23 /* AgentProgressiveToolCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E23 /* AgentProgressiveToolCatalog.swift */; };
     A10000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift */; };
     A10000000000000000003E25 /* AgentSupervisedAnswerPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E25 /* AgentSupervisedAnswerPreview.swift */; };
+    A10000000000000000003E28 /* AgentVerifiedTimerStart.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E28 /* AgentVerifiedTimerStart.swift */; };
     A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */; };
+    A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4589,7 +4591,9 @@
     A20000000000000000003E23 /* AgentProgressiveToolCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProgressiveToolCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProgressiveToolCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E25 /* AgentSupervisedAnswerPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedAnswerPreview.swift; sourceTree = "<group>"; };
+    A20000000000000000003E28 /* AgentVerifiedTimerStart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVerifiedTimerStart.swift; sourceTree = "<group>"; };
     A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedAnswerPreviewTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVerifiedTimerStartTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5552,6 +5556,7 @@
         A20000000000000000003E22 /* AgentToolInspectionCatalog.swift */,
         A20000000000000000003E23 /* AgentProgressiveToolCatalog.swift */,
         A20000000000000000003E25 /* AgentSupervisedAnswerPreview.swift */,
+        A20000000000000000003E28 /* AgentVerifiedTimerStart.swift */,
 		D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
@@ -6597,6 +6602,7 @@
         A20000000000000000003E18 /* AgentConnectorDocumentInputTests.swift */,
         A20000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift */,
         A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */,
+        A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */,
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
@@ -8404,6 +8410,7 @@
         A10000000000000000003E22 /* AgentToolInspectionCatalog.swift in Sources */,
         A10000000000000000003E23 /* AgentProgressiveToolCatalog.swift in Sources */,
         A10000000000000000003E25 /* AgentSupervisedAnswerPreview.swift in Sources */,
+        A10000000000000000003E28 /* AgentVerifiedTimerStart.swift in Sources */,
 		D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
@@ -9030,6 +9037,7 @@
         A10000000000000000003E18 /* AgentConnectorDocumentInputTests.swift in Sources */,
         A10000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift in Sources */,
         A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */,
+        A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */,
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,

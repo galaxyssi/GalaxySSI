@@ -1,6 +1,12 @@
 import Foundation
 
 enum AgentDirectNativeToolPlanner {
+  static func exactTimerStartSeconds(_ goal: String) -> Int? {
+    let value = AgentLocalCommandText.sentence(AgentLocalCommandText.withoutPoliteness(goal.lowercased()))
+    if AgentLocalCommandText.captures(value, durationPattern) != nil { return parsedDuration(value) }
+    return timerDurationSeconds(for: value)
+  }
+
   static func shortcutPlan(
     request: AgentPlanRequest,
     hasAttachments: Bool = false
