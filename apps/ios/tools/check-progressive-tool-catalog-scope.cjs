@@ -1,7 +1,8 @@
 // Source contracts, not Swift compilation, executed discovery or model/device acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '5f60bac1b8571768f6f12f426dee5950c6f87bd0';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-interactive-request-hedge-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const git = args => cp.execFileSync('git', args, {cwd: root, maxBuffer: 32 * 1024 * 1024});
 const cache = new Map();
 function old(file) { if (!cache.has(file)) cache.set(file, git(['show', `${base}:${file}`]).toString().replace(/\r\n/g, '\n')); return cache.get(file); }
@@ -10,6 +11,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
+  source = require('./check-interactive-request-hedge-scope.cjs').retained(file, source);
   if (file.endsWith('check-journal-codex-replay-scope.cjs')) return source
     .replace("const read = file => require('./check-progressive-tool-catalog-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")

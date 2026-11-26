@@ -2,7 +2,7 @@
   "androidPR": 4584,
   "androidHead": "51185d5a1ab8f9793b25944e03ad1f878548fe84",
   "androidBase": "8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b",
-  "scope": "Partial: real scoped native discovery/inspection and progressive planning catalog. Interactive MQTT hedges and supervised ephemeral answer preview remain incomplete. No native acceptance.",
+  "scope": "Partial: scoped native discovery/inspection, progressive planning catalog and authorized bounded interactive Desktop packet hedges are wired. Supervised ephemeral answer preview remains incomplete. No native acceptance.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -42,7 +42,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/GalaxySSIMqttClient.kt",
       "sha256": "280861cfbde12c6ff06bbb7d7febde44acc01f928b2d3120db81b6ebd005b4a9",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "iOS adaptation wired: current verified Desktop connector/task classification opts direct deliveries into 250 ms backup copies up to 256 KiB; existing message/final wire classes, authorized generations, capacity, packet and verified receipt kernels retained. Six authored-only Swift fixtures; no native latency/reconnect/receipt acceptance."
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityConnectorResponses.kt",
@@ -52,12 +52,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttDeliveryDispatch.kt",
       "sha256": "559391a70e89bcb14f0532e97de954f2f02445c6b54db81b626235401f0f4935",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "iOS adaptation wired: current verified Desktop connector/task classification opts direct deliveries into 250 ms backup copies up to 256 KiB; existing message/final wire classes, authorized generations, capacity, packet and verified receipt kernels retained. Six authored-only Swift fixtures; no native latency/reconnect/receipt acceptance."
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttMultipathPolicy.kt",
       "sha256": "80eefb1289ae665a1c7d07c98a6ea5d08be21bd6330f1d588663bf2adb25bbe3",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "iOS adaptation wired: current verified Desktop connector/task classification opts direct deliveries into 250 ms backup copies up to 256 KiB; existing message/final wire classes, authorized generations, capacity, packet and verified receipt kernels retained. Six authored-only Swift fixtures; no native latency/reconnect/receipt acceptance."
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentSupervisedProjectPromptTemplateTest.kt",
@@ -67,7 +67,7 @@
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/MqttMultipathPolicyTest.kt",
       "sha256": "e0c02810851f0bcc9b053104d1b2acec69db67a45cfdc4ec44e2d711e3fb58e2",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "iOS adaptation wired: current verified Desktop connector/task classification opts direct deliveries into 250 ms backup copies up to 256 KiB; existing message/final wire classes, authorized generations, capacity, packet and verified receipt kernels retained. Six authored-only Swift fixtures; no native latency/reconnect/receipt acceptance."
     },
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/agent_answer_preview.py",
@@ -112,7 +112,7 @@
     {
       "path": "docs/protocol/MQTT_MULTIPATH.md",
       "sha256": "5353c18dbcfeb93afc33a490e0b861d5e6ba6d19abb1bc0c6d3f2b9fd795ab30",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "iOS adaptation wired: current verified Desktop connector/task classification opts direct deliveries into 250 ms backup copies up to 256 KiB; existing message/final wire classes, authorized generations, capacity, packet and verified receipt kernels retained. Six authored-only Swift fixtures; no native latency/reconnect/receipt acceptance."
     }
   ]
 }
