@@ -14620,8 +14620,39 @@ final class MessageCoordinator: ObservableObject {
           nativeConnectorDispatches.insert(dispatch.owner).inserted else { return }
     var started = false
     do {
-      guard let context = queuedNativeConnectorContext(dispatch) else {
+      guard let original = queuedNativeConnectorContext(dispatch) else {
         throw GalaxySSIError.invalidPayload("The original connector continuation is no longer active. Nothing was sent.")
+      }
+      let blocks = AgentRichContentCodec.decode(original.outgoing.richOutputJson).filter {
+        [.image, .file, .video, .audio].contains($0.type) && $0.metadata["source"] == "user_attachment"
+      }
+      let attachments = AgentAttachmentWorkspaceStager.restore(conversationId: dispatch.conversationId,
+        turnId: dispatch.turnId, blocks: blocks, matchExactIDs: true).map(\.attachment)
+      guard attachments.count == blocks.count else {
+        throw GalaxySSIError.invalidPayload("The original scoped attachments could not be restored. Nothing was sent.")
+      }
+      let documentInput: AgentConnectorDocumentInput.Prepared
+      if dispatch.contactId == "local-llm" || store.contact(id: dispatch.contactId)?.deliveryMode == .cloudAPI {
+        if dispatch.contactId == "local-llm", attachments.contains(where: \.isImage) {
+          throw GalaxySSIError.invalidPayload("This local connector cannot inspect raw images. Nothing was sent.")
+        }
+        if attachments.contains(where: { !$0.isImage }) {
+          let extraction = Task.detached(priority: .utility) { try AgentConnectorDocumentInput.prepare(attachments) }
+          documentInput = try await withTaskCancellationHandler(operation: { try await extraction.value }, onCancel: { extraction.cancel() })
+        } else {
+          documentInput = try AgentConnectorDocumentInput.prepare(attachments)
+        }
+      } else {
+        documentInput = .init(section: "", documentIDs: [])
+      }
+      try Task.checkCancellation()
+      guard (dispatch.executionPrompt + documentInput.section).utf8.count <= 256 * 1_024 else {
+        throw GalaxySSIError.invalidPayload("The connector request and document context exceed the input limit. Nothing was sent.")
+      }
+      guard let context = queuedNativeConnectorContext(dispatch),
+            context.outgoing.content == original.outgoing.content,
+            context.outgoing.richOutputJson == original.outgoing.richOutputJson else {
+        throw GalaxySSIError.invalidPayload("The original connector attachment scope changed. Nothing was sent.")
       }
       let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
         apiKey: { store.apiKey(for: $0) })
@@ -14647,31 +14678,21 @@ final class MessageCoordinator: ObservableObject {
             requirements.dataSensitivity != .restricted || [.phoneSystem, .verifiedPaired].contains(resource.trust) else {
         throw GalaxySSIError.invalidPayload("The current privacy, connector or task-budget policy does not allow this request.")
       }
-      let blocks = AgentRichContentCodec.decode(context.outgoing.richOutputJson).filter {
-        [.image, .file, .video, .audio].contains($0.type) && $0.metadata["source"] == "user_attachment"
-      }
-      let attachments = AgentAttachmentWorkspaceStager.restore(conversationId: dispatch.conversationId,
-        turnId: dispatch.turnId, blocks: blocks, matchExactIDs: true).map(\.attachment)
-      guard attachments.count == blocks.count else {
-        throw GalaxySSIError.invalidPayload("The original scoped attachments could not be restored. Nothing was sent.")
-      }
       if dispatch.contactId == "local-llm" {
-        guard attachments.isEmpty else { throw GalaxySSIError.invalidPayload("This local connector needs extracted text rather than raw attachments.") }
         let model = (action.parameters["model_id"] ?? "").ifBlank(LocalModelRuntimeSettings.selectedProfile().id)
         let profile = LocalModelRuntimeCatalog.find(model)
         guard profile.id == model, LocalModelRuntimeSettings.isProfileEnabled(profile),
               LocalModelInferenceRuntime.shared.ready(profile: profile) else { throw LocalModelInferenceError.modelNotReady }
         started = true
         let answer = try await LocalModelInferenceRuntime.shared.generateAsync(profile: profile,
-          systemPrompt: (action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? "")
-            .ifBlank("Complete the scoped user request and return only the useful final response."),
-          userPrompt: dispatch.prompt, maximumTokens: 1_500, temperature: 0.2, taskId: dispatch.taskId)
+          systemPrompt: AgentUntrustedEvidenceBoundary.enforceSystemPrompt((action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? "")
+            .ifBlank("Complete the scoped user request and return only the useful final response.")),
+          userPrompt: dispatch.prompt + documentInput.section, maximumTokens: 1_500, temperature: 0.2, taskId: dispatch.taskId)
         guard !answer.text.isBlank else { throw GalaxySSIError.invalidPayload("The local connector returned an empty response.") }
         publishNativeConnectorResponse(dispatch.response(answer.text, success: true), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
       } else if let contact = store.contact(id: dispatch.contactId), contact.deliveryMode == .cloudAPI {
-        guard attachments.allSatisfy(\.isImage),
-              (action.parameters["reasoning_effort"] ?? "auto").ifBlank("auto") == "auto" else {
-          throw GalaxySSIError.invalidPayload("This cloud connector needs extracted text for non-image attachments and does not accept an effort override.")
+        guard (action.parameters["reasoning_effort"] ?? "auto").ifBlank("auto") == "auto" else {
+          throw GalaxySSIError.invalidPayload("This cloud connector does not accept an effort override.")
         }
         let modelID = (action.parameters["model_id"] ?? "").ifBlank(contact.selectedCloudModel?.modelId ?? "")
         guard let model = CloudModelRequestRoutingPolicy.models(for: contact).first(where: { $0.modelId == modelID }),
@@ -14681,8 +14702,8 @@ final class MessageCoordinator: ObservableObject {
         }
         var selected = contact
         selected.selectedCloudModelId = modelID
-        let images = try CloudImagePayloadFactory.prepare(attachments, taskId: dispatch.outgoingId.uuidString)
-        let turn = ChatMessage(contactId: contact.id, content: dispatch.executionPrompt, isMine: true,
+        let images = try CloudImagePayloadFactory.prepare(attachments.filter(\.isImage), taskId: dispatch.outgoingId.uuidString)
+        let turn = ChatMessage(contactId: contact.id, content: dispatch.executionPrompt + documentInput.section, isMine: true,
           conversationId: dispatch.conversationId, turnId: dispatch.turnId)
         var text = ""
         var completed = false

@@ -107,3 +107,59 @@ struct AgentIOSConnectorDispatch {
       receivedAtMillis: AgentControlPlaneClock.nowMillis(), taskStatus: success ? "completed" : "failed")
   }
 }
+
+enum AgentConnectorDocumentInput {
+  struct Prepared: Sendable, Equatable {
+    var section: String
+    var documentIDs: [String]
+  }
+
+  static let maximumSourceBytes = AgentKnowledgeImportPolicy.maxSourceBytes
+  static let maximumDocumentCharacters = 12_000
+  static let maximumTotalCharacters = 24_000
+  static let maximumEnvelopeBytes = 128 * 1_024
+
+  static func prepare(_ attachments: [GalaxySSIDraftAttachment],
+                      extract: (AgentAttachmentKnowledgeInput) -> String? = AgentAttachmentKnowledgeImporter.transientDocumentText)
+    throws -> Prepared {
+    guard attachments.count <= 10, Set(attachments.map(\.id)).count == attachments.count,
+          attachments.allSatisfy({ !$0.id.isBlank && $0.id.count <= 200 && $0.historicalSourceTurnId == nil }) else {
+      throw GalaxySSIError.invalidPayload("The connector attachments have ambiguous or historical source identities. Nothing was sent.")
+    }
+    let documents = attachments.filter { !$0.isImage }
+    var totalBytes = 0
+    for attachment in documents {
+      guard !attachment.data.isEmpty, attachment.sizeBytes <= maximumSourceBytes - totalBytes else {
+        throw GalaxySSIError.invalidPayload("The connector documents exceed the extraction byte limit. Nothing was sent.")
+      }
+      totalBytes += attachment.sizeBytes
+    }
+    var sections: [String] = []
+    var totalCharacters = 0
+    for attachment in documents {
+      try Task.checkCancellation()
+      let input = AgentAttachmentKnowledgeInput(id: attachment.id, displayName: attachment.displayName,
+        mimeType: attachment.mimeType, data: attachment.data)
+      guard let text = extract(input)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+        throw GalaxySSIError.invalidPayload("A connector attachment has no supported extractable document text. Nothing was sent.")
+      }
+      guard text.count <= maximumDocumentCharacters, text.count <= maximumTotalCharacters - totalCharacters else {
+        throw GalaxySSIError.invalidPayload("The connector document text exceeds the context limit. Split the document before retrying. Nothing was sent.")
+      }
+      totalCharacters += text.count
+      let document = AgentMcpJSONCodec.stringify(.object([
+        "attachment_id": .string(attachment.id), "name": .string(String(attachment.displayName.prefix(512))),
+        "mime_type": .string(String(attachment.mimeType.prefix(256))),
+        "representation": .string("extracted_document_text"), "text": .string(text)
+      ]))
+      sections.append(AgentUntrustedEvidenceBoundary.wrapText(sourceType: "connector_document",
+        sourceId: attachment.id, content: document))
+    }
+    try Task.checkCancellation()
+    let section = sections.isEmpty ? "" : "\n\n" + sections.joined(separator: "\n\n")
+    guard section.utf8.count <= maximumEnvelopeBytes else {
+      throw GalaxySSIError.invalidPayload("The encoded connector document context exceeds its byte limit. Nothing was sent.")
+    }
+    return Prepared(section: section, documentIDs: documents.map(\.id))
+  }
+}
