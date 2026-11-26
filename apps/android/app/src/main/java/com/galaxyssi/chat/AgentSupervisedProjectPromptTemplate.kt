@@ -121,7 +121,7 @@ internal object AgentSupervisedProjectPromptTemplate {
         append("The latest receipt's _frame is authoritative; never reuse a mutation's input revision. Inspect again if the frame or target is missing. Do not batch dependent UI mutations, invent nodes or guess coordinates. ")
         append("Password text is unavailable; Android permission/security dialogs require the user. Sensitive actions may wait for panel confirmation. Chrome preserves the phone's login; do not export cookies or credentials. Recording requires visible Android consent. ")
         append("Resolve typos, spoken numbers and short follow-ups from this conversation's Phone operation context. A one-time duration is not a recurring schedule. Never replace SET with OPEN because a parameter was not parsed. If access is absent preserve the pending goal and report the missing capability without requiring the user to repeat the command.\n")
-        append("Timers use galaxyssi.agent_action.set.alarm with timer_operation/timer_seconds; after UI recovery inspect the timer. Verify its identity, running state and decreasing remaining seconds, not merely an opened Clock.\n")
+        append(AgentPhoneInteractionPrompt.TIMER_ARGUMENTS).append(" After UI recovery inspect the timer. Verify its identity, running state and decreasing remaining seconds, not merely an opened Clock.\n")
     }
 
     private fun StringBuilder.appendCompactContinuationContract() {

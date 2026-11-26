@@ -48,14 +48,16 @@ internal object AgentSupervisedProjectCompletionPolicy {
         completedAction: AgentAction,
         result: AgentActionResult,
         requirements: AgentCompletionRequirements? = null,
+        activeActions: List<AgentAction> = history,
         descriptorFor: (String) -> AgentNativeToolDescriptor? = { null }
     ): AgentVerifiedProjectCompletion? {
         if (!AgentGoalEvidence.permitsSuccess(result) || result.metadata["awaiting_response"] == "true") return null
         if (completedAction.kind != AgentActionKind.CALL_NATIVE_TOOL) return null
         // A publication receipt cannot replace the model's answers to additional requested results.
         if (!requirements?.results.isNullOrEmpty()) return null
-        if (completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
         val toolId = completedAction.parameters["tool_id"].orEmpty().ifBlank { completedAction.target }
+        val timerStart = toolId == AgentVerifiedTimerStart.toolId
+        if (!timerStart && completedAction.parameters[MODEL_TERMINAL_OUTCOME_PARAMETER] != "true") return null
         if (result.metadata["native_tool_id"] != toolId ||
             result.metadata["native_tool_status"] != "succeeded" ||
             result.metadata["invocation_id"].isNullOrBlank()
@@ -69,6 +71,7 @@ internal object AgentSupervisedProjectCompletionPolicy {
         if (AgentPendingOutcomeEvidence.unresolved(requirements, scopedHistory, descriptorFor).isNotEmpty()) return null
         val outputText = result.metadata["native_tool_output"].orEmpty()
         val output = runCatching { JSONObject(outputText) }.getOrNull() ?: return null
+        if (timerStart) return AgentVerifiedTimerStart.completion(goal, activeActions, completedAction, result, output)
         val chinese = goal.any { character -> character in '\u3400'..'\u9fff' }
         val publication = requirements?.publication
         return when (toolId) {

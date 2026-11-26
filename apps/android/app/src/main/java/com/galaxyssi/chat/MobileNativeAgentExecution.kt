@@ -608,6 +608,7 @@ internal fun MobileNativeAgent.executeParallelActions(
             completedAction = lastAction,
             result = lastResult,
             requirements = updatedPlan.completionRequirements,
+            activeActions = updatedPlan.actions,
             descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
         )?.let { completion ->
             currentPlan = updatedPlan
@@ -910,6 +911,7 @@ internal fun MobileNativeAgent.executePlannedAction(
                 completedAction = hardenedAction,
                 result = observedResult,
                 requirements = observedPlan.completionRequirements,
+                activeActions = observedPlan.actions,
                 descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
             )
             if (verifiedCompletion != null) {
@@ -1224,7 +1226,10 @@ internal fun MobileNativeAgent.completeVerifiedProjectOutcome(
             "terminal_evidence" to completion.evidence
         )
     )
-    currentPlan = plan.markAction(action.id, AgentActionStatus.COMPLETED, finalResult)
+    val finalPlan = if (completion.terminalToolId == AgentVerifiedTimerStart.toolId)
+        plan.copy(actions = plan.actions.filterNot { AgentVerifiedTimerStart.isReviewer(it, action.id) })
+    else plan
+    currentPlan = finalPlan.markAction(action.id, AgentActionStatus.COMPLETED, finalResult)
     lastActionResult = finalResult
     if (!advanceExecutionLoop(
             nextPhase = AgentExecutionLoopPhase.VERIFY,
@@ -2329,6 +2334,7 @@ internal fun MobileNativeAgent.resumeCompletedDispatchObservation(
         completedAction = action,
         result = result,
         requirements = observedPlan.completionRequirements,
+        activeActions = observedPlan.actions,
         descriptorFor = { nativeToolRegistry.lookup(it)?.descriptor }
     )
     if (verifiedCompletion != null) {

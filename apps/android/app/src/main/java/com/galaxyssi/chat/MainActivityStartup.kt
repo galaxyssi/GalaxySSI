@@ -684,7 +684,11 @@ internal fun MainActivity.restoreRecoverableAgentRuntime(
                     "remote_status=${waitingMetadata["remote_task_status"].orEmpty().ifBlank { "none" }} " +
                     "attempt=${AgentPendingHandoffRecoveryPolicy.recoveryAttempt(waitingMetadata)}"
             )
-            if (AgentTerminalDeliveryStore.isTerminal(this, waitingSourceMessageId)) {
+            val verifiedTimer = runtime.finishWaitingTimerReview(waitingSourceMessageId)
+            if (verifiedTimer != null) {
+                state = verifiedTimer
+                persistAgentWorkspaceSnapshot(workspace.workspaceId, state, runtime)
+            } else if (AgentTerminalDeliveryStore.isTerminal(this, waitingSourceMessageId)) {
                 state = runtime.handleConnectorDeliveryFailure(waitingSourceMessageId,
                     getString(R.string.agent_message_not_delivered), allowFallback = false) ?: runtime.snapshot()
                 persistAgentWorkspaceSnapshot(workspace.workspaceId, state, runtime)
