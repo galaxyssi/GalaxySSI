@@ -18,7 +18,7 @@ function retained(file, source) {
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-journal-codex-replay-scope.cjs').retained(file, source);\n", '');
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
-    .filter(line => !line.includes('MqttJournalCodexReplayTests.swift')).join('\n');
+    .filter(line => !['MqttJournalCodexReplayTests.swift', 'AgentResumedPlannerRouteTests.swift'].some(name => line.includes(name))).join('\n');
   if (file.endsWith('AgentRemoteTaskStatusPolicy.swift') && source.includes('enum AgentJournalCodexReplayPolicy {'))
     return source.replace(section(source, 'enum AgentJournalCodexReplayPolicy {', 'enum AgentCodexSilenceRecoveryPolicy {'), '');
   if (file.endsWith('MqttDesktopConnectorProjection.swift') && source.includes('AgentJournalCodexReplayPolicy.')) return source
@@ -28,7 +28,7 @@ function retained(file, source) {
     .replace('    if !requiresTeam, let replay = try resolveCodexReplayOwner?(source, contact, identity, target),\n       replay.codexReplay != nil { return replay }\n', '')
     .replace(section(source, '    let presentation: MqttDeliveryCompletions.Event\n', '    catch GalaxySSIChatHistoryError.locallyDeleted'),
       '    do { try store.persistTransportDelivery(event, messageContactID: owner.message.contactId) }\n');
-  if (file.endsWith('GalaxySSIServices.swift') && source.includes('  private func journalCodexReplayOwner(')) return source
+  if (file.endsWith('GalaxySSIServices.swift') && source.includes('  private func journalCodexReplayOwner(')) source = source
     .replace(section(source, '  private func journalCodexReplayOwner(', '  private func dispatchScheduledCodexReplay('), '')
     .replace('if published < 8, (usesLegacyMqtt ? mqttClient.relationshipSubscriptionsReady : journalMqttRuntime != nil) {',
       'if published < 8, mqttClient.relationshipSubscriptionsReady {')
@@ -37,7 +37,7 @@ function retained(file, source) {
     .replace('        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId,\n          ownerContactID: codexReplay == nil ? nil : outgoing.contactId)',
       '        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId)')
     .replace('      }, resolveCodexReplayOwner: { [weak self] source, contact, identity, target in\n        self?.journalCodexReplayOwner(source, contact: contact, identity: identity, target: target)\n', '');
-  return source;
+  return require('./check-resumed-planner-route-scope.cjs').retained(file, source);
 }
 function validate() {
   for (const file of [app + 'AgentRemoteTaskStatusPolicy.swift', app + 'MqttDesktopConnectorProjection.swift',
