@@ -114,6 +114,15 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Resumed planner model identity follow-up
+
+See `ANDROID_3119_RESUMED_PLANNER_ROUTE.md`: user-requested native replanning
+and rolling continuation no longer fill a missing snapshot from global planner
+settings. They retain exact saved snapshots, otherwise reuse the scoped current
+conversation selection with Auto admission/binding and manual/privacy gates.
+Eight fixture methods are authored only. This does not complete generic routing,
+active timeout observation or Android #3119 acceptance.
+
 ### Journal Codex recovery follow-up
 
 See `ANDROID_3119_JOURNAL_CODEX_REPLAY.md`: pending bounded Codex attempts can
