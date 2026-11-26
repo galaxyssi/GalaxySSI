@@ -10,7 +10,8 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPartitions.swift', 'AgentKnowledgePrimaryPartitionsTests.swift',
-  'AgentKnowledgeStorageBackground.swift', 'AgentKnowledgeStorageMaintenanceTests.swift'];
+  'AgentKnowledgeStorageBackground.swift', 'AgentKnowledgeStorageMaintenanceTests.swift',
+  'AgentKnowledgePrimaryReaderSlots.swift', 'AgentKnowledgePrimaryReaderSlotsTests.swift'];
 const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n';
 function retained(file, source) {
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line => !names.some(name => line.includes(name))).join('\n')
@@ -135,6 +136,20 @@ function validate() {
   const pendingRead = section(storage, '  private func readPayload(', '  // Independent catalog snapshots');
   for (const token of ['batch.catalog == catalog, batch.thread === Thread.current', 'batch.pending.contains(partition)',
     'if pending == nil { sqlite3_close_v2(database) }']) assert(pendingRead.includes(token), token);
+  const acquire = pendingRead.indexOf('readerLease = try readerSlots.acquire(checkActive: checkActive)'),
+    release = pendingRead.indexOf('defer { readerLease?.end() }'),
+    open = pendingRead.indexOf('let database = try pending ?? open(partition, create: false, readOnly: true)'),
+    close = pendingRead.indexOf('defer { if pending == nil { sqlite3_close_v2(database) } }');
+  assert(acquire >= 0 && acquire < release && release < open && open < close);
+  assert(pendingRead.includes('if pending == nil { readerLease = try readerSlots.acquire(checkActive: checkActive) }'));
+  assert(storage.includes('readerSlots: AgentKnowledgePrimaryReaderSlots = .shared'));
+  const slots = read(app + names[5]);
+  for (const token of ['static let shared = AgentKnowledgePrimaryReaderSlots(capacity: 8)', 'DispatchSemaphore(value: capacity)',
+    'semaphore.wait(timeout: .now() + .milliseconds(50))', 'try Task.checkCancellation()', 'try checkActive()',
+    'release = nil', 'action?()', 'deinit { end() }', 'return Lease { _ = self.semaphore.signal() }',
+    '} catch {\n        semaphore.signal()\n        throw error']) assert(slots.includes(token), token);
+  assert(slots.indexOf('release = nil') < slots.indexOf('action?()'));
+  assert.equal((read('apps/ios/GalaxySSITests/' + names[6]).match(/  func test/g) || []).length, 6);
   const rotation = section(storage, '  private func partition(catalog:', '  private func writer(id:');
   assert(rotation.indexOf('try flushWriter(bucket: bucket, checkActive: checkActive)') >= 0 &&
     rotation.indexOf('try flushWriter(bucket: bucket, checkActive: checkActive)') < rotation.indexOf('try open(id, create: true, readOnly: false)'));
@@ -213,7 +228,7 @@ function validate() {
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   assert.equal(project.split(' com.galaxyssi.chat.ios.knowledge-storage').length, 3);
   for (const name of names) assert.equal(project.split('\n').filter(line => line.includes(name)).length, 4, name);
-  console.log('Pinned Android #3037 storage, owned batch commit barriers/readback, periodic maintenance, retained logical/vector code and twenty-seven primary plus six maintenance authored fixture source contracts passed; no native acceptance.');
+  console.log('Pinned Android #3037 storage, shared eight-reader slots, owned batch barriers, periodic maintenance and twenty-seven primary plus six maintenance plus six reader-slot authored fixture source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();

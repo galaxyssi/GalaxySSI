@@ -47,6 +47,7 @@ final class AgentKnowledgePrimaryPartitions {
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let partitionBytes: Int64
   private let partitionRecords: Int64
+  private let readerSlots: AgentKnowledgePrimaryReaderSlots
   private let writerLock = NSLock()
   private let readerLock = NSLock()
   private let leaseLock = NSLock()
@@ -65,7 +66,8 @@ final class AgentKnowledgePrimaryPartitions {
   init(catalogURL: URL, secrets: GalaxySSISecretStore, partitionBytes: Int64 = 64 * 1_024 * 1_024,
        partitionRecords: Int64 = 65_536, beforeCatalogPublication: @escaping () throws -> Void = {},
        beforeRetiredUnlink: @escaping () throws -> Void = {}, afterRetiredUnlink: @escaping () throws -> Void = {},
-       beforePartitionCommit: @escaping (String) throws -> Void = { _ in }) {
+       beforePartitionCommit: @escaping (String) throws -> Void = { _ in },
+       readerSlots: AgentKnowledgePrimaryReaderSlots = .shared) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -76,6 +78,7 @@ final class AgentKnowledgePrimaryPartitions {
     self.beforeRetiredUnlink = beforeRetiredUnlink
     self.afterRetiredUnlink = afterRetiredUnlink
     self.beforePartitionCommit = beforePartitionCommit
+    self.readerSlots = readerSlots
   }
 
   deinit {
@@ -304,6 +307,10 @@ final class AgentKnowledgePrimaryPartitions {
       pending = batch.pending.contains(partition) ? writers.values.first(where: { $0.id == partition })?.database : nil
       if batch.pending.contains(partition), pending == nil { throw AgentKnowledgeDatabaseError.corruptRecord }
     } else { pending = nil }
+    let readerLease: AgentKnowledgePrimaryReaderSlots.Lease?
+    if pending == nil { readerLease = try readerSlots.acquire(checkActive: checkActive) }
+    else { readerLease = nil }
+    defer { readerLease?.end() }
     let database = try pending ?? open(partition, create: false, readOnly: true)
     defer { if pending == nil { sqlite3_close_v2(database) } }
     let frames = try prepare(database, "SELECT ordinal,sealed FROM frames WHERE entry_id=? ORDER BY ordinal")

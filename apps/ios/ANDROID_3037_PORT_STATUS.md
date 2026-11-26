@@ -24,6 +24,9 @@ Four buckets use the existing keyed record hash. Partitions rotate at about
 rotation targets, not corpus limits or exact physical file-size guarantees;
 SQLite/WAL/metadata overhead and orphaned append frames can add space. Each store
 retains at most four writer connections and serializes one transient reader.
+Independent primary-reader connections also share a global eight-slot pool across
+production stores, matching the pinned Android global reader limit. Borrowed
+pending writer connections do not consume a separate reader slot.
 The catalog writer lock and SQLite catalog transaction still govern logical
 writes; snapshot reads use their own catalog handle.
 
@@ -112,7 +115,11 @@ and cancellation/resumption. Seven additional primary methods cover batch-owned
 readback and deferred physical commits, rotation, caught-error poisoning, partial
 physical commit failure, failure after prepare with old snapshots, owner/scope
 rejection, and physical-size rotation despite small catalog counters. None of
-these thirty-three methods were executed.
+these thirty-three methods were executed. Six reader-slot methods are also
+authored only: capacity/double-release, deinitialization, cancellation just after
+acquisition, shared capacity across two stores, pending-writer bypass, and slot
+release after missing-file/corrupt-frame failures. All thirty-nine methods remain
+unexecuted.
 
 `check-knowledge-primary-partitions-scope.cjs` verifies pinned production sources,
 complete retained coordinator/catalog code outside declared hooks, actual writer/
@@ -237,3 +244,25 @@ No additional wire format, schema migration, native performance result or power-
 loss proof is claimed.
 
 Transaction reference: [SQLite transaction documentation](https://sqlite.org/lang_transaction.html).
+
+## Shared independent readers
+
+The pinned Android backend shares eight independent readers globally rather than
+only limiting readers per catalog. The iOS production constructor now defaults
+to the same shared eight-slot bound, while retaining per-store serialized reads.
+An exact batch-owner read of a pending writer bypasses this pool because it opens
+no independent SQLite handle. Small isolated pools are injected only by synthetic
+fixtures, not by the production database constructor.
+
+Independent reads acquire a lease before opening their physical file. Timed
+DispatchSemaphore waits recheck task cancellation and the existing active/budget
+callback every fifty milliseconds. Cancellation immediately after acquisition
+returns the slot before throwing. The lease is registered before file open;
+SQLite close runs before slot return on success, open/prepare failure, bad frames,
+authentication failure and cancellation. Explicit release and deinitialization
+share an idempotent, lock-protected release action, preventing extra capacity from
+double signaling.
+
+This bounds independent primary-reader handles, not complete-record memory, total
+catalog/writer handles, or OS scheduling latency/fairness. Native concurrency and
+resource-count acceptance have not been run.
