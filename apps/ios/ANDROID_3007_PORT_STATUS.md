@@ -199,6 +199,48 @@ the declared passive hooks before comparing the entire engine with its prior
 head, preserving all existing data disclosure, collaboration, citation, deadline,
 preview, recovery, tools and reply behavior outside those hooks.
 
+## Indexed Source Health Domain
+
+The pinned AgentWebIntelligenceService.kt reads requested source IDs directly,
+batches repeated source receipts into one database transaction and prunes by
+indexed recency without decrypting bodies. iOS now moves the source-health domain
+to a dedicated encrypted SQLite table. Direct sourceHealth(ids:) reads only
+matching HMAC keys; recordSourceReceipts evolves duplicate IDs in order, commits
+one batch and prunes to 512 rows using indexed metadata. Reset counts/deletes rows
+in one transaction and preserves the migration marker. Cache-wide clear continues
+to retain health, as in the reference. Recency ties use opaque keys, not a claim
+of identical Android rowid eviction ordering.
+
+The initial import reads/authenticates the existing bounded v1 snapshot once.
+Legacy health rows and an encrypted migration marker commit together. Subsequent
+health calls do not read or rewrite legacy document bodies. The original JSON is
+not modified by the import and remains authoritative for other cache domains.
+Its health field becomes historical, not a second active writer. A non-secret
+Keychain import flag distinguishes pending from committed migration. Pending
+imports may retry; committed imports cannot silently resurrect obsolete legacy
+circuits after reset, including a missing or truncated index. Corrupt/locked/missing keys fail closed; neither
+health operations nor later document writes may replace the missing master key.
+The existing cache master derives separate HKDF payload/index keys; AES-GCM AAD
+binds namespace and row purpose, and HMAC hides source IDs. A stable Application
+Support-relative logical identity tolerates container relocation, while distinct
+cache identities cannot authenticate copied rows. Explicit external paths retain
+path-bound identity. This adds an import flag, not a model/API credential.
+
+Use existing iOS SQLite patterns: FULLMUTEX handles, BEGIN IMMEDIATE, rollback on
+failure, FULL/fullfsync, bounded cache/no mmap, protected owner-only files and
+backup-excluded index directory. Nine source-only fixture methods cover scoped
+decode counts, ordered batches, commit/reset rollback, migration retry, wrong
+keys/copied namespaces, relocation, legacy import/reset, missing-index/key fences
+and overlapping handles. Existing health write-failure fixtures now inject the
+database pre-commit hook; document snapshot fault injection remains unchanged.
+
+This is the first indexed domain, NOT a complete web-cache migration. Detailed
+stats and learned-source routing still read the JSON snapshot; document/search/
+watch/learned storage, indexed aggregate metadata, 2,000-document parity, whole
+workspace indexing, native SQL/crypto/migration/concurrency/lock behavior and
+performance acceptance remain incomplete. No XCTest, native build, CI or device
+run is claimed by source guards, grammar parsing or fixture instrumentation.
+
 ## Remaining Work
 
 The following incremental subsections retain their historical scope at the time
@@ -288,7 +330,7 @@ of each change. The current remaining scope is summarized after those records.
 - A ninth source scope guard checks the pinned Android selection/fusion branches and declared new source hooks, with prior guards restoring only those hooks before their own comparisons. Source/project/grammar checks do not prove native typechecking, API/markup availability, image retrieval/visual relevance, cancellation races or UI/device acceptance.
 - Remaining: indexed storage/workspace performance and larger storage/evidence limits, other media behaviors, transcript/context paths, model-loop spans/UI timing, connection-IP pinning/ranges and native/live/fault/performance acceptance. No native build/XCTest, CI watching, IPA, version or Android/Desktop edits. This does not complete #3007 or the full backlog.
 
-Current remaining scope: source-health/workspace indexed storage and larger corpus/result limits, broader transcript/context paths, other media/relevance behavior, UI/end-to-end timing and connection-IP pinning/complete special-purpose address classification. The four provider-round diagnostic spans are now wired in source, not measured or native-accepted. Real media, learning/routing/workspace fault/concurrency, model/transport budget and renderer recovery acceptance remain unverified. Source integration and fixtures are not runtime acceptance.
+Current remaining scope: document/search/watch/learned and aggregate-metadata indexing, workspace indexed storage and larger corpus/result limits, broader transcript/context paths, other media/relevance behavior, UI/end-to-end timing and connection-IP pinning/complete special-purpose address classification. Source-health indexing and four provider-round diagnostic spans are now wired in source, not measured or native-accepted. Real SQL/crypto/migration/locking/media, learning/routing/workspace fault/concurrency, model/transport budget and renderer recovery acceptance remain unverified. Source integration and fixtures are not runtime acceptance.
 
 `check-public-search-parsing-scope.cjs` pins all Android changed files and checks actual parser/evidence/project wiring, renderer lifecycle and configured cloud round/tool deadline wiring, while retaining raw HTTP policy, URL/auth restrictions, configurable limit definitions, coordination/admission/recall, annotation, finalization schemas and main service code against the predecessor. These are source contracts, not Swift type checking or runtime acceptance. Windows has no Xcode: no dependency resolution/build/XCTest, live search, WebKit failure/recovery, UI, network latency or device claims. Android measurements do not transfer to iOS.
 

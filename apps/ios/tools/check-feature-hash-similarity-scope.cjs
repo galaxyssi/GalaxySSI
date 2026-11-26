@@ -24,6 +24,7 @@ const cacheHooks = [
   ]
 ];
 function retainedEmbeddingCache(source) {
+  source = require('./check-source-health-index-scope.cjs').retainedHealthCache(source);
   if (!source.includes('  var embeddingModelID: String? = nil')) return source;
   for (const [before, after] of cacheHooks) {
     assert.equal(source.split(after).length, 2, 'Exactly one embedding cache hook: ' + before);

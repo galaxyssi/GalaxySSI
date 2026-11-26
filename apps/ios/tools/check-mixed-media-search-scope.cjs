@@ -213,6 +213,7 @@ if (require.main === module) {
   assert.equal(project.split('AgentIOSMixedWebSearchTests.swift in Sources */').length, 3);
   for (const file of ['AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebExecutionBudget.swift', 'AgentIOSWebSourceHealth.swift',
     'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSJSONWebSearchAdapter.swift', 'AgentIOSImageSearchFusion.swift',
-    'AgentIOSWebFeatureHashEmbedder.swift']) assert.equal(read(app + file), show(base, app + file), file);
+    'AgentIOSWebFeatureHashEmbedder.swift']) assert.equal(
+      require('./check-source-health-index-scope.cjs').retainedHealthCache(read(app + file)), show(base, app + file), file);
   console.log('Pinned mixed/direct/learned-image routing, one global fusion score, typed-media/topic distinction and unchanged network/header/cache controls checked as source. No native execution or live media acceptance.');
 }

@@ -107,7 +107,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: native scoped learning/health, all pinned catalogs/adapters, unified text/media fusion and adaptive source selection, exact encrypted response caching and feature-hash document similarity for find_similar/cache query. Qualified image-topic sites remain page references unless a direct parser discovers typed media. Optional response/vector fields preserve legacy decode; exact cache routing identities prevent stale result-shape reuse. Current bounded iOS storage/evidence limits retained. Indexed database/workspace performance, large-corpus/result caps, context/timing and native acceptance remain incomplete"
+      "disposition": "Partial: native scoped learning/health, pinned catalogs/adapters, unified fusion/routing, exact response caching and feature-hash similarity. Source health now uses a protected purpose-bound encrypted SQLite index with scoped HMAC-key reads, ordered batch transactions, indexed retention, atomic legacy import and non-resurrection/key-loss fences. Other domains remain JSON; detailed stats and learned routing still read that snapshot. Qualified image-topic references never invent media. Current bounded storage/evidence limits retained. Remaining document/search/watch/learned and aggregate metadata indexing, workspace/large-corpus limits and native SQL/crypto/recovery/performance acceptance are incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

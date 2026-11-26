@@ -144,6 +144,7 @@ final class AgentIOSWebIntelligenceCacheStore {
   private let lock: NSLock
   private let writeFile: (Data, URL) throws -> Void
   private let learningQueue: AgentIOSWebMaintenanceQueue
+  private let healthBeforeCommit: () throws -> Void
   private let state: State
   private final class State {
     let lock = NSLock()
@@ -170,6 +171,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
     learningQueue: AgentIOSWebMaintenanceQueue = .shared,
+    healthBeforeCommit: @escaping () throws -> Void = {},
     writeFile: @escaping (Data, URL) throws -> Void = {
       try $0.write(to: $1, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
@@ -180,6 +182,7 @@ final class AgentIOSWebIntelligenceCacheStore {
     self.nowMillis = nowMillis
     self.writeFile = writeFile
     self.learningQueue = learningQueue
+    self.healthBeforeCommit = healthBeforeCommit
     let sharedState = Self.state(for: fileURL)
     state = sharedState
     lock = sharedState.lock
@@ -324,7 +327,7 @@ final class AgentIOSWebIntelligenceCacheStore {
   func stats() -> AgentMcpJSONObject {
     lock.lock()
     defer { lock.unlock() }
-    guard let snapshot = readUnlocked() else {
+    guard let snapshot = readUnlocked(), let health = try? healthIndexUnlocked().records() else {
       return ["available": .bool(false), "status": .string("unavailable"), "encryption": .string("ios_keychain_aes_gcm")]
     }
     let now = nowMillis()
@@ -333,8 +336,8 @@ final class AgentIOSWebIntelligenceCacheStore {
       "learned_source_count": .int(Int64(snapshot.learnedSources?.count ?? 0)),
       "verified_learned_source_count": .int(Int64(snapshot.learnedSources?.filter { $0.status == "verified" }.count ?? 0)),
       "last_learning_status": .string(state.lastLearningStatus),
-      "source_health_count": .int(Int64(snapshot.sourceHealth?.count ?? 0)),
-      "source_circuits_open": .int(Int64(snapshot.sourceHealth?.filter { $0.circuitState(now: now) == "open" }.count ?? 0)),
+      "source_health_count": .int(Int64(health.count)),
+      "source_circuits_open": .int(Int64(health.values.filter { $0.circuitState(now: now) == "open" }.count)),
       "cache_version": .int(Int64(snapshot.version)),
       "entry_count": .int(Int64(snapshot.documents.count)),
       "search_count": .int(Int64(snapshot.searchResponses?.count ?? 0)),
@@ -399,42 +402,33 @@ final class AgentIOSWebIntelligenceCacheStore {
   func sourceHealth(ids: Set<String> = []) -> [String: AgentIOSWebSourceHealth]? {
     lock.lock()
     defer { lock.unlock() }
-    guard let snapshot = readUnlocked() else { return nil }
-    return Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).filter {
-      ids.isEmpty || ids.contains($0.sourceID)
-    }.map { ($0.sourceID, $0) })
+    return try? healthIndexUnlocked().records(ids: ids)
   }
 
   func sourceRoutingSnapshot() -> (learnedSources: [AgentIOSLearnedWebSource], health: [String: AgentIOSWebSourceHealth])? {
     lock.lock()
     defer { lock.unlock() }
-    guard let snapshot = readUnlocked() else { return nil }
-    return (snapshot.learnedSources ?? [], Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).map { ($0.sourceID, $0) }))
+    guard let snapshot = readUnlocked(), let health = try? healthIndexUnlocked().records() else { return nil }
+    return (snapshot.learnedSources ?? [], health)
   }
 
   @discardableResult
   func recordSourceReceipts(_ receipts: [AgentIOSWebSourceReceipt]) -> Bool {
     guard receipts.count <= AgentIOSWebSourceHealth.maximumSources, receipts.allSatisfy(\.isValid) else { return false }
     if receipts.isEmpty { return true }
-    return mutate { snapshot in
-      var health = Dictionary(uniqueKeysWithValues: (snapshot.sourceHealth ?? []).map { ($0.sourceID, $0) })
-      for receipt in receipts {
-        health[receipt.sourceID] = (health[receipt.sourceID] ?? AgentIOSWebSourceHealth(sourceID: receipt.sourceID))
-          .evolved(receipt, now: nowMillis())
-      }
-      snapshot.sourceHealth = Array(health.values.sorted {
-        $0.lastAttemptAtMillis == $1.lastAttemptAtMillis ? $0.sourceID < $1.sourceID : $0.lastAttemptAtMillis > $1.lastAttemptAtMillis
-      }.prefix(AgentIOSWebSourceHealth.maximumSources))
-    }
+    lock.lock()
+    defer { lock.unlock() }
+    do { try healthIndexUnlocked().record(receipts, now: nowMillis); return true }
+    catch { return false }
   }
 
   func resetSourceHealth() -> AgentMcpJSONObject {
-    var removed = 0
-    let committed = mutate { snapshot in
-      removed = snapshot.sourceHealth?.count ?? 0
-      snapshot.sourceHealth = []
-    }
-    return ["committed": .bool(committed), "source_health_removed": .int(Int64(committed ? removed : 0))]
+    lock.lock()
+    defer { lock.unlock() }
+    do {
+      let removed = try healthIndexUnlocked().reset()
+      return ["committed": .bool(true), "source_health_removed": .int(removed)]
+    } catch { return ["committed": .bool(false), "source_health_removed": .int(0)] }
   }
 
   func learnSourceCandidates(query: String, categories: [String], results: [AgentMcpJSONObject],
@@ -583,13 +577,58 @@ final class AgentIOSWebIntelligenceCacheStore {
       guard let data = Data(base64Encoded: encoded), data.count == 32 else { return nil }
       return SymmetricKey(data: data)
     }
-    guard createIfMissing else { return nil }
+    guard createIfMissing, !fileManager.fileExists(atPath: Self.sourceHealthDatabaseURL(for: fileURL).path),
+      secrets.string(account: healthImportAccount) == nil else { return nil }
     let key = SymmetricKey(size: .bits256)
     let data = key.withUnsafeBytes { Data($0) }
     guard (try? secrets.setString(data.base64EncodedString(), account: Self.keyAccount)) != nil else {
       return nil
     }
     return key
+  }
+
+  static func sourceHealthDatabaseURL(for legacyURL: URL) -> URL {
+    URL(fileURLWithPath: legacyURL.path + ".health-index", isDirectory: true).appendingPathComponent("health.sqlite")
+  }
+
+  private func healthIndexUnlocked() throws -> AgentIOSWebSourceHealthDatabase {
+    guard fileURL.isFileURL else { throw AgentIOSWebSourceHealthDatabase.Failure.unavailable }
+    let url = Self.sourceHealthDatabaseURL(for: fileURL)
+    let receipt = secrets.string(account: healthImportAccount)
+    guard receipt == nil || receipt == "pending" || receipt == "1",
+      receipt == nil || fileManager.fileExists(atPath: url.path) else { throw AgentIOSWebSourceHealthDatabase.Failure.corrupt }
+    let existing = fileManager.fileExists(atPath: url.path) || fileManager.fileExists(atPath: fileURL.path)
+    guard let key = encryptionKey(createIfMissing: !existing) else { throw AgentIOSWebSourceHealthDatabase.Failure.unavailable }
+    let index = try AgentIOSWebSourceHealthDatabase(fileURL: url, masterKey: key,
+      storageIdentity: Self.healthStorageIdentity(for: fileURL), beforeCommit: healthBeforeCommit)
+    // Remember that the health domain moved even if its database is later lost.
+    // A deleted index must not resurrect stale legacy circuits after a reset.
+    if receipt == nil { try secrets.setString("pending", account: healthImportAccount) }
+    try index.initialize(allowLegacyImport: receipt != "1") {
+      guard let snapshot = readUnlocked() else { throw AgentIOSWebSourceHealthDatabase.Failure.corrupt }
+      return snapshot.sourceHealth ?? []
+    }
+    if receipt != "1" { try secrets.setString("1", account: healthImportAccount) }
+    return index
+  }
+
+  private var healthImportAccount: String {
+    let digest = SHA256.hash(data: Data(Self.healthStorageIdentity(for: fileURL).utf8)).map { String(format: "%02x", $0) }.joined()
+    return "web_intelligence.health_import.v1.\(digest)"
+  }
+
+  private static func healthStorageIdentity(for url: URL) -> String {
+    let path = url.standardizedFileURL.pathComponents
+    let roots: [(String, URL?)] = [
+      ("app-support", FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first),
+      ("temporary", FileManager.default.temporaryDirectory)
+    ]
+    for (name, root) in roots {
+      guard let components = root?.standardizedFileURL.pathComponents, path.count > components.count,
+        path.prefix(components.count).elementsEqual(components) else { continue }
+      return name + ":" + path.dropFirst(components.count).joined(separator: "/")
+    }
+    return "explicit-path:" + url.standardizedFileURL.path
   }
 
   private func canonicalURL(_ value: String) -> String {

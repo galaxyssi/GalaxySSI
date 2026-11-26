@@ -223,8 +223,12 @@ extension GalaxySSIStoreTests {
     defer { try? FileManager.default.removeItem(at: url) }
     let secrets = InMemorySecretStore()
     var writes = 0
+    var healthWrites = 0
     var reject = false
-    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, nowMillis: { 1000 }, writeFile: { data, url in
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, nowMillis: { 1000 }, healthBeforeCommit: {
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+      healthWrites += 1
+    }, writeFile: { data, url in
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
       writes += 1
       try data.write(to: url, options: .atomic)
@@ -233,7 +237,8 @@ extension GalaxySSIStoreTests {
     let receipts = (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0) } +
       [.init(sourceID: "baidu", status: "empty", durationMillis: 200, resultCount: 0)]
     XCTAssertTrue(cache.recordSourceReceipts(receipts))
-    XCTAssertEqual(writes, 2)
+    XCTAssertEqual(writes, 1)
+    XCTAssertEqual(healthWrites, 2) // Migration and one complete receipt batch.
     XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?.count, 1)
     XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?["bing"]?.attempts, 3)
     XCTAssertEqual(cache.stats()["source_circuits_open"], .int(1))
@@ -299,10 +304,13 @@ extension GalaxySSIStoreTests {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-scope-\(UUID()).json")
     defer { try? FileManager.default.removeItem(at: url) }
     var reject = false
-    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 }, writeFile: { data, url in
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 }, healthBeforeCommit: {
+      if reject { throw CocoaError(.fileWriteOutOfSpace) }
+    }, writeFile: { data, url in
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
       try data.write(to: url, options: .atomic)
     })
+    XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("health-scope")]))
     XCTAssertTrue(cache.recordSourceReceipts((0..<3).map { _ in
       .init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
     }))
@@ -344,7 +352,7 @@ extension GalaxySSIStoreTests {
       (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: provider, status: "failed", durationMillis: 100, resultCount: 0) }
     }
     XCTAssertTrue(cache.recordSourceReceipts(receipts))
-    let original = try Data(contentsOf: url)
+    let original = try XCTUnwrap(cache.sourceHealth())
     let transport = SourceHealthSearchFixture()
     let provider = AgentIOSURLSessionWebIntelligenceProvider(
       webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1000 }),
@@ -360,7 +368,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(result.error?.code, "search_sources_cooling_down")
     XCTAssertTrue(transport.hosts.isEmpty)
     XCTAssertEqual(result.error?.details["circuits_skipped"]?.arrayValue?.count, providers.count)
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(cache.sourceHealth(), original)
   }
 
   func testSourceLearningRequiresRepeatedDiverseQueriesAndSafeDistinctHosts() throws {
