@@ -494,7 +494,8 @@ private fun MainActivity.renderAgentModelSelectionPage(content: AgentModelSelect
             val selected = preferredTargetId == target.id
             val modelId = selection.modelId.takeIf { selected && it.isNotBlank() }
                 ?: providerProfile.modelId
-            val modelName = modelDisplayLabel(modelId)
+            val effectiveModelId = target.invocationProfile.modelAliases[modelId] ?: modelId
+            val modelName = modelDisplayLabel(effectiveModelId)
             featureContent.addView(
                 agentModelSelectionRow(
                     title = modelName,
@@ -627,8 +628,8 @@ private fun MainActivity.agentModelConfigurationView(
                 textSize = 12.5f
                 setTextColor(getColorCompat(R.color.text_secondary))
             }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { gravity = Gravity.CENTER_VERTICAL })
-            val selectedModel = profile.models.firstOrNull { it.id == selection.modelId }
-                ?: profile.models.firstOrNull { it.id == profile.defaultModelId }
+            val selectedModelId = profile.normalizedModelId(selection.modelId)
+            val selectedModel = profile.models.firstOrNull { it.id == selectedModelId }
                 ?: profile.models.first()
             addView(TextView(this@agentModelConfigurationView).apply {
                 text = "${selectedModel.displayName}  ›"

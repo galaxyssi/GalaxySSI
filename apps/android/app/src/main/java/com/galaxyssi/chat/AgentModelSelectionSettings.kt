@@ -45,13 +45,14 @@ data class AgentModelOption(
 data class AgentInvocationProfile(
     val defaultModelId: String = "",
     val models: List<AgentModelOption> = emptyList(),
-    val reasoningEfforts: List<AgentModelReasoningEffort> = emptyList()
+    val reasoningEfforts: List<AgentModelReasoningEffort> = emptyList(),
+    val modelAliases: Map<String, String> = emptyMap()
 ) {
     val configurable: Boolean
         get() = models.isNotEmpty() || reasoningEfforts.isNotEmpty()
 
     fun normalizedModelId(requested: String): String {
-        val clean = requested.trim()
+        val clean = requested.trim().let { modelAliases[it] ?: it }
         val available = models.filterNot { RetiredAgentModelPolicy.isRetired(it.id) }
         return available.firstOrNull { it.id == clean }?.id
             ?: available.firstOrNull { it.id == defaultModelId }?.id
@@ -95,7 +96,14 @@ object AgentInvocationProfileJsonCodec {
             defaultModelId = RetiredAgentModelPolicy.availableOrDefault(root.optString("default_model"))
                 .ifBlank { models.firstOrNull()?.id.orEmpty() },
             models = models,
-            reasoningEfforts = efforts
+            reasoningEfforts = efforts,
+            modelAliases = root.optJSONObject("model_aliases")?.let { aliases ->
+                val availableIds = models.mapTo(hashSetOf(), AgentModelOption::id)
+                aliases.keys().asSequence().mapNotNull { old ->
+                    aliases.optString(old).takeIf { it in availableIds && old !in availableIds }
+                        ?.let { old to it }
+                }.toMap()
+            }.orEmpty()
         )
     }
 }

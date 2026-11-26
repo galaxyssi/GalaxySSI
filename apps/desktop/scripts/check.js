@@ -1311,7 +1311,7 @@ for (const requiredText of [
   "CLOUD_API_REPLY_",
   "direct_mobile_cloud_api",
   "adb([\"reverse\"",
-  "deepseek-v4-flash",
+  "deepseek-flash",
   "smoke:android-cloud-models",
   "galaxyssi_debug_open_voice_settings",
   "galaxyssi_debug_open_backup_export",

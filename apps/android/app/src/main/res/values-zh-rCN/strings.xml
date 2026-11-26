@@ -106,11 +106,11 @@
     <string name="cloud_configure_api_key_first">请先配置 %1$s 的 API Key</string>
     <string name="cloud_switched_model">已切换到 %1$s</string>
     <string name="cloud_model_tag">模型</string>
-    <string name="cloud_provider_openai_subtitle">GPT-5.5、GPT-5.4 mini/nano 等 OpenAI API 模型</string>
-    <string name="cloud_provider_anthropic_subtitle">Claude Opus、Sonnet、Haiku；使用 Messages API</string>
-    <string name="cloud_provider_gemini_subtitle">Gemini Pro / Flash / Flash Lite；手机直连 Google API</string>
-    <string name="cloud_provider_deepseek_subtitle">deepseek-v4-pro、deepseek-v4-flash、deepseek-v4-flash-vision-exp</string>
-    <string name="cloud_provider_qwen_subtitle">Qwen 3.7 Max/Plus、Qwen 3.6 Flash；DashScope 兼容 OpenAI</string>
+    <string name="cloud_provider_openai_subtitle">OpenAI Chat Completions 模型</string>
+    <string name="cloud_provider_anthropic_subtitle">Claude Fable、Opus、Sonnet 和 Haiku</string>
+    <string name="cloud_provider_gemini_subtitle">Gemini 4 和 Flash-Lite</string>
+    <string name="cloud_provider_deepseek_subtitle">deepseek-v4-pro、deepseek-flash</string>
+    <string name="cloud_provider_qwen_subtitle">通义千问 Max、Plus 和 Flash</string>
     <string name="cloud_provider_openrouter_subtitle">统一访问多个云端模型，可自行填写模型路由</string>
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible 自定义端点</string>
     <string name="cloud_request_failed">云端模型调用失败：%1$s</string>
