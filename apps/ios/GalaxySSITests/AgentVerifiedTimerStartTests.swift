@@ -11,6 +11,9 @@ final class AgentVerifiedTimerStartTests: XCTestCase {
       XCTAssertTrue(AgentVerifiedTimerStart.permits(plan: plan(goal: goal), action: timer(), result: receipt()), goal)
     }
     XCTAssertFalse(AgentVerifiedTimerStart.permits(plan: plan(goal: "2 minutes"), action: timer(), result: receipt()))
+    XCTAssertEqual(AgentDirectNativeToolPlanner.exactTimerStartSeconds("1 minute and 30 seconds"), 90)
+    XCTAssertEqual(AgentDirectNativeToolPlanner.exactTimerStartSeconds("1\u{5206}\u{949f}\u{52a0}30\u{79d2}"), 90)
+    XCTAssertFalse(AgentVerifiedTimerStart.permits(plan: plan(goal: "1 minute and 30 seconds"), action: timer(), result: receipt()))
     XCTAssertFalse(AgentVerifiedTimerStart.permits(plan: plan(goal: "Start a one-minute timer and tell me when it finishes"),
       action: timer(), result: receipt()))
     var declared = timer()

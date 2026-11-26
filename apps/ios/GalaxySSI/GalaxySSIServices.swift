@@ -15304,6 +15304,7 @@ final class MessageCoordinator: ObservableObject {
 
   private func permitsVerifiedTimerStart(plan: AgentPlan, action: AgentAction, result: AgentActionResult,
     task: AgentTaskRecord, outgoing: ChatMessage) -> Bool {
+    guard action.kind == .callNativeTool, action.parameters["tool_id"] == AgentVerifiedTimerStart.toolId else { return false }
     guard AgentVerifiedTimerStart.permits(plan: plan, action: action, result: result,
             legacyCheckpoint: AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)),
           task.pendingActions.allSatisfy({ $0.id == action.id || AgentVerifiedTimerStart.isReviewer($0, timerId: action.id) }),

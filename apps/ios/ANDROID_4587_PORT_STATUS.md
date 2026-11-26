@@ -17,7 +17,8 @@ business-success flags are invented for iOS.
 The shared model prompt documents nested target/parameters arguments. The real
 model parser retains only a literal boolean action.completes_goal=true, in an
 internal planning parameter. It is not a permission or receipt. Reuse the existing
-iOS anchored duration interpreter for exact full timer/duration requests. Other
+iOS anchored duration interpreter and its digit/spoken-unit parsing for exact
+full timer/duration requests, including complete multi-unit sums. Other
 wording requires the model declaration, as on Android; this does not claim full
 Android duration-language equivalence or that model semantic judgments are proven.
 
@@ -65,3 +66,8 @@ against the stated baseline after only explicit completion/recovery/metadata/
 prompt hooks. No native build/typecheck/XCTest, CI monitoring or IPA. Source
 checks are not native, model compliance, persistence-fault or device acceptance.
 The wider Android-to-iOS backlog remains incomplete.
+
+Checkpoint: fifteen related JS scope guards passed after synchronizing #4588,
+including timer, resumed model, preview/catalog/hedge and retained routing/
+transport guards. `npm run check:ios`, changed iOS literal-Han and diff whitespace
+checks passed. These do not assert an all-repository or native test pass.
