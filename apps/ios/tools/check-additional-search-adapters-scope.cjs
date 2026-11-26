@@ -67,7 +67,11 @@ if (require.main === module) {
   const policy = 'struct AgentIOSJSONWebSearchRequestPolicy';
   assert.equal(json.slice(json.indexOf(policy)), show(base, app + 'AgentIOSJSONWebSearchAdapter.swift').slice(show(base, app + 'AgentIOSJSONWebSearchAdapter.swift').indexOf(policy)), 'Exact credential/header policy retained');
   assert(json.includes('parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")'));
-  for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) assert.equal(read(app + name), show(base, app + name), name);
+  for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) {
+    const current = read(app + name), indexed = require('./check-web-cache-index-scope.cjs');
+    if (indexed.isIndexedCache(current)) indexed.validateIndexedCache();
+    else assert.equal(current, show(base, app + name), name);
+  }
   const parserFile = app + 'AgentIOSPublicSearchParser.swift';
   assert.equal(require('./check-text-search-fusion-scope.cjs').retainedFusionHit(read(parserFile)).replace('    var retrievalStatus: String? = nil\n', ''), show(base, parserFile), 'Existing HTML/image/redirect parsing unchanged');
   const tests = read('apps/ios/GalaxySSITests/AgentIOSAdditionalWebSearchAdapterTests.swift');

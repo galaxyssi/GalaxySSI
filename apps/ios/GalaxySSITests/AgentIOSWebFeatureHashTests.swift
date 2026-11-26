@@ -51,7 +51,7 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
 
   func testEncryptedDocumentVectorsPersistAndDoNotAppearInPublicProjection() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore(), cache = makeCache(url, secrets)
     XCTAssertTrue(cache.putDocument(url: "https://source.test/a", title: "alpha", content: "beta",
       contentType: "text/plain", contentSHA256: "fixture", retrievedAtMillis: 1, expiresAtMillis: 2))
@@ -62,12 +62,12 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
     XCTAssertNil(document.value()["embeddingModelID"])
     let restored = makeCache(url, secrets)
     XCTAssertEqual(restored.document(url: document.url, allowStale: true)?.vector, document.vector)
-    XCTAssertFalse(String(decoding: try Data(contentsOf: url), as: UTF8.self).contains("feature-hash"))
+    XCTAssertFalse(String(decoding: try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), as: UTF8.self).contains("feature-hash"))
   }
 
   func testLegacyDocumentsReembedWithoutMutatingReadSnapshot() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore(), key = SymmetricKey(size: .bits256)
     try secrets.setString(key.withUnsafeBytes { Data($0) }.base64EncodedString(), account: AgentIOSWebIntelligenceCacheStore.keyAccount)
     let document = AgentIOSWebIntelligenceCacheDocument(url: "https://source.test/legacy", title: "alpha",
@@ -80,17 +80,17 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
     let envelope: [String: Any] = ["version": 1, "nonce": sealed.nonce.withUnsafeBytes { Data($0) }.base64EncodedString(),
       "ciphertext": sealed.ciphertext.base64EncodedString(), "tag": sealed.tag.base64EncodedString()]
     try JSONSerialization.data(withJSONObject: envelope).write(to: url)
-    let original = try Data(contentsOf: url), cache = makeCache(url, secrets)
+    let cache = makeCache(url, secrets)
     let match = try XCTUnwrap(cache.similarDocuments(query: "alpha beta", limit: 1).first)
     XCTAssertGreaterThan(match.score, 0.5)
     XCTAssertEqual(match.document.url, document.url)
     XCTAssertNil(match.document.vector)
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
   }
 
   func testSimilarityKeepsNoOverlapCandidatesAndExcludesRequestedURL() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = makeCache(url, InMemorySecretStore())
     for index in 0..<3 {
       XCTAssertTrue(cache.putDocument(url: "https://source.test/\(index)", title: "entry \(index)",
@@ -104,7 +104,7 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
 
   func testActualRegistryLocalSimilarityUsesVectorsAndReportsModelWithoutNetwork() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = makeCache(url, InMemorySecretStore())
     XCTAssertTrue(cache.putDocument(url: "https://source.test/a", title: "alpha", content: "beta",
       contentType: "text/plain", contentSHA256: "fixture", retrievedAtMillis: 1, expiresAtMillis: 2))
@@ -124,7 +124,7 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
 
   func testURLSelectionOverridesQueryAndSparseFallbackKeepsReceiptsAndDeduplicates() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = makeCache(url, InMemorySecretStore())
     for name in ["origin", "related"] {
       XCTAssertTrue(cache.putDocument(url: "https://source.test/\(name)", title: "alpha", content: "beta",
@@ -147,7 +147,7 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
 
   func testActualCacheQueryUsesSameLocalCosineScoresAndRejectsEmptyQuery() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = makeCache(url, InMemorySecretStore())
     XCTAssertTrue(cache.putDocument(url: "https://source.test/a", title: "alpha", content: "beta",
       contentType: "text/plain", contentSHA256: "fixture", retrievedAtMillis: 1, expiresAtMillis: 2))
@@ -167,7 +167,7 @@ final class AgentIOSWebFeatureHashTests: XCTestCase {
 
   func testCacheOnlyScopeCannotFetchUncachedURLOrRunOptionalSearch() throws {
     let url = temporaryFile()
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = makeCache(url, InMemorySecretStore())
     XCTAssertTrue(cache.putDocument(url: "https://source.test/local", title: "alpha", content: "beta",
       contentType: "text/plain", contentSHA256: "fixture", retrievedAtMillis: 1, expiresAtMillis: 2))

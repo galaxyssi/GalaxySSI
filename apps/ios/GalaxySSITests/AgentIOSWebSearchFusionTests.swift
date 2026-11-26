@@ -75,7 +75,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
   func testActualRegistryRanksWithinOneProviderAndPreservesScoreAndPublication() throws {
     let transport = TextFusionTransport()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("fusion-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
     let registry = try makeRegistry(transport: transport, cache: cache)
     let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.search,
@@ -95,7 +95,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
   func testCachedPublicationIsPreservedInDocumentButNotReusedForAnotherSearch() throws {
     let transport = TextFusionTransport()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("fusion-cache-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
     let content = "alpha cached summary"
     let hash = SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -118,7 +118,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
 
   func testExactResponseCachePreservesScoresAndReceiptsWithoutAnotherRequest() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("exact-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let secrets = InMemorySecretStore()
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: secrets, nowMillis: { self.now })
     let transport = TextFusionTransport()
@@ -136,14 +136,14 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     XCTAssertEqual(second.metadata["response_cache_original_receipts"], .bool(true))
     XCTAssertEqual(second.output["results"], first.output["results"])
     XCTAssertEqual(second.output["source_receipts"], first.output["source_receipts"])
-    XCTAssertFalse(String(decoding: try Data(contentsOf: file), as: UTF8.self).contains("fixture/alpha"))
+    XCTAssertFalse(String(decoding: try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: file)), as: UTF8.self).contains("fixture/alpha"))
     XCTAssertEqual(AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: secrets,
       nowMillis: { self.now }).stats()["search_count"], .int(1))
   }
 
   func testExactSearchIdentitySeparatesQueryProfileFanoutAndTopics() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("identity-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
     let transport = TextFusionTransport(), registry = try makeRegistry(transport: transport, cache: cache)
     let base: AgentMcpJSONObject = ["query": .string("alpha"), "engines": .array([.string("github")]), "limit": .int(1)]
@@ -166,7 +166,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
 
   func testForcedRefreshUnconsentedSearchAndCredentialRotationDoNotHitOldResponse() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("fresh-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { self.now })
     let credentials = InMemorySecretStore(), transport = TextFusionTransport()
     let registry = try makeRegistry(transport: transport, cache: cache, credentials: credentials)
@@ -191,7 +191,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
   func testSearchResponseExpiryAndClearInvalidateInFlightGeneration() throws {
     var clock: Int64 = 1_000
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("expiry-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { clock })
     let key = String(repeating: "a", count: 64), response = cachedFixture()
     XCTAssertTrue(cache.putSearchResponse(key: key, result: response, ttlMillis: 60_000))
@@ -208,7 +208,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
   func testSearchResponseBoundsRejectEmptyFailedAndOversizedEntries() throws {
     var clock: Int64 = 1_000
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("bounds-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { clock })
     for index in 0..<33 {
       clock += 1
@@ -228,30 +228,30 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
   func testSearchResponseFailedWriteAndCorruptReadDoNotErasePriorData() throws {
     var reject = false
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("failure-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { 1_000 },
-      writeFile: { data, url in
+      beforeCommit: {
         if reject { throw CocoaError(.fileWriteOutOfSpace) }
-        try data.write(to: url, options: .atomic)
       })
     let key = String(repeating: "a", count: 64)
     XCTAssertTrue(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
-    let original = try Data(contentsOf: file)
+    let index = AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: file)
+    let original = try Data(contentsOf: index)
     reject = true
     XCTAssertFalse(cache.putSearchResponse(key: String(repeating: "b", count: 64), result: cachedFixture(), ttlMillis: 60_000))
-    XCTAssertEqual(try Data(contentsOf: file), original)
+    XCTAssertEqual(try Data(contentsOf: index), original)
     XCTAssertNotNil(cache.searchResponse(key: key))
     let corrupt = Data("not-an-envelope".utf8)
-    try corrupt.write(to: file)
+    try corrupt.write(to: index)
     reject = false
     XCTAssertNil(cache.searchResponse(key: key))
     XCTAssertFalse(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
-    XCTAssertEqual(try Data(contentsOf: file), corrupt)
+    XCTAssertEqual(try Data(contentsOf: index), corrupt)
   }
 
   func testLegacySnapshotWithoutSearchResponsesRemainsReadableAndRetained() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-response-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: file) }
+    defer { removeWebCacheFixture(file) }
     let secrets = InMemorySecretStore(), key = SymmetricKey(size: .bits256)
     try secrets.setString(key.withUnsafeBytes { Data($0) }.base64EncodedString(), account: AgentIOSWebIntelligenceCacheStore.keyAccount)
     let sealed = try AES.GCM.seal(Data(#"{"version":1,"documents":[],"watches":[]}"#.utf8), using: key)

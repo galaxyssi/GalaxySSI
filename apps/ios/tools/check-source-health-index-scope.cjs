@@ -15,6 +15,7 @@ function replaceOnce(source, first, replacement) {
   return source.replace(first, replacement);
 }
 function retainedHealthCache(source) {
+  if (require('./check-web-cache-index-scope.cjs').isIndexedCache(source)) return source;
   if (!source.includes('  private func healthIndexUnlocked()')) return source;
   const prior = oldCache();
   for (const line of ['  private let healthBeforeCommit: () throws -> Void\n',
@@ -32,7 +33,9 @@ function retainedHealthCache(source) {
 module.exports = {retainedHealthCache};
 if (require.main === module) {
   const cache = read(app + 'AgentIOSWebIntelligenceCache.swift');
-  assert.equal(retainedHealthCache(cache), oldCache(), 'Only health domain delegation, statistics, migration and missing-key fences changed');
+  const indexed = require('./check-web-cache-index-scope.cjs');
+  if (indexed.isIndexedCache(cache)) indexed.validateIndexedCache();
+  else assert.equal(retainedHealthCache(cache), oldCache(), 'Only health domain delegation, statistics, migration and missing-key fences changed');
   for (const [first, last] of [['  func sourceHealth(', '  func sourceRoutingSnapshot('],
     ['  func recordSourceReceipts(', '  func resetSourceHealth('], ['  func resetSourceHealth(', '  func learnSourceCandidates(']]) {
     const method = section(cache, first, last);
@@ -40,7 +43,7 @@ if (require.main === module) {
     assert(method.includes('healthIndexUnlocked()'), first);
   }
   assert(cache.includes('receipt == nil || fileManager.fileExists(atPath: url.path)'));
-  assert(cache.includes('secrets.string(account: healthImportAccount) == nil else { return nil }'));
+  assert(cache.includes('secrets.string(account: healthImportAccount) == nil'));
   assert(cache.includes('if receipt == nil { try secrets.setString("pending", account: healthImportAccount) }'));
   assert(cache.includes('initialize(allowLegacyImport: receipt != "1")'));
   assert(cache.includes('if receipt != "1" { try secrets.setString("1", account: healthImportAccount) }'));

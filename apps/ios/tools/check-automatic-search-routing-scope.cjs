@@ -74,8 +74,11 @@ if (require.main === module) {
     '!seen.contains($0.id)', '$0.offset < $1.offset', 'inferredVerticals: []']) assert(catalog.includes(token), token);
   for (const file of ['AgentIOSWebSourceHealth.swift', 'AgentIOSWebIntelligenceCache.swift',
     'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSWebExecutionBudget.swift', 'AgentIOSPublicSearchParser.swift',
-    'AgentIOSWebSearchFusion.swift', 'AgentIOSURLSessionWebIntelligenceProvider.swift'])
-    assert.equal(read(app + file), show(base, app + file), file + ' unchanged');
+    'AgentIOSWebSearchFusion.swift', 'AgentIOSURLSessionWebIntelligenceProvider.swift']) {
+    const current = read(app + file), indexed = require('./check-web-cache-index-scope.cjs');
+    if (indexed.isIndexedCache(current)) indexed.validateIndexedCache();
+    else assert.equal(current, show(base, app + file), file + ' unchanged');
+  }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSIndexedWebSourceCatalogTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 14);
   for (const token of ['testAutomaticBroadRoutingIncludesEnabledRegionalAndGeneralAdapters',

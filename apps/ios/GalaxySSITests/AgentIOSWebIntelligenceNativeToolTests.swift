@@ -220,7 +220,7 @@ extension GalaxySSIStoreTests {
 
   func testSourceHealthBatchAndResetCommitTruthfullyWithoutReplacingDocuments() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-batch-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     var writes = 0
     var healthWrites = 0
@@ -228,25 +228,24 @@ extension GalaxySSIStoreTests {
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, nowMillis: { 1000 }, healthBeforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
       healthWrites += 1
-    }, writeFile: { data, url in
+    }, beforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
       writes += 1
-      try data.write(to: url, options: .atomic)
     })
     XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("evidence")]))
     let receipts = (0..<3).map { _ in AgentIOSWebSourceReceipt(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0) } +
       [.init(sourceID: "baidu", status: "empty", durationMillis: 200, resultCount: 0)]
     XCTAssertTrue(cache.recordSourceReceipts(receipts))
-    XCTAssertEqual(writes, 1)
+    XCTAssertEqual(writes, 2) // Cache migration and the document batch.
     XCTAssertEqual(healthWrites, 2) // Migration and one complete receipt batch.
     XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?.count, 1)
     XCTAssertEqual(cache.sourceHealth(ids: ["bing"])?["bing"]?.attempts, 3)
     XCTAssertEqual(cache.stats()["source_circuits_open"], .int(1))
-    let original = try Data(contentsOf: url)
+    let original = try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url))
     reject = true
     XCTAssertFalse(cache.recordSourceReceipts([.init(sourceID: "bing", status: "completed", durationMillis: 100, resultCount: 2)]))
     XCTAssertEqual(cache.resetSourceHealth()["committed"], .bool(false))
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
     XCTAssertNotNil(cache.document(url: "https://cache.test/evidence", allowStale: true))
     reject = false
     XCTAssertEqual(cache.resetSourceHealth()["source_health_removed"], .int(2))
@@ -259,7 +258,7 @@ extension GalaxySSIStoreTests {
 
   func testActualNativeSearchUsesScopedHealthAndCacheHealthTools() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-tools-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 })
     XCTAssertTrue(cache.recordSourceReceipts((0..<3).map { _ in
       .init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
@@ -302,19 +301,18 @@ extension GalaxySSIStoreTests {
 
   func testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-scope-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     var reject = false
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 }, healthBeforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
-    }, writeFile: { data, url in
+    }, beforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
-      try data.write(to: url, options: .atomic)
     })
     XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("health-scope")]))
     XCTAssertTrue(cache.recordSourceReceipts((0..<3).map { _ in
       .init(sourceID: "bing", status: "failed", durationMillis: 100, resultCount: 0)
     }))
-    let original = try Data(contentsOf: url)
+    let original = try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url))
     reject = true
     let transport = SourceHealthSearchFixture()
     let provider = AgentIOSURLSessionWebIntelligenceProvider(
@@ -331,7 +329,7 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(unscoped.isSuccess)
     XCTAssertNil(unscoped.metadata["source_health_available"])
     XCTAssertTrue(transport.hosts.contains(where: { $0.contains("bing.com") }))
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
     context.invocationId = "health-write-failed"
     context.grantedPermissions.insert(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)
     context.grantedConsents.insert(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
@@ -339,12 +337,12 @@ extension GalaxySSIStoreTests {
       hooks: AgentNativeToolInvocationHooks(nowMillis: { 1000 }))
     XCTAssertTrue(failedWrite.isSuccess)
     XCTAssertEqual(failedWrite.metadata["source_health_write_committed"], .bool(false))
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
   }
 
   func testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("health-open-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), nowMillis: { 1000 })
     let providers = AgentIOSWebIntelligenceQueryRouting.select(query: "Galaxy research",
       requestedVerticals: [], requestedEngineIds: [], fanout: 32).selected.map(\.id)
@@ -423,7 +421,7 @@ extension GalaxySSIStoreTests {
 
   func testFullCacheClearInvalidatesQueuedLearningAcrossInstancesButExpiredClearDoesNot() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-clear-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     let operations = OperationQueue()
     operations.isSuspended = true
@@ -450,7 +448,7 @@ extension GalaxySSIStoreTests {
 
   func testLearningUsesEncryptedSnapshotAndLegacyDocumentsRemainReadable() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-encrypted-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     let operations = OperationQueue()
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets,
@@ -471,32 +469,31 @@ extension GalaxySSIStoreTests {
 
   func testFailedOrCancelledLearningDoesNotPublishOrReplaceEvidence() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-failed-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let operations = OperationQueue()
     var reject = false
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
-      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations), writeFile: { data, url in
+      learningQueue: AgentIOSWebMaintenanceQueue(queue: operations), beforeCommit: {
         if reject { throw CocoaError(.fileWriteOutOfSpace) }
-        try data.write(to: url, options: .atomic)
       })
     XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("evidence")]))
-    let original = try Data(contentsOf: url)
+    let original = try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url))
     reject = true
     let results: [AgentMcpJSONObject] = [["url": .string("https://source.example/article")]]
     _ = cache.learnSourceCandidates(query: "first", categories: [], results: results)
     operations.waitUntilAllOperationsAreFinished()
     XCTAssertEqual(cache.stats()["last_learning_status"], .string("failed_write"))
     XCTAssertTrue(try XCTUnwrap(cache.learnedSources()).isEmpty)
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
     reject = false
     _ = cache.learnSourceCandidates(query: "cancelled", categories: [], results: results, isCancelled: { true })
     operations.waitUntilAllOperationsAreFinished()
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
   }
 
   func testActualSearchQueuesLearningOnlyWithCacheScopeAndCacheToolListsIt() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("learning-tool-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let operations = OperationQueue()
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(),
       learningQueue: AgentIOSWebMaintenanceQueue(queue: operations))
@@ -511,6 +508,7 @@ extension GalaxySSIStoreTests {
     XCTAssertTrue(skipped.isSuccess)
     XCTAssertEqual(skipped.output["learning"]?.objectValue?["status"], .string("skipped_cache_scope_required"))
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url).path))
     context.grantedPermissions.insert(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)
     context.grantedConsents.insert(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
     for (index, query) in ["Galaxy first", "Galaxy second", "Galaxy third", "Galaxy first"].enumerated() {
@@ -532,7 +530,7 @@ extension GalaxySSIStoreTests {
 
   func testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-corrupt-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let original = Data("not an encrypted envelope".utf8)
     try original.write(to: url, options: .atomic)
     let secrets = InMemorySecretStore()
@@ -546,36 +544,37 @@ extension GalaxySSIStoreTests {
 
   func testMissingWebCacheKeyDoesNotRotateOrReplaceExistingCiphertext() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-key-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
     XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("old")]))
-    let original = try Data(contentsOf: url)
+    let original = try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url))
     secrets.delete(account: AgentIOSWebIntelligenceCacheStore.keyAccount)
     XCTAssertFalse(cache.putDocuments([cacheDocumentFixture("new")]))
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
     XCTAssertNil(secrets.string(account: AgentIOSWebIntelligenceCacheStore.keyAccount))
   }
 
   func testWebCacheBatchCommitsOnceAndFailedReplacementPreservesSnapshot() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-batch-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     var writes = 0
     var reject = false
-    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, writeFile: { data, url in
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets, beforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
       writes += 1
-      try data.write(to: url, options: .atomic)
     })
+    XCTAssertEqual(cache.cacheMetadata()["available"], .bool(true))
+    writes = 0
     XCTAssertTrue(cache.putDocuments([cacheDocumentFixture("first"), cacheDocumentFixture("second")]))
     XCTAssertEqual(writes, 1)
-    let original = try Data(contentsOf: url)
+    let original = try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url))
     reject = true
     XCTAssertFalse(cache.putDocuments([cacheDocumentFixture("third")]))
     XCTAssertEqual(cache.clear(expiredOnly: false)["documents_removed"], .int(0))
     XCTAssertNil(cache.removeWatch(id: "missing"))
-    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(try Data(contentsOf: AgentIOSWebIntelligenceCacheStore.indexDatabaseURL(for: url)), original)
     let reopened = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
     XCTAssertEqual(reopened.stats()["entry_count"], .int(2))
     XCTAssertNil(reopened.document(url: "https://cache.test/third", allowStale: true))
@@ -583,7 +582,7 @@ extension GalaxySSIStoreTests {
 
   func testWebCacheInstancesSerializeOneSnapshotReadModifyWrite() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-shared-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     let secrets = InMemorySecretStore()
     let first = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
     let second = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: secrets)
@@ -596,11 +595,10 @@ extension GalaxySSIStoreTests {
 
   func testWebWatchAndClearToolsDoNotClaimFailedPersistenceSucceeded() throws {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("cache-watch-\(UUID()).json")
-    defer { try? FileManager.default.removeItem(at: url) }
+    defer { removeWebCacheFixture(url) }
     var reject = false
-    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), writeFile: { data, url in
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: url, secrets: InMemorySecretStore(), beforeCommit: {
       if reject { throw CocoaError(.fileWriteOutOfSpace) }
-      try data.write(to: url, options: .atomic)
     })
     let watch = AgentIOSWebIntelligenceCacheWatch(id: "original", url: "https://cache.test/article",
       intervalMinutes: 60, enabled: true, lastCheckedAtMillis: 0, lastChangedAtMillis: 0,

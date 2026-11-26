@@ -74,6 +74,8 @@ if (require.main === module) {
   for (const name of ['AgentIOSImageSearchFusion', 'AgentIOSImageSearchRequestPolicy', 'AgentIOSWebExecutionBudget', 'AgentIOSWebSourceHealth',
     'AgentIOSWebIntelligenceCache', 'AgentIOSWebIntelligenceSourceCatalog', 'AgentIOSHTMLWebSearchAdapter']) {
     const current = require('./check-search-response-cache-scope.cjs').retainedResponseCache(read(app + name + '.swift'));
+    const indexed = require('./check-web-cache-index-scope.cjs');
+    if (indexed.isIndexedCache(current)) { indexed.validateIndexedCache(); continue; }
     assert.equal(name === 'AgentIOSWebIntelligenceSourceCatalog'
       ? require('./check-automatic-search-routing-scope.cjs').retainedAutoRoutingCatalog(current) : current,
       show(base, app + name + '.swift'), name);

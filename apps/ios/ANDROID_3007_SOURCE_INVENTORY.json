@@ -107,7 +107,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: native scoped learning/health, pinned catalogs/adapters, unified fusion/routing, exact response caching and feature-hash similarity. Source health now uses a protected purpose-bound encrypted SQLite index with scoped HMAC-key reads, ordered batch transactions, indexed retention, atomic legacy import and non-resurrection/key-loss fences. Other domains remain JSON; detailed stats and learned routing still read that snapshot. Qualified image-topic references never invent media. Current bounded storage/evidence limits retained. Remaining document/search/watch/learned and aggregate metadata indexing, workspace/large-corpus limits and native SQL/crypto/recovery/performance acceptance are incomplete"
+      "disposition": "Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains now use protected purpose-bound encrypted SQLite indexes: point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Document/search/learned clear and persisted cache-generation rotation share one transaction; watches and health remain. Import is fenced and the old file is retired after committed migration, with cleanup failure reported. Similarity scans one body at a time with bounded retained hits, not ANN. Public result/media limits, workspace transactions and native SQL/crypto/backup/recovery/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",

@@ -33,6 +33,10 @@ for (const token of ['JSONSerialization.jsonObject', 'rows.prefix(100)', 'seen.i
 const intelligence = require('./check-search-response-cache-scope.cjs').retainedResponseSearch(read(swift('AgentIOSURLSessionWebIntelligenceProvider')));
 const cacheStore = require('./check-search-response-cache-scope.cjs').retainedResponseCache(read(swift('AgentIOSWebIntelligenceCache')));
 const oldCacheStore = git('show', base + ':' + swift('AgentIOSWebIntelligenceCache'));
+const indexedCache = require('./check-web-cache-index-scope.cjs');
+const usesIndexedCache = indexedCache.isIndexedCache(cacheStore);
+if (usesIndexedCache) indexedCache.validateIndexedCache();
+else {
 assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   'Persisted document/watch schemas unchanged');
@@ -50,6 +54,7 @@ for (const token of ['let sharedState = Self.state(for: fileURL)', 'lock = share
   'try writeFile(encoded, fileURL)', '.completeFileProtectionUntilFirstUserAuthentication',
   '"committed": .bool(committed)', 'return committed ? removed : nil']) assert(cacheStore.includes(token), token);
 assert(!cacheStore.includes('try? encoded.write'));
+}
 for (const token of ['cacheMetadata["available"] != .bool(false)', 'cleared["committed"] == .bool(true)',
   'guard cacheStore.putWatch(watch)', 'guard cacheStore.putWatch(updated)', 'cacheStore.watchSnapshot()',
   'guard let removed = cacheStore.removeWatch(', 'return cacheStore.putDocuments(documents)',
@@ -67,7 +72,7 @@ for (const token of ['results.prefix(20)', 'static let maximumSources = 512', 'q
   'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains { host == $0 || host.hasSuffix("." + $0) }',
   'compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)',
   'AgentIOSWebResearchPlanCodec.normalizedCategory(tag) == tag']) assert(learning.includes(token), token);
-for (const token of ['let generation = state.generation', 'state.generation = UUID()',
+if (!usesIndexedCache) for (const token of ['let generation = state.generation', 'state.generation = UUID()',
   'guard state.generation == generation, !isCancelled()', 'self.applyLearning(observations, generation: generation',
   'state.lastLearningStatus = committed ? "saved" : "failed_write"',
   '(snapshot.learnedSources ?? []).allSatisfy(\\.isValid)', '"learned_sources_removed"',
@@ -101,7 +106,7 @@ for (const token of ['consecutiveFailures >= 3', 'if receipt.status == "cancelle
   'Int64(1_800_000)', 'Int64(60_000) * (Int64(1) << exponent)',
   'end.overflow ? Int64.max', 'Double(attempts) + 1', 'if explicit { return Selection(',
   'filter { !blocked.contains($0.element) }']) assert(sourceHealth.includes(token), token);
-for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSourceReceipts(',
+if (!usesIndexedCache) for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSourceReceipts(',
   'receipts.allSatisfy(\\.isValid)', 'health[receipt.sourceID]', '.evolved(receipt, now: nowMillis())',
   'func resetSourceHealth()', 'snapshot.sourceHealth = []', '"source_health_removed"',
   '(snapshot.sourceHealth ?? []).allSatisfy(\\.isValid)']) assert(cacheStore.includes(token), token);
@@ -393,7 +398,7 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: native scoped learning/health, pinned catalogs/adapters, unified fusion/routing, exact response caching and feature-hash similarity. Source health now uses a protected purpose-bound encrypted SQLite index with scoped HMAC-key reads, ordered batch transactions, indexed retention, atomic legacy import and non-resurrection/key-loss fences. Other domains remain JSON; detailed stats and learned routing still read that snapshot. Qualified image-topic references never invent media. Current bounded storage/evidence limits retained. Remaining document/search/watch/learned and aggregate metadata indexing, workspace/large-corpus limits and native SQL/crypto/recovery/performance acceptance are incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains now use protected purpose-bound encrypted SQLite indexes: point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Document/search/learned clear and persisted cache-generation rotation share one transaction; watches and health remain. Import is fenced and the old file is retired after committed migration, with cleanup failure reported. Similarity scans one body at a time with bounded retained hits, not ANN. Public result/media limits, workspace transactions and native SQL/crypto/backup/recovery/performance acceptance remain incomplete';
   if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
   if (file.endsWith('/CloudImageSearchEvidence.kt')) return 'Native image-only packs prefer safe HTTPS previews, retain originals without claiming download/visual verification, remove original dimensions and use exact-subject Markdown guidance. Image-aware bounded model formatting admits whole URLs and re-verifies remaining source identities, with explicit omissions/failure. Native/network/UI acceptance not run';
   if (file.endsWith('/CloudModelClient.kt')) return 'Adapted the two added image-search reply instructions into the existing shared visual-output prompt consumed by default text and vision conversation preparation. Preserve language/vision/tool trust, HTML/video guards, actual evidence/citations and structured custom prompts. Native provider/compatibility fixture sources added, NOT executed; model compliance/UI acceptance not claimed';

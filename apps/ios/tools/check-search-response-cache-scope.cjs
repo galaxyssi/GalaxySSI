@@ -36,6 +36,7 @@ const cacheHooks = [
   ]
 ];
 function retainedResponseCache(source) {
+  if (require('./check-web-cache-index-scope.cjs').isIndexedCache(source)) return source;
   source = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(source);
   source = require('./check-feature-hash-similarity-scope.cjs').retainedEmbeddingCache(source);
   if (!source.includes('    var searchResponses: [SearchResponse]? = nil')) return source;
@@ -56,8 +57,10 @@ function retainedResponseSearch(source) {
 module.exports = {retainedResponseCache, retainedResponseSearch};
 if (require.main === module) {
   const cacheFile = app + 'AgentIOSWebIntelligenceCache.swift', providerFile = app + 'AgentIOSURLSessionWebIntelligenceProvider.swift';
-  const cache = read(cacheFile), provider = read(providerFile);
-  assert.equal(retainedResponseCache(cache), show(base, cacheFile), 'Only optional response records, bounds, stats, clear and guarded operations');
+  const indexed = require('./check-web-cache-index-scope.cjs');
+  const cache = read(cacheFile), provider = indexed.retainedMetadataProvider(read(providerFile));
+  if (indexed.isIndexedCache(cache)) indexed.validateIndexedCache();
+  else assert.equal(retainedResponseCache(cache), show(base, cacheFile), 'Only optional response records, bounds, stats, clear and guarded operations');
   assert.equal(retainedResponseSearch(provider), show(base, providerFile), 'Only search response caching kernel; fetch/research/watch/extract and other behavior unchanged');
   const reference = show(android, 'apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt');
   for (const token of ['"fanout" to fanout', '"profile" to profile.wireValue', '"engines" to engines.sorted()',
@@ -77,7 +80,7 @@ if (require.main === module) {
     '(canReadCache ? cacheStore.stats() : [:])', 'if cacheScope, !invocation.isCancellationRequested, !resultObjects.isEmpty'])
     assert(provider.includes(token), token);
   assert(!provider.includes('mergeSearchResults(') && !provider.includes('cachedSearchResults(') && !provider.includes('cacheSearchResults('));
-  for (const token of ['var searchResponses: [SearchResponse]? = nil', 'static let maxSearchResponses = 32',
+  if (!indexed.isIndexedCache(cache)) for (const token of ['var searchResponses: [SearchResponse]? = nil', 'static let maxSearchResponses = 32',
     '$0 <= 262_144', 'now < $0.expiresAtMillis', '$0.storedAtMillis <= now',
     'expectedGeneration == state.generation', 'var snapshot = readUnlocked() else { return false }',
     'return writeUnlocked(snapshot)', 'snapshot.searchResponses?.removeAll { $0.expiresAtMillis <= now }',

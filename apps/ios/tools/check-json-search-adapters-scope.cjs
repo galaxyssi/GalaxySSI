@@ -60,7 +60,9 @@ if (require.main === module) {
   for (const name of ['AgentIOSWebExecutionBudget.swift', 'AgentIOSImageSearchRequestPolicy.swift',
     'AgentIOSPublicSearchParser.swift', 'AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebSourceHealth.swift']) {
     const current = require('./check-text-search-fusion-scope.cjs').retainedFusionHit(read(app + name)).replace('    var retrievalStatus: String? = nil\n', '');
-    assert.equal(current, show(base, app + name), name + ' retained (optional local-reference hit metadata only)');
+    const indexed = require('./check-web-cache-index-scope.cjs');
+    if (indexed.isIndexedCache(current)) indexed.validateIndexedCache();
+    else assert.equal(current, show(base, app + name), name + ' retained (optional local-reference hit metadata only)');
   }
   const tests = read('apps/ios/GalaxySSITests/AgentIOSJSONWebSearchAdapterTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 8);

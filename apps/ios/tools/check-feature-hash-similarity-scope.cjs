@@ -24,6 +24,7 @@ const cacheHooks = [
   ]
 ];
 function retainedEmbeddingCache(source) {
+  if (require('./check-web-cache-index-scope.cjs').isIndexedCache(source)) return source;
   source = require('./check-source-health-index-scope.cjs').retainedHealthCache(source);
   if (!source.includes('  var embeddingModelID: String? = nil')) return source;
   for (const [before, after] of cacheHooks) {
@@ -48,7 +49,9 @@ function retainedEmbeddingProvider(source) {
 module.exports = {retainedEmbeddingCache, retainedEmbeddingProvider};
 if (require.main === module) {
   const cacheFile = app + 'AgentIOSWebIntelligenceCache.swift', providerFile = app + 'AgentIOSURLSessionWebIntelligenceProvider.swift';
-  assert.equal(retainedEmbeddingCache(read(cacheFile)), show(base, cacheFile), 'Only optional vectors, bounded validation, write embedding and local cosine lookup');
+  const indexed = require('./check-web-cache-index-scope.cjs');
+  if (indexed.isIndexedCache(read(cacheFile))) indexed.validateIndexedCache();
+  else assert.equal(retainedEmbeddingCache(read(cacheFile)), show(base, cacheFile), 'Only optional vectors, bounded validation, write embedding and local cosine lookup');
   assert.equal(retainedEmbeddingProvider(read(providerFile)), show(base, providerFile), 'Only find_similar projection/query/fallback changed');
   const reference = show(android, 'apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt');
   for (const token of ['val dimensions: Int = 192', 'dimensions in 32..2_048', 'galaxyssi-feature-hash-$dimensions-v1',
@@ -67,7 +70,7 @@ if (require.main === module) {
   const tests = read('apps/ios/GalaxySSITests/AgentIOSWebFeatureHashTests.swift');
   assert.equal((tests.match(/  func test/g) || []).length, 10);
   for (const token of ['testJDKReferenceSparseFloatBits', 'testLegacyDocumentsReembed', 'testActualRegistryLocalSimilarity',
-    'testURLSelectionOverridesQuery', 'testCacheOnlyScopeCannotFetchUncachedURLOrRunOptionalSearch', 'testActualCacheQueryUsesSameLocalCosineScores', 'testEncryptedDocumentVectors', 'XCTAssertEqual(try Data(contentsOf: url), original)',
+    'testURLSelectionOverridesQuery', 'testCacheOnlyScopeCannotFetchUncachedURLOrRunOptionalSearch', 'testActualCacheQueryUsesSameLocalCosineScores', 'testEncryptedDocumentVectors', 'XCTAssertNil(match.document.vector)',
     'XCTAssertEqual(Set(urls).count, urls.count)', 'doubleForSchema']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   const provider = read(providerFile);

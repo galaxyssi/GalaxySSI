@@ -124,13 +124,13 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     var documents: [AgentMcpJSONObject] = []
     var results: [AgentMcpJSONObject] = []
     var actionMetadata: AgentMcpJSONObject = [:]
-    var cacheMetadata = cacheStore.stats()
+    var cacheMetadata = cacheStore.cacheMetadata()
     guard cacheMetadata["available"] != .bool(false) else {
       return failure("cache_unavailable", "The encrypted cache could not be read. Existing data was not replaced.", retryable: true)
     }
     switch action {
     case "status":
-      break
+      cacheMetadata = cacheStore.stats()
     case "query":
       let query = string(input, "query", limit: 4_096)
       guard !query.isEmpty else { return failure("invalid_query", "Cache similarity query requires non-empty text") }
@@ -149,7 +149,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard cleared["committed"] == .bool(true) else {
         return failure("cache_persistence_failed", "The cache change could not be saved.", retryable: true)
       }
-      cacheMetadata = cacheStore.stats().merging(cleared) { _, next in next }
+      cacheMetadata = cacheStore.cacheMetadata().merging(cleared) { _, next in next }
     case "learned_sources":
       let status = string(input, "status", limit: 32)
       guard status.isEmpty || ["candidate", "verified", "disabled"].contains(status) else {
@@ -178,7 +178,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       guard reset["committed"] == .bool(true) else {
         return failure("cache_persistence_failed", "The source health reset could not be saved.", retryable: true)
       }
-      cacheMetadata = cacheStore.stats().merging(reset) { _, next in next }
+      cacheMetadata = cacheStore.cacheMetadata().merging(reset) { _, next in next }
     default:
       return failure("invalid_cache_action", "Unsupported iOS web cache action")
     }
@@ -255,7 +255,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["query"] = .string(String(decoding: query.utf16.prefix(4_096), as: UTF16.self))
     output["results"] = .array(matches.prefix(limit).map { .object($0) })
     output["receipts"] = .array(receipts)
-    output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(!local.isEmpty)]) { _, next in next })
+    output["cache"] = .object(cacheStore.cacheMetadata().merging(["hit": .bool(!local.isEmpty)]) { _, next in next })
     output["metadata"] = .object(["embedding_model": .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)])
     var resultMetadata = metadata(operation: .findSimilar)
     resultMetadata["embedding_model"] = .string(AgentIOSWebFeatureHashEmbedder.standard.modelID)
@@ -377,7 +377,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     }
     var output = baseOutput(operation: .watch, invocation: invocation, status: "completed")
     output["watch"] = .object(watchValue)
-    output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(false)]) { _, next in next })
+    output["cache"] = .object(cacheStore.cacheMetadata().merging(["hit": .bool(false)]) { _, next in next })
     output["metadata"] = .object(watchMetadata)
     if let diffValue { output["diff"] = .object(diffValue) }
     return AgentNativeToolExecutionResult.success(
@@ -540,7 +540,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["source_receipts"] = .array(receipts.map { .object($0) })
     let canReadCache = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
       invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
-    output["cache"] = .object((canReadCache ? cacheStore.stats() : [:]).merging([
+    output["cache"] = .object((canReadCache ? cacheStore.cacheMetadata() : [:]).merging([
       "hit": .bool(cacheHit),
       "network_attempted": .bool(networkAttempted)
     ]) { _, next in next })
@@ -692,7 +692,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["content_sha256"] = .string(document.contentSHA256)
     output["source_receipts"] = .array([.object(receipt)])
     output["source"] = .object(receipt)
-    output["cache"] = .object(cacheStore.stats().merging([
+    output["cache"] = .object(cacheStore.cacheMetadata().merging([
       "hit": .bool(true),
       "shared_fetch": .bool(false)
     ]) { _, next in next })
@@ -721,7 +721,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     receipt["network_policy"] = .string("coalesced_public_https")
     result.output["source"] = .object(receipt)
     result.output["source_receipts"] = .array([.object(receipt)])
-    var cache = result.output["cache"]?.objectValue ?? cacheStore.stats()
+    var cache = result.output["cache"]?.objectValue ?? cacheStore.cacheMetadata()
     cache["hit"] = .bool(true)
     cache["shared_fetch"] = .bool(true)
     cache["waited_millis"] = .int(flight.waitedMillis)
@@ -1156,7 +1156,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     output["documents"] = .array(pageReads.documents.map { .object($0) })
     output["receipts"] = .array(allReceipts.map { .object($0) })
     output["source_receipts"] = .array(allReceipts.map { .object($0) })
-    output["cache"] = .object(cacheStore.stats().merging(["hit": .bool(false)]) { _, next in next })
+    output["cache"] = .object(cacheStore.cacheMetadata().merging(["hit": .bool(false)]) { _, next in next })
     output["synthesis_required"] = .bool(true)
     output["research"] = .object([
       "query_plan": .array(queryPlan.map { .object($0.publicValue) }),
@@ -1289,7 +1289,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     if let article = webResult.output["article"]?.objectValue {
       output["article"] = .object(article)
     }
-    output["cache"] = .object(cacheStore.stats().merging([
+    output["cache"] = .object(cacheStore.cacheMetadata().merging([
       "hit": .bool(false),
       "shared_fetch": .bool(false)
     ]) { _, next in next })

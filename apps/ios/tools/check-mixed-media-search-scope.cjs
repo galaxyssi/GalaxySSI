@@ -160,6 +160,7 @@ const hooks = {
   ]
 };
 function retainedMixedSource(source) {
+  source = require('./check-web-cache-index-scope.cjs').retainedMetadataProvider(source);
   source = require('./check-public-address-policy-scope.cjs').retainedAddressProvider(source);
   let kind;
   if (source.includes('let merged = AgentIOSWebSearchFusion.fuse')) kind = 'raw';
@@ -213,7 +214,10 @@ if (require.main === module) {
   assert.equal(project.split('AgentIOSMixedWebSearchTests.swift in Sources */').length, 3);
   for (const file of ['AgentIOSWebIntelligenceCache.swift', 'AgentIOSWebExecutionBudget.swift', 'AgentIOSWebSourceHealth.swift',
     'AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSJSONWebSearchAdapter.swift', 'AgentIOSImageSearchFusion.swift',
-    'AgentIOSWebFeatureHashEmbedder.swift']) assert.equal(
-      require('./check-source-health-index-scope.cjs').retainedHealthCache(read(app + file)), show(base, app + file), file);
+    'AgentIOSWebFeatureHashEmbedder.swift']) {
+      const source = read(app + file), indexed = require('./check-web-cache-index-scope.cjs');
+      if (indexed.isIndexedCache(source)) indexed.validateIndexedCache();
+      else assert.equal(require('./check-source-health-index-scope.cjs').retainedHealthCache(source), show(base, app + file), file);
+    }
   console.log('Pinned mixed/direct/learned-image routing, one global fusion score, typed-media/topic distinction and unchanged network/header/cache controls checked as source. No native execution or live media acceptance.');
 }

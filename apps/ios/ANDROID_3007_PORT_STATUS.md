@@ -241,6 +241,49 @@ workspace indexing, native SQL/crypto/migration/concurrency/lock behavior and
 performance acceptance remain incomplete. No XCTest, native build, CI or device
 run is claimed by source guards, grammar parsing or fixture instrumentation.
 
+## Unified Indexed Cache
+
+Documents, exact search responses, watches and learned sources now share one
+protected encrypted SQLite index. Keep the separate health domain because full
+cache clear deliberately retains it. Clear deletes document/search/learned rows
+and rotates the authenticated search-cache generation in the same transaction;
+watches remain. Response writes check that persisted generation inside their
+transaction, so another handle cannot repopulate a successfully cleared cache
+with an earlier response. Expired-only clear preserves the generation and the
+reference's distinct document (< now) and search (<= now) expiry boundaries.
+
+Point document/response/watch reads use HMAC-keyed indexes. Learning updates only
+observed sources in one transaction; routing reads learned rows plus health, not
+document bodies. Hot response metadata uses indexed counts/character sums, not
+full snapshots or source-health payload decoding. Explicit status retains circuit
+details. Increase document retention to the pinned Android 2,000 limit. Document
+and learned eviction uses insertion row IDs, including refreshed older sources;
+response/watch bounds remain 32/100. Similarity and lexical fallback scan one
+document at a time and retain at most 100 ranked hits; they remain linear scans,
+not ANN lookup or a whole-App RSS/latency guarantee. Preserve feature-hash math,
+public document/watch projections, exact response validation/TTL/result bounds,
+cache permissions, credentials, source scoring and transport behavior.
+
+The old v1 decoder is import-only with its original 64-document bound. Import
+validates rows and commits all four domains with an encrypted marker. Share the
+decoded health records with the health import instead of decoding bodies again.
+Pending/committed non-secret import flags allow interrupted retries and reject
+fallback after a committed index is lost or corrupted. Namespace/AAD-bound keys
+use the existing master and stable application-relative identity. Retire the old
+encrypted file only after the indexes and import receipts commit. Failed unlink
+is retried and reported as legacy_cleanup_pending; no forensic erase, cross-store
+Keychain/SQLite atomicity or downgrade-writer interoperability is claimed.
+
+Seven additional source-only fixtures cover indexed counts/point reads, atomic
+clear/generation and watch retention, expiry boundaries, 2,000-row pruning,
+refreshed-source insertion recency, rollback/import fencing and actual facade
+import/clear without reopening the old archive. Existing failure fixtures now use
+pre-commit injection and inspect index storage; cleanup removes owned temporary
+database families. They are not executed. Historical snapshot-only scope checks
+delegate explicitly to the new index contracts; they do not substitute an old
+source copy for the new implementation. Native compilation, SQL/crypto/fault/
+locking/backup acceptance and measured performance remain unverified.
+
 ## Remaining Work
 
 The following incremental subsections retain their historical scope at the time
@@ -330,7 +373,7 @@ of each change. The current remaining scope is summarized after those records.
 - A ninth source scope guard checks the pinned Android selection/fusion branches and declared new source hooks, with prior guards restoring only those hooks before their own comparisons. Source/project/grammar checks do not prove native typechecking, API/markup availability, image retrieval/visual relevance, cancellation races or UI/device acceptance.
 - Remaining: indexed storage/workspace performance and larger storage/evidence limits, other media behaviors, transcript/context paths, model-loop spans/UI timing, connection-IP pinning/ranges and native/live/fault/performance acceptance. No native build/XCTest, CI watching, IPA, version or Android/Desktop edits. This does not complete #3007 or the full backlog.
 
-Current remaining scope: document/search/watch/learned and aggregate-metadata indexing, workspace indexed storage and larger corpus/result limits, broader transcript/context paths, other media/relevance behavior, UI/end-to-end timing and connection-IP pinning/complete special-purpose address classification. Source-health indexing and four provider-round diagnostic spans are now wired in source, not measured or native-accepted. Real SQL/crypto/migration/locking/media, learning/routing/workspace fault/concurrency, model/transport budget and renderer recovery acceptance remain unverified. Source integration and fixtures are not runtime acceptance.
+Current remaining scope: workspace indexed storage/transactions, remaining public-result/media limits, broader transcript/context paths, other media/relevance behavior, UI/end-to-end timing and connection-IP pinning/complete special-purpose address classification. All web-cache domains, aggregate metadata and 2,000-document retention are now indexed in source, alongside source health and four provider-round diagnostic spans. Real SQL/crypto/migration/locking/backup/media, learning/routing/workspace fault/concurrency, model/transport budget and renderer recovery acceptance remain unverified. Source integration and fixtures are not runtime acceptance.
 
 `check-public-search-parsing-scope.cjs` pins all Android changed files and checks actual parser/evidence/project wiring, renderer lifecycle and configured cloud round/tool deadline wiring, while retaining raw HTTP policy, URL/auth restrictions, configurable limit definitions, coordination/admission/recall, annotation, finalization schemas and main service code against the predecessor. These are source contracts, not Swift type checking or runtime acceptance. Windows has no Xcode: no dependency resolution/build/XCTest, live search, WebKit failure/recovery, UI, network latency or device claims. Android measurements do not transfer to iOS.
 

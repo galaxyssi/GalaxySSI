@@ -52,7 +52,9 @@ show(base, engineFile), 'Execution budget and validation unchanged except regist
 for (const file of ['AgentIOSImageSearchRequestPolicy.swift', 'AgentIOSPublicSearchParser.swift',
   'AgentIOSWebSourceHealth.swift', 'AgentIOSWebIntelligenceCache.swift']) {
   const current = require('./check-text-search-fusion-scope.cjs').retainedFusionHit(read(app + file)).replace('    var retrievalStatus: String? = nil\n', '');
-  assert.equal(current, show(base, app + file), file + ' unchanged except optional local-reference hit metadata');
+  const indexed = require('./check-web-cache-index-scope.cjs');
+  if (indexed.isIndexedCache(current)) indexed.validateIndexedCache();
+  else assert.equal(current, show(base, app + file), file + ' unchanged except optional local-reference hit metadata');
 }
 const loader = read(app + 'AgentIOSIndexedWebSourceCatalog.swift');
 for (const token of ['Bundle.main.url(forResource: "web-indexed-sources", withExtension: "json")',
