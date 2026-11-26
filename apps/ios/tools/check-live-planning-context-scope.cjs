@@ -4,7 +4,7 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '5f6297c3cf8348fa777e5c80cdee5f46cf7c10a1';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-background-cognition-scope.cjs').retainedBackgroundCognitionFile(f,
-  clean(fs.readFileSync(path.join(root, f), 'utf8')));
+  require('./check-research-source-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {

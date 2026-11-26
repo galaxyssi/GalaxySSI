@@ -1477,7 +1477,8 @@ final class MessageCoordinator: ObservableObject {
         taskId: request.taskId,
         systemPrompt: request.systemPrompt,
         prompt: request.prompt,
-        nowMillis: nowMillis
+        nowMillis: nowMillis,
+        stillAuthorized: { GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: self.store, request: request) }
       )
     case .pairedAgent:
       guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }

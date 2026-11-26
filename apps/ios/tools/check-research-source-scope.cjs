@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '49c2522d05cef989f00fcde7474bb38d117bc7fb';
+const base = '17441c5c98b4a1d20eef6b9ac8c8aa3f20ae638f';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
@@ -71,12 +71,14 @@ function validate() {
   const models = read(app + 'GlobalResearchExecutorModels.swift');
   for (const token of ['sensitivity != .sessionPrivate', 'metadata["source_conversation_ids"] != nil',
     'metadata["long_horizon_goal_id"] == goalId', 'sources.isSubset(of: scope.allowedConversationIds)',
+    'ids.formUnion(cognition.contextConversationIds ?? [])', 'guard cognition.contextConversationIds != nil',
     'sources.contains(task.sourceConversationId)', 'response.sourceMessageId > 0',
     'response.contactId == request.resourceId', 'sourceConversationIds: task.sourceConversationIds']) assert(models.includes(token), token);
   const claim = section(read(app + 'GlobalResearchExecutorPolicy.swift'), '  static func claimTask(', '  private static func isClaimable(');
   assert(claim.indexOf('.filter(eligible)') < claim.indexOf('.map { GlobalResearchTaskPolicy.recoverIfStale'));
   const services = section(read(app + 'GalaxySSIServices.swift'), '  private func dispatchGlobalResearchRequest(', '  func publicAttentionLink(');
   assert.equal(services.split('permitsResearchRequest(store: store, request: request)').length, 4);
+  assert(services.includes('stillAuthorized: { GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: self.store, request: request) }'));
   const fixtures = read('apps/ios/GalaxySSITests/GlobalResearchExecutorPolicyTests.swift');
   assert.equal((fixtures.match(/  func test/g) || []).length - (old('apps/ios/GalaxySSITests/GlobalResearchExecutorPolicyTests.swift').match(/  func test/g) || []).length, 8);
   for (const name of ['GlobalRealtimePlanningScope', 'GlobalRealtimeContextProvider', 'PublicAttentionPreferences',

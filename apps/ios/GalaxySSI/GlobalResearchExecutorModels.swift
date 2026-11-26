@@ -16,6 +16,10 @@ enum GlobalResearchSourceScope {
     let synthetic = !goalId.isEmpty && primary == "global-goal:\(goalId)" &&
       metadata["origin"] == "global_long_horizon_scheduler"
     if !primary.isEmpty && !synthetic { ids.insert(primary) }
+    if cognition.status == .completed || cognition.result != GlobalModelUnderstanding() {
+      guard cognition.contextConversationIds != nil else { return nil }
+    }
+    ids.formUnion(cognition.contextConversationIds ?? [])
     return ids
   }
 

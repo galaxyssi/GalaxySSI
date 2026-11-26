@@ -42,6 +42,10 @@ final class GlobalResearchExecutorPolicyTests: XCTestCase {
     var cognition = researchCognition()
     cognition.sourceEvent.metadata["source_conversation_ids"] = " secondary, conversation-main, ,secondary "
     XCTAssertEqual(GlobalResearchSourceScope.sourceIds(from: cognition), ["conversation-main", "secondary"])
+    cognition.status = .completed
+    XCTAssertNil(GlobalResearchSourceScope.sourceIds(from: cognition))
+    cognition.contextConversationIds = ["context-source"]
+    XCTAssertEqual(GlobalResearchSourceScope.sourceIds(from: cognition), ["conversation-main", "secondary", "context-source"])
     cognition.sourceEvent.sensitivity = .sessionPrivate
     XCTAssertNil(GlobalResearchSourceScope.sourceIds(from: cognition))
   }
