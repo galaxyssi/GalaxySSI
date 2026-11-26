@@ -11,6 +11,7 @@ function section(s, first, last) {
   assert(a >= 0 && b > a, first); assert.equal(s.split(first).length, 2, first); return s.slice(a, b);
 }
 function retained(file, s) {
+  s = require('./check-connector-observation-timing-scope.cjs').retained(file, s);
   if (file.endsWith('GalaxySSIGlobalAutonomousResearchRuntime.swift') && s.includes('next.sourceConversationIds = current.sourceConversationIds.map')) {
     return once(s, '      next.sourceConversationIds = current.sourceConversationIds.map { $0.union(researchSources) }\n', '');
   }
@@ -89,7 +90,9 @@ function validate() {
     assert.equal((read(file).match(/  func test/g) || []).length - (old(file).match(/  func test/g) || []).length, count);
   }
   for (const name of ['GalaxySSIServices', 'GlobalBackgroundCognitionScope', 'GalaxySSIGlobalAutonomousRuntime',
-    'AgentCognitiveGovernance', 'AgentRecordedRunStore', 'GlobalResearchPromptBuilder']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name + ': unchanged dependency');
+    'AgentCognitiveGovernance', 'AgentRecordedRunStore', 'GlobalResearchPromptBuilder']) assert.equal(
+      require('./check-connector-observation-timing-scope.cjs').retained(app + name + '.swift', read(app + name + '.swift')),
+      old(app + name + '.swift'), name + ': unchanged dependency outside observation timing metadata');
   console.log('Complete context source unions, recorded dispatch proof and accepted-source retention contracts passed; no native acceptance');
 }
 if (require.main === module) validate();
