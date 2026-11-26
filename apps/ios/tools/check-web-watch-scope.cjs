@@ -27,6 +27,7 @@ function retainedWatchIndex(source) {
   return source.replace(section(source, '  func compareAndPutWatch(', '  func clear('), '');
 }
 function retainedWatchFile(name, source) {
+  if (name === 'AgentIOSURLSessionWebMediaProvider') return require('./check-encoded-web-request-scope.cjs').retainedEncodedMedia(source);
   if (name === 'AgentIOSWebIntelligenceCache') return retainedWatchCache(source);
   if (name === 'AgentIOSWebCacheIndex') return retainedWatchIndex(source);
   return source;
@@ -37,7 +38,7 @@ function validateWebWatch() {
     assert.equal(normalize(read(app + name + '.swift')), old(app + name + '.swift'), name + ': only declared watch hooks change');
   for (const name of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSURLSessionWebMediaProvider', 'AgentIOSWebPageDiff',
     'AgentIOSWebCrawlPolicy', 'AgentIOSWebLocalExtraction', 'AgentIOSWebExecutionBudget', 'AgentIOSWebEvidencePack'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(retainedWatchFile(name, read(app + name + '.swift')), old(app + name + '.swift'), name);
   const provider = section(read(app + 'AgentIOSURLSessionWebIntelligenceProvider.swift'), '  private func watch(', '  private func search(');
   for (const token of ['cachePermission', 'cacheConsent', 'networkPermission', 'publicWebConsent', 'try invocation.checkpoint()',
     'try cacheStore.watchRecord(id: id)', 'cacheStore.watchSnapshot()', 'AgentIOSWebWatchPolicy.isDue(item, now: now)',

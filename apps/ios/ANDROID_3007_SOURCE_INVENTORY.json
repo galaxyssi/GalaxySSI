@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed workspace/cache, scoped health/learning, pinned adapters, mixed default-10/max-100 search, bounded BFS crawl, URL/local extraction, ordered-line page diff, invoked watch failure receipts/completion timing/conditional progress commits, typed media versus topic pages, explicit-cleanup search-key retention with bounded individual responses/inclusive expiry, feature-hash similarity and diagnostics. Health tasks remain sealed. DNS preflight is not connection pinning. Per-response byte bounds/OS watch scheduling/other media/context parity, UI/end-to-end timing and native acceptance remain incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed workspace/cache, scoped health/learning, pinned adapters, mixed default-10/max-100 search, bounded BFS crawl, URL/local extraction, ordered-line page diff, invoked watch failure receipts/completion timing/conditional progress commits, typed media versus topic pages, explicit-cleanup search-key retention with bounded individual responses/inclusive expiry, encoded request/redirect identity preservation, feature-hash similarity and diagnostics. Health tasks remain sealed. DNS preflight is not connection pinning. Per-response byte bounds/OS watch scheduling/other media/context parity, UI/end-to-end timing and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -117,7 +117,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMediaNativeTools.kt",
       "sha256": "dd486aba148ae275a65fee1d002c51bae3b596fca7f0286340e733a597894d0e",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Ported the actual changed encoded-address behavior: validate HTTPS/public host/credentials/port without decoding or rebuilding encoded paths and queries, normalize authority/empty path and strip fragments before dispatch, and preserve case-sensitive path/query redirect identities. Existing manual per-hop revalidation, HTTP/header/credential/body/deadline policies retained. Seven native fixture methods authored only, including the exact Android encoded/signed redirect sample. Not native Foundation/URLSession/DNS or full WebMedia parity"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebRendererHealth.kt",
@@ -242,7 +242,7 @@
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebMediaNativeToolsTest.kt",
       "sha256": "17027cfc63722eda79c2e562c8d01c9f3475a65713fee2ad5f442a843fbb29de",
-      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+      "disposition": "Exact Android encoded path/query/signed redirect sample copied into an actual iOS registry/injected transport fixture, plus relative redirects, case-sensitive identities, fragment loops, empty path and private/credentialed/insecure redirect rejection. Seven fixture methods SOURCE ONLY, NOT executed; not full Android test coverage"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebRendererHealthTest.kt",

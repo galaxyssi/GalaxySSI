@@ -38,7 +38,8 @@ function validateSearchRetention() {
     old(tests + 'AgentIOSWebCacheIndexTests.swift'), 'Only equality boundary fixture changes');
   for (const name of ['AgentIOSURLSessionWebIntelligenceProvider', 'AgentIOSURLSessionWebMediaProvider', 'AgentIOSWebWatchPolicy',
     'AgentIOSWebSearchCapacity', 'AgentIOSWebIntelligenceNativeTools', 'AgentIOSWebPageDiff'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(name === 'AgentIOSURLSessionWebMediaProvider' ? require('./check-encoded-web-request-scope.cjs').retainedEncodedMedia(read(app + name + '.swift'))
+      : read(app + name + '.swift'), old(app + name + '.swift'), name);
   const start = index.indexOf('  func putSearch('), end = index.indexOf('  func compareAndPutWatch(', start);
   assert(start >= 0 && end > start);
   const put = index.slice(start, end);

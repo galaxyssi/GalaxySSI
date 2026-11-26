@@ -23,6 +23,7 @@ function retainedCrawlProvider(source) {
   return source.replace('  private func titleFromHTML(', section(prior, '  private func urlAllowed(', '  private func titleFromHTML(') + '  private func titleFromHTML(');
 }
 function retainedCrawlMedia(source) {
+  source = require('./check-encoded-web-request-scope.cjs').retainedEncodedMedia(source);
   const hook = 'let links = AgentIOSWebCrawlPolicy.links(output: ["text": .string(html)], baseURL: resource.finalURL, rawHTML: true)\n          output["links"] = .array(links.map(AgentMcpJSONValue.string))';
   if (!source.includes(hook)) return source;
   assert.equal(source.split(hook).length, 2);

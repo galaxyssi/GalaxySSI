@@ -1620,6 +1620,9 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       throw AgentIOSURLSessionWebError.localHostBlocked
     }
     components.scheme = "https"
+    components.host = host.lowercased()
+    components.fragment = nil
+    if components.percentEncodedPath.isEmpty { components.percentEncodedPath = "/" }
     guard let url = components.url else {
       throw AgentIOSURLSessionWebError.invalidURL
     }
@@ -2067,7 +2070,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   }
 
   private func canonicalURL(_ url: URL) -> String {
-    url.absoluteString.lowercased()
+    // Authority is normalized during validation; paths and signed queries are case-sensitive.
+    url.absoluteString
   }
 
   private func string(_ input: AgentMcpJSONObject, _ key: String, limit: Int) -> String {
