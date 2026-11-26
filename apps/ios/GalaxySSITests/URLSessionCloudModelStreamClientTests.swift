@@ -165,6 +165,31 @@ final class URLSessionCloudModelStreamClientTests: XCTestCase {
     XCTAssertTrue(rolledBack.session === second.session)
   }
 
+  func testInboundDiagnosticStagesUseOnlyFixedNonidentifyingNames() {
+    XCTAssertEqual(Set(MqttInboundDebugTiming.Stage.allCases.map(\.rawValue)),
+      Set(["queue", "handle", "wire_open", "signal_decrypt_store", "inbox_dispatch"]))
+  }
+
+  func testInboundDiagnosticMonotonicDurationDoesNotUnderflowOrOverflow() {
+    XCTAssertEqual(MqttInboundDebugTiming.elapsedMillis(start: 0, end: 999_999), 0)
+    XCTAssertEqual(MqttInboundDebugTiming.elapsedMillis(start: 1, end: 1_000_001), 1)
+    XCTAssertEqual(MqttInboundDebugTiming.elapsedMillis(start: UInt64.max, end: 0), 0)
+    XCTAssertEqual(MqttInboundDebugTiming.elapsedMillis(start: 0, end: UInt64.max), UInt64.max / 1_000_000)
+  }
+
+  func testInboundDiagnosticMeasurementPreservesReturnThrowAndSingleInvocation() {
+    enum Failure: Error { case fixture }
+    var calls = 0
+    XCTAssertEqual(MqttInboundDebugTiming.measure(.signalDecryptStore) { calls += 1; return 42 }, 42)
+    XCTAssertEqual(calls, 1)
+    XCTAssertThrowsError(try MqttInboundDebugTiming.measure(.inboxDispatch) { () throws -> Int in
+      calls += 1; throw Failure.fixture
+    }) { error in
+      guard let failure = error as? Failure, case .fixture = failure else { return XCTFail("Diagnostic wrapper changed the error") }
+    }
+    XCTAssertEqual(calls, 2)
+  }
+
   func testSSEFrameAccumulatorCombinesEventAndMultilineData() {
     let accumulator = ModelStreamFrameAccumulator(transport: .sse)
     var frames: [ModelStreamFrame] = []

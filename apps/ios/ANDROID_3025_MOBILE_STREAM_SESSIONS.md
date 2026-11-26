@@ -40,5 +40,6 @@ Combined with the initial increment this PR authors nine new test methods.
 Scoped JavaScript checks verify call placement, ownership, unchanged active/trial
 paths and retained code only; they do not execute URLSession or prove TCP-level
 behavior. No native/model/network/device tests, latency measurement, CI monitoring
-or IPA are performed. MQTT stage diagnostics, ordered-image/caption equivalence
+or IPA are performed. A later #4610 increment adds DEBUG-only MQTT stage probes
+documented in ANDROID_3025_MQTT_INBOUND_TIMING.md; ordered-image/caption equivalence
 and overall Android parity remain separate work.

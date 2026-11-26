@@ -26,8 +26,9 @@ guidance, source verification, permission/consent and disclosure paths remain.
 - Android CloudWebGrounding: existing iOS simple weather/news, dated-source,
   no-duplicate-caption guidance and unplanned fast defaults are retained; this
   increment fixes the missed dedicated image count and clarifies retrieval intent.
-- Android MQTT receive timing: not changed here. Existing iOS encrypted receipt,
-  replay and dispatch code is retained; timing/diagnostic parity is not certified.
+- Android MQTT receive timing: the later #4610 increment adds DEBUG-only probes
+  at actual iOS stages; see ANDROID_3025_MQTT_INBOUND_TIMING.md. Existing encrypted
+  receipt, replay and dispatch behavior is retained; native timing is unverified.
 - Android OkHttp idle retention/HTTP2 pings: the follow-up in
   ANDROID_3025_MOBILE_STREAM_SESSIONS.md adds owned idle-only session rotation
   without lowering active deadlines. No matching HTTP2 ping control is claimed;

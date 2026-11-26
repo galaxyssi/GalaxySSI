@@ -1,4 +1,10 @@
 import Foundation
+import os
+
+private struct MqttTimedIngress {
+  let ingress: MqttAuthenticatedIngress
+  let queued = MqttInboundDebugTiming.start(.queue)
+}
 
 // Owns one journal-backed Signal engine and one broker configuration. The application
 // supplies durable projections and the foreground/recovery cadence; it owns migration.
@@ -399,15 +405,17 @@ final class MqttBusinessTransportRuntime {
     try routes.replace(peers.map(\.binding))
     self.identities = identities
     remoteNames = Dictionary(uniqueKeysWithValues: peers.map { ($0.binding.scope, $0.remoteSignalName) })
-    var captured: AsyncStream<MqttAuthenticatedIngress>.Continuation?
-    let ingressStream = AsyncStream<MqttAuthenticatedIngress>(bufferingPolicy: .bufferingOldest(32)) { captured = $0 }
+    var captured: AsyncStream<MqttTimedIngress>.Continuation?
+    let ingressStream = AsyncStream<MqttTimedIngress>(bufferingPolicy: .bufferingOldest(32)) { captured = $0 }
     guard let continuation = captured else { throw MqttDeliveryDispatch.Failure.unavailable }
     pool.onPathState = { [weak routes = self.routes] in routes?.synchronize($0) }
-    pool.onAuthenticatedIngress = { ingress in _ = continuation.yield(ingress) }
+    pool.onAuthenticatedIngress = { ingress in _ = continuation.yield(MqttTimedIngress(ingress: ingress)) }
     ingressTask = Task { [weak self] in
       defer { continuation.finish() }
-      for await ingress in ingressStream {
+      for await queued in ingressStream {
         guard !Task.isCancelled, let self, !self.stopped else { return }
+        queued.queued.finish()
+        let ingress = queued.ingress
         do { try await self.receive(ingress) } catch { self.onFailure(error) }
       }
     }
@@ -758,6 +766,8 @@ final class MqttBusinessTransportRuntime {
   }
 
   private func receive(_ ingress: MqttAuthenticatedIngress) async throws {
+    let timing = MqttInboundDebugTiming.start(.handle)
+    defer { timing.finish() }
     try refreshDirectPeerBindings()
     let received = try await routes.receive(ingress)
     guard !stopped, !received.handled, let packet = received.packet else { return }
@@ -780,7 +790,9 @@ final class MqttBusinessTransportRuntime {
       return
     }
     guard packet.payload["scheme"] as? String == "signal" else { return }
-    let accepted = try routes.decryptAndStore(packet, using: engine, remoteName: remoteName)
+    let accepted = try MqttInboundDebugTiming.measure(.signalDecryptStore) {
+      try routes.decryptAndStore(packet, using: engine, remoteName: remoteName)
+    }
     guard let receipt = accepted.receipt else { return }
     if packet.payload[MqttDeliveryEnvelope.field] != nil {
       let frame = try MqttDeliveryEnvelope.parseVerifiedFrame(packet.payload, sender: packet.sender,
@@ -886,8 +898,10 @@ final class MqttBusinessTransportRuntime {
       guard let wire = try JSONSerialization.jsonObject(with: Data(assembled.utf8)) as? [String: Any] else {
         throw MqttRouteError.invalidPayload
       }
-      let accepted = try engine.decryptAndStore(wire, identity: identity, remoteName: remoteName,
-        ingressBroker: packet.ingress.brokerID)
+      let accepted = try MqttInboundDebugTiming.measure(.signalDecryptStore) {
+        try engine.decryptAndStore(wire, identity: identity, remoteName: remoteName,
+          ingressBroker: packet.ingress.brokerID)
+      }
       if let receipt = accepted.receipt {
         proof = try journal.inbox.storedReceipt(identity: identity, messageID: receipt.messageID, wireHash: receipt.wireHash)
         if let proof {
@@ -910,6 +924,8 @@ final class MqttBusinessTransportRuntime {
       guard !stopped else { return }
       inboxCursor = item.key
       do {
+        let timing = MqttInboundDebugTiming.start(.inboxDispatch)
+        defer { timing.finish() }
         guard let payload = try JSONSerialization.jsonObject(with: item.payload) as? [String: Any] else {
           throw MqttRouteError.invalidPayload
         }
@@ -1266,5 +1282,48 @@ final class MqttBusinessTransportRuntime {
     try await withCheckedThrowingContinuation { continuation in
       attachmentQueue.async { continuation.resume(with: Result { try work() }) }
     }
+  }
+}
+
+// Stages are a fixed allowlist. No payload, route, identity or error text can enter
+// this diagnostic channel. Release builds take no timestamps and emit no logs.
+enum MqttInboundDebugTiming {
+  enum Stage: String, CaseIterable {
+    case queue
+    case handle
+    case wireOpen = "wire_open"
+    case signalDecryptStore = "signal_decrypt_store"
+    case inboxDispatch = "inbox_dispatch"
+  }
+  #if DEBUG
+  private static let logger = Logger(subsystem: "com.galaxyssi.chat.ios", category: "mqtt-latency")
+  #endif
+
+  struct Span {
+    private let stage: Stage
+    #if DEBUG
+    private let started: UInt64
+    #endif
+    init(_ stage: Stage) {
+      self.stage = stage
+      #if DEBUG
+      started = DispatchTime.now().uptimeNanoseconds
+      #endif
+    }
+    func finish() {
+      #if DEBUG
+      let elapsed = MqttInboundDebugTiming.elapsedMillis(start: started, end: DispatchTime.now().uptimeNanoseconds)
+      MqttInboundDebugTiming.logger.debug("mqtt_inbound stage=\(stage.rawValue, privacy: .public) ms=\(elapsed, privacy: .public)")
+      #endif
+    }
+  }
+  static func start(_ stage: Stage) -> Span { Span(stage) }
+  static func measure<T>(_ stage: Stage, _ work: () throws -> T) rethrows -> T {
+    let span = start(stage)
+    defer { span.finish() }
+    return try work()
+  }
+  static func elapsedMillis(start: UInt64, end: UInt64) -> UInt64 {
+    end >= start ? (end - start) / 1_000_000 : 0
   }
 }

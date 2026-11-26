@@ -3,10 +3,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), cp = requ
 const root = path.resolve(__dirname, '../../..'), base = '1a9f176ca540b177d756ccac5be4685c5cfc9295';
 const client = 'apps/ios/GalaxySSI/URLSessionCloudModelStreamClient.swift';
 const fixture = 'apps/ios/GalaxySSITests/URLSessionCloudModelStreamClientTests.swift';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-mqtt-inbound-timing-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(f, s) {
+  s = require('./check-mqtt-inbound-timing-scope.cjs').retained(f, s);
   if (f === client && s.includes('final class CloudModelStreamSessionPool {')) return s
     .replace(section(s, '// Retire only owned, completely idle sessions', 'private extension String {'), '')
     .replace('  private let sessions: CloudModelStreamSessionPool', '  private let session: URLSession')
