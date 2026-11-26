@@ -114,6 +114,14 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Exclusive Desktop probe ownership follow-up
+
+See `ANDROID_3119_DESKTOP_PROBE_OWNERSHIP.md`: the shared ordinary Desktop sweep
+no longer advances the journal query clock through an offline legacy probe.
+Existing journal readiness/identity checks, legacy offline accounting, result
+projection and Codex replay remain unchanged. This is not generic active timeout
+observation or native/network acceptance.
+
 ### Scored main-service route context follow-up
 
 See `ANDROID_3119_SCORED_ROUTE_CONTEXT.md`: main Auto choice, dispatch refresh
