@@ -2289,6 +2289,7 @@
     A10000000000000000003E4C /* AgentKnowledgePrimaryCompaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E4C /* AgentKnowledgePrimaryCompaction.swift */; };
     A10000000000000000003E4E /* AgentKnowledgePrimaryCopyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E4E /* AgentKnowledgePrimaryCopyState.swift */; };
     A10000000000000000003E50 /* AgentKnowledgePrimaryCopyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E50 /* AgentKnowledgePrimaryCopyStore.swift */; };
+    A10000000000000000003E52 /* AgentKnowledgePrimaryMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E52 /* AgentKnowledgePrimaryMetadata.swift */; };
     A10000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift */; };
     A10000000000000000003E47 /* AgentKnowledgeSQLiteStatementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E47 /* AgentKnowledgeSQLiteStatementsTests.swift */; };
     A10000000000000000003E49 /* AgentKnowledgeReadConnectionPoolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E49 /* AgentKnowledgeReadConnectionPoolTests.swift */; };
@@ -2296,6 +2297,7 @@
     A10000000000000000003E4D /* AgentKnowledgePrimaryCompactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E4D /* AgentKnowledgePrimaryCompactionTests.swift */; };
     A10000000000000000003E4F /* AgentKnowledgePrimaryCopyStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E4F /* AgentKnowledgePrimaryCopyStateTests.swift */; };
     A10000000000000000003E51 /* AgentKnowledgePrimaryCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E51 /* AgentKnowledgePrimaryCopyTests.swift */; };
+    A10000000000000000003E53 /* AgentKnowledgePrimaryMetadataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E53 /* AgentKnowledgePrimaryMetadataTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4641,6 +4643,7 @@
     A20000000000000000003E4C /* AgentKnowledgePrimaryCompaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCompaction.swift; sourceTree = "<group>"; };
     A20000000000000000003E4E /* AgentKnowledgePrimaryCopyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCopyState.swift; sourceTree = "<group>"; };
     A20000000000000000003E50 /* AgentKnowledgePrimaryCopyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCopyStore.swift; sourceTree = "<group>"; };
+    A20000000000000000003E52 /* AgentKnowledgePrimaryMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryMetadata.swift; sourceTree = "<group>"; };
     A20000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryAllocationsTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E47 /* AgentKnowledgeSQLiteStatementsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSQLiteStatementsTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E49 /* AgentKnowledgeReadConnectionPoolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeReadConnectionPoolTests.swift; sourceTree = "<group>"; };
@@ -4648,6 +4651,7 @@
     A20000000000000000003E4D /* AgentKnowledgePrimaryCompactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCompactionTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E4F /* AgentKnowledgePrimaryCopyStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCopyStateTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E51 /* AgentKnowledgePrimaryCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryCopyTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E53 /* AgentKnowledgePrimaryMetadataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryMetadataTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5624,6 +5628,7 @@
         A20000000000000000003E4C /* AgentKnowledgePrimaryCompaction.swift */,
         A20000000000000000003E4E /* AgentKnowledgePrimaryCopyState.swift */,
         A20000000000000000003E50 /* AgentKnowledgePrimaryCopyStore.swift */,
+        A20000000000000000003E52 /* AgentKnowledgePrimaryMetadata.swift */,
 		D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
@@ -6682,6 +6687,7 @@
         A20000000000000000003E4D /* AgentKnowledgePrimaryCompactionTests.swift */,
         A20000000000000000003E4F /* AgentKnowledgePrimaryCopyStateTests.swift */,
         A20000000000000000003E51 /* AgentKnowledgePrimaryCopyTests.swift */,
+        A20000000000000000003E53 /* AgentKnowledgePrimaryMetadataTests.swift */,
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
@@ -8505,6 +8511,7 @@
         A10000000000000000003E4C /* AgentKnowledgePrimaryCompaction.swift in Sources */,
         A10000000000000000003E4E /* AgentKnowledgePrimaryCopyState.swift in Sources */,
         A10000000000000000003E50 /* AgentKnowledgePrimaryCopyStore.swift in Sources */,
+        A10000000000000000003E52 /* AgentKnowledgePrimaryMetadata.swift in Sources */,
 		D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
@@ -9144,6 +9151,7 @@
         A10000000000000000003E4D /* AgentKnowledgePrimaryCompactionTests.swift in Sources */,
         A10000000000000000003E4F /* AgentKnowledgePrimaryCopyStateTests.swift in Sources */,
         A10000000000000000003E51 /* AgentKnowledgePrimaryCopyTests.swift in Sources */,
+        A10000000000000000003E53 /* AgentKnowledgePrimaryMetadataTests.swift in Sources */,
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,

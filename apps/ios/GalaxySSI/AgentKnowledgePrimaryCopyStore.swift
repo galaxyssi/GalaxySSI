@@ -42,6 +42,11 @@ enum AgentKnowledgePrimaryCopyStore {
       guard try row($0) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     }
   }
+  static func accountMetadata(_ db: OpaquePointer, _ job: Job, previous: Int64, added: Int64) throws {
+    guard added >= 0, previous >= 0, previous <= Int64.max - added else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    try run(db, "UPDATE knowledge_primary_partitions SET bytes=bytes+? WHERE partition_id=? AND bytes=? AND sealed=1 AND records=1",
+      [.integer(added), .text(job.destination), .integer(previous)])
+  }
   static func checkpoint(_ db: OpaquePointer, _ job: Job, sealed: Data, bytes: Int64) throws {
     try run(db, "UPDATE knowledge_primary_partitions SET bytes=? WHERE partition_id=? AND sealed=1 AND records=1", [.integer(bytes), .text(job.destination)])
     try run(db, "UPDATE knowledge_primary_copy SET checkpoint=? WHERE id=1 AND checkpoint=?", [.blob(sealed), .blob(job.checkpoint)])
