@@ -1434,7 +1434,7 @@ final class MessageCoordinator: ObservableObject {
         guard !Task.isCancelled, store.globalAgentSettings.enabled else { break }
         let failure = AgentConnectorResponse(
           sourceMessageId: request.sourceMessageId,
-          contactId: request.contactId,
+          contactId: request.contactId.ifBlank(request.resourceId),
           content: "Global research request could not be dispatched",
           conversationId: request.conversationId,
           turnId: request.turnId,
@@ -1465,7 +1465,7 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalResearchRequest(
     _ request: GlobalResearchDispatchRequest
   ) async -> Bool {
-    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    guard !Task.isCancelled, GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: store, request: request) else { return false }
     let publicAttention = PublicAttentionResearchPolicy.isPublicTask(request.taskId)
     guard !publicAttention || PublicAttentionResearchPolicy.allows(request, settings: store.globalAgentSettings)
     else { return false }
@@ -1480,7 +1480,8 @@ final class MessageCoordinator: ObservableObject {
         taskId: request.taskId,
         systemPrompt: request.systemPrompt,
         prompt: request.prompt,
-        nowMillis: nowMillis
+        nowMillis: nowMillis,
+        stillAuthorized: { GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: self.store, request: request) }
       )
     case .pairedAgent:
       guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
@@ -1566,6 +1567,7 @@ final class MessageCoordinator: ObservableObject {
           case .textDelta(let delta):
             accumulated += delta.text
           case .failed(let failure):
+            guard GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: store, request: request) else { return false }
             _ = connectorResponseBus.publish(AgentConnectorResponse(
               sourceMessageId: request.sourceMessageId,
               contactId: contact.id,
@@ -1584,7 +1586,7 @@ final class MessageCoordinator: ObservableObject {
           }
         }
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return false }
+        guard !content.isEmpty, GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: store, request: request) else { return false }
         _ = connectorResponseBus.publish(AgentConnectorResponse(
           sourceMessageId: request.sourceMessageId,
           contactId: contact.id,

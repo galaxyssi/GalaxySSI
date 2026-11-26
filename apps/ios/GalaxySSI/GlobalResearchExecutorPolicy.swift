@@ -7,9 +7,10 @@ enum GlobalResearchExecutorPolicy {
     publicAttentionResources: [GlobalResearchExecutorResource] = [],
     context: GlobalResearchExecutionContext = GlobalResearchExecutionContext(),
     budgetLimits: GlobalResearchExecutorBudgetLimits = GlobalResearchExecutorBudgetLimits(),
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    eligible: (GlobalResearchTask) -> Bool = { _ in true }
   ) -> GlobalResearchExecutorStep? {
-    guard let claimed = claimTask(from: state.tasks, nowMillis: nowMillis) else { return nil }
+    guard let claimed = claimTask(from: state.tasks, nowMillis: nowMillis, eligible: eligible) else { return nil }
     let isPublic = PublicAttentionResearchPolicy.isPublicTask(claimed.id)
     let resources = isPublic ? publicAttentionResources : resources
     let context = isPublic ? GlobalResearchExecutionContext() : context
@@ -1106,8 +1107,10 @@ enum GlobalResearchExecutorPolicy {
     ))
   }
 
-  static func claimTask(from tasks: [GlobalResearchTask], nowMillis: Int64) -> GlobalResearchTask? {
+  static func claimTask(from tasks: [GlobalResearchTask], nowMillis: Int64,
+    eligible: (GlobalResearchTask) -> Bool = { _ in true }) -> GlobalResearchTask? {
     tasks
+      .filter(eligible)
       .map { GlobalResearchTaskPolicy.recoverIfStale($0, nowMillis: nowMillis) }
       .filter { isClaimable($0, nowMillis: nowMillis) }
       .sorted { left, right in
