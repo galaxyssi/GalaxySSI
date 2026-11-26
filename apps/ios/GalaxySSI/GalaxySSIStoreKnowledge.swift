@@ -4,15 +4,7 @@ typealias AgentKnowledgeSemanticQuery = @MainActor (String, [AgentKnowledgeHit],
 
 extension GalaxySSIStore {
   var agentKnowledgeStats: AgentKnowledgeStats {
-    if let indexed = try? agentKnowledgeDatabase.knowledgeStats() {
-      return indexed
-    }
-    let sources = Set(agentKnowledgeItems.map(agentKnowledgeSourceKey))
-    return AgentKnowledgeStats(
-      itemCount: agentKnowledgeItems.count,
-      sourceCount: sources.count,
-      lastUpdatedAtMillis: agentKnowledgeItems.map(\.updatedAtMillis).max() ?? 0
-    )
+    AgentKnowledgeStatisticsContext.resolve(try? agentKnowledgeDatabase.knowledgeStats())
   }
 
   func agentKnowledgeSourceGroups() -> [AgentKnowledgeSourceGroup] {

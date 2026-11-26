@@ -361,17 +361,20 @@ struct AgentKnowledgeStats: Codable, Equatable {
   var sourceCount: Int
   var lastUpdatedAtMillis: Int64
   var countsComplete: Bool
+  var countsUnavailable: Bool
 
   init(
     itemCount: Int = 0,
     sourceCount: Int = 0,
     lastUpdatedAtMillis: Int64 = 0,
-    countsComplete: Bool = true
+    countsComplete: Bool = true,
+    countsUnavailable: Bool = false
   ) {
     self.itemCount = max(itemCount, 0)
     self.sourceCount = max(sourceCount, 0)
     self.lastUpdatedAtMillis = max(lastUpdatedAtMillis, 0)
-    self.countsComplete = countsComplete
+    self.countsComplete = countsComplete && !countsUnavailable
+    self.countsUnavailable = countsUnavailable
   }
 
   enum CodingKeys: String, CodingKey {
@@ -379,6 +382,7 @@ struct AgentKnowledgeStats: Codable, Equatable {
     case sourceCount = "source_count"
     case lastUpdatedAtMillis = "last_updated_at_millis"
     case countsComplete = "counts_complete"
+    case countsUnavailable = "counts_unavailable"
   }
 
   init(from decoder: Decoder) throws {
@@ -387,7 +391,8 @@ struct AgentKnowledgeStats: Codable, Equatable {
       itemCount: try container.decodeIfPresent(Int.self, forKey: .itemCount) ?? 0,
       sourceCount: try container.decodeIfPresent(Int.self, forKey: .sourceCount) ?? 0,
       lastUpdatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastUpdatedAtMillis) ?? 0,
-      countsComplete: try container.decodeIfPresent(Bool.self, forKey: .countsComplete) ?? true
+      countsComplete: try container.decodeIfPresent(Bool.self, forKey: .countsComplete) ?? true,
+      countsUnavailable: try container.decodeIfPresent(Bool.self, forKey: .countsUnavailable) ?? false
     )
   }
 }
