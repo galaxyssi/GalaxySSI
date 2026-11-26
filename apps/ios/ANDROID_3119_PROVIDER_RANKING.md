@@ -7,6 +7,21 @@ weights and uses the same inferred/declared capability policy as iOS.
 The updated source-check baseline is `ab1df6efb94ebbf7bffa19e86859a4e6dd4bd3cf`,
 after observation timing PR #4573 merged. Those merged changes are not this PR's diff.
 
+## Publication History
+
+This document describes the combined implementation. Attribute ranking alone
+merged as #4574 at `e087ea3b886c15123bd90c0e3482e00bb25034c1` while the follow-up
+was being prepared. That merge did not include family preferences, paired-presence
+arguments or domain-aware alternatives. Those additions are on the independent
+`ios/android-3119-paired-domain-alternatives-20261126` branch based on main
+`e2b4579311a361ab95db61486402441631683d29`. Its actual main diff contains only
+the follow-up and excludes the already merged attribute implementation.
+
+The checker deliberately retains its older `ab1df6ef` historical baseline to
+validate the combined declared hooks. That frozen comparison baseline is not the
+follow-up PR's live merge base. The follow-up adds five fixture methods and updates
+the original six methods for the family bonus; eleven is the cumulative count.
+
 ## Production Connection
 
 The existing `AgentQualityRoutingService.baselineDecision` now calls the new
