@@ -74,7 +74,8 @@ for (const file of [
   'GalaxySSIAgentModelSelectionView.swift',
 ]) {
   const target = `apps/ios/GalaxySSI/${file}`;
-  assert.equal(read(target), git('show', `${base}:${target}`), file);
+  assert.equal(require('./check-provider-resource-ranking-scope.cjs').retained(target, read(target)),
+    git('show', `${base}:${target}`), file);
 }
 const services = read('apps/ios/GalaxySSI/GalaxySSIServices.swift');
 assert(services.includes('store.beginAgentAutoRouteTurn(for: message'));

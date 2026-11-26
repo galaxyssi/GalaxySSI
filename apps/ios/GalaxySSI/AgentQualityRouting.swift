@@ -360,20 +360,21 @@ enum AgentQualityRoutingService {
     goal: String,
     targets: [AgentCallableTarget],
     primaryTargetId: String,
-    requirements: AgentTaskRequirements? = nil
+    requirements: AgentTaskRequirements? = nil,
+    environment: AgentRuntimeEnvironment? = nil
   ) -> AgentRoutingDecision? {
     let requirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(goal)
+    let environment = environment ?? {
+      let probe = AgentMediaNetworkDetector.shared.currentProbe
+      return AgentRuntimeEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable,
+        networkValidated: probe.validated, networkMetered: probe.metered)
+    }()
     let catalog = AgentResourceCatalog.build(targets: targets, tools: [])
       .filter { !$0.targetId.isBlank }
     let candidates = catalog.filter {
       AgentCapabilityRoutingPolicy.missingRequired(requirements, available: $0.capabilities).isEmpty
     }.map { resource in
-      AgentResourceCandidate(
-        resource: resource,
-        score: AgentCapabilityRoutingPolicy.fitScore(requirements, available: resource.capabilities),
-        reasons: ["available_reasoning_resource"] +
-          AgentCapabilityRoutingPolicy.evidence(requirements, available: resource.capabilities)
-      )
+      AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment)
     }
     guard !candidates.isEmpty else { return nil }
     let primary = candidates.first { $0.resource.targetId == primaryTargetId } ?? candidates[0]
@@ -381,6 +382,7 @@ enum AgentQualityRoutingService {
       requirements: requirements,
       primary: primary,
       fallbacks: candidates.filter { $0.resource.id != primary.resource.id },
+      environment: environment,
       catalog: catalog
     )
   }
