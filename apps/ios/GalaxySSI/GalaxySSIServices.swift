@@ -4572,7 +4572,7 @@ final class MessageCoordinator: ObservableObject {
         continue
       }
       if record.codexDispatchPending == true {
-        if published < 8, mqttClient.relationshipSubscriptionsReady {
+        if published < 8, (usesLegacyMqtt ? mqttClient.relationshipSubscriptionsReady : journalMqttRuntime != nil) {
           await dispatchScheduledCodexReplay(record)
           published += 1
         } else if now >= record.createdAt, now - record.createdAt >= 5 * 60_000 {
@@ -5215,6 +5215,42 @@ final class MessageCoordinator: ObservableObject {
     desktopReplyRecoverySweepRequested = true
     Task { @MainActor [weak self] in await self?.sweepDesktopReplyRecovery() }
     return true
+  }
+
+  private func journalCodexReplayOwner(_ source: String, contact: GalaxySSIContact, identity: AgentTaskIdentity,
+                                      target: MqttPeerChatProjection.Destination) -> MqttDesktopConnectorProjection.TaskOwner? {
+    guard !usesLegacyMqtt, UIApplication.shared.isProtectedDataAvailable,
+          desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          !store.agentSafetySettings.executionPaused, store.agentSafetySettings.connectorCallsAllowed,
+          contact.trustState == .verified, contact.isCommunicable, !contact.isDesktopDeviceContact,
+          contact.deliveryMode.isGalaxySSILinkFamily, target.desktop, identity.isComplete,
+          contact.desktopId == target.peer.remoteSignalName, identity.clientRouteId == target.routeId,
+          codexReplayTargets(desktopId: contact.desktopId).contains(where: { $0.id == contact.id }),
+          AgentModelSelectionSettings.selection(for: identity.conversationId).mode == .automatic else { return nil }
+    let records = desktopReplyRecovery.pending.filter {
+      $0.binding.attemptSourceId != nil && $0.binding.sourceIdentity == source &&
+        $0.binding.contactId == contact.id && $0.binding.agentId == contact.connectorAgentId &&
+        $0.binding.desktopId == contact.desktopId && $0.binding.identity == identity
+    }
+    guard records.count == 1, let record = records.first, record.binding.isValid,
+          record.binding.managedSource == nil, record.binding.teamSource == nil, record.binding.goalWork != true,
+          !record.isManualTargetLocked, record.terminalObservedAt == 0, record.acceptedReply == nil, record.pinnedTeamReply == nil,
+          !AgentDesktopReplyRecovery.terminalStatuses.contains(record.status),
+          let replay = record.codexReplay, !replay.budget.exhausted,
+          replay.budget.expectedTarget == contact.id, let saved = currentDesktopReplySource(record.binding),
+          replay.matches(saved), saved.contactId == "hermes",
+          let session = store.agentSession(id: identity.conversationId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          session.collaborationRoster == nil,
+          !PhoneExecutionAuthority.isCancelled(taskId: identity.turnId) else { return nil }
+    if replay.budget.origin == contact.id, let invocation = replay.invocation {
+      let model = invocation["model_id"] ?? ""
+      let effort = AgentModelReasoningEffort(rawValue: invocation["reasoning_effort"] ?? "")
+      guard (model.isBlank || contact.connectorInvocationProfile.models.contains(where: { $0.id == model })),
+            effort == nil || effort == .automatic || contact.connectorInvocationProfile.reasoningEfforts.contains(where: { $0 == effort })
+      else { return nil }
+    }
+    return MqttDesktopConnectorProjection.TaskOwner(message: saved, codexReplay: record)
   }
 
   private func dispatchScheduledCodexReplay(_ record: AgentDesktopReplyRecoveryRecord) async {
@@ -17399,7 +17435,7 @@ final class MessageCoordinator: ObservableObject {
   ) async throws -> AgentDisclosureStatus {
     try Task.checkCancellation()
     if !usesLegacyMqtt {
-      guard journalMqttRuntime != nil, teamContext?.isManagedCollaboration != false, codexReplay == nil else {
+      guard journalMqttRuntime != nil, teamContext?.isManagedCollaboration != false else {
         throw GalaxySSIError.transportUnavailable
       }
     }
@@ -17814,7 +17850,8 @@ final class MessageCoordinator: ObservableObject {
       if peerChat {
         _ = try runtime.enqueueDirectPeerText(messageId: outgoing.id, contactId: contact.id)
       } else {
-        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId)
+        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId,
+          ownerContactID: codexReplay == nil ? nil : outgoing.contactId)
       }
       return .queued
     }
@@ -18032,6 +18069,8 @@ final class MessageCoordinator: ObservableObject {
         Task { @MainActor [weak self] in self?.resumeWaitingNativeConnectors() }
       }, managedAttachmentSourceIsCurrent: { [weak self] source, contact, identity, target in
         self?.nativeManagedAttachmentOwner(source: source, contact: contact, identity: identity, target: target) != nil
+      }, resolveCodexReplayOwner: { [weak self] source, contact, identity, target in
+        self?.journalCodexReplayOwner(source, contact: contact, identity: identity, target: target)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,

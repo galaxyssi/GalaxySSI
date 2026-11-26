@@ -8,10 +8,12 @@ struct MqttDesktopConnectorProjection {
     var teamID: String? = nil
     var maySend = true
     var managedOwnerRunID: String? = nil
+    var codexReplay: AgentDesktopReplyRecoveryRecord? = nil
 
     var projectsAttachmentToTranscript: Bool { team?.deliveryMode != .observe }
 
     func matches(_ payload: [String: Any]) -> Bool {
+      if let codexReplay { return AgentJournalCodexReplayPolicy.matchesRequest(payload, record: codexReplay, source: message) }
       guard let team else { return payload["agent_team_message"] as? Bool != true }
       guard let teamID else { return false }
       let run = team.deliveryMode == .respond ? team.supervisorRunId :
@@ -38,6 +40,7 @@ struct MqttDesktopConnectorProjection {
   var resolveManagedAttachmentOwner: (([String: Any], GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
   var recordManagedAttachmentFailure: (([String: Any], AgentPreparedOutboundAttachment) throws -> Void)? = nil
   var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil
+  var resolveCodexReplayOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -171,6 +174,8 @@ struct MqttDesktopConnectorProjection {
           identity.clientRouteId == target.routeId else { return nil }
     if !requiresTeam, let ordinary = sourceMessage(id, contactID: contact.id,
       conversation: identity.conversationId, turn: identity.turnId) { return TaskOwner(message: ordinary) }
+    if !requiresTeam, let replay = try resolveCodexReplayOwner?(source, contact, identity, target),
+       replay.codexReplay != nil { return replay }
     return try resolveTeamOwner?(source, contact, identity, target)
   }
 
@@ -371,7 +376,13 @@ struct MqttDesktopConnectorProjection {
     guard let owner = try taskOwner(source: event.sourceMessageID, id: id, contact: contact, target: target),
           owner.team == nil
     else { return }
-    do { try store.persistTransportDelivery(event, messageContactID: owner.message.contactId) }
+    let presentation: MqttDeliveryCompletions.Event
+    if let replay = owner.codexReplay {
+      guard let mapped = AgentJournalCodexReplayPolicy.presentationEvent(event, record: replay, source: owner.message)
+      else { throw MqttRouteError.identityChanged }
+      presentation = mapped
+    } else { presentation = event }
+    do { try store.persistTransportDelivery(presentation, messageContactID: owner.message.contactId) }
     catch GalaxySSIChatHistoryError.locallyDeleted { }
   }
 }
