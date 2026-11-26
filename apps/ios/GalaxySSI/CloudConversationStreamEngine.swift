@@ -38,6 +38,10 @@ protocol CloudConversationStreaming {
     requestId: String
   ) -> AsyncThrowingStream<ModelStreamEvent, Error>
   func cancel(requestId: String, reason: ModelStreamCancelReason) async
+  func streamConversation(
+    contact: GalaxySSIContact, store: GalaxySSIStore, turns: [ChatMessage], images: [CloudImagePayload],
+    requestId: String, connectorFailureEvidence: AgentConnectorModelFailureEvidence
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error>
 }
 
 extension CloudConversationStreaming {
@@ -52,6 +56,14 @@ extension CloudConversationStreaming {
   }
 
   func cancel(requestId: String, reason: ModelStreamCancelReason) async {}
+
+  func streamConversation(
+    contact: GalaxySSIContact, store: GalaxySSIStore, turns: [ChatMessage], images: [CloudImagePayload],
+    requestId: String, connectorFailureEvidence: AgentConnectorModelFailureEvidence
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+    connectorFailureEvidence.markPossibleEffects()
+    return streamConversation(contact: contact, store: store, turns: turns, images: images, requestId: requestId)
+  }
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
@@ -129,6 +141,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   func streamConversation(
+    contact: GalaxySSIContact, store: GalaxySSIStore, turns: [ChatMessage], images: [CloudImagePayload],
+    requestId: String, connectorFailureEvidence: AgentConnectorModelFailureEvidence
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
+    streamConversation(contact: contact, store: store, turns: turns, images: images,
+      requestId: requestId, collaborationEvidence: nil, connectorFailureEvidence: connectorFailureEvidence)
+  }
+
+  func streamConversation(
     contact: GalaxySSIContact,
     store: GalaxySSIStore,
     turns: [ChatMessage],
@@ -145,9 +165,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     researchRetrySource: ChatMessage? = nil,
     retainResearch: Bool = true,
     peerWorkRecall: GoalWorkHandler? = nil,
-    peerWorkPublish: GoalWorkHandler? = nil
+    peerWorkPublish: GoalWorkHandler? = nil,
+    connectorFailureEvidence: AgentConnectorModelFailureEvidence? = nil
   ) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     let conversationRequestId = Self.normalizedRequestId(requestId)
+    connectorFailureEvidence?.installCloudObserver(requestId: conversationRequestId)
     return AsyncThrowingStream { continuation in
       let worker = Task {
         await runConversation(
@@ -168,6 +190,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           retainResearch: retainResearch,
           peerWorkRecall: peerWorkRecall,
           peerWorkPublish: peerWorkPublish,
+          connectorFailureEvidence: connectorFailureEvidence,
           continuation: continuation
         )
       }
@@ -215,6 +238,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     retainResearch: Bool,
     peerWorkRecall: GoalWorkHandler?,
     peerWorkPublish: GoalWorkHandler?,
+    connectorFailureEvidence: AgentConnectorModelFailureEvidence?,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
@@ -545,6 +569,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               let fallbackAudit = try await beginCollaborationAudit(scope: collaborationModelAudit, round: currentRound,
                 request: roundRequest, route: .compatibility, contact: contact, store: store,
                 lane: coordinationScope == nil ? nil : .hostLivePlanning)
+              connectorFailureEvidence?.markPossibleEffects()
               await emitLegacyConversation(
                 sender: legacySender,
                 contact: contact,
@@ -911,7 +936,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           },
           remainingResearchMillis: { research.remainingActiveMillis },
           milestoneRead: milestoneRead, collaborationRecall: recall,
-          collaborationPublish: publish
+          collaborationPublish: publish,
+          connectorFailureEvidence: connectorFailureEvidence
         )
         try Task.checkCancellation()
         if let scope = collaborationEvidence {
@@ -1246,9 +1272,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     remainingResearchMillis: (() -> Int64)? = nil,
     milestoneRead: GoalWorkHandler? = nil,
     collaborationRecall: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
-    collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil
+    collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,
+    connectorFailureEvidence: AgentConnectorModelFailureEvidence? = nil
   ) async -> [ToolExecutionOutcome] {
     guard !calls.isEmpty else { return [] }
+    connectorFailureEvidence?.markPossibleEffects()
 
     var outcomes: [ToolExecutionOutcome] = []
     for start in stride(from: 0, to: calls.count, by: Self.maxParallelToolCalls) {
