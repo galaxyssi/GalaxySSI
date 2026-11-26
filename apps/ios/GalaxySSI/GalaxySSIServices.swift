@@ -13,6 +13,10 @@ final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
   @Published private(set) var pendingAgentReplyTurnIds: Set<String> = []
+  @Published private(set) var supervisedAnswerPreviews: [String: AgentSupervisedAnswerPreview] = [:]
+  private var supervisedAnswerPreviewScopes: [String: AgentSupervisedAnswerPreview.Scope] = [:]
+  private var answerPreviewLifecycleObservers: [NSObjectProtocol] = []
+  private var answerPreviewProfileObserver: AnyCancellable?
   @Published private(set) var pendingPeerSendContactIds: Set<String> = []
   @Published var contactReminders: [GalaxySSIContactReminder] = []
   @Published var outgoingContactReminderPanel: GalaxySSIContactReminderPanelSelection?
@@ -527,6 +531,9 @@ final class MessageCoordinator: ObservableObject {
     let deliveryWake = GlobalProactiveDeliveryWake { _ = store.deliverPendingGlobalProactiveMessages() }
     self.globalProactiveDeliveryListener = GlobalProactiveDeliveryListener { deliveryWake.request() }
     VoiceRemoteWhisperCaptureRuntime.shared.bind(coordinator: self)
+    answerPreviewProfileObserver = store.$profile.map(\.identityFingerprint).removeDuplicates().dropFirst().sink { [weak self] profile in
+      Task { @MainActor [weak self] in self?.clearSupervisedAnswerPreviews(exceptProfile: profile) }
+    }
     nativeConnectorResponseToken = AgentLateManagedResponseBus.shared.addListener { [weak self] record in
       Task { @MainActor [weak self] in
         self?.resumeWaitingNativeConnectors(owner: record.ownerRunId)
@@ -1116,6 +1123,12 @@ final class MessageCoordinator: ObservableObject {
 
   private func installForegroundRecoveryWake() {
     guard foregroundRecoveryObserver == nil else { return }
+    answerPreviewLifecycleObservers = [UIApplication.willResignActiveNotification,
+      UIApplication.protectedDataWillBecomeUnavailableNotification, .galaxySSIRuntimePlaintextWillClear].map { name in
+      NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        Task { @MainActor [weak self] in self?.clearSupervisedAnswerPreviews() }
+      }
+    }
     foregroundRecoveryObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didBecomeActiveNotification,
       object: nil,
@@ -1167,6 +1180,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   deinit {
+    answerPreviewLifecycleObservers.forEach { NotificationCenter.default.removeObserver($0) }
     journalMqttPoll?.cancel()
     if let runtime = journalMqttRuntime { Task { @MainActor in await runtime.stop() } }
     desktopReplyRecoveryTask?.cancel()
@@ -13035,6 +13049,50 @@ final class MessageCoordinator: ObservableObject {
     }, modelProfile: route.modelId)
   }
 
+  func clearSupervisedAnswerPreviews(exceptProfile profile: String? = nil) {
+    supervisedAnswerPreviewScopes = supervisedAnswerPreviewScopes.filter { profile != nil && $0.value.profile == profile }
+    supervisedAnswerPreviews = supervisedAnswerPreviews.filter { supervisedAnswerPreviewScopes[$0.key] == $0.value.scope }
+  }
+
+  private func answerPreviewScopeIsCurrent(_ scope: AgentSupervisedAnswerPreview.Scope) -> Bool {
+    guard scope.profile == store.profile.identityFingerprint, store.canReadAgentTranscript,
+          UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
+          supervisedAnswerPreviewScopes[scope.owner] == scope,
+          let task = store.agentTask(id: scope.identity.turnId), task.phase == .planning,
+          task.sessionId == scope.identity.conversationId, !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let session = store.agentSession(id: task.sessionId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          GalaxySSIHealthCareAgentScope.concernID(session) == nil,
+          pairedPhonePlannerLink(scope.route) != nil,
+          let record = try? managedDesktopReplyLedger.recoveryRecord(owner: scope.owner), record.state == .pending,
+          record.response == nil, record.sourceMessageId == scope.source, record.agentId == "codex",
+          record.contactId == scope.route.contactId, record.conversationId == scope.identity.conversationId,
+          record.turnId == scope.identity.turnId, record.taskId == scope.identity.taskId,
+          record.executionGeneration == scope.generation else { return false }
+    return taskIdentityStore.identity(contactId: scope.route.contactId, sourceMessageId: String(scope.source)) == scope.identity
+  }
+
+  func visibleSupervisedAnswerPreviews(conversationId: String) -> [AgentSupervisedAnswerPreview] {
+    supervisedAnswerPreviews.values.filter {
+      $0.scope.identity.conversationId == conversationId && answerPreviewScopeIsCurrent($0.scope)
+    }.sorted { $0.id < $1.id }
+  }
+
+  private func receiveSupervisedAnswerPreview(_ payload: [String: Any], desktopId: String, routeId: String) {
+    guard let source = AgentSupervisedAnswerPreview.source(payload) else { return }
+    let scopes = supervisedAnswerPreviewScopes.values.filter {
+      $0.source == source && $0.route.contactId == payload.string("contact_id") &&
+        $0.route.desktopId == desktopId && $0.identity.clientRouteId == routeId
+    }
+    guard scopes.count == 1, let scope = scopes.first else { return }
+    guard answerPreviewScopeIsCurrent(scope), taskIdentityStore.matchesRegistered(payload: payload) else {
+      supervisedAnswerPreviews.removeValue(forKey: scope.owner)
+      return
+    }
+    guard let preview = AgentSupervisedAnswerPreview(payload: payload, scope: scope), preview.advances(supervisedAnswerPreviews[scope.owner]) else { return }
+    supervisedAnswerPreviews[scope.owner] = preview
+  }
+
   private func requestPairedPhonePlan(
     route: AgentPairedPhonePlannerRoute, invocation: AgentModelPlanningInvocation
   ) async throws -> String {
@@ -13052,6 +13110,21 @@ final class MessageCoordinator: ObservableObject {
     let record = AgentManagedResponseRecord(ownerRunId: dispatch.owner, supervisorRunId: identity.turnId,
       agentId: "codex", deliveryMode: .observe, sourceMessageId: dispatch.source, contactId: route.contactId,
       conversationId: identity.conversationId, turnId: identity.turnId, taskId: identity.taskId, createdAtMillis: now)
+    let previewScope = AgentSupervisedAnswerPreview.Scope(token: UUID(), profile: store.profile.identityFingerprint,
+      owner: dispatch.owner, source: dispatch.source, route: route, identity: identity, generation: record.executionGeneration)
+    if supervisedAnswerPreviewScopes.count >= 32, supervisedAnswerPreviewScopes[dispatch.owner] == nil,
+       let discarded = supervisedAnswerPreviewScopes.keys.sorted().first {
+      supervisedAnswerPreviewScopes.removeValue(forKey: discarded)
+      supervisedAnswerPreviews.removeValue(forKey: discarded)
+    }
+    supervisedAnswerPreviewScopes[dispatch.owner] = previewScope
+    supervisedAnswerPreviews.removeValue(forKey: dispatch.owner)
+    defer {
+      if supervisedAnswerPreviewScopes[dispatch.owner] == previewScope {
+        supervisedAnswerPreviewScopes.removeValue(forKey: dispatch.owner)
+        supervisedAnswerPreviews.removeValue(forKey: dispatch.owner)
+      }
+    }
     try managedDesktopReplyLedger.register(record)
     guard taskIdentityStore.register(contactId: route.contactId, sourceMessageId: source, identity: identity),
           let binding = AgentDesktopReplyBinding.managed(record: record, desktopId: route.desktopId,
@@ -18086,6 +18159,8 @@ final class MessageCoordinator: ObservableObject {
         self?.nativeManagedAttachmentOwner(source: source, contact: contact, identity: identity, target: target) != nil
       }, resolveCodexReplayOwner: { [weak self] source, contact, identity, target in
         self?.journalCodexReplayOwner(source, contact: contact, identity: identity, target: target)
+      }, receiveAnswerPreview: { [weak self] payload, desktop, route in
+        self?.receiveSupervisedAnswerPreview(payload, desktopId: desktop, routeId: route)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
@@ -19388,6 +19463,14 @@ final class MessageCoordinator: ObservableObject {
       if !messageId.isEmpty {
         deliveryStore.completeIncoming(messageId: messageId)
       }
+      return
+    }
+    if AgentSupervisedAnswerPreview.claims(appPayload) {
+      if object.string("scheme") == "signal", let link, link.paired,
+         object.string("from") == link.desktopId, object.string("to") == signalEngine.identity.name {
+        receiveSupervisedAnswerPreview(appPayload, desktopId: link.desktopId, routeId: link.routes.clientRouteId)
+      }
+      if !messageId.isEmpty { deliveryStore.completeIncoming(messageId: messageId) }
       return
     }
     if object.string("scheme") == "signal", let link, handleDesktopGoalWorkReply(appPayload, link: link) {

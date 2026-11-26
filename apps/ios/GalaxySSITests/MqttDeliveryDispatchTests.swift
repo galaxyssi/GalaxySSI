@@ -2,6 +2,61 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryDispatchTests: XCTestCase {
+  func testInteractiveRequestCopiesShareLogicalIdentityAndStopOnCommittedReceipt() async throws {
+    let fixture = DispatchFixture()
+    var delivery = try fixture.delivery(bound: 87_500)
+    delivery.interactiveFinal = true
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: delivery)
+    let first = try XCTUnwrap(fixture.publications.first)
+    fixture.time = 249
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 1)
+    fixture.time = 250
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 2)
+    XCTAssertEqual(Set(fixture.publications.map { $0.frame.message.messageID }), [delivery.message.messageID])
+    XCTAssertEqual(Set(fixture.publications.map { $0.frame.message.contentHash }), [delivery.message.contentHash])
+    var committed = false
+    let accepted = try await fixture.dispatch.acceptVerifiedReceipt(peer: "pair", frame: first.frame) { committed = true }
+    XCTAssertTrue(accepted)
+    XCTAssertTrue(committed)
+    let state = await fixture.dispatch.diagnostics()
+    XCTAssertEqual(state.queuedCopies, 0)
+    fixture.time = 500
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 2)
+  }
+
+  func testInteractiveDelayedCopiesRecheckAuthorization() async throws {
+    let fixture = DispatchFixture()
+    var delivery = try fixture.delivery(bound: 87_500)
+    delivery.interactiveFinal = true
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: delivery)
+    fixture.authorized = false
+    fixture.time = 250
+    await fixture.dispatch.tick()
+    fixture.time = 500
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 1)
+  }
+
+  func testInteractiveReceiptCommitFailureLeavesFastCopiesAvailable() async throws {
+    let fixture = DispatchFixture()
+    var delivery = try fixture.delivery(bound: 87_500)
+    delivery.interactiveFinal = true
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: delivery)
+    let first = try XCTUnwrap(fixture.publications.first)
+    do {
+      _ = try await fixture.dispatch.acceptVerifiedReceipt(peer: "pair", frame: first.frame) { throw DispatchFixture.Fault.commit }
+      XCTFail("Failed durable acceptance must propagate")
+    } catch DispatchFixture.Fault.commit { }
+    let state = await fixture.dispatch.diagnostics()
+    XCTAssertEqual(state.queuedCopies, 2)
+    fixture.time = 250
+    await fixture.dispatch.tick()
+    XCTAssertEqual(fixture.publications.count, 2)
+  }
+
   func testCommittedReceiptStopsCopiesEvenAfterPolicyObservationReset() async throws {
     let fixture = DispatchFixture()
     _ = try await fixture.dispatch.submit(topic: "outbox", delivery: fixture.delivery())

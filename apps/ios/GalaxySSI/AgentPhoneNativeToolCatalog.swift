@@ -131,7 +131,7 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider) +
       AgentIOSProjectRepositoryReadToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
       AgentIOSProjectRepositoryMutationToolCatalog.definitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
-      AgentSystemEvidenceNativeToolCatalog.definitions()
+      AgentSystemEvidenceNativeToolCatalog.definitions() + AgentToolInspectionCatalog.definitions()
   }
 
   static func descriptors(
@@ -227,6 +227,7 @@ enum AgentPhoneNativeToolCatalog {
       projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
       AgentSystemEvidenceNativeToolCatalog.executableDefinitions(nowMillis: nowMillis) +
+      AgentToolInspectionCatalog.executableDefinitions() +
       (voiceReminderTool.map { [$0] } ?? [])
     return try registry.registerExecutables(executables)
   }

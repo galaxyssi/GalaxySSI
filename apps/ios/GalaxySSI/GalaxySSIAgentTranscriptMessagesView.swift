@@ -40,6 +40,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var expandedProgress = Set<UUID>()
   var messages: [ChatMessage]
+  var answerPreviews: [AgentSupervisedAnswerPreview] = []
   var turnStartMillis: [String: Int64]
   var waitingMessageIDs: Set<UUID>
   var retryingMessageIDs: Set<UUID>
@@ -84,6 +85,18 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       let turn = AgentTranscriptExecutionProgress.TurnKey(message)
       messageRow(message, latestSpeechEntryId: latest?.entryId, deliveredAt: deliveredTimes[turn],
         requestStartedAt: turnStartMillis[turn.turnId], researchSource: disclosureSources[message.id])
+      if message.isMine {
+        ForEach(answerPreviews.filter { $0.scope.identity.conversationId == message.conversationId &&
+          $0.scope.identity.turnId == message.turnId.ifBlank(message.id.uuidString) }) { preview in
+          Text(verbatim: preview.text)
+            .font(.body)
+            .foregroundColor(.primary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+            .id("supervised-answer-preview-" + preview.id)
+        }
+      }
     }
     .onAppear { observeLatestReply(latest) }
     .onChange(of: latest) { target in

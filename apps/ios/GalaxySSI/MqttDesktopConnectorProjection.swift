@@ -41,6 +41,7 @@ struct MqttDesktopConnectorProjection {
   var recordManagedAttachmentFailure: (([String: Any], AgentPreparedOutboundAttachment) throws -> Void)? = nil
   var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil
   var resolveCodexReplayOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
+  var receiveAnswerPreview: (([String: Any], String, String) -> Void)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -267,6 +268,10 @@ struct MqttDesktopConnectorProjection {
       return
     }
     if payload.string("type") == "agent_task_event" {
+      if AgentSupervisedAnswerPreview.claims(payload) {
+        receiveAnswerPreview?(payload, target.peer.remoteSignalName, target.routeId)
+        return
+      }
       let source = payload.string("source_message_id")
       guard let id = UUID(uuidString: source), let owner = try taskOwner(source: source, id: id, contact: contact, target: target),
             owner.maySend else { throw MqttRouteError.invalidPayload }

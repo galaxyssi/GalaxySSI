@@ -12,6 +12,7 @@ actor MqttDeliveryDispatch {
     // Returns the final pair-AEAD packet, including this physical attempt's metadata.
     let encodeAttempt: (MqttDeliveryEnvelope.Frame) throws -> Data
     let authorized: (String, Int64) -> Bool
+    var interactiveFinal = false
   }
   struct Publication {
     let topic: String
@@ -262,7 +263,8 @@ actor MqttDeliveryDispatch {
     let eligible = policy.readyPathGenerations(receiveTopics: delivery.receiveTopics)
       .filter { delivery.authorized($0.key, $0.value) }
     return policy.plan(peer: delivery.peer, messageID: delivery.message.messageID, traffic: Self.traffic(delivery.message),
-                       wireBytes: delivery.sizeBound, receiveTopics: delivery.receiveTopics, now: at, eligible: eligible)
+                       wireBytes: delivery.sizeBound, receiveTopics: delivery.receiveTopics, now: at, eligible: eligible,
+                       interactiveFinal: delivery.interactiveFinal)
   }
   private static func traffic(_ message: MqttDeliveryEnvelope.Message) -> MqttMultipathPolicy.Traffic {
     // Message construction already validates this closed wire enum.

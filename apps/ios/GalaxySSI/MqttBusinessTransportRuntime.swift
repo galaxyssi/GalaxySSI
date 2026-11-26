@@ -433,7 +433,8 @@ final class MqttBusinessTransportRuntime {
     await receiptRetry.drain(now: monotonic())
     for send in chunkFeedback.drain(now: monotonic()) { await send() }
     guard !stopped else { return }
-    let outbound = try await sends.drain(identities: identities, validatedNetwork: validatedNetwork) { [weak self] entry in
+    let outbound = try await sends.drain(identities: identities, validatedNetwork: validatedNetwork,
+      interactiveFinal: { [weak self] entry in try await self?.isInteractiveConnectorRequest(entry) ?? false }) { [weak self] entry in
       try await self?.authorizeConnectorSend(entry) ?? false
     }
     outbound.failures.forEach { onFailure($0.error) }
@@ -446,6 +447,20 @@ final class MqttBusinessTransportRuntime {
     if !stopped { await pumpDesktopRecoveryQueries() }
     if !stopped { pumpDesktopResultReceipts() }
     if !stopped { desktopConnector?.resumeEvidenceJobs?(self) }
+  }
+
+  private func isInteractiveConnectorRequest(_ entry: MqttBusinessOutbox.Entry) throws -> Bool {
+    guard [MqttMultipathPolicy.Traffic.message.rawValue, MqttMultipathPolicy.Traffic.final.rawValue].contains(entry.traffic),
+          entry.message.attachmentTransferId.isEmpty, !entry.message.clientSourceMessageId.isBlank,
+          let projection = peerChatProjection, entry.identity.scope.hasPrefix("direct:"),
+          let target = try projection.currentDestination(entry.identity), target.desktop,
+          target.contactId != entry.message.contactId,
+          let contact = projection.store.contact(id: entry.message.contactId), contact.trustState == .verified,
+          !contact.isDesktopDeviceContact, contact.deliveryMode.isGalaxySSILinkFamily,
+          contact.desktopId == target.peer.remoteSignalName,
+          let identity = desktopConnector?.identities.identity(contactId: contact.id, sourceMessageId: entry.message.clientSourceMessageId),
+          identity.isComplete, identity.clientRouteId == target.routeId else { return false }
+    return try authorizeConnectorSend(entry)
   }
 
   private func authorizeConnectorSend(_ entry: MqttBusinessOutbox.Entry) throws -> Bool {
