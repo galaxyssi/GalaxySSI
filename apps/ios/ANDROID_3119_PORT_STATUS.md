@@ -123,6 +123,14 @@ later progress. Existing timing policy and original owner/result semantics are
 retained. Four fixture methods are source only; active timeout scheduling and
 native acceptance remain incomplete.
 
+### Exclusive Desktop probe ownership follow-up
+
+See `ANDROID_3119_DESKTOP_PROBE_OWNERSHIP.md`: the shared ordinary Desktop sweep
+no longer advances the journal query clock through an offline legacy probe.
+Existing journal readiness/identity checks, legacy offline accounting, result
+projection and Codex replay remain unchanged. This is not generic active timeout
+observation or native/network acceptance.
+
 ### Phone local-model resource identity follow-up
 
 See `ANDROID_3119_PHONE_LOCAL_MODEL_RESOURCE.md`: the actual reserved iOS local

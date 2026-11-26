@@ -1,7 +1,7 @@
 // Source contracts only, not executed Swift, transport or timeout acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '1d68be9b738d8cbc48745b51554dbb24b4aa3129';
+const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -24,9 +24,9 @@ function retained(file, source) {
   ];
   for (const [name, start, end] of fixtures) if (file.endsWith(name) && source.includes('  func ' + start))
     return source.replace(section(source, '  func ' + start, '  func ' + end), '');
-  if (file.endsWith('check-phone-local-model-resource-scope.cjs')) return source
-    .replace("const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
-      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")
+  if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
+    .replace("const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
+      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-connector-acceptance-evidence-scope.cjs').retained(file, source);\n", '');
   return source;
 }
@@ -34,7 +34,7 @@ function validate() {
   for (const file of [app + 'AgentIOSConnectorDispatch.swift', app + 'AgentConnectorTaskStatusRecorder.swift',
     'apps/ios/GalaxySSITests/AgentControlPlaneActionExecutorTests.swift',
     'apps/ios/GalaxySSITests/AgentNativeConnectorStatusObservationTests.swift',
-    'apps/ios/tools/check-phone-local-model-resource-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const prepare = section(read(app + 'AgentIOSConnectorDispatch.swift'), '  static func prepare(', '  func matchesWaitingAction(');
   assert(!prepare.includes('"remote_task_status"'));
   for (const token of ['message: "Queued"', '"awaiting_response": "true"', '"completion_verified": "false"',

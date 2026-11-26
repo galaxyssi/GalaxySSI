@@ -1,7 +1,7 @@
 // Source evidence only, not native inference, offline/private execution or compiled fixture acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '104e4e156ed187a8e5980813efc901bb08d2bd34';
-const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,
+const read = file => require('./check-desktop-probe-owner-scope.cjs').retained(file,
   fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -28,7 +28,7 @@ const localBlock = `    if let profile = activeLocalProfiles.first {
     }
 `;
 function retained(file, source) {
-  source = require('./check-connector-acceptance-evidence-scope.cjs').retained(file, source);
+  source = require('./check-desktop-probe-owner-scope.cjs').retained(file, source);
   if (file.endsWith('check-scored-route-context-scope.cjs')) return source
     .replace("const read = file => require('./check-phone-local-model-resource-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")

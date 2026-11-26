@@ -1,7 +1,7 @@
 # Native connector acceptance evidence
 
 Follow-up to Android #3119, based on main
-`1d68be9b738d8cbc48745b51554dbb24b4aa3129`.
+`8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
 
 ## Actual integration gap
 
