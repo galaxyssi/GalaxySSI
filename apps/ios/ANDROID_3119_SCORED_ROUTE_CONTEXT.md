@@ -3,7 +3,9 @@
 Reference: Android #3119 merge `e7c6af6ef3eed21c7fb697b4458d1cf742833dc4`,
 AgentResourceRouter.kt SHA256
 `d95d5d072eb0637ee20e0a883559918979bf0be48daf4dfb9021fbbcfb37663f`.
-iOS baseline: main `9781cd99a1ad53c7408a664f1a3b4ebb27579f3e`.
+iOS baseline: main `f1b21803638c354cd6056883cf2c8cb88ee76f08`, after
+synchronizing merged timer PR #4589. The timer changes are not part of this
+increment's diff against main.
 The source guard also pins that baseline's current Android task-budget policy,
 which explicitly treats resource counters as telemetry, not termination limits.
 Do not restore the older numeric token/cost/memory admission restrictions.

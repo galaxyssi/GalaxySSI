@@ -24,6 +24,7 @@ struct AgentIOSTimerCheckpoint: Codable, Equatable {
     let status = state == .scheduled ? (remaining > 0 ? "running" : "elapsed") : state.rawValue
     return [
       "schedule": "timer", "operation_id": id.uuidString, "timer_state": status,
+      "duration_seconds": String(durationSeconds),
       "source_turn_id": sourceTurnId, "deadline_ms": String(deadlineMillis),
       "notification_id": notificationId,
       "remaining_seconds": String([.scheduled, .paused].contains(state) ? (remaining + 999) / 1_000 : 0),
@@ -432,6 +433,7 @@ struct AgentIOSTimerExecutor {
   private func result(_ action: AgentAction, _ record: AgentIOSTimerCheckpoint?, error: String? = nil,
                       extra: [String: String] = [:]) -> AgentActionResult {
     var evidence = record?.evidence(now: now()) ?? [:]
+    evidence["execution_authority"] = "galaxyssi-phone"
     evidence["completion_verified"] = error == nil ? "true" : "false"
     evidence["error_code"] = error
     evidence.merge(extra) { _, value in value }

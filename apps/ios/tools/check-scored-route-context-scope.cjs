@@ -1,6 +1,6 @@
 // Source contracts only, not native routing, provider calls or privacy acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path'), crypto = require('node:crypto');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '9781cd99a1ad53c7408a664f1a3b4ebb27579f3e';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'f1b21803638c354cd6056883cf2c8cb88ee76f08';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -36,9 +36,9 @@ const fallbackNew = `    let current = scoredAutomaticConnectorRoute(goal: goal)
     let targets = current.targets
     let currentRoute = current.selection`;
 function retained(file, source) {
-  if (file.endsWith('check-resumed-planner-route-scope.cjs')) return source
-    .replace("const read = file => require('./check-scored-route-context-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
-      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
+  if (file.endsWith('check-verified-timer-start-scope.cjs')) return source
+    .replace("const read = file => require('./check-scored-route-context-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
+      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")
     .replace("  source = require('./check-scored-route-context-scope.cjs').retained(file, source);\n", '');
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line =>
     !['AgentAutomaticRoutingContext.swift', 'AgentAutomaticRoutingContextTests.swift'].some(name => line.includes(name))).join('\n');
@@ -62,7 +62,7 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'AgentNetworkRoutingModels.swift',
-    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-resumed-planner-route-scope.cjs'])
+    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-verified-timer-start-scope.cjs'])
     assert.equal(retained(file, read(file)), old(file), file);
   const model = read(app + 'AgentAutomaticRoutingContext.swift');
   for (const token of ['AgentAutomaticRouteAdmission.targets(', 'connectorCallsAllowed: connectorCallsAllowed',
