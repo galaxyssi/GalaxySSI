@@ -90,6 +90,19 @@ final class AgentPreShadowRoutingTests: XCTestCase {
     XCTAssertEqual(safe.fallbacks.first?.score, Int.min)
   }
 
+  func testRepeatedPreparationReplacesCalibrationRatherThanCompoundingIt() {
+    let original = decision([candidate("high", score: Int.max - 1), candidate("low", score: Int.min + 1)])
+    let first = AgentProviderResourceRanking.prepareForQuality(decision: original,
+      eligibleTargetIds: ["high", "low"], preferredTargetId: "") { $0 == "high" ? 120 : -180 }
+    let second = AgentProviderResourceRanking.prepareForQuality(decision: first,
+      eligibleTargetIds: ["high", "low"], preferredTargetId: "") { _ in 0 }
+    XCTAssertEqual(second.primary?.score, Int.max - 1)
+    XCTAssertEqual(second.fallbacks.first?.score, Int.min + 1)
+    XCTAssertEqual(second.primary?.reasons.filter { $0.hasPrefix("routing_self_calibration_baseline:") }.count, 1)
+    XCTAssertEqual(second.primary?.reasons.filter { $0.hasPrefix("routing_self_calibration_adjustment:") },
+      ["routing_self_calibration_adjustment:0"])
+  }
+
   func testShadowScoringAcceptsClampedExtremeBaselineWithoutIntegerAddition() throws {
     let extremes = [candidate("high", score: Int.max), candidate("low", score: Int.min)]
     var settings = AgentEvalOpsSettings()

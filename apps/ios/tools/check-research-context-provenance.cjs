@@ -4,7 +4,8 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '0bdfc81662cc27f638f0b3360f13c399ad2ba704';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-provider-resource-ranking-scope.cjs').retained(f,
-  require('./check-routing-health-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
+  require('./check-routing-health-scope.cjs').retained(f,
+    require('./check-routing-usage-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8')))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {
@@ -12,6 +13,7 @@ function section(s, first, last) {
   assert(a >= 0 && b > a, first); assert.equal(s.split(first).length, 2, first); return s.slice(a, b);
 }
 function retained(file, s) {
+  s = require('./check-routing-usage-scope.cjs').retained(file, s);
   s = require('./check-routing-health-scope.cjs').retained(file, s);
   s = require('./check-provider-resource-ranking-scope.cjs').retained(file, s);
   s = require('./check-connector-observation-timing-scope.cjs').retained(file, s);

@@ -10,7 +10,8 @@ const android = 'e7c6af6ef3eed21c7fb697b4458d1cf742833dc4';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 const read = file => require('./check-provider-resource-ranking-scope.cjs').retained(file,
   require('./check-routing-health-scope.cjs').retained(file,
-    fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')));
+    require('./check-routing-usage-scope.cjs').retained(file,
+      fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'))));
 const native = 'apps/ios/GalaxySSI/AgentNetworkRoutingModels.swift';
 const source = read(native);
 const insertion = '    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n';

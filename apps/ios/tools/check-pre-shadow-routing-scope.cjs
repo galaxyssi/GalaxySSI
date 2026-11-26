@@ -1,6 +1,6 @@
 // Source contracts only, not native execution or quality acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), base = '387929097036560b483482e3590451190e7640db';
+const root = path.resolve(__dirname, '../../..'), base = 'f2b671fa9a9728bfc6e1c94697bec0bdf89c943e';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const git = (...args) => cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024});
 const old = file => git('show', `${base}:${file}`).replace(/\r\n/g, '\n');
@@ -69,7 +69,9 @@ function validate() {
   assert.equal(once(read(checker), '  [models, "AgentProviderResourceRanking.prepareForQuality"],',
     '  [models, "eligible_reasoning_fallback"],'), old(checker));
   const tests = read('apps/ios/GalaxySSITests/AgentPreShadowRoutingTests.swift');
-  assert.equal((tests.match(/  func test/g) || []).length, 9);
+  assert.equal((tests.match(/  func test/g) || []).length, 10);
+  assert(policy.includes('Int($0.dropFirst(baselinePrefix.count))'));
+  assert(tests.includes('testRepeatedPreparationReplacesCalibrationRatherThanCompoundingIt'));
   for (const token of ['XCTAssertEqual(seen, candidates.map', 'recommendedResourceId: "shared-6"',
     'XCTAssertEqual(safe.primary?.score, Int.max)', 'XCTAssertEqual(safe.fallbacks.first?.score, Int.min)',
     'shadow.scores.map(\\.score), [1, 0]', 'preferredTargetId: "node-9"', 'recoverable_connector_status']) assert(tests.includes(token), token);

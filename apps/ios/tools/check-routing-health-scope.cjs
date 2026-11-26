@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..');
 const base = '5f63d903558458025c872851369dbfd557c75cf1';
-const read = file => require('./check-pre-shadow-routing-scope.cjs').retained(file,
+const read = file => require('./check-routing-usage-scope.cjs').retained(file,
   fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function once(source, from, to = '') { assert.equal(source.split(from).length, 2, from); return source.replace(from, to); }
@@ -25,7 +25,7 @@ const replayHook = '    let replayTargets = automaticRoutingTargets(goal: source
   '      hasPairedDesktop: store.serverLinks.contains { $0.paired },\n' +
   '      routingHealth: automaticRoutingHealth(targets: replayTargets))\n';
 function retained(file, source) {
-  source = require('./check-pre-shadow-routing-scope.cjs').retained(file, source);
+  source = require('./check-routing-usage-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentRoutingHealthSnapshot.swift') && !line.includes('AgentRoutingHealthSnapshotTests.swift')).join('\n');
   if (file.endsWith('AgentProviderHealth.swift') && source.includes(ledgerHook)) {

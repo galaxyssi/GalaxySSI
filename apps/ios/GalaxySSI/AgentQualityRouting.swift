@@ -363,7 +363,8 @@ enum AgentQualityRoutingService {
     requirements: AgentTaskRequirements? = nil,
     environment: AgentRuntimeEnvironment? = nil,
     hasPairedDesktop: Bool = false,
-    routingHealth: AgentRoutingHealthSnapshot? = nil
+    routingHealth: AgentRoutingHealthSnapshot? = nil,
+    routingUsage: AgentRoutingUsageSnapshot? = nil
   ) -> AgentRoutingDecision? {
     let requirements = requirements ?? AgentTaskRequirementAnalyzer.analyze(goal)
     let environment = environment ?? {
@@ -378,7 +379,7 @@ enum AgentQualityRoutingService {
         AgentCapabilityRoutingPolicy.missingRequired(requirements, available: $0.capabilities).isEmpty
     }.map { resource in
       AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment,
-        hasPairedDesktop: hasPairedDesktop, health: routingHealth?.resources[resource.targetId])
+        hasPairedDesktop: hasPairedDesktop, health: routingHealth?.resources[resource.targetId], observedUsage: routingUsage?.resources[resource.targetId])
     }
     guard !candidates.isEmpty else { return nil }
     let primary = candidates.first { $0.resource.targetId == primaryTargetId } ?? candidates[0]
