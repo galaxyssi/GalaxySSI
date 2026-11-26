@@ -117,7 +117,7 @@ extension AgentHomeView {
 
   func createAgentConversation() {
     coordinator.endLocalAgentSession(sessionId: store.activeAgentConversationId)
-    _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"))
+    _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"), useRememberedSelection: true)
     resetAgentSessionPresentation()
   }
 

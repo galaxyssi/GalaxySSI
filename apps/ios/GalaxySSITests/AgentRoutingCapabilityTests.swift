@@ -2072,7 +2072,7 @@ extension GalaxySSIStoreTests {
     }
   }
 
-  func testAgentModelSelectionRemembersEachAgentButNewSessionsStartAutomatic() throws {
+  func testAgentModelSelectionRemembersEachAgentAndSnapshotsNewUserSession() throws {
     let suiteName = "AgentModelSelectionSettingsTests.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -2107,7 +2107,10 @@ extension GalaxySSIStoreTests {
       for: "conversation-two",
       defaults: defaults
     )
-    XCTAssertEqual(inherited, AgentModelSelection())
+    XCTAssertEqual(inherited, AgentModelSelectionSettings.defaultSelection(defaults: defaults))
+    XCTAssertEqual(inherited.targetId, "desktop:claude")
+    XCTAssertEqual(inherited.modelId, "claude-opus-4-1")
+    XCTAssertEqual(inherited.reasoningEffort, .xhigh)
     XCTAssertEqual(AgentModelSelectionSettings.selection(for: "conversation-one", defaults: defaults).targetId,
       "desktop:claude")
     AgentModelSelectionSettings.inheritDefault(for: "conversation-one", defaults: defaults)
@@ -2155,21 +2158,21 @@ extension GalaxySSIStoreTests {
     AgentModelSelectionSettings.selectManual(for: "home", targetId: "desktop:codex",
       modelId: "gpt-6-sol", displayName: "Codex", reasoningEffort: .high, defaults: defaults)
     let home = AgentModelSelectionSettings.selection(for: "home", defaults: defaults)
-    AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
+    AgentModelSelectionSettings.initializeConversation(for: "screen", useRememberedSelection: false, defaults: defaults)
     XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
     AgentModelSelectionSettings.selectManual(for: "screen", targetId: "desktop:codex",
       modelId: "gpt-6-luna", displayName: "Codex", reasoningEffort: .low,
       rememberAsDefault: false, defaults: defaults)
     AgentModelSelectionSettings.selectAutomaticForConversation(for: "screen", defaults: defaults)
     XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
-    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), AgentModelSelection())
+    XCTAssertEqual(AgentModelSelectionSettings.defaultSelection(defaults: defaults), home)
     XCTAssertEqual(AgentModelSelectionSettings.selection(for: "home", defaults: defaults), home)
     let remembered = try XCTUnwrap(AgentModelSelectionSettings.configurationForTarget(
       conversationId: "screen", targetId: "desktop:codex", defaults: defaults))
     XCTAssertEqual(remembered.modelId, "gpt-6-luna")
     XCTAssertEqual(remembered.reasoningEffort, .low)
     AgentModelSelectionSettings.inheritDefault(for: "next", defaults: defaults)
-    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "next", defaults: defaults), AgentModelSelection())
+    XCTAssertEqual(AgentModelSelectionSettings.selection(for: "next", defaults: defaults), home)
     AgentModelSelectionSettings.inheritDefault(for: "screen", defaults: defaults)
     XCTAssertEqual(AgentModelSelectionSettings.selection(for: "screen", defaults: defaults), AgentModelSelection())
     AgentModelSelectionSettings.selectAutomatic(for: "home", defaults: defaults)

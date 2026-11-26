@@ -724,7 +724,7 @@ struct GalaxySSIAgentSessionsView: View {
   private func createSession() {
     multiDeleteMode = false
     selectedSessionIDs.removeAll()
-    let session = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"))
+    let session = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"), useRememberedSelection: true)
     statusText = String(format: t("galaxyssi.agent_sessions.created", "Selected %@"), session.title)
     showArchived = false
     dismiss()
