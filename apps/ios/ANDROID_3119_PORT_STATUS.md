@@ -106,13 +106,22 @@ Because the delegate may already have sent an external effect, this path does no
 
 The actual shortcut outcome-review provider path now binds an Auto turn only when no persisted planner snapshot exists. It captures one target for all local/cloud/paired-phone branches, including explicit no-route, and records that target only after a real snapshot passes the existing review-provider privacy/local-only/connector gate. Failure to commit current-turn metadata rejects provider selection. A saved snapshot is retained unchanged and does not rebind or overwrite newer Auto metadata; manual recovery also retains its original selection behavior. Original effect readback, uncertain-effect evidence and continuation ownership are unchanged. Broader resumed planning paths remain unported; these assertions are source-only and do not prove native recovery behavior.
 
-This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. The installed queued producer supports the scoped input/backend combinations above, not the full Android generic connector contract. Coordinator's direct model/Agent sending remains separate. The general control-plane timeout helper still lacks a Coordinator caller/candidate-observation source. Those missing timeout/deferred-observation and broader attachment connections require implementation, not just policy tests.
+This is NOT completion of Android #3119. At the original checkpoint main service selection started without a full scored privacy/budget/capacity context. The scored-route follow-up below now connects that context to main Auto selection, dispatch refresh and fresh fallback using the existing admission/scoring policies; it does not cover every planner entry point or restore superseded resource-counter limits. The installed queued producer supports the scoped input/backend combinations above, not the full Android generic connector contract. Coordinator's direct model/Agent sending remains separate. The general control-plane timeout helper still lacks a Coordinator caller/candidate-observation source. Those missing timeout/deferred-observation and broader attachment connections require implementation, not just policy tests.
 
 The original Desktop changes above were limited to the existing recovery implementation. The journal Codex follow-up below removes its explicit replay rejection with exact current attempt authorization and original-message receipt projection. Broader asynchronous continuation, active pre-timeout observation/deferred discovery and broader scheduled/resumed provider identity still require integration. Parallel/attachment/native UI, network, process-restart and recovery acceptance are unverified. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn.
 
 All 17 Android changed files are pinned with explicit dispositions. Manual selection, planning factory and quality-ranking implementations remain exact. The scoped Auto, admission, host continuation and queued producer changes above are additive to those existing policies. No credential, version, Android, Desktop or IPA changes. Existing network engines/outboxes are reused, not replaced with a new protocol.
 
 ## Verification Limits
+
+### Scored main-service route context follow-up
+
+See `ANDROID_3119_SCORED_ROUTE_CONTEXT.md`: main Auto choice, dispatch refresh
+and fresh fallback now pass an explicit scored decision with actual admission,
+budget/environment, exact registration attributes, health and scoped usage.
+Healthy admitted primaries avoid alternative calibration/shadow work; other
+candidates remain complete until the existing selector bounds them. Eight
+fixture methods are source only; no native routing acceptance is claimed.
 
 ### Resumed planner model identity follow-up
 
