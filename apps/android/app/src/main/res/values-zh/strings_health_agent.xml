@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="health_agent_report_reference">" · 报告参考 %1$s"</string>
     <string name="health_agent_why">关注原因：%1$s</string>
     <string name="health_agent_next">下一步：%1$s</string>
     <string name="health_agent_research_state">主动查证：%1$s</string>
