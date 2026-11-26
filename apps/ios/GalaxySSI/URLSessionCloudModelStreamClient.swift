@@ -1,7 +1,7 @@
 import Foundation
 
 final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
-  private let session: URLSession
+  private let sessions: CloudModelStreamSessionPool
   private let elapsedMillis: () -> Int64
   private let lock = NSLock()
   private var activeTasks: [String: Task<Void, Never>] = [:]
@@ -12,7 +12,7 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
     session: URLSession? = nil,
     elapsedMillis: @escaping () -> Int64 = URLSessionCloudModelStreamClient.defaultElapsedMillis
   ) {
-    self.session = session ?? URLSession(configuration: Self.mobileStreamingConfiguration())
+    sessions = CloudModelStreamSessionPool(session: session, now: elapsedMillis)
     self.elapsedMillis = elapsedMillis
   }
 
@@ -119,7 +119,9 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
           state: state, timing: timing, continuation: continuation)
         return
       }
-      let (bytes, response) = try await session.bytes(for: urlRequest,
+      let sessionLease = sessions.acquire()
+      defer { sessionLease.end() }
+      let (bytes, response) = try await sessionLease.session.bytes(for: urlRequest,
         delegate: privateContinuation ? NoPrivateContinuationRedirects() : nil)
       timing.mark("request_write_end")
       timing.mark("response_headers")
@@ -518,6 +520,59 @@ final class ModelStreamFrameAccumulator {
       dataLines.append(line)
     }
     return []
+  }
+}
+
+// Retire only owned, completely idle sessions before reuse. Leases span response
+// bodies, not just headers, so a concurrent or slow stream cannot be invalidated.
+final class CloudModelStreamSessionPool {
+  final class Lease {
+    let session: URLSession
+    private let lock = NSLock()
+    private var release: (() -> Void)?
+    init(session: URLSession, release: @escaping () -> Void) { self.session = session; self.release = release }
+    deinit { end() }
+    func end() {
+      lock.lock(); let action = release; release = nil; lock.unlock()
+      action?()
+    }
+  }
+  private let lock = NSLock()
+  private let owned: Bool
+  private let now: () -> Int64
+  private let make: () -> URLSession
+  private let retire: (URLSession) -> Void
+  private var current: URLSession?
+  private var active = Set<UUID>()
+  private var idleSince: Int64?
+
+  init(session: URLSession? = nil, now: @escaping () -> Int64,
+       make: @escaping () -> URLSession = { URLSession(configuration: URLSessionCloudModelStreamClient.mobileStreamingConfiguration()) },
+       retire: @escaping (URLSession) -> Void = { $0.finishTasksAndInvalidate() }) {
+    current = session; owned = session == nil; self.now = now; self.make = make; self.retire = retire
+  }
+  deinit { if owned, let current { retire(current) } }
+
+  func acquire() -> Lease {
+    lock.lock()
+    let time = now()
+    var previous: URLSession?
+    if owned, active.isEmpty, let idleSince, time >= idleSince {
+      let (elapsed, overflow) = time.subtractingReportingOverflow(idleSince)
+      if overflow || elapsed >= 60_000 { previous = current; current = nil }
+    }
+    let session = current ?? make()
+    current = session; idleSince = nil
+    let id = UUID(); active.insert(id)
+    lock.unlock()
+    if let previous { retire(previous) }
+    return Lease(session: session) { self.finish(id) }
+  }
+
+  private func finish(_ id: UUID) {
+    lock.lock(); defer { lock.unlock() }
+    guard active.remove(id) != nil else { return }
+    if active.isEmpty { idleSince = now() }
   }
 }
 

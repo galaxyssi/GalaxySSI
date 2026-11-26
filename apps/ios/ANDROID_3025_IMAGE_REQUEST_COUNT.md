@@ -28,9 +28,10 @@ guidance, source verification, permission/consent and disclosure paths remain.
   increment fixes the missed dedicated image count and clarifies retrieval intent.
 - Android MQTT receive timing: not changed here. Existing iOS encrypted receipt,
   replay and dispatch code is retained; timing/diagnostic parity is not certified.
-- Android OkHttp idle retention/HTTP2 pings: not copied as imaginary URLSession
-  settings or by lowering active request deadlines. The iOS stream transport is
-  unchanged; stale-connection and weak-network acceptance remain follow-up work.
+- Android OkHttp idle retention/HTTP2 pings: the follow-up in
+  ANDROID_3025_MOBILE_STREAM_SESSIONS.md adds owned idle-only session rotation
+  without lowering active deadlines. No matching HTTP2 ping control is claimed;
+  stale-connection and weak-network acceptance remain follow-up work.
 - Desktop ACK-credit/coalescing and task priority: backend-only changes are not
   reimplemented in iOS. No encrypted packet deletion, ACK relaxation or concurrency
   reduction is introduced. End-to-end credit behavior is not accepted here.

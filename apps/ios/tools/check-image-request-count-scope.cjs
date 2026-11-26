@@ -2,11 +2,12 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
 const app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-mobile-stream-session-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const intent = '      "Finding or showing existing pictures is retrieval, not a request to generate new artwork. Generate or edit " +\n      "images only when the user requests creation or transformation; do not substitute fan art for existing images. " +\n';
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(f, s) {
+  s = require('./check-mobile-stream-session-scope.cjs').retained(f, s);
   if (f === app + 'CloudWebGrounding.swift') return s.replace(intent, '')
     .replace('min(max(result["max_results"]?.intValue ?? 3, 1), 12)', 'min(max(result["max_results"]?.intValue ?? 12, 6), 12)');
   if (f === tests + 'CloudWebGroundingTests.swift' && s.includes('  func testDedicatedImageAliasPreservesEverySupportedRequestedCount()'))

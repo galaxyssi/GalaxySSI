@@ -107,6 +107,64 @@ final class URLSessionCloudModelStreamClientTests: XCTestCase {
     XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
   }
 
+  func testIdleSessionReusedBeforeMinuteAndReplacedAtTheBoundary() {
+    var time: Int64 = 0
+    var retired: [URLSession] = []
+    let pool = CloudModelStreamSessionPool(now: { time }, retire: { retired.append($0); $0.finishTasksAndInvalidate() })
+    let first = pool.acquire(); first.end()
+    time = 59_999
+    let second = pool.acquire(); XCTAssertTrue(first.session === second.session); second.end()
+    time = 119_999
+    let replacement = pool.acquire(); defer { replacement.end() }
+    XCTAssertFalse(replacement.session === first.session)
+    XCTAssertEqual(retired.count, 1); XCTAssertTrue(retired.first === first.session)
+  }
+
+  func testActiveBodyLeasesPreventRetirementAcrossLongParallelStreams() {
+    var time: Int64 = 0
+    var retirements = 0
+    let pool = CloudModelStreamSessionPool(now: { time }, retire: { retirements += 1; $0.finishTasksAndInvalidate() })
+    let first = pool.acquire()
+    time = 900_000
+    let parallel = pool.acquire(); XCTAssertTrue(first.session === parallel.session)
+    first.end(); first.end()
+    time = 1_800_000
+    let third = pool.acquire(); XCTAssertTrue(parallel.session === third.session)
+    XCTAssertEqual(retirements, 0)
+    parallel.end(); third.end()
+    time += 60_000
+    let next = pool.acquire(); defer { next.end() }
+    XCTAssertFalse(next.session === first.session); XCTAssertEqual(retirements, 1)
+  }
+
+  func testInjectedSessionRemainsCallerOwnedAcrossIdleAndPoolDisposal() {
+    let injected = URLSession(configuration: .ephemeral)
+    defer { injected.finishTasksAndInvalidate() }
+    var time: Int64 = 0
+    var retirements = 0, creations = 0
+    var pool: CloudModelStreamSessionPool? = CloudModelStreamSessionPool(session: injected, now: { time },
+      make: { creations += 1; return URLSession(configuration: .ephemeral) }, retire: { _ in retirements += 1 })
+    let first = pool!.acquire(); first.end()
+    time = Int64.max
+    let second = pool!.acquire(); XCTAssertTrue(second.session === injected); second.end()
+    pool = nil
+    XCTAssertEqual(creations, 0); XCTAssertEqual(retirements, 0)
+  }
+
+  func testLeaseDeinitReleasesAndOverflowOrClockRollbackCannotCorruptIdleAge() {
+    var time = Int64.min
+    let pool = CloudModelStreamSessionPool(now: { time })
+    var first: CloudModelStreamSessionPool.Lease? = pool.acquire()
+    let original = first!.session
+    first = nil
+    time = Int64.max
+    let second = pool.acquire(); XCTAssertFalse(second.session === original)
+    second.end()
+    time = 0
+    let rolledBack = pool.acquire(); defer { rolledBack.end() }
+    XCTAssertTrue(rolledBack.session === second.session)
+  }
+
   func testSSEFrameAccumulatorCombinesEventAndMultilineData() {
     let accumulator = ModelStreamFrameAccumulator(transport: .sse)
     var frames: [ModelStreamFrame] = []
