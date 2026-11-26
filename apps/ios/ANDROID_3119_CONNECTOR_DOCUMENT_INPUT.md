@@ -5,7 +5,10 @@
 This addresses the broader attachment-input gap tracked in the iOS #3119 port,
 not a claim that Android #3119 introduced the iOS parser or these limits.
 Android reference remains `e7c6af6ef3eed21c7fb697b4458d1cf742833dc4` and its
-originating-turn attachment routing. iOS source baseline: main `2e4db3d46`.
+originating-turn attachment routing. iOS source baseline: main `fee71d95c`,
+including the merged owned-status observation work in #4580. Earlier source
+guards normalize only this document-input increment before their comparisons;
+the new guard also freezes those guard integration hooks against this main base.
 
 Native queued local/cloud connectors previously rejected all non-image
 attachments, even though iOS already had document text parsers. They now restore

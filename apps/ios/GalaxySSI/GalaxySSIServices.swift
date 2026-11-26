@@ -4422,6 +4422,7 @@ final class MessageCoordinator: ObservableObject {
       _ = desktopReplyRecovery.retire(binding)
       return false
     }
+    recordNativeConnectorObservation(record)
     if let payload = desktopResultRecovery.assembled(record) {
       persistRecoveredManagedDesktopResult(payload, record: record)
       return false
@@ -4882,6 +4883,7 @@ final class MessageCoordinator: ObservableObject {
             let record = desktopReplyRecovery.receive(payload, authenticatedDesktopId: desktopId, now: now) else {
         throw MqttRouteError.invalidPayload
       }
+      recordNativeConnectorObservation(record)
       if AgentDesktopReplyRecovery.terminalStatuses.contains(record.status), let page = item.dictionary("result_page"),
          let manifest = desktopResultRecovery.receiveInline(page, record: record, queryNonce: payload.string("request_id")) {
         // Inline page zero is optional. If the manifest write fails, fetch it again explicitly.
@@ -4918,6 +4920,7 @@ final class MessageCoordinator: ObservableObject {
     for record in page {
       journalBackedRecoveryCursor = record.binding.key
       guard record.codexDispatchPending != true, journalBackedDesktopBindingIsCurrent(record.binding) else { continue }
+      recordNativeConnectorObservation(record)
       if let team = record.binding.teamSource {
         let retry = teamRecoveryRetryState(runID: team.supervisorRunId)
         guard !retry.stalled, retry.retryAtMillis <= now else { continue }
@@ -14554,6 +14557,46 @@ final class MessageCoordinator: ObservableObject {
     return (task, outgoing, waiting, pending)
   }
 
+  private func recordNativeConnectorObservation(_ observation: AgentDesktopReplyRecoveryRecord) {
+    guard UIApplication.shared.isProtectedDataAvailable,
+          desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          desktopReplyRecovery.record(for: observation.binding) == observation,
+          let record = currentManagedDesktopReply(observation.binding), record.state == .pending,
+          let task = store.agentTask(id: record.turnId), task.sessionId == record.conversationId,
+          let session = store.agentSession(id: record.conversationId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          task.phase == .waitingResponse || task.phase == .paused ||
+            (task.phase == .blocked && task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true"),
+          var plan = task.activePlan else { return }
+    let matches = plan.actions.indices.filter {
+      AgentNativeConnectorContinuation.pendingResult(plan.actions[$0])?.metadata["control_plane_run_id"] == record.ownerRunId
+    }
+    guard matches.count == 1, let index = matches.first,
+          let pending = AgentNativeConnectorContinuation.pendingResult(plan.actions[index]),
+          task.lastNativeActionResult?.actionId == pending.actionId,
+          task.lastNativeActionResult?.metadata["control_plane_run_id"] == record.ownerRunId,
+          let dispatch = AgentIOSConnectorDispatch(action: plan.actions[index], receipt: pending),
+          plan.actions[index].parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint,
+          let outgoing = store.persistedMessage(id: dispatch.outgoingId, contactId: "hermes"),
+          AgentNativeConnectorContinuation.waitingAction(plan.actions[index], result: pending, task: task, outgoing: outgoing) != nil,
+          record.correlates(dispatch.response("", success: false)),
+          let observed = AgentNativeConnectorStatusObservation.apply(pending: pending, managed: record, observation: observation),
+          let retained = AgentNativeConnectorContinuation.waitingAction(plan.actions[index], result: observed,
+            task: task, outgoing: outgoing) else { return }
+    var updated = task
+    plan.actions[index] = retained
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.lastNativeActionResult = observed
+    if updated.pendingAction?.id == retained.id { updated.pendingAction = retained }
+    if task.phase == .waitingResponse, pending.metadata["native_connector_observation_overdue"] == "true" {
+      updated.verification = localizedReply("galaxyssi.agent.connector.waiting_original_result",
+        fallback: "Waiting for the original connector result.")
+    }
+    updated.updatedAtMillis = max(task.updatedAtMillis, observation.lastResponseAt)
+    _ = store.commitOwnedAgentTaskState(expected: task, updated: updated)
+  }
+
   private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord) -> Bool {
     guard record.state == .pending, let task = store.agentTask(id: record.turnId),
           task.sessionId == record.conversationId,
@@ -18937,6 +18980,7 @@ final class MessageCoordinator: ObservableObject {
          teamRecoveryObservationIsCurrent(expected, item: item) {
         if let record = desktopReplyRecovery.receive(appPayload, authenticatedDesktopId: link.desktopId,
           now: AgentControlPlaneClock.nowMillis()) {
+          recordNativeConnectorObservation(record)
           if let item = (appPayload["items"] as? [[String: Any]])?.first, let page = item.dictionary("result_page"),
              let manifest = desktopResultRecovery.receiveInline(page, record: record,
                queryNonce: appPayload.string("request_id")) { _ = desktopReplyRecovery.attachManifest(manifest, to: record) }

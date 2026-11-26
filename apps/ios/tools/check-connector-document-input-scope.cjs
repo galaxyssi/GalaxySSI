@@ -1,6 +1,6 @@
 // Source contracts only, not native extraction, inference, provider delivery or cancellation acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '2e4db3d46';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'fee71d95ce8b6d5c5d62863dd55e1bf93c866078';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const show = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -9,6 +9,10 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
+  if (file.endsWith('check-pre-shadow-routing-scope.cjs')) return source.replace(
+    "  require('./check-connector-document-input-scope.cjs').retained(file,\n    fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')));",
+    "  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));")
+    .replace("  source = require('./check-connector-document-input-scope.cjs').retained(file, source);\n", '');
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentConnectorDocumentInputTests.swift')).join('\n');
   if (file.endsWith('AgentIOSConnectorDispatch.swift') && source.includes('\nenum AgentConnectorDocumentInput {'))
@@ -68,6 +72,11 @@ function validate() {
     'testEncodedByteBoundRejectsLargeSingleGraphemePayloads', 'testImageBytesStayOnExistingVisionPathAndAreNotDecodedAsDocuments',
     'testOneUnreadableDocumentCannotYieldPartialSuccessfulContext']) assert(tests.includes(token), token);
   assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj').split('\n').filter(line => line.includes('AgentConnectorDocumentInputTests.swift')).length, 4);
+  const priorScope = 'apps/ios/tools/check-pre-shadow-routing-scope.cjs';
+  assert.equal(retained(priorScope, read(priorScope)), show(priorScope));
+  const statusScope = 'apps/ios/tools/check-native-status-observation-scope.cjs';
+  assert.equal(read(statusScope).replace("const read = file => require('./check-connector-document-input-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
+    "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');"), show(statusScope));
   console.log('Scoped transient document input, post-extraction admission, untrusted envelopes and unchanged paired transport source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
