@@ -61,6 +61,11 @@ resource scoring, disclosure and transport. No native typecheck/build/XCTest,
 actual offline/private generation, model loading, runtime-concurrency/device
 acceptance, CI monitoring or IPA is included.
 
+Checkpoint: seventeen related JS source-scope guards passed after synchronizing
+main's scored-routing integration. iOS project structure, changed iOS literal-
+Han and diff whitespace checks passed. These are not an all-repository or native
+test pass.
+
 This fixes the phone resource identity used by these existing call paths, not
 generic timeout/deferred observation, all routing/attachment entry points or the
 overall Android-to-iOS backlog.
