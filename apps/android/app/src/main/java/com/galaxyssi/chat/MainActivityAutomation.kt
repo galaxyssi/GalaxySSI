@@ -1281,24 +1281,37 @@ internal fun MainActivity.showDesktopSecurityDetail(device: DesktopSecuritySumma
     }
     addSectionTitle(getString(R.string.security_section_danger))
     featureContent.addView(featureRow(
-        getString(R.string.desktop_disconnect_keep_history), "", R.drawable.ic_protocol_link, ""
+        getString(R.string.desktop_scan_reconnect), "", R.drawable.ic_protocol_link, ""
     ).apply {
-        setOnClickListener {
-            confirmDesktopDisconnect(device.id) {
-                refreshDirectoryContacts()
-                showSecurityFeaturePage()
-            }
-        }
+        setOnClickListener { startSecurityScan() }
     })
     featureContent.addView(featureRow(getString(R.string.security_revoke_this_pc), getString(R.string.security_revoke_this_pc_subtitle), R.drawable.ic_delete, getString(R.string.security_revoke)).apply {
         setOnClickListener { confirmRevokeDesktop(device) }
+    })
+    featureContent.addView(featureRow(getString(R.string.desktop_delete_local_chats), "", R.drawable.ic_delete, "").apply {
+        setOnClickListener {
+            AlertDialog.Builder(this@showDesktopSecurityDetail)
+                .setTitle(R.string.desktop_delete_local_chats)
+                .setMessage(getString(R.string.desktop_delete_local_chats_confirm, device.name))
+                .setNegativeButton(R.string.common_cancel, null)
+                .setPositiveButton(R.string.security_delete) { _, _ ->
+                    thread(name = "desktop-clear-local-chats") {
+                        val ok = AppStore.clearPairedDesktopLocalHistory(applicationContext, device.id, device.fingerprint)
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) Toast.makeText(this@showDesktopSecurityDetail,
+                                if (ok) R.string.desktop_local_chats_cleared else R.string.desktop_disconnect_failed,
+                                Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }.show()
+        }
     })
 }
 
 internal fun MainActivity.confirmRevokeDesktop(device: DesktopSecuritySummary) {
     showFeaturePage(getString(R.string.security_revoke_device_title))
     featureContent.addView(featureHeroCard(device.name, getString(R.string.security_revoke_device_subtitle), R.drawable.ic_delete, "#FF3B30", getString(R.string.common_confirm)))
-    featureContent.addView(featureRow(getString(R.string.security_revoke_scope), getString(R.string.count_pc_connector_agents, device.agentCount), R.drawable.ic_agent_node, getString(R.string.security_delete)))
+    featureContent.addView(featureRow(getString(R.string.security_revoke_scope), getString(R.string.count_pc_connector_agents, device.agentCount), R.drawable.ic_agent_node, getString(R.string.security_revoke)))
     featureContent.addView(featureRow(getString(R.string.security_desktop_fingerprint), formatFingerprint(device.fingerprint), R.drawable.ic_security_shield, ""))
     featureContent.addView(TextView(this).apply {
         text = getString(R.string.security_revoke_this_pc)

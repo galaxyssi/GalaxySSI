@@ -105,6 +105,7 @@ from mqtt_durable_chunks import DurableChunkAssembler
 from mqtt_chunk_receipts import OutgoingChunks, Query as ChunkQuery, PROBE as CHUNK_PROBE, STATE as CHUNK_STATE
 from pairing_state import (
     DATA_DIR,
+    accepts_history_owner,
     active_pairing_topics,
     claim_pairing_session,
     clients_for_identity,
@@ -1809,13 +1810,10 @@ def forget_paired_client_transport(client_route_id: str, mqttc=None) -> dict:
         _unsubscribe_client(mqttc, paired_client)
     closed_sessions = _close_phone_tool_sessions(route_id, "pairing revoked")
     delivery = discard_route(route_id)
-    from peer_chat_store import peer_chat_store
-
-    peer_messages = peer_chat_store().delete_route(route_id)
     return {
         "closed_phone_tool_sessions": closed_sessions,
         "discarded_delivery": delivery,
-        "deleted_peer_messages": peer_messages,
+        "deleted_peer_messages": 0,
     }
 
 
@@ -8149,6 +8147,9 @@ def handle_pairing_claim(mqttc, payload: dict, *, ingress_broker=""):
     if existing_client is not None:
         log.info("MQTT duplicate pairing claim accepted; confirmation will be replayed")
         _publish_pairing_confirmation(mqttc, existing_client, fingerprint, ingress_broker=ingress_broker)
+        return
+    if not accepts_history_owner(client_route_id, local_fingerprint, fingerprint):
+        log.warning("MQTT pairing rejected: archived route identity mismatch")
         return
     replaced_clients = clients_for_identity(
         fingerprint,

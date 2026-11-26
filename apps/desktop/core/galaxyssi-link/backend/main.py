@@ -724,9 +724,12 @@ def api_delete_peer_message(message_id: str, request: Request, client_route_id: 
 def api_delete_peer_conversation(client_route_id: str, request: Request):
     require_desktop_api_token(request)
     from peer_chat_store import peer_chat_store
+    from pairing_state import history_routes
 
-    deleted = peer_chat_store().delete_route(client_route_id)
-    return {"client_route_id": client_route_id, "deleted_messages": deleted}
+    store = peer_chat_store()
+    routes = history_routes(client_route_id)
+    deleted = sum(store.delete_route(route) for route in routes)
+    return {"client_route_id": client_route_id, "deleted_messages": deleted, "deleted_route_ids": routes}
 
 
 @app.get("/api/peer/messages/{message_id}/attachments/{attachment_index}")
