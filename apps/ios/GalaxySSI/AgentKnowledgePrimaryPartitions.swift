@@ -31,6 +31,16 @@ final class AgentKnowledgePrimaryPartitions {
     var sha256: String
   }
 
+  private final class WriteBatch {
+    let catalog: OpaquePointer
+    let thread = Thread.current
+    var pending: Set<String> = []
+    var failed = false
+    var prepared = false
+    var hasWrites = false
+    init(catalog: OpaquePointer) { self.catalog = catalog }
+  }
+
   let root: URL
   private var namespace: String?
   private let namespacePurpose: String
@@ -44,6 +54,8 @@ final class AgentKnowledgePrimaryPartitions {
   private var accessDescriptor: Int32 = -1
   private var sharedLease = false
   private var writers: [Int: (id: String, database: OpaquePointer)] = [:]
+  private var writeBatch: WriteBatch?
+  private let beforePartitionCommit: (String) throws -> Void
   private let beforeCatalogPublication: () throws -> Void
   private let beforeRetiredUnlink: () throws -> Void
   private let afterRetiredUnlink: () throws -> Void
@@ -52,7 +64,8 @@ final class AgentKnowledgePrimaryPartitions {
 
   init(catalogURL: URL, secrets: GalaxySSISecretStore, partitionBytes: Int64 = 64 * 1_024 * 1_024,
        partitionRecords: Int64 = 65_536, beforeCatalogPublication: @escaping () throws -> Void = {},
-       beforeRetiredUnlink: @escaping () throws -> Void = {}, afterRetiredUnlink: @escaping () throws -> Void = {}) {
+       beforeRetiredUnlink: @escaping () throws -> Void = {}, afterRetiredUnlink: @escaping () throws -> Void = {},
+       beforePartitionCommit: @escaping (String) throws -> Void = { _ in }) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -62,6 +75,7 @@ final class AgentKnowledgePrimaryPartitions {
     self.beforeCatalogPublication = beforeCatalogPublication
     self.beforeRetiredUnlink = beforeRetiredUnlink
     self.afterRetiredUnlink = afterRetiredUnlink
+    self.beforePartitionCommit = beforePartitionCommit
   }
 
   deinit {
@@ -72,7 +86,8 @@ final class AgentKnowledgePrimaryPartitions {
 
   func setup(catalog: OpaquePointer) throws {
     guard partitionBytes > 0, partitionRecords > 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    if FileManager.default.fileExists(atPath: root.path) {
+    let existed = FileManager.default.fileExists(atPath: root.path)
+    if existed {
       guard try FileManager.default.attributesOfItem(atPath: root.path)[.type] as? FileAttributeType == .typeDirectory else {
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
@@ -83,6 +98,12 @@ final class AgentKnowledgePrimaryPartitions {
     resources.isExcludedFromBackup = false
     try directory.setResourceValues(resources)
     try setupLease()
+    if !existed {
+      let parent = Darwin.open(root.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+      guard parent >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { Darwin.close(parent) }
+      guard Darwin.fsync(parent) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
     try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
     var committed = false
     defer { if !committed { try? execute(catalog, "ROLLBACK") } }
@@ -119,24 +140,81 @@ final class AgentKnowledgePrimaryPartitions {
     committed = true
   }
 
-  // Caller owns a catalog write transaction. Immutable frames commit before any reference is published.
+  func beginWriteBatch(catalog: OpaquePointer) throws {
+    writerLock.lock()
+    defer { writerLock.unlock() }
+    guard writeBatch == nil, sqlite3_get_autocommit(catalog) == 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    try ensureSharedLease()
+    writeBatch = WriteBatch(catalog: catalog)
+  }
+
+  // Flush every physical participant before the caller can commit its catalog transaction.
+  func prepareBatchCommit(catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws {
+    writerLock.lock()
+    defer { writerLock.unlock() }
+    guard let batch = try ownedBatch(catalog: catalog), sqlite3_get_autocommit(catalog) == 0 else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    do {
+      for bucket in writers.keys.sorted() { try flushWriter(bucket: bucket, checkActive: checkActive) }
+      try Task.checkCancellation()
+      try checkActive()
+      if batch.hasWrites { try syncRoot(); try beforeCatalogPublication() }
+      try Task.checkCancellation()
+      try checkActive()
+      batch.prepared = true
+    } catch { batch.failed = true; throw error }
+  }
+
+  // Always called by the same synchronous owner, after catalog commit or on any error path.
+  func endWriteBatch(catalog: OpaquePointer) {
+    writerLock.lock()
+    defer { writerLock.unlock() }
+    guard let batch = writeBatch, batch.catalog == catalog, batch.thread === Thread.current else { return }
+    for writer in writers.values {
+      if batch.pending.contains(writer.id) { try? execute(writer.database, "ROLLBACK") }
+      sqlite3_close_v2(writer.database)
+    }
+    writers.removeAll()
+    writeBatch = nil
+  }
+
+  private func ownedBatch(catalog: OpaquePointer) throws -> WriteBatch? {
+    guard let batch = writeBatch else { return nil }
+    guard batch.catalog == catalog, batch.thread === Thread.current, !batch.failed, !batch.prepared else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return batch
+  }
+
+  // References can be staged in the catalog, but none may be published before prepareBatchCommit.
   func append(_ plain: Data, itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws {
     writerLock.lock()
     defer { writerLock.unlock() }
+    let batch = try ownedBatch(catalog: catalog)
+    do { try appendFrames(plain, itemHash: itemHash, catalog: catalog, batch: batch, checkActive: checkActive) }
+    catch { batch?.failed = true; throw error }
+  }
+
+  private func appendFrames(_ plain: Data, itemHash: String, catalog: OpaquePointer, batch: WriteBatch?,
+                            checkActive: () throws -> Void) throws {
     try checkActive()
     try ensureSharedLease()
     guard Self.digest(itemHash), !plain.isEmpty, sqlite3_get_autocommit(catalog) == 0,
           let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let bucket = prefix & 3
-    let id = try partition(catalog: catalog, bucket: bucket)
+    let id = try partition(catalog: catalog, bucket: bucket, checkActive: checkActive)
     let database = try writer(id: id, bucket: bucket)
     let entry = UUID().uuidString.lowercased()
     var frameCount = 0, offset = 0
     var storedBytes: Int64 = 0
     do {
-      try execute(database, "BEGIN IMMEDIATE TRANSACTION")
+      if batch?.pending.contains(id) != true {
+        try execute(database, "BEGIN IMMEDIATE TRANSACTION")
+        batch?.pending.insert(id)
+      }
       var committed = false
-      defer { if !committed { try? execute(database, "ROLLBACK") } }
+      defer { if batch == nil && !committed { try? execute(database, "ROLLBACK") } }
       let statement = try prepare(database, "INSERT INTO frames(entry_id,ordinal,sealed) VALUES(?,?,?)")
       defer { sqlite3_finalize(statement) }
       while offset < plain.count {
@@ -157,16 +235,19 @@ final class AgentKnowledgePrimaryPartitions {
         offset = end
         frameCount += 1
       }
-      try checkActive()
-      try Task.checkCancellation()
-      try execute(database, "COMMIT")
-      committed = true
+      if batch == nil {
+        try checkActive()
+        try Task.checkCancellation()
+        try beforePartitionCommit(id)
+        try execute(database, "COMMIT")
+        committed = true
+      }
     } catch {
-      writers.removeValue(forKey: bucket)
-      sqlite3_close_v2(database)
+      if batch == nil { writers.removeValue(forKey: bucket); sqlite3_close_v2(database) }
       throw error
     }
-    try beforeCatalogPublication()
+    batch?.hasWrites = true
+    if batch == nil { try syncRoot(); try beforeCatalogPublication() }
     try Task.checkCancellation()
     try checkActive()
     let reference = Reference(version: 1, partition: id, entry: entry, frames: frameCount,
@@ -189,6 +270,8 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   func read(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
+    writerLock.lock()
+    defer { writerLock.unlock() }
     readerLock.lock()
     defer { readerLock.unlock() }
     try ensureSharedLease()
@@ -197,6 +280,9 @@ final class AgentKnowledgePrimaryPartitions {
 
   private func readPayload(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
     try checkActive()
+    if let batch = writeBatch, batch.catalog == catalog {
+      guard batch.thread === Thread.current, !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    }
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
     defer { sqlite3_finalize(lookup) }
@@ -212,8 +298,14 @@ final class AgentKnowledgePrimaryPartitions {
           reference.frames > 0, reference.plainBytes > 0, reference.plainBytes <= Int64(Int.max),
           Int64(reference.frames) == 1 + (reference.plainBytes - 1) / Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes),
           Self.digest(reference.sha256) else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    let database = try open(partition, create: false, readOnly: true)
-    defer { sqlite3_close_v2(database) }
+    let pending: OpaquePointer?
+    if let batch = writeBatch, batch.catalog == catalog, batch.thread === Thread.current {
+      guard !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      pending = batch.pending.contains(partition) ? writers.values.first(where: { $0.id == partition })?.database : nil
+      if batch.pending.contains(partition), pending == nil { throw AgentKnowledgeDatabaseError.corruptRecord }
+    } else { pending = nil }
+    let database = try pending ?? open(partition, create: false, readOnly: true)
+    defer { if pending == nil { sqlite3_close_v2(database) } }
     let frames = try prepare(database, "SELECT ordinal,sealed FROM frames WHERE entry_id=? ORDER BY ordinal")
     defer { sqlite3_finalize(frames) }
     try bind(reference.entry, index: 1, statement: frames)
@@ -271,6 +363,7 @@ final class AgentKnowledgePrimaryPartitions {
     guard sqlite3_get_autocommit(catalog) != 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     writerLock.lock()
     defer { writerLock.unlock() }
+    guard writeBatch == nil else { throw AgentKnowledgeDatabaseError.corruptRecord }
     readerLock.lock()
     defer { readerLock.unlock() }
     leaseLock.lock()
@@ -419,7 +512,13 @@ final class AgentKnowledgePrimaryPartitions {
         throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
       }
     }
-    guard Darwin.fsync(directoryDescriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    try syncRoot()
+  }
+
+  private func syncRoot() throws {
+    guard directoryDescriptor >= 0, Darwin.fsync(directoryDescriptor) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
   }
 
   private func setupLease() throws {
@@ -463,7 +562,21 @@ final class AgentKnowledgePrimaryPartitions {
     return true
   }
 
-  private func partition(catalog: OpaquePointer, bucket: Int) throws -> String {
+  private func flushWriter(bucket: Int, checkActive: () throws -> Void) throws {
+    guard let writer = writers[bucket] else { return }
+    if let batch = writeBatch, batch.pending.contains(writer.id) {
+      guard batch.thread === Thread.current, !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      try Task.checkCancellation()
+      try checkActive()
+      try beforePartitionCommit(writer.id)
+      try execute(writer.database, "COMMIT")
+      batch.pending.remove(writer.id)
+    }
+    writers.removeValue(forKey: bucket)
+    sqlite3_close_v2(writer.database)
+  }
+
+  private func partition(catalog: OpaquePointer, bucket: Int, checkActive: () throws -> Void) throws -> String {
     let lookup = try prepare(catalog, "SELECT partition_id,bytes,records FROM knowledge_primary_partitions WHERE bucket=? AND sealed=0")
     defer { sqlite3_finalize(lookup) }
     sqlite3_bind_int(lookup, 1, Int32(bucket))
@@ -472,13 +585,14 @@ final class AgentKnowledgePrimaryPartitions {
       let id = try text(lookup, column: 0)
       let bytes = sqlite3_column_int64(lookup, 1), records = sqlite3_column_int64(lookup, 2)
       guard Self.token(id), bytes >= 0, records >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-      if bytes < partitionBytes, records < partitionRecords { return id }
+      if bytes < partitionBytes, records < partitionRecords, try physicalBytes(id) < partitionBytes { return id }
+      try flushWriter(bucket: bucket, checkActive: checkActive)
       let seal = try prepare(catalog, "UPDATE knowledge_primary_partitions SET sealed=1 WHERE partition_id=?")
       defer { sqlite3_finalize(seal) }
       try bind(id, index: 1, statement: seal)
       guard sqlite3_step(seal) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     } else if status != SQLITE_DONE { throw AgentKnowledgeDatabaseError.unavailable }
-    if let prior = writers.removeValue(forKey: bucket) { sqlite3_close_v2(prior.database) }
+    try flushWriter(bucket: bucket, checkActive: checkActive)
     let id = UUID().uuidString.lowercased()
     let database = try open(id, create: true, readOnly: false)
     sqlite3_close_v2(database)
@@ -492,10 +606,30 @@ final class AgentKnowledgePrimaryPartitions {
 
   private func writer(id: String, bucket: Int) throws -> OpaquePointer {
     if let current = writers[bucket], current.id == id { return current.database }
-    if let prior = writers.removeValue(forKey: bucket) { sqlite3_close_v2(prior.database) }
+    if let prior = writers[bucket] {
+      guard writeBatch?.pending.contains(prior.id) != true else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      writers.removeValue(forKey: bucket)
+      sqlite3_close_v2(prior.database)
+    }
     let database = try open(id, create: false, readOnly: false)
     writers[bucket] = (id, database)
     return database
+  }
+
+  private func physicalBytes(_ id: String) throws -> Int64 {
+    guard Self.token(id) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    var total: Int64 = 0
+    for suffix in ["", "-wal"] {
+      let path = root.appendingPathComponent(id + ".sqlite" + suffix).path
+      if suffix == "-wal", !FileManager.default.fileExists(atPath: path) { continue }
+      let attributes = try FileManager.default.attributesOfItem(atPath: path)
+      guard attributes[.type] as? FileAttributeType == .typeRegular,
+            let size = attributes[.size] as? NSNumber, size.int64Value >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      let (sum, overflow) = total.addingReportingOverflow(size.int64Value)
+      guard !overflow else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      total = sum
+    }
+    return total
   }
 
   private func open(_ id: String, create: Bool, readOnly: Bool) throws -> OpaquePointer {

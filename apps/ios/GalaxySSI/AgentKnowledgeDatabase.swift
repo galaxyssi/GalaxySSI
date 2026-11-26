@@ -1240,6 +1240,8 @@ final class AgentKnowledgeDatabase {
       }
       var committed = false
       defer { if !committed { _ = execute("ROLLBACK") } }
+      try primaryPayloads.beginWriteBatch(catalog: database)
+      defer { primaryPayloads.endWriteBatch(catalog: database) }
       guard let state = prepare("SELECT after_item_hash,complete FROM knowledge_primary_migration WHERE id=1") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -1252,6 +1254,7 @@ final class AgentKnowledgeDatabase {
       guard (cursor.isEmpty || cursor.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil),
             (0...1).contains(complete) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       if complete == 1 {
+        try primaryPayloads.prepareBatchCommit(catalog: database, checkActive: checkActive)
         guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
         committed = true
         return PrimaryMigrationPage(visited: 0, moved: 0, complete: true)
@@ -1307,9 +1310,11 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int(stateUpdate, 2, finished ? 1 : 0)
       let saved = sqlite3_step(stateUpdate) == SQLITE_DONE && sqlite3_changes(database) == 1
       sqlite3_finalize(stateUpdate)
+      guard saved else { throw AgentKnowledgeDatabaseError.unavailable }
       try checkActive()
       try Task.checkCancellation()
-      guard saved, execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+      try primaryPayloads.prepareBatchCommit(catalog: database, checkActive: checkActive)
+      guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
       committed = true
       return PrimaryMigrationPage(visited: visited, moved: moved, complete: finished)
     }
@@ -1537,7 +1542,10 @@ final class AgentKnowledgeDatabase {
   @discardableResult
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
-      guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      guard validateIdentities(items), let database, execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
+      do { try primaryPayloads.beginWriteBatch(catalog: database) }
+      catch { _ = execute("ROLLBACK"); return false }
+      defer { primaryPayloads.endWriteBatch(catalog: database) }
       guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items"),
             execute("DELETE FROM knowledge_source_headers") else {
         _ = execute("ROLLBACK")
@@ -1582,8 +1590,13 @@ final class AgentKnowledgeDatabase {
             execute("UPDATE knowledge_source_directory_state SET complete = 1 WHERE id = 1"),
             execute("DELETE FROM knowledge_vector_queue"),
             execute("UPDATE knowledge_vector_enrollment SET after_item_hash = '', complete = 0"),
-            execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),
-            execute("COMMIT") else {
+            execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {
+        _ = execute("ROLLBACK")
+        return false
+      }
+      do { try primaryPayloads.prepareBatchCommit(catalog: database) }
+      catch { _ = execute("ROLLBACK"); return false }
+      guard execute("COMMIT") else {
         _ = execute("ROLLBACK")
         return false
       }

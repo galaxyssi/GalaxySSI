@@ -19,7 +19,8 @@ than silently returning a legacy copy. New writes fail closed if primary storage
 cannot be prepared; they do not pretend to have committed via another backend.
 
 Four buckets use the existing keyed record hash. Partitions rotate at about
-64 MiB of appended sealed-frame bytes or 65,536 appended records. These are
+64 MiB of appended sealed-frame bytes, observed database/WAL file bytes, or
+65,536 appended records. These are
 rotation targets, not corpus limits or exact physical file-size guarantees;
 SQLite/WAL/metadata overhead and orphaned append frames can add space. Each store
 retains at most four writer connections and serializes one transient reader.
@@ -41,9 +42,11 @@ this is not a raw cross-platform database format or key transfer protocol.
 
 ## Publication and migration
 
-Immutable frame transactions commit with SQLite FULL synchronization before
-catalog reference publication. The outer catalog transaction then publishes the
-reference/item/index changes. A failed catalog publication can leave unreachable
+Both production append owners (whole-store replacement and each migration page)
+begin an owned physical write batch inside their existing catalog transaction.
+Immutable frame transactions commit with SQLite FULL synchronization at rotation
+or the batch prepare barrier, before catalog reference publication. The outer
+catalog transaction then publishes staged reference/item/index changes. A failed catalog publication can leave unreachable
 physical frames, but cannot point at an uncommitted frame transaction. Subsequent
 updates get a distinct entry ID; old snapshot references keep their original
 frames. No atomic transaction across multiple SQLite files or power-loss proof
@@ -76,9 +79,9 @@ and its original old-format behavior remains covered by explicit legacy fixtures
   fifteen-minute earliest date is not an exact or guaranteed execution interval.
 - Unknown primary orphan discovery and mixed-live compaction were not delivered
   by the pinned Android PR either.
-- Physical commits are currently per record, before catalog publication. Native
-  bulk partition-transaction batching and its performance investigation remain
-  open; no latency improvement or universal resource-bound claim is made.
+- Physical commits are batched for both production append paths; native fault,
+  throughput/latency and connection-bound acceptance remain unexecuted. No measured
+  performance improvement or universal resource-bound claim is made.
 - Complete record encoding/materialization, FTS and logical catalog work still
   have their existing memory costs. Per-frame bounds are not a full-record or
   whole-corpus memory guarantee. Native crash/fault, migration/backup/privacy,
@@ -86,7 +89,7 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Source evidence
 
-Twenty primary-store XCTest methods are authored only, NOT executed: compressed/raw/binary frame
+Twenty-seven primary-store XCTest methods are authored only, NOT executed: compressed/raw/binary frame
 bounds, Unicode multi-frame/reopen, rotation across four buckets, failed catalog
 publication, old snapshot retention, swapped/corrupt references, missing/corrupt
 frames, container relocation, resumed old inline/file migration with unchanged
@@ -105,7 +108,11 @@ An additional primary method injects cancellation between frames and checks that
 the previous catalog reference/body survive. Six separate maintenance methods
 cover idle/energy policy, monotonic deadlines, expired/successful completion
 ownership, bounded actual-database migration/cleanup without an embedding runtime,
-and cancellation/resumption. None of these twenty-six methods were executed.
+and cancellation/resumption. Seven additional primary methods cover batch-owned
+readback and deferred physical commits, rotation, caught-error poisoning, partial
+physical commit failure, failure after prepare with old snapshots, owner/scope
+rejection, and physical-size rotation despite small catalog counters. None of
+these thirty-three methods were executed.
 
 `check-knowledge-primary-partitions-scope.cjs` verifies pinned production sources,
 complete retained coordinator/catalog code outside declared hooks, actual writer/
@@ -199,3 +206,34 @@ enumeration remains noninterruptible until it returns. No model or network call
 is part of physical maintenance. OS delivery and native behavior remain untested.
 
 Scheduling reference: [Apple earliestBeginDate documentation](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate).
+
+## Owned batch publication
+
+`replaceAll` and `maintainPrimaryPayloads` explicitly begin/prepare/end a physical
+batch; generic SQL execution and unrelated vector/read transactions are unchanged.
+The catalog connection and synchronous thread identify the owner. Up to four
+bucket writers keep physical transactions open across records. Catalog reference
+rows are staged, not externally published, while those physical transactions are
+pending. Only the same owner and catalog may borrow a pending writer for migration
+readback; independent snapshots open committed data instead. Reads and retirement
+follow the same writer/reader lock order, and retirement cannot enter a live batch.
+
+A rotation flushes/closes its predecessor before creating another writer. Prepare
+flushes all remaining participants, synchronizes the physical directory, runs the
+publication fault hook and marks the batch prepared before the caller may COMMIT
+the catalog. New-root creation also synchronizes its parent. Any append/flush
+failure poisons the batch, including a failure caught by the caller: prepare then
+refuses publication. Deferred end rolls back/closes every remaining physical
+transaction and clears ownership on success/error paths. Nested, foreign-owner,
+autocommit and post-prepare writes are rejected. Internal standalone append calls
+retain immediate physical commit behavior; production record writes use batches.
+
+Physical prepare is not an atomic transaction across SQLite files. If one file
+commits and a later file/prepare/catalog step fails, the original catalog remains
+authoritative and committed new frames can remain unreachable. WAL/metadata and a
+single oversized record can exceed rotation targets; actual database/WAL bytes
+are included so orphaned append bytes cannot hide behind old catalog counters.
+No additional wire format, schema migration, native performance result or power-
+loss proof is claimed.
+
+Transaction reference: [SQLite transaction documentation](https://sqlite.org/lang_transaction.html).

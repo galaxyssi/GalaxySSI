@@ -62,7 +62,8 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var url: URL { directory.appendingPathComponent("knowledge.sqlite") }
     let key = String(repeating: "a", count: 64)
 
-    init(bytes: Int64 = 64 * 1_024 * 1_024, records: Int64 = 65_536) throws {
+    init(bytes: Int64 = 64 * 1_024 * 1_024, records: Int64 = 65_536,
+         beforeCatalogPublication: @escaping () throws -> Void = {}, beforePartitionCommit: @escaping (String) throws -> Void = { _ in }) throws {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       var raw: OpaquePointer?
       guard sqlite3_open(url.path, &raw) == SQLITE_OK, let raw else { throw AgentKnowledgeDatabaseError.unavailable }
@@ -70,7 +71,8 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       try sql("PRAGMA journal_mode=WAL")
       try sql("CREATE TABLE knowledge_items(item_hash TEXT PRIMARY KEY,encrypted_payload BLOB NOT NULL)")
       try sql("CREATE TABLE knowledge_external_payloads(item_hash TEXT PRIMARY KEY,file_name TEXT NOT NULL UNIQUE,plaintext_bytes INTEGER NOT NULL,plaintext_sha256 TEXT NOT NULL)")
-      store = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: secrets, partitionBytes: bytes, partitionRecords: records)
+      store = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: secrets, partitionBytes: bytes, partitionRecords: records,
+        beforeCatalogPublication: beforeCatalogPublication, beforePartitionCommit: beforePartitionCommit)
       try store.setup(catalog: catalog)
     }
     deinit {
@@ -89,17 +91,33 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       return sqlite3_column_int64(statement, 0)
     }
     func write(_ plain: Data, key: String? = nil, checkActive: () throws -> Void = {}) throws {
-      let key = key ?? self.key
       try sql("BEGIN IMMEDIATE TRANSACTION")
       var committed = false
       defer { if !committed { try? sql("ROLLBACK") } }
-      try sql("DELETE FROM knowledge_items WHERE item_hash='\(key)'")
-      try sql("INSERT INTO knowledge_items VALUES('\(key)',x'00')")
-      try store.append(plain, itemHash: key, catalog: catalog, checkActive: checkActive)
+      try stage(plain, key: key, checkActive: checkActive)
       try sql("COMMIT")
       committed = true
     }
-    func partitionID() throws -> String {
+    func stage(_ plain: Data, key: String? = nil, checkActive: () throws -> Void = {}) throws {
+      let key = key ?? self.key
+      try sql("DELETE FROM knowledge_items WHERE item_hash='\(key)'")
+      try sql("INSERT INTO knowledge_items VALUES('\(key)',x'00')")
+      try store.append(plain, itemHash: key, catalog: catalog, checkActive: checkActive)
+    }
+    func batch(afterPrepare: () throws -> Void = {}, operation: () throws -> Void) throws {
+      try sql("BEGIN IMMEDIATE TRANSACTION")
+      var committed = false
+      defer { if !committed { try? sql("ROLLBACK") } }
+      try store.beginWriteBatch(catalog: catalog)
+      defer { store.endWriteBatch(catalog: catalog) }
+      try operation()
+      try store.prepareBatchCommit(catalog: catalog)
+      try afterPrepare()
+      try sql("COMMIT")
+      committed = true
+    }
+    func partitionID(key: String? = nil) throws -> String {
+      let key = key ?? self.key
       var statement: OpaquePointer?
       guard sqlite3_prepare_v2(catalog, "SELECT partition_id FROM knowledge_primary_refs WHERE item_hash='\(key)'", -1, &statement, nil) == SQLITE_OK else {
         throw AgentKnowledgeDatabaseError.unavailable
@@ -124,6 +142,151 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     XCTAssertThrowsError(try AgentKnowledgePrimaryFrameCodec.encode(Data(count: 65_537)))
     let oversized = try JSONSerialization.data(withJSONObject: ["version": 1, "codec": "raw", "plainBytes": 65_537, "payload": "AA=="])
     XCTAssertThrowsError(try AgentKnowledgePrimaryFrameCodec.decode(oversized))
+  }
+
+  func testBatchStagesOwnerReadbackAndCommitsOncePerBucketBeforePublication() throws {
+    var commits = 0, publications = 0
+    let f = try Fixture(beforeCatalogPublication: { publications += 1; XCTAssertEqual(commits, 4) },
+      beforePartitionCommit: { _ in commits += 1 })
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open_v2(f.url.path, &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
+    let snapshot = try XCTUnwrap(raw)
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(snapshot) }
+    XCTAssertEqual(sqlite3_exec(snapshot, "BEGIN", nil, nil, nil), SQLITE_OK)
+    let keys = (0..<16).map { String(format: "%02x", $0) + String(repeating: "a", count: 62) }
+    try f.batch {
+      for key in keys {
+        let data = Data(key.utf8)
+        try f.stage(data, key: key)
+        XCTAssertEqual(try f.store.read(itemHash: key, catalog: f.catalog), data)
+        XCTAssertNil(try f.store.read(itemHash: key, catalog: snapshot))
+        XCTAssertEqual(commits, 0)
+      }
+    }
+    XCTAssertEqual(commits, 4)
+    XCTAssertEqual(publications, 1)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_refs"), 16)
+    for key in keys {
+      XCTAssertEqual(try f.store.read(itemHash: key, catalog: f.catalog), Data(key.utf8))
+      XCTAssertNil(try f.store.read(itemHash: key, catalog: snapshot))
+    }
+  }
+
+  func testBatchRotationFlushesEachSealedPredecessorAndKeepsAllReferencesReadable() throws {
+    var commits = 0
+    let f = try Fixture(records: 1, beforePartitionCommit: { _ in commits += 1 })
+    let keys = (0..<12).map { String(format: "%02x", $0 * 4) + String(repeating: "a", count: 62) }
+    try f.batch {
+      for (index, key) in keys.enumerated() {
+        try f.stage(Data(key.utf8), key: key)
+        XCTAssertEqual(commits, index)
+        for previous in keys.prefix(index + 1) {
+          XCTAssertEqual(try f.store.read(itemHash: previous, catalog: f.catalog), Data(previous.utf8))
+        }
+      }
+    }
+    XCTAssertEqual(commits, 12)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_partitions"), 12)
+    for key in keys { XCTAssertEqual(try f.store.read(itemHash: key, catalog: f.catalog), Data(key.utf8)) }
+  }
+
+  func testCaughtBatchAppendFailurePoisonsPreparationAndRollsBackEarlierStaging() throws {
+    var commits = 0
+    let f = try Fixture(beforePartitionCommit: { _ in commits += 1 })
+    let original = Data("original".utf8), other = String(repeating: "b", count: 64)
+    try f.write(original)
+    commits = 0
+    XCTAssertThrowsError(try f.batch {
+      try f.stage(Data("staged".utf8), key: other)
+      XCTAssertThrowsError(try f.store.append(Data(), itemHash: f.key, catalog: f.catalog))
+    })
+    XCTAssertEqual(commits, 0)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), original)
+    XCTAssertNil(try f.store.read(itemHash: other, catalog: f.catalog))
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_items"), 1)
+  }
+
+  func testPartialPhysicalCommitFailureCannotPublishCatalogReferences() throws {
+    var armed = false, attempts = 0
+    let f = try Fixture(beforePartitionCommit: { _ in
+      if armed { attempts += 1; if attempts == 2 { throw AgentKnowledgeDatabaseError.unavailable } }
+    })
+    let other = String(repeating: "b", count: 64), original = Data("original".utf8)
+    try f.write(original)
+    try f.write(original, key: other)
+    armed = true
+    XCTAssertThrowsError(try f.batch {
+      try f.stage(Data("new first".utf8))
+      try f.stage(Data("new second".utf8), key: other)
+    })
+    XCTAssertEqual(attempts, 2)
+    f.store = nil
+    f.store = AgentKnowledgePrimaryPartitions(catalogURL: f.url, secrets: f.secrets)
+    try f.store.setup(catalog: f.catalog)
+    for key in [f.key, other] { XCTAssertEqual(try f.store.read(itemHash: key, catalog: f.catalog), original) }
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_refs"), 2)
+    try f.batch { try f.stage(Data("retry".utf8)) }
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), Data("retry".utf8))
+  }
+
+  func testCatalogFailureAfterBatchPreparePreservesTheOldSnapshot() throws {
+    let f = try Fixture()
+    let old = Data("old snapshot".utf8), new = Data("unpublished".utf8)
+    try f.write(old)
+    let lease = try f.store.snapshotLease()
+    defer { withExtendedLifetime(lease) {} }
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open_v2(f.url.path, &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
+    let snapshot = try XCTUnwrap(raw)
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(snapshot) }
+    XCTAssertEqual(sqlite3_exec(snapshot, "BEGIN", nil, nil, nil), SQLITE_OK)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: snapshot), old)
+    XCTAssertThrowsError(try f.batch(afterPrepare: {
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), new)
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: snapshot), old)
+      throw AgentKnowledgeDatabaseError.unavailable
+    }, operation: { try f.stage(new) }))
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), old)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: snapshot), old)
+  }
+
+  func testBatchScopeRejectsAutocommitNestedForeignAndPostPrepareWrites() throws {
+    let f = try Fixture()
+    XCTAssertThrowsError(try f.store.beginWriteBatch(catalog: f.catalog))
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(f.url.path, &raw), SQLITE_OK)
+    let foreign = try XCTUnwrap(raw)
+    defer { sqlite3_close_v2(foreign) }
+    let body = Data("valid".utf8)
+    try f.batch(afterPrepare: {
+      XCTAssertThrowsError(try f.store.append(Data("late".utf8), itemHash: f.key, catalog: f.catalog))
+    }, operation: {
+      XCTAssertThrowsError(try f.store.beginWriteBatch(catalog: f.catalog))
+      XCTAssertThrowsError(try f.store.append(body, itemHash: f.key, catalog: foreign))
+      XCTAssertThrowsError(try f.store.prepareBatchCommit(catalog: foreign))
+      f.store.endWriteBatch(catalog: foreign)
+      try f.stage(body)
+    })
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), body)
+    XCTAssertThrowsError(try f.store.prepareBatchCommit(catalog: f.catalog))
+  }
+
+  func testRotationIncludesPhysicalBytesLeftByUnreferencedFrames() throws {
+    let f = try Fixture(bytes: 64 * 1_024)
+    let body = Data("live".utf8)
+    try f.write(body)
+    let old = try f.partitionID()
+    var raw: OpaquePointer?
+    XCTAssertEqual(sqlite3_open(f.partitionURL(old).path, &raw), SQLITE_OK)
+    let physical = try XCTUnwrap(raw)
+    XCTAssertEqual(sqlite3_exec(physical, "INSERT INTO frames VALUES('unreferenced',0,zeroblob(131072))", nil, nil, nil), SQLITE_OK)
+    sqlite3_close_v2(physical)
+    XCTAssertLessThan(try f.scalar("SELECT bytes FROM knowledge_primary_partitions"), 64 * 1_024)
+    let other = "0e" + String(repeating: "b", count: 62)
+    try f.write(body, key: other)
+    XCTAssertNotEqual(try f.partitionID(key: other), old)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_partitions"), 2)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), body)
   }
 
   func testCompleteMultiFrameRecordsReopenWithTheSameNamespace() throws {

@@ -39,6 +39,15 @@ function retained(file, source) {
     const decodeStart = '    guard let catalog = sqlite3_db_handle(statement)', decodeEnd = '          keyedHash(item.id) == itemHash else';
     source = source.replace(section(source, decodeStart, decodeEnd),
       section(original, '    let external = readExternalPayload(itemHash: itemHash, database: sqlite3_db_handle(statement))', decodeEnd));
+    const replaceStart = '  @discardableResult\n  func replaceAll(', replaceEnd = '  private func insert(_ item:';
+    const replacement = section(source, replaceStart, replaceEnd);
+    const restoredReplacement = replacement
+      .replace('guard validateIdentities(items), let database, execute("BEGIN IMMEDIATE TRANSACTION")', 'guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION")')
+      .replace('      do { try primaryPayloads.beginWriteBatch(catalog: database) }\n      catch { _ = execute("ROLLBACK"); return false }\n      defer { primaryPayloads.endWriteBatch(catalog: database) }\n', '')
+      .replace('            execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {\n        _ = execute("ROLLBACK")\n        return false\n      }\n      do { try primaryPayloads.prepareBatchCommit(catalog: database) }\n      catch { _ = execute("ROLLBACK"); return false }\n      guard execute("COMMIT") else {',
+        '            execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1"),\n            execute("COMMIT") else {');
+    assert.equal(restoredReplacement, section(original, replaceStart, replaceEnd));
+    source = source.replace(replacement, restoredReplacement);
     const reclaimStart = '  @discardableResult\n  func reclaimExternalPayloadFiles(', reclaimEnd = '  @discardableResult\n  func replaceAll(';
     const actualReclaim = section(source, reclaimStart, reclaimEnd);
     const checkedReclaim = actualReclaim
@@ -110,11 +119,32 @@ function validate() {
   for (const token of ['partitionBytes: Int64 = 64 * 1_024 * 1_024', 'partitionRecords: Int64 = 65_536', 'let bucket = prefix & 3',
     'sqlite3_get_autocommit(catalog) == 0', 'try beforeCatalogPublication()',
     'reference.frames', 'Self.sha256(result) == reference.sha256']) assert(storage.includes(token), token);
-  assert(storage.indexOf('try execute(database, "COMMIT")') < storage.indexOf('try beforeCatalogPublication()'));
-  assert(storage.indexOf('try beforeCatalogPublication()') < storage.indexOf('INSERT INTO knowledge_primary_refs'));
+  const append = section(storage, '  private func appendFrames(', '  func read(');
+  assert(append.indexOf('try execute(database, "COMMIT")') < append.indexOf('if batch == nil { try syncRoot(); try beforeCatalogPublication() }'));
+  assert(append.indexOf('if batch == nil { try syncRoot(); try beforeCatalogPublication() }') < append.indexOf('INSERT INTO knowledge_primary_refs'));
+  assert(append.includes('if batch == nil {\n        try checkActive()') && append.includes('batch?.pending.insert(id)'));
+  const barrier = section(storage, '  func prepareBatchCommit(', '  func endWriteBatch(');
+  assert(barrier.indexOf('for bucket in writers.keys.sorted()') < barrier.indexOf('try beforeCatalogPublication()'));
+  assert(barrier.indexOf('try beforeCatalogPublication()') < barrier.indexOf('batch.prepared = true'));
+  assert(barrier.includes('batch.failed = true'));
+  const flush = section(storage, '  private func flushWriter(', '  private func partition(');
+  assert(flush.indexOf('try execute(writer.database, "COMMIT")') < flush.indexOf('batch.pending.remove(writer.id)'));
+  assert(flush.indexOf('batch.pending.remove(writer.id)') < flush.indexOf('sqlite3_close_v2(writer.database)'));
+  const batchEnd = section(storage, '  func endWriteBatch(', '  private func ownedBatch(');
+  for (const token of ['batch.catalog == catalog', 'batch.thread === Thread.current', '"ROLLBACK"', 'writeBatch = nil']) assert(batchEnd.includes(token), token);
+  const pendingRead = section(storage, '  private func readPayload(', '  // Independent catalog snapshots');
+  for (const token of ['batch.catalog == catalog, batch.thread === Thread.current', 'batch.pending.contains(partition)',
+    'if pending == nil { sqlite3_close_v2(database) }']) assert(pendingRead.includes(token), token);
   const rotation = section(storage, '  private func partition(catalog:', '  private func writer(id:');
-  assert(rotation.indexOf('writers.removeValue(forKey: bucket)') >= 0 &&
-    rotation.indexOf('writers.removeValue(forKey: bucket)') < rotation.indexOf('try open(id, create: true, readOnly: false)'));
+  assert(rotation.indexOf('try flushWriter(bucket: bucket, checkActive: checkActive)') >= 0 &&
+    rotation.indexOf('try flushWriter(bucket: bucket, checkActive: checkActive)') < rotation.indexOf('try open(id, create: true, readOnly: false)'));
+  assert(rotation.includes('try physicalBytes(id) < partitionBytes'));
+  const actualReplacement = section(database, '  func replaceAll(', '  private func insert(_ item:');
+  for (const owner of [actualReplacement, migration]) {
+    for (const token of ['primaryPayloads.beginWriteBatch(catalog: database)', 'defer { primaryPayloads.endWriteBatch(catalog: database) }',
+      'primaryPayloads.prepareBatchCommit(catalog: database']) assert(owner.includes(token), token);
+    assert(owner.lastIndexOf('primaryPayloads.prepareBatchCommit(') < owner.lastIndexOf('execute("COMMIT")'));
+  }
   assert(storage.includes('resources.isExcludedFromBackup = false'));
   assert(storage.includes('catalogURL.lastPathComponent') && storage.includes('CREATE TABLE IF NOT EXISTS knowledge_primary_namespace'));
   for (const token of ['private let writerLock = NSLock()', 'private let readerLock = NSLock()',
@@ -165,7 +195,7 @@ function validate() {
   for (const token of ['maximumPlainBytes = 64 * 1_024', 'maximumEncodedBytes = 128 * 1_024', 'COMPRESSION_ZLIB',
     'frame.plainBytes + 1', 'guard count == frame.plainBytes', 'codec: compressed ? "zlib" : "raw"']) assert(codec.includes(token), token);
   const tests = read('apps/ios/GalaxySSITests/' + names[2]);
-  assert.equal((tests.match(/  func test/g) || []).length, 20);
+  assert.equal((tests.match(/  func test/g) || []).length, 27);
   for (const token of ['testCatalogPublicationFailureLeavesThePreviousRecordReadable', 'testOldCatalogSnapshotStillReadsTheOriginalImmutableFrames',
     'testMissingAndCorruptedFramesRejectAnOtherwiseValidReference', 'testPersistentNamespaceSurvivesAContainerPathChange',
     'testPrimaryMigrationResumesWithoutChangingSourcesVectorsOrLogicalRecords',
@@ -173,11 +203,17 @@ function validate() {
     'testRetirementQueueResumesBeforeAndAfterPhysicalUnlink', 'testReclaimRejectsLiveReferencesTraversalAndSymlinkTargets',
     'testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile', 'testLegacyReferenceReleaseIsPagedVerifiedAndSnapshotDeferred',
     'testLegacyReferenceReleaseRollsBackIfAnyPrimaryIsCorrupt', 'testExportPinsLegacyFilesThroughMigrationAndLaterReclamation',
-    'testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge', 'testCancellationBetweenFramesDoesNotPublishAReplacement']) assert(tests.includes(token), token);
+    'testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge', 'testCancellationBetweenFramesDoesNotPublishAReplacement',
+    'testBatchStagesOwnerReadbackAndCommitsOncePerBucketBeforePublication',
+    'testBatchRotationFlushesEachSealedPredecessorAndKeepsAllReferencesReadable',
+    'testCaughtBatchAppendFailurePoisonsPreparationAndRollsBackEarlierStaging',
+    'testPartialPhysicalCommitFailureCannotPublishCatalogReferences', 'testCatalogFailureAfterBatchPreparePreservesTheOldSnapshot',
+    'testBatchScopeRejectsAutocommitNestedForeignAndPostPrepareWrites',
+    'testRotationIncludesPhysicalBytesLeftByUnreferencedFrames']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   assert.equal(project.split(' com.galaxyssi.chat.ios.knowledge-storage').length, 3);
   for (const name of names) assert.equal(project.split('\n').filter(line => line.includes(name)).length, 4, name);
-  console.log('Pinned Android #3037 storage, periodic system maintenance, primary/legacy hooks, retained logical/vector code and twenty primary plus six maintenance authored fixture source contracts passed; no native acceptance.');
+  console.log('Pinned Android #3037 storage, owned batch commit barriers/readback, periodic maintenance, retained logical/vector code and twenty-seven primary plus six maintenance authored fixture source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();
