@@ -9,6 +9,12 @@ const android = 'e7c6af6ef3eed21c7fb697b4458d1cf742833dc4';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const before = file => git('show', `${base}:${file}`).replace(/\r\n/g, '\n');
+const hook = '    observed.metadata.merge(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,\n' +
+  '      nowMillis: AgentControlPlaneClock.nowMillis())) { _, latest in latest }\n';
+function retained(file, source) {
+  return file.endsWith('GalaxySSIServices.swift') ? source.replace(hook, '') : source;
+}
+function validate() {
 const androidRouter = git('show', `${android}:apps/android/app/src/main/java/com/galaxyssi/chat/AgentResourceRouter.kt`);
 for (const token of ['acceptedMs = 15_000L', 'runningMs = 45_000L', 'liveStaleMs = 60_000L',
   'acceptedMs = 60_000L', 'runningMs = 90_000L', 'liveStaleMs = 180_000L',
@@ -43,8 +49,6 @@ const normalizedModels = (models.slice(0, start) + models.slice(end)).replace(
 assert.equal(normalizedModels, before(modelsFile), 'only timing policy may change');
 
 const servicesFile = 'apps/ios/GalaxySSI/GalaxySSIServices.swift';
-const hook = '    observed.metadata.merge(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,\n' +
-  '      nowMillis: AgentControlPlaneClock.nowMillis())) { _, latest in latest }\n';
 const services = read(servicesFile);
 assert.equal(services.split(hook).length, 2);
 assert(services.includes('observed.metadata["native_connector_observation_overdue"] = "true"\n' + hook));
@@ -71,3 +75,6 @@ for (const file of ['AgentConnectorTimeoutResolver.swift', 'AgentConnectorTransp
   assert.equal(read(target), before(target), file);
 }
 console.log('Connector observation timing source scope passed; no Swift fixtures or native runtime executed.');
+}
+if (require.main === module) validate();
+module.exports = { retained, validate };

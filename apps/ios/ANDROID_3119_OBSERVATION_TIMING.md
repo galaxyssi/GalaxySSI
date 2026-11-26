@@ -40,3 +40,8 @@ Run the source-only scope check with:
 ```sh
 node apps/ios/tools/check-connector-observation-timing-scope.cjs
 ```
+
+The existing context-source checker composes the exact two-line observation
+hook normalizer before historical whole-file comparisons. Its context,
+knowledge-gap, autonomous, research, background-cognition and live-planning
+source contracts also passed. These remain source checks, not native execution.
