@@ -938,6 +938,9 @@
     C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */; };
     C3007C500000000000000001 /* GlobalAgentDashboardLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */; };
     C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */; };
+    C45610000000000000000001 /* AgentModelPickerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45610000000000000000002 /* AgentModelPickerPolicy.swift */; };
+    C45610000000000000000003 /* GalaxySSIAgentModelPickerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45610000000000000000004 /* GalaxySSIAgentModelPickerContent.swift */; };
+    C45610000000000000000005 /* AgentModelPickerPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45610000000000000000006 /* AgentModelPickerPolicyTests.swift */; };
     C3007C600000000000000001 /* AgentLocalWorkspaceDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */; };
     C3007BA00000000000000003 /* AgentIOSWebExtractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */; };
     C3007B900000000000000003 /* AgentIOSWebCrawlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */; };
@@ -4313,6 +4316,9 @@
     C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimePrewarmTests.swift; sourceTree = "<group>"; };
     C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDashboardLoader.swift; sourceTree = "<group>"; };
     C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDashboardLoaderTests.swift; sourceTree = "<group>"; };
+    C45610000000000000000002 /* AgentModelPickerPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPickerPolicy.swift; sourceTree = "<group>"; };
+    C45610000000000000000004 /* GalaxySSIAgentModelPickerContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentModelPickerContent.swift; sourceTree = "<group>"; };
+    C45610000000000000000006 /* AgentModelPickerPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPickerPolicyTests.swift; sourceTree = "<group>"; };
     C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalWorkspaceDeviceTests.swift; sourceTree = "<group>"; };
     C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExtractionTests.swift; sourceTree = "<group>"; };
     C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCrawlTests.swift; sourceTree = "<group>"; };
@@ -5641,6 +5647,8 @@
         A20000000000000000000500 /* GlobalRealtimeContext.swift */,
         A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */,
         C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */,
+        C45610000000000000000002 /* AgentModelPickerPolicy.swift */,
+        C45610000000000000000004 /* GalaxySSIAgentModelPickerContent.swift */,
         A20000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift */,
         A20000000000000000000560 /* GlobalLongHorizonGoalGraph.swift */,
         A20000000000000000000562 /* GlobalLongHorizonLifecycle.swift */,
@@ -6705,6 +6713,7 @@
         C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */,
         C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */,
         C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */,
+        C45610000000000000000006 /* AgentModelPickerPolicyTests.swift */,
         C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */,
         A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */,
         A20000000000000000000793 /* CloudModelConversationContextTests.swift */,
@@ -7929,6 +7938,8 @@
         A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */,
         A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */,
         C3007C500000000000000001 /* GlobalAgentDashboardLoader.swift in Sources */,
+        C45610000000000000000001 /* AgentModelPickerPolicy.swift in Sources */,
+        C45610000000000000000003 /* GalaxySSIAgentModelPickerContent.swift in Sources */,
         A10000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift in Sources */,
         A10000000000000000000560 /* GlobalLongHorizonGoalGraph.swift in Sources */,
         A10000000000000000000562 /* GlobalLongHorizonLifecycle.swift in Sources */,
@@ -9106,6 +9117,7 @@
         C3007C300000000000000003 /* AgentPlanningContextTimingTests.swift in Sources */,
         C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */,
         C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */,
+        C45610000000000000000005 /* AgentModelPickerPolicyTests.swift in Sources */,
         C3007C600000000000000001 /* AgentLocalWorkspaceDeviceTests.swift in Sources */,
         A10000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift in Sources */,
         A10000000000000000000793 /* CloudModelConversationContextTests.swift in Sources */,
