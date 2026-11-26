@@ -863,7 +863,7 @@ final class AgentNativeToolRegistry {
     }
     let startedAt = hooks.nowMillis()
     let deadline = min(effectiveContext.deadlineEpochMillis ?? Int64.max, Self.safeAdd(startedAt, descriptor.timeoutMillis))
-    let invocation = AgentNativeToolInvocation(
+    var invocation = AgentNativeToolInvocation(
       descriptor: descriptor,
       input: input,
       context: effectiveContext,
@@ -874,6 +874,7 @@ final class AgentNativeToolRegistry {
       cancellationRequested: hooks.cancellationRequested,
       progressReporter: hooks.onProgress
     )
+    invocation.toolCatalog = { [weak self] in self?.catalogObject() ?? [:] }
     var claimedEffect: AgentNativeToolReplayKey?
     var claimedRecoveryQuery: AgentNativeEffectRecoveryQuery?
     var dispatchedEffect = false

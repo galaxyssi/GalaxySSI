@@ -1,0 +1,118 @@
+{
+  "androidPR": 4584,
+  "androidHead": "51185d5a1ab8f9793b25944e03ad1f878548fe84",
+  "androidBase": "8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b",
+  "scope": "Partial: real scoped native discovery/inspection and progressive planning catalog. Interactive MQTT hedges and supervised ephemeral answer preview remain incomplete. No native acceptance.",
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "sha256": "e4b28ececf403a6b1f61362ca073fa43f6f8593f4f50b430ca62215cd5bac02e",
+      "disposition": "Android/Desktop version metadata excluded from iOS-only port."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorResponseBus.kt",
+      "sha256": "fe53bef0fcec1d5d685f6e2e8b463bcb096bba59091c9c510fc8f7b2aa5dc6ee",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPhoneInteractionPrompt.kt",
+      "sha256": "de508012d9d167e644d2c080c6664ccdced001b4ec14f2f0ba43f7d0587637cd",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentProgressiveToolCatalog.kt",
+      "sha256": "fc78844387a704b012383e6a9864a04c9597b5053dad74797c1f486b04bc416d",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentSupervisedProjectLoop.kt",
+      "sha256": "85d443072ba65e603fe2cefa651287f52e83baf64749c14506ffbb4152fa2a10",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentSupervisedProjectProgressSnapshotCache.kt",
+      "sha256": "0b3b71e5ec056de17c42be567a9c6abb12231d23b6ad23ca76755e220a8a3649",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentSupervisedProjectPromptTemplate.kt",
+      "sha256": "1855220d29f61f6d7a1e60a3e71d45f78b0e54289dda1b2ef30d6071b1efcd08",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/GalaxySSIMqttClient.kt",
+      "sha256": "280861cfbde12c6ff06bbb7d7febde44acc01f928b2d3120db81b6ebd005b4a9",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityConnectorResponses.kt",
+      "sha256": "a07bca309259b43bf1409235f68d5914ec9226ee5461892a0c3c91d79f546cac",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttDeliveryDispatch.kt",
+      "sha256": "559391a70e89bcb14f0532e97de954f2f02445c6b54db81b626235401f0f4935",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttMultipathPolicy.kt",
+      "sha256": "80eefb1289ae665a1c7d07c98a6ea5d08be21bd6330f1d588663bf2adb25bbe3",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentSupervisedProjectPromptTemplateTest.kt",
+      "sha256": "0ba1fd9307d46ac7566ab2e0fa00e0c85ed991338c72af3474ada41d63940090",
+      "disposition": "Tool-catalog portion adapted to iOS native planning with live invoking-registry discovery/inspection prerequisites; no native acceptance."
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/MqttMultipathPolicyTest.kt",
+      "sha256": "e0c02810851f0bcc9b053104d1b2acec69db67a45cfdc4ec44e2d711e3fb58e2",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/agent_answer_preview.py",
+      "sha256": "9e96b88d905746c80f3838edb2f34111cd27b662136f8291055b0195ba41b262",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/mqtt_bridge.py",
+      "sha256": "776b8d2d6721a1646eacb8374e3fae8cb645825afb4726b05c29ab7119ac6ccf",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/task_progress_window.py",
+      "sha256": "b728a19d0e5d735b9042f0bad08e451118f5fc55f9de7e508693eb1596b7f653",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/test_agent_answer_preview.py",
+      "sha256": "5489a2a483326c49bb7d4573dce457e1969438b6eb3c49c037c76ed7cd44428d",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "apps/desktop/core/galaxyssi-link/backend/test_mqtt_task_turn_routing.py",
+      "sha256": "5b2dea366934dc4c285e760255613d90240d031d9327c1ca002fba986ed31c14",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    },
+    {
+      "path": "apps/desktop/package-lock.json",
+      "sha256": "76f65edeb362fe3680e213b2404f1a861dc96adb6347eb6d77875ee5a7ac9bc8",
+      "disposition": "Android/Desktop version metadata excluded from iOS-only port."
+    },
+    {
+      "path": "apps/desktop/package.json",
+      "sha256": "a883a26e96fb37814543124b8f575a29e48cad3a042f9bc0228583e41c9b59bc",
+      "disposition": "Android/Desktop version metadata excluded from iOS-only port."
+    },
+    {
+      "path": "docs/protocol/GalaxySSI-Link-Protocol.md",
+      "sha256": "9c8cc8e815a6e5f1d3a63c6faa58a97cd957175931aabec2ff9081df0e6adea5",
+      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+    },
+    {
+      "path": "docs/protocol/MQTT_MULTIPATH.md",
+      "sha256": "5353c18dbcfeb93afc33a490e0b861d5e6ba6d19abb1bc0c6d3f2b9fd795ab30",
+      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+    }
+  ]
+}
