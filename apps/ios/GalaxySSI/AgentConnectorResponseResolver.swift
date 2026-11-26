@@ -150,6 +150,8 @@ enum AgentConnectorResponseResolver {
         return nil
       }
       metadata["delivery_failure_code"] = response.deliveryFailureCode
+      metadata["provider_failure_attribution"] = "local_transport"
+      metadata["delivery_failure_reason"] = response.deliveryFailureCode
       metadata["attachment_verified"] = "false"
       metadata["connector_disposition"] = "delivery_failure"
     }

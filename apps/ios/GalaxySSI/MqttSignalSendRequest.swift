@@ -1,5 +1,37 @@
 import Foundation
 
+// Local body lookup only. Current managed-owner authorization is still required before sending.
+enum MqttAttachmentBodyIdentity {
+  static func bodyID(source: String, taskID: String) -> String? {
+    if let id = UUID(uuidString: source) { return id.uuidString }
+    guard let numeric = Int64(source), numeric > 0, numeric <= 9_007_199_254_740_991,
+          String(numeric) == source else { return nil }
+    return UUID(uuidString: taskID)?.uuidString
+  }
+
+  static func matches(_ request: MqttSignalSendRequest, bodyID: String) throws -> Bool {
+    if request.sourceMessageID == bodyID || UUID(uuidString: request.sourceMessageID)?.uuidString == bodyID { return true }
+    let payload = try request.applicationPayload()
+    return request.traffic == .message && !request.attachmentDependencies.isEmpty &&
+      payload.string("type") == "text" && payload["agent_team_message"] as? Bool != true &&
+      payload.string("source_message_id") == request.sourceMessageID &&
+      payload.string("client_message_id") == request.sourceMessageID && payload.string("message_id") == bodyID &&
+      payload.string("contact_id") == request.contactID && payload.string("desktop_id") == request.remoteName &&
+      payload.string("client_route_id") == request.clientRouteID &&
+      Self.bodyID(source: request.sourceMessageID, taskID: payload.string("task_id")) == bodyID
+  }
+
+  static func matches(_ request: MqttSignalSendRequest, transfer: AgentPreparedOutboundAttachment, bodyID: String) throws -> Bool {
+    guard try matches(request, bodyID: bodyID), request.attachmentDependencies.contains(transfer.transferId) else { return false }
+    if request.sourceMessageID == bodyID || UUID(uuidString: request.sourceMessageID) != nil { return true }
+    let payload = try request.applicationPayload()
+    return request.sourceMessageID == transfer.scope.clientMessageId && request.contactID == transfer.scope.contactId &&
+      request.remoteName == transfer.scope.desktopId && request.clientRouteID == transfer.scope.clientRouteId &&
+      payload.string("conversation_id") == transfer.scope.conversationId && payload.string("task_id") == transfer.scope.taskId &&
+      payload.string("turn_id") == transfer.scope.turnId
+  }
+}
+
 // Trusted local send intent. Timestamps/retry state are deliberately excluded from its immutable hash.
 struct MqttSignalSendRequest: Codable {
   let identity: MqttBusinessIdentity

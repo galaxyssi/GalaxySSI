@@ -42,6 +42,10 @@ window can fit every accepted request. Existing local generation limits remain.
 
 ## Remaining paired attachment work
 
+This section records the document-input PR's original baseline. The follow-up in
+`ANDROID_3119_MANAGED_RAW_ATTACHMENTS.md` implements the coordinated raw paired
+attachment path and documents its remaining acceptance/legacy lifecycle limits.
+
 Paired numeric-source connector attachments are still rejected explicitly. The
 current journal runtime, deferred-body dependency release and attachment-receipt
 paths require UUID source/body identity. Supporting numeric managed owners needs

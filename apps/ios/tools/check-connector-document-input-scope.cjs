@@ -1,7 +1,8 @@
 // Source contracts only, not native extraction, inference, provider delivery or cancellation acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'fee71d95ce8b6d5c5d62863dd55e1bf93c866078';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-managed-raw-attachments-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const show = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -9,6 +10,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
+  source = require('./check-managed-raw-attachments-scope.cjs').retained(file, source);
   if (file.endsWith('check-pre-shadow-routing-scope.cjs')) return source.replace(
     "  require('./check-connector-document-input-scope.cjs').retained(file,\n    fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')));",
     "  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));")
