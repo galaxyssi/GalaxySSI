@@ -4,8 +4,10 @@ import UserNotifications
 
 struct GalaxySSIGeneralControlCenterView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scene
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+  @SceneStorage("ios.general-settings.more") private var moreExpanded = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -21,14 +23,30 @@ struct GalaxySSIGeneralControlCenterView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           generalSection
-          notificationsSection
+          GalaxySSISecurityNavigationRow(title: t("cc_notifications_title", "Notifications"), subtitle: "",
+            systemImage: "bell.badge", tint: .blue, badge: notificationStatusLabel) { notificationSettingsPage }
           aboutSection
-          resetSection
+          DisclosureGroup(t("my_agent_more", "More"), isExpanded: $moreExpanded) {
+            advancedSection
+            resetSection
+          }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
         .padding(.bottom, 18)
       }
+    }
+    .background(Color.galaxySSIPageBackground.ignoresSafeArea())
+    .navigationBarHidden(true)
+    .onAppear(perform: refreshNotifications)
+    .onChange(of: scene) { if $0 == .active { refreshNotifications() } }
+  }
+
+  private var notificationSettingsPage: some View {
+    VStack(spacing: 0) {
+      GalaxySSITopBar(title: t("cc_notifications_title", "Notifications"),
+        leading: { GalaxySSIBackButton() }, trailing: { Color.clear })
+      ScrollView { notificationsSection.padding(12) }
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
@@ -95,6 +113,11 @@ struct GalaxySSIGeneralControlCenterView: View {
       ) {
         GalaxySSIAboutView()
       }
+    }
+  }
+
+  private var advancedSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecurityNavigationRow(
         title: t("cc_developer_title", "Developer Options"),
         subtitle: t("cc_developer_subtitle", "Logs, network, protocol diagnostics, and experiments"),

@@ -5,6 +5,8 @@ struct GalaxySSIExecutionPolicyView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var notificationsEnabled = false
+  @SceneStorage("ios.execution-policy.confirmation") private var confirmationExpanded = false
+  @SceneStorage("ios.execution-policy.privacy") private var privacyExpanded = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -23,9 +25,13 @@ struct GalaxySSIExecutionPolicyView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
           permissionModeSection
-          confirmationRulesSection
           taskControlSection
-          privacyBoundarySection
+          DisclosureGroup(t("cc_section_confirmation_rules", "Confirmation Rules"), isExpanded: $confirmationExpanded) {
+            confirmationRulesSection
+          }
+          DisclosureGroup(t("cc_section_privacy_boundary", "Privacy Boundary"), isExpanded: $privacyExpanded) {
+            privacyBoundarySection
+          }
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)

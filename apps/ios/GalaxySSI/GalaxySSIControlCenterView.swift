@@ -897,7 +897,7 @@ private struct GalaxySSIAndroidAdvancedHubView: View {
           t("my_agent_cognition_advanced", "Advanced cognition settings"),
           "brain.head.profile",
           .purple,
-          GalaxySSIGlobalAgentControlView()
+          GalaxySSIGlobalAgentControlView(page: .advanced)
         )
       }
     }

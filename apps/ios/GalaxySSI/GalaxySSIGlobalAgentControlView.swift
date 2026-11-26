@@ -1,7 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum GalaxySSIGlobalAgentSettingsPage: Equatable { case proactive, advanced, obsidian }
+
 struct GalaxySSIGlobalAgentControlView: View {
+  var page: GalaxySSIGlobalAgentSettingsPage = .proactive
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
@@ -13,6 +16,11 @@ struct GalaxySSIGlobalAgentControlView: View {
   @State private var obsidianSettings = AgentIOSObsidianSettings()
   @State private var obsidianCandidateCount = 0
   @State private var showingObsidianVaultPicker = false
+  @SceneStorage("ios.proactive-settings.advanced") private var advancedExpanded = false
+  @SceneStorage("ios.proactive-settings.budgets") private var budgetsExpanded = false
+  @SceneStorage("ios.proactive-settings.boundaries") private var boundariesExpanded = false
+  @SceneStorage("ios.proactive-settings.more") private var moreExpanded = false
+  @SceneStorage("ios.proactive-settings.controls") private var controlsExpanded = false
 
   private let deliberationStore = GlobalAgentDeliberationStore()
   private let longHorizonStore = GlobalLongHorizonGoalStore()
@@ -59,7 +67,8 @@ struct GalaxySSIGlobalAgentControlView: View {
   var body: some View {
     VStack(spacing: 0) {
       GalaxySSITopBar(
-        title: t("cc_global_agent_title", "Proactive cognition"),
+        title: page == .obsidian ? t("my_agent_obsidian", "Obsidian") :
+          (page == .advanced ? t("my_agent_cognition_advanced", "Advanced cognition settings") : t("my_agent_proactive", "Proactive assistant")),
         leading: { GalaxySSIBackButton() },
         trailing: {
           GalaxySSIAndroidIconButton(systemName: "arrow.clockwise", action: refreshRuntime)
@@ -67,9 +76,19 @@ struct GalaxySSIGlobalAgentControlView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          heroSection
-          cognitionLoopSection
-          if !hasAuthorizedReasoningResource &&
+          if page == .obsidian { obsidianSection }
+          else if page == .proactive { proactiveHub }
+          else {
+            autonomySection
+            DisclosureGroup(t("cc_global_section_resources", "Resource policy"), isExpanded: $budgetsExpanded) { resourcesSection }
+            DisclosureGroup(t("cc_global_section_privacy", "Conversation boundaries"), isExpanded: $boundariesExpanded) { privacySection }
+            DisclosureGroup(t("my_agent_more", "More"), isExpanded: $moreExpanded) {
+              cognitionLoopSection
+              worldSection
+              intelligenceSection
+            }
+          }
+          if page != .obsidian && !hasAuthorizedReasoningResource &&
               (snapshot.activeCognitionCount > 0 || snapshot.activeResearchCount > 0) {
             GalaxySSISecurityStatusRow(
               title: t("cc_global_resource_needed_title", "Proactive cognition is waiting for a reasoning resource"),
@@ -88,25 +107,6 @@ struct GalaxySSIGlobalAgentControlView: View {
               badge: t("galaxyssi.status.ready", "Ready")
             )
           }
-          autonomySection
-          GalaxySSISecurityNavigationRow(
-            title: t("attention_title", "Proactive attention"),
-            subtitle: t("attention_subtitle", "Public research topics and discoveries"),
-            systemImage: "scope",
-            tint: .galaxySSIAccent
-          ) {
-            GalaxySSIPublicAttentionSettingsView()
-          }
-          worldSection
-          intelligenceSection
-          resourcesSection
-          obsidianSection
-          privacySection
-          Text(t("cc_global_footer", "Private conversations are never added to the global world model. External side effects still follow GalaxySSI confirmation policy."))
-            .font(.system(size: 12))
-            .foregroundColor(.galaxySSITextSecondary)
-            .padding(.horizontal, 4)
-            .padding(.bottom, 8)
         }
         .padding(.horizontal, 12)
         .padding(.top, 12)
@@ -122,6 +122,49 @@ struct GalaxySSIGlobalAgentControlView: View {
       allowsMultipleSelection: false,
       onCompletion: configureObsidianVault
     )
+  }
+
+  private var proactiveHub: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Group {
+        Toggle(t("my_agent_cognition", "Background cognition"), isOn: globalBinding(\.enabled))
+        Toggle(t("cc_global_proactive_title", "Proactive insights"), isOn: globalBinding(\.proactiveInsightsEnabled))
+          .disabled(!store.globalAgentSettings.enabled)
+      }
+      GalaxySSISecuritySectionTitle(title: t("my_agent_goals", "Goals"))
+      compactDestination(.longHorizon, "cc_global_goals_title", "Long-term goals", "scope")
+      compactDestination(.research, "cc_global_research_queue_title", "Research and monitoring", "magnifyingglass")
+      compactDestination(.insights, "cc_global_pending_insights_title", "Pending insights", "sparkles")
+      GalaxySSISecurityNavigationRow(title: t("attention_title", "Proactive attention"), subtitle: "",
+        systemImage: "scope", tint: .galaxySSIAccent, badge: "") { GalaxySSIPublicAttentionSettingsView() }
+      GalaxySSISecuritySectionTitle(title: t("my_agent_current", "Current activity"))
+      compactDestination(.runs, "cc_global_runs_title", "Autonomous work", "play.circle")
+      compactDestination(.continuity, "cc_global_continuity_title", "Continuity", "arrow.triangle.2.circlepath")
+      DisclosureGroup(t("my_agent_cognition_advanced", "Advanced cognition settings"), isExpanded: $advancedExpanded) {
+        GalaxySSISecurityNavigationRow(title: t("my_agent_cognition_advanced", "Advanced cognition settings"), subtitle: "",
+          systemImage: "slider.horizontal.3", tint: .blue, badge: "") {
+          GalaxySSIGlobalAgentControlView(page: .advanced)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func compactDestination(_ kind: GalaxySSIGlobalAgentDetailKind, _ key: String, _ fallback: String, _ icon: String) -> some View {
+    GalaxySSISecurityNavigationRow(title: t(key, fallback), subtitle: "", systemImage: icon,
+      tint: .blue, badge: "\(snapshot.count(for: kind))") {
+      if kind == .insights { GalaxySSIGlobalAgentInsightInboxView() }
+      else if kind == .runs { GalaxySSIGlobalAgentRunsView() }
+      else { GalaxySSIGlobalAgentDetailView(kind: kind, snapshot: snapshot) }
+    }
+  }
+
+  private func globalBinding(_ keyPath: WritableKeyPath<GlobalAgentSettings, Bool>) -> Binding<Bool> {
+    Binding(get: { store.globalAgentSettings[keyPath: keyPath] }, set: { value in
+      if keyPath != \.enabled && !store.globalAgentSettings.enabled { return }
+      store.updateGlobalAgentSettings { $0[keyPath: keyPath] = value }
+      coordinator.refreshAgentHomeState()
+    })
   }
 
   private var heroSection: some View {
@@ -296,15 +339,16 @@ struct GalaxySSIGlobalAgentControlView: View {
         systemImage: "hammer",
         tint: .orange,
         keyPath: \.autonomousToolExecutionEnabled,
-        enabled: store.globalAgentSettings.enabled
+        enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.autonomousPreparationEnabled
       )
+      DisclosureGroup(t("my_agent_advanced_controls", "Advanced controls"), isExpanded: $controlsExpanded) {
       toggleRow(
         title: t("cc_global_dynamic_replanning_title", "Dynamic replanning"),
         subtitle: t("cc_global_dynamic_replanning_subtitle", "Review real outcomes and revise remaining steps without discarding completed evidence"),
         systemImage: "arrow.triangle.2.circlepath",
         tint: .blue,
         keyPath: \.dynamicAutonomousReplanningEnabled,
-        enabled: store.globalAgentSettings.enabled
+        enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.autonomousPreparationEnabled
       )
       toggleRow(
         title: t("cc_global_long_horizon_toggle_title", "Long-horizon planning"),
@@ -320,7 +364,7 @@ struct GalaxySSIGlobalAgentControlView: View {
         systemImage: "safari",
         tint: .galaxySSIAccent,
         keyPath: \.proactiveDiscoveryEnabled,
-        enabled: store.globalAgentSettings.enabled
+        enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.modelUnderstandingEnabled
       )
       toggleRow(
         title: t("cc_global_proactive_title", "Proactive insights"),
@@ -361,6 +405,7 @@ struct GalaxySSIGlobalAgentControlView: View {
         tint: .orange,
         keyPath: \.notificationsEnabled
       )
+      }
     }
   }
 

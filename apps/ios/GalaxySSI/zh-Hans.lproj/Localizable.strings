@@ -7814,3 +7814,13 @@
 "galaxyssi.agent.connector.response_unsaved" = "未能保存连接器回复，未重复发送原请求。";
 "galaxyssi.agent.connector.outcome_unknown" = "连接器可能已开始执行，但结果尚不确定。未重复发送原请求。";
 "galaxyssi.agent.connector.fallback_pending" = "原连接器已失败，正在检查下一条允许的执行路径。";
+"my_agent_records" = "我的资料";
+"my_agent_memory_items" = "我的记忆";
+"my_agent_review" = "待确认";
+"my_agent_record_scope" = "记录范围";
+"my_agent_goals" = "目标与研究";
+"my_agent_current" = "当前进展";
+"my_agent_advanced_controls" = "高级控制";
+"my_agent_cognition" = "后台认知";
+"my_agent_obsidian" = "Obsidian";
+"my_agent_more" = "更多";
