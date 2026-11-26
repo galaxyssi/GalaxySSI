@@ -1,5 +1,10 @@
 import Foundation
 
+struct GlobalRealtimeContextProjection {
+  var text: String
+  var conversationIds: Set<String>
+}
+
 final class GlobalRealtimeContextProvider {
   private struct Snapshot {
     var cognitionTasks: [GlobalCognitionTask]
@@ -46,7 +51,8 @@ final class GlobalRealtimeContextProvider {
     excludedKeys: Set<String> = [],
     maximumItems: Int = GlobalRealtimeContextPolicy.defaultMaximumItems,
     maximumCharacters: Int = GlobalRealtimeContextPolicy.defaultMaximumCharacters,
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    allowedConversationIds: Set<String>? = nil
   ) -> String {
     render(
       snapshot: loadSnapshot(nowMillis: nowMillis),
@@ -56,8 +62,20 @@ final class GlobalRealtimeContextProvider {
       excludedKeys: excludedKeys,
       maximumItems: maximumItems,
       maximumCharacters: maximumCharacters,
-      nowMillis: nowMillis
-    )
+      nowMillis: nowMillis,
+      allowedConversationIds: allowedConversationIds
+    ).text
+  }
+
+  func buildProjection(query: String, currentConversationId: String,
+    excludedConversationIds: Set<String>, allowedConversationIds: Set<String>,
+    maximumItems: Int = GlobalRealtimeContextPolicy.defaultMaximumItems,
+    maximumCharacters: Int = GlobalRealtimeContextPolicy.defaultMaximumCharacters,
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()) -> GlobalRealtimeContextProjection {
+    render(snapshot: loadSnapshot(nowMillis: nowMillis), query: query,
+      currentConversationId: currentConversationId, excludedConversationIds: excludedConversationIds,
+      excludedKeys: [], maximumItems: maximumItems, maximumCharacters: maximumCharacters,
+      nowMillis: nowMillis, allowedConversationIds: allowedConversationIds, captureConversationIds: true)
   }
 
   /// Returns the last complete snapshot immediately and refreshes stale state off the caller path.
@@ -91,7 +109,7 @@ final class GlobalRealtimeContextProvider {
       maximumCharacters: maximumCharacters,
       nowMillis: nowMillis,
       allowedConversationIds: allowedConversationIds
-    )
+    ).text
   }
 
   func prewarm(nowMillis: Int64 = GlobalRealtimeClock.nowMillis()) {
@@ -114,8 +132,9 @@ final class GlobalRealtimeContextProvider {
     maximumItems: Int,
     maximumCharacters: Int,
     nowMillis: Int64,
-    allowedConversationIds: Set<String>? = nil
-  ) -> String {
+    allowedConversationIds: Set<String>? = nil,
+    captureConversationIds: Bool = false
+  ) -> GlobalRealtimeContextProjection {
     let allowedGoals = allowedConversationIds.map { allowed in
       snapshot.longHorizonGoals.filter { $0.sourceConversationIds.isSubset(of: allowed) }
     } ?? snapshot.longHorizonGoals
@@ -138,7 +157,8 @@ final class GlobalRealtimeContextProvider {
       nowMillis: nowMillis,
       maximumItems: maximumItems
     )
-    return GlobalRealtimeContextPolicy.render(selected, maximumCharacters: maximumCharacters)
+    return GlobalRealtimeContextProjection(text: GlobalRealtimeContextPolicy.render(selected, maximumCharacters: maximumCharacters),
+      conversationIds: captureConversationIds ? Set(selected.flatMap(\.conversationIds)) : [])
   }
 
   private func cachedSnapshotSnapshot() -> Snapshot? {

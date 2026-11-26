@@ -146,6 +146,7 @@ final class GlobalAgentDeliberationStore {
   @discardableResult
   func updateCognitionTask(
     taskId: String,
+    expected: GlobalCognitionTask? = nil,
     transform: (GlobalCognitionTask) -> GlobalCognitionTask
   ) -> GlobalCognitionTask? {
     locked {
@@ -153,15 +154,17 @@ final class GlobalAgentDeliberationStore {
       guard let index = snapshot.cognitionTasks.firstIndex(where: { $0.id == taskId }) else {
         return nil
       }
+      guard expected == nil || snapshot.cognitionTasks[index] == expected else { return nil }
       let updated = transform(snapshot.cognitionTasks[index])
       snapshot.cognitionTasks[index] = updated
       snapshot.cognitionTasks = boundedCognition(snapshot.cognitionTasks)
       persist(snapshot)
-      return updated
+      return lastErrorDescription.isEmpty ? updated : nil
     }
   }
 
-  func claimCognitionTask(nowMillis: Int64 = GlobalRealtimeClock.nowMillis()) -> GlobalCognitionTask? {
+  func claimCognitionTask(nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+                          eligible: (GlobalCognitionTask) -> Bool = { _ in true }) -> GlobalCognitionTask? {
     locked {
       var snapshot = load()
       var tasks = snapshot.cognitionTasks.map {
@@ -169,7 +172,7 @@ final class GlobalAgentDeliberationStore {
       }
       let index = tasks.indices
         .filter {
-          [.queued, .waitingForResource].contains(tasks[$0].status) &&
+          eligible(tasks[$0]) && [.queued, .waitingForResource].contains(tasks[$0].status) &&
             tasks[$0].nextAttemptAtMillis <= nowMillis
         }
         .max { left, right in
