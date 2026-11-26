@@ -1,9 +1,10 @@
 // Source-only gap provenance contracts; no Swift compilation/native test execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '2362b3ffe6a3114feb55e699c0054b794ebe9fac';
+const base = 'ca36efb28c5e2e72c620e20c4e88ccfe30e1549a';
 const clean = s => s.replace(/\r\n/g, '\n');
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => require('./check-autonomous-source-scope.cjs').retained(f,
+  clean(fs.readFileSync(path.join(root, f), 'utf8')));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {

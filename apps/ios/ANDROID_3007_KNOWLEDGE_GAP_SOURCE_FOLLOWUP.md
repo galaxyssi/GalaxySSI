@@ -2,6 +2,8 @@
 
 Baseline: main 2362b3ffe6a3114feb55e699c0054b794ebe9fac after #4568 merged during the policy-isolation correction. Independent iOS increment; no duplicate autonomous implementation or Android/Desktop changes. Compose both autonomous and gap checker hooks after resolving their shared reader conflict.
 
+The remote branch also received merge 008d6e775 while this correction was being published. Preserve that merge and its autonomous-normalized reader. The checker retains historical ca36efb28 after that explicit normalization; the actual synchronized PR diff base remains 2362b3ffe, not the checker's historical comparison.
+
 ## Implemented
 
 - Knowledge gaps gain optional sourceConversationIds in their existing Codable record. New detector output records the conversation behind the original request used for topic/goal extraction. Require the evaluation sample to belong to the same recorded run before creating or resolving a gap.
