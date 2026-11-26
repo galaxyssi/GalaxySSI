@@ -25,14 +25,6 @@ struct GalaxySSIAboutView: View {
       )
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          GalaxySSIAboutHeroView(
-            title: "GalaxySSI",
-            subtitle: t(
-              "about_product_subtitle",
-              "A secure superintelligent agent for people, agents, models, and devices"
-            ),
-            badge: "v\(versionName)"
-          )
           productSection
           trustSection
         }
@@ -48,12 +40,10 @@ struct GalaxySSIAboutView: View {
   private var productSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       GalaxySSISecuritySectionTitle(title: t("about_section_product", "Product"))
-      GalaxySSISecurityStatusRow(
+      GalaxySSIAboutVersionRow(
         title: t("about_version", "Version"),
         subtitle: t("about_version_subtitle", "GalaxySSI iOS release"),
-        systemImage: "info.circle",
-        tint: .blue,
-        badge: "v\(versionName)"
+        value: "v\(versionName)"
       )
       GalaxySSISecurityNavigationRow(
         title: t("settings_signal_link_protocol", "Signal Link Protocol        v1.0.3"),
@@ -101,39 +91,59 @@ struct GalaxySSIAboutView: View {
   }
 }
 
-private struct GalaxySSIAboutHeroView: View {
+private struct GalaxySSIAboutVersionRow: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   var title: String
   var subtitle: String
-  var badge: String
+  var value: String
 
   var body: some View {
-    HStack(alignment: .center, spacing: 12) {
-      GalaxySSILogoView(size: 56, cornerRadius: 10)
-      VStack(alignment: .leading, spacing: 5) {
-        HStack(spacing: 8) {
-          Text(title)
-            .font(.system(size: 22, weight: .bold))
-            .foregroundColor(.galaxySSITextPrimary)
-            .lineLimit(1)
-            .minimumScaleFactor(0.78)
-          Text(badge)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundColor(.galaxySSIAccent)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, 7)
-            .frame(minHeight: 22)
-            .background(Color.galaxySSIAccent.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: "info.circle")
+        .font(.system(size: 18, weight: .semibold))
+        .foregroundColor(.blue)
+        .frame(width: 42, height: 42)
+        .background(Color.blue.opacity(0.16))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityHidden(true)
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 8) {
+          labels
+          version
         }
-        Text(subtitle)
-          .font(.system(size: 14))
-          .foregroundColor(.galaxySSITextSecondary)
-          .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        HStack(alignment: .top, spacing: 12) {
+          labels.frame(maxWidth: .infinity, alignment: .leading)
+          version.frame(maxWidth: .infinity, alignment: .trailing)
+        }
       }
-      Spacer(minLength: 0)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.vertical, 4)
+    .padding(12)
+    .background(Color.galaxySSISurface)
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .accessibilityElement(children: .combine)
+  }
+
+  private var labels: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(title)
+        .font(.body.weight(.semibold))
+        .foregroundColor(.galaxySSITextPrimary)
+      Text(subtitle)
+        .font(.footnote)
+        .foregroundColor(.galaxySSITextSecondary)
+    }
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var version: some View {
+    Text(value)
+      .font(.body)
+      .foregroundColor(.blue)
+      .lineLimit(nil)
+      .fixedSize(horizontal: false, vertical: true)
+      .textSelection(.enabled)
   }
 }
