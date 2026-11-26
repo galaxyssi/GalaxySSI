@@ -1,6 +1,31 @@
 import Foundation
 
 enum AgentDirectNativeToolPlanner {
+  static func exactTimerStartSeconds(_ goal: String) -> Int? {
+    let value = AgentLocalCommandText.sentence(AgentLocalCommandText.withoutPoliteness(goal.lowercased()))
+    if AgentLocalCommandText.captures(value, durationPattern) != nil { return parsedDuration(value) }
+    if let seconds = timerDurationSeconds(for: value) { return seconds }
+    guard value.utf8.count <= 16_384, let durations = try? NSRegularExpression(pattern: durationPattern) else { return nil }
+    let expression = value
+      .replacingOccurrences(of: #"\b(?:timers?|countdown)\b|\u8BA1\u65F6\u5668|\u5012\u8BA1\u65F6"#, with: "", options: .regularExpression)
+      .replacingOccurrences(of: #"^(?:(?:set|start|create|begin|run)\b\s*(?:(?:a|an)\b\s*)?|\u8BBE\u7F6E|\u5F00\u59CB)"#,
+        with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: #"^for\s+"#, with: "", options: .regularExpression)
+    let text = expression as NSString
+    let matches = durations.matches(in: expression, range: NSRange(location: 0, length: text.length))
+    guard !matches.isEmpty else { return nil }
+    let remainder = durations.stringByReplacingMatches(in: expression, range: NSRange(location: 0, length: text.length), withTemplate: "")
+      .replacingOccurrences(of: #"\s+|\band\b|\u548C|\u53C8|\u52A0|\u7684|\+"#, with: "", options: .regularExpression)
+    guard remainder.isEmpty else { return nil }
+    var total = 0
+    for match in matches {
+      guard let seconds = parsedDuration(text.substring(with: match.range)), seconds <= maximumTimerDurationSeconds - total else { return nil }
+      total += seconds
+    }
+    return total > 0 ? total : nil
+  }
+
   static func shortcutPlan(
     request: AgentPlanRequest,
     hasAttachments: Bool = false

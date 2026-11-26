@@ -419,6 +419,9 @@ enum AgentModelPlanParser {
     resolvedParameters["node_ref"] = nodeRef
     resolvedParameters["depends_on"] = dependencyIds.joined(separator: ",")
     resolvedParameters["use_outputs_from"] = outputSourceIds.joined(separator: ",")
+    if kind == .callNativeTool, json["completes_goal"] == .bool(true) {
+      resolvedParameters[AgentVerifiedTimerStart.terminalParameter] = "true"
+    }
     let target = completion != nil ? taskCompleteTarget : resolveTarget(
       kind: kind,
       proposed: json.string("target"),

@@ -795,7 +795,7 @@ final class MessageCoordinator: ObservableObject {
 
   @discardableResult
   func reconcileInterruptedLocalPlanNodes() -> Int {
-    var recoveredTaskCount = 0
+    var recoveredTaskCount = reconcileVerifiedTimerStarts()
     for var task in store.recentAgentTasks(limit: 500) where
       task.phase == .executing || (task.phase == .paused && task.teamRecoveryRunId != nil) ||
       (task.phase == .waitingResponse && task.capturePermission != nil) {
@@ -15266,6 +15266,7 @@ final class MessageCoordinator: ObservableObject {
           !store.agentSafetySettings.executionPaused,
           store.agentSafetySettings.taskExecutionMode != .planOnly,
           ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode) else { return }
+    _ = reconcileVerifiedTimerStarts()
     drainNativeConnectorAttachmentFailures()
     for var task in store.recentAgentTasks(limit: 200) where task.phase == .waitingResponse ||
       (task.phase == .blocked && task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true") {
@@ -15301,6 +15302,56 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  private func permitsVerifiedTimerStart(plan: AgentPlan, action: AgentAction, result: AgentActionResult,
+    task: AgentTaskRecord, outgoing: ChatMessage) -> Bool {
+    guard action.kind == .callNativeTool, action.parameters["tool_id"] == AgentVerifiedTimerStart.toolId else { return false }
+    guard AgentVerifiedTimerStart.permits(plan: plan, action: action, result: result,
+            legacyCheckpoint: AgentIOSTimerCheckpointStore.shared.current(conversationId: outgoing.conversationId)),
+          task.pendingActions.allSatisfy({ $0.id == action.id || AgentVerifiedTimerStart.isReviewer($0, timerId: action.id) }),
+          AgentPlanContinuationScope.resolve(plan: plan, activeConversationId: outgoing.conversationId,
+            activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), sessionId: task.sessionId) != nil else { return false }
+    return pendingNativeOutcomes(task, outgoing: outgoing, requirements: plan.completionRequirements,
+      history: plan.actionHistory + plan.actions).issues.isEmpty
+  }
+
+  @discardableResult
+  func reconcileVerifiedTimerStarts() -> Int {
+    guard UIApplication.shared.isProtectedDataAvailable, UIApplication.shared.applicationState == .active,
+          store.canReadAgentTranscript, !store.agentSafetySettings.executionPaused else { return 0 }
+    var count = 0
+    for var task in store.recentAgentTasks(limit: 500) where [.executing, .paused, .waitingResponse].contains(task.phase) {
+      guard !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+            let session = store.agentSession(id: task.sessionId), session.status == .active,
+            !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+            let outgoing = localOutgoingMessage(for: task), var plan = task.activePlan else { continue }
+      let timers = plan.actions.filter { $0.kind == .callNativeTool &&
+        $0.parameters["tool_id"] == AgentVerifiedTimerStart.toolId && [.running, .completed].contains($0.status) }
+      guard timers.count == 1, let timer = timers.first else { continue }
+      if let waiting = task.lastNativeActionResult, waiting.metadata["awaiting_response"] == "true" {
+        guard AgentVerifiedTimerStart.waitingStart(plan.actions, waitingId: waiting.actionId)?.id == timer.id else { continue }
+      }
+      let replay: AgentSequentialPlanNodeDispatch.Replay
+      do {
+        guard let saved = try AgentSequentialPlanNodeDispatch.replay(plan: plan, actionId: timer.id,
+          sessionId: task.sessionId, conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), journal: localPlanNodeJournal) else { continue }
+        replay = saved
+      } catch { continue }
+      guard let index = plan.actions.firstIndex(where: { $0.id == timer.id }) else { continue }
+      plan.actions[index].status = .completed
+      plan.actions[index].evidence = replay.result.metadata["native_tool_output"] ?? ""
+      AgentCompletionEvidencePolicy.recordObservationEnvelope(replay.result, action: &plan.actions[index])
+      guard permitsVerifiedTimerStart(plan: plan, action: replay.action, result: replay.result, task: task, outgoing: outgoing),
+            store.agentTask(id: task.taskId) == task else { continue }
+      task.activePlan = plan
+      task.executionLog.append("Timer: recovered the original verified start receipt without redispatch")
+      finishLocalNativeAction(action: replay.action, executionAction: replay.action, result: replay.result,
+        outgoing: outgoing, rollbackAction: nil, task: &task)
+      if task.phase == .completed { count += 1 }
+    }
+    return count
+  }
+
   private func finishLocalNativeAction(
     action: AgentAction, executionAction: AgentAction, result: AgentActionResult,
     outgoing: ChatMessage, rollbackAction: AgentAction?, task: inout AgentTaskRecord
@@ -15312,11 +15363,22 @@ final class MessageCoordinator: ObservableObject {
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(
       action, history: supervisorHistory(task: task, outgoing: outgoing))
     AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
-    let hasRemainingActions = !task.pendingActions.isEmpty
     task.lastNativeActionResult = result
     rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
     updateActiveNativePlan(action: boundAction, result: result, task: &task)
     if let plan = task.activePlan { recoverEarlierNativeOutcomes(plan: plan, task: &task, outgoing: outgoing) }
+    let verifiedTimerStart = task.activePlan.map {
+      permitsVerifiedTimerStart(plan: $0, action: executionAction, result: result, task: task, outgoing: outgoing)
+    } == true
+    if verifiedTimerStart {
+      task.activePlan?.actions.removeAll { AgentVerifiedTimerStart.isReviewer($0, timerId: action.id) }
+      task.pendingActions.removeAll { $0.id == action.id || AgentVerifiedTimerStart.isReviewer($0, timerId: action.id) }
+      task.pendingAction = task.pendingActions.first
+      task.pendingPlanning = nil
+      if let plan = task.activePlan { task.planContext = AgentTaskPlanContext(plan: plan) }
+      task.blocked = false
+    }
+    let hasRemainingActions = !task.pendingActions.isEmpty
     let effects = task.effectRecovery ?? []
     let unresolvedEffect = effects.contains { !$0.hasObservation }
     let output = result.metadata["native_tool_output"].flatMap {
@@ -15335,7 +15397,7 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(result.success ? "The requested phone action completed." : "The requested phone action could not be completed.")
     let reply = recordLocalNativeActionResult(stepReply, task: &task)
     let shouldReviewOutcome = unresolvedEffect && result.metadata["awaiting_response"] != "true"
-    let rollingBatchBoundary = !unresolvedEffect && !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
+    let rollingBatchBoundary = !verifiedTimerStart && !unresolvedEffect && !hasRemainingActions && AgentRollingPlanPolicy.shouldRequestNextBatch(
       plan: task.activePlan,
       result: result
     )
