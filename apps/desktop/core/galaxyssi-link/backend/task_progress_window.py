@@ -10,7 +10,7 @@ class TaskProgressWindow:
         self._routes = {}
         self._lock = threading.Lock()
 
-    def reserve(self, route, message):
+    def reserve(self, route, message, *, visible_body=False):
         if not route or not message:
             return False
         with self._lock:
@@ -22,7 +22,8 @@ class TaskProgressWindow:
                     return False
             pending = {key: deadline for key, deadline in self._routes.get(route, {}).items() if deadline > now}
             self._routes[route] = pending
-            if len(pending) >= self.limit:
+            # Ordinary heartbeats must not consume the last slot for a readable answer.
+            if len(pending) >= self.limit + int(visible_body):
                 return False
             pending[message] = now + self.ttl
             return True

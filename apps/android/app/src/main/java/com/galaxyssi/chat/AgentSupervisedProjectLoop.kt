@@ -395,6 +395,7 @@ internal object AgentSupervisedProjectLoop {
                     maximumSchemaCharacters = MAX_TOOL_SCHEMA_CHARACTERS,
                     temporarilyBlockedToolIds = progress.temporarilyBlockedToolIds,
                     detailedToolIds = progress.detailedToolIds,
+                    recentlyUsedToolIds = progress.recentlyUsedToolIds,
                     developmentContext = AgentPhoneDevelopmentPolicy.shouldUsePhoneRuntime(request.goal) ||
                         request.executionHistory.any { action ->
                         val id = action.parameters["tool_id"].orEmpty().ifBlank { action.target }
@@ -544,7 +545,8 @@ internal object AgentSupervisedProjectToolInventory {
         val maximumSchemaCharacters: Int,
         val temporarilyBlockedToolIds: Set<String>,
         val detailedToolIds: Set<String>?,
-        val phoneControl: Boolean
+        val phoneControl: Boolean,
+        val onDemandTools: Set<String>?
     ) {
         override fun equals(other: Any?): Boolean =
             other is ManifestKey &&
@@ -552,7 +554,8 @@ internal object AgentSupervisedProjectToolInventory {
                 other.executableToolIds == executableToolIds &&
                 other.maximumSchemaCharacters == maximumSchemaCharacters &&
                 other.temporarilyBlockedToolIds == temporarilyBlockedToolIds &&
-                other.detailedToolIds == detailedToolIds && other.phoneControl == phoneControl
+                other.detailedToolIds == detailedToolIds && other.phoneControl == phoneControl &&
+                other.onDemandTools == onDemandTools
 
         override fun hashCode(): Int {
             var result = System.identityHashCode(tools)
@@ -561,7 +564,7 @@ internal object AgentSupervisedProjectToolInventory {
             result = 31 * result + temporarilyBlockedToolIds.hashCode()
             result = 31 * result + detailedToolIds.hashCode()
             result = 31 * result + phoneControl.hashCode()
-            return result
+            return 31 * result + onDemandTools.hashCode()
         }
     }
 
@@ -577,7 +580,8 @@ internal object AgentSupervisedProjectToolInventory {
         maximumSchemaCharacters: Int,
         temporarilyBlockedToolIds: Set<String> = emptySet(),
         detailedToolIds: Set<String>? = null,
-        phoneControl: Boolean = false
+        phoneControl: Boolean = false,
+        onDemandTools: Set<String>? = null
     ): String {
         val tools = context.nativeTools
         val executableToolIds = if (context.capabilityMatrix.entries.isEmpty()) {
@@ -596,17 +600,21 @@ internal object AgentSupervisedProjectToolInventory {
             maximumSchemaCharacters,
             temporarilyBlockedToolIds,
             detailedToolIds,
-            phoneControl
+            phoneControl,
+            onDemandTools
         )
         return renderedManifestCache.getOrCompute(key) {
-            ordered(tools).asSequence()
+            val eligible = ordered(tools)
                 .filter { tool ->
                     tool.id in executableToolIds &&
                         tool.id !in temporarilyBlockedToolIds &&
                         (if (phoneControl) PhoneAssistantToolPolicy.allowsRemotePhoneTool(tool.id)
                             else PhoneAssistantToolPolicy.allowsGeneralPhoneTool(tool.id))
                 }
-                .joinToString(separator = "") { tool ->
+            if (onDemandTools != null) {
+                AgentProgressiveToolCatalog.render(eligible, onDemandTools)?.let { return@getOrCompute it }
+            }
+            eligible.joinToString(separator = "") { tool ->
                     buildString {
                         append("- ").append(tool.id)
                         append(" | risk=").append(tool.risk.wireValue)

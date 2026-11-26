@@ -154,6 +154,16 @@ Receivers validate the exact major version, UUID, time window, authenticated
 relationship identity, target identity, payload limits, and message replay state
 before dispatch. Unknown or malformed traffic fails closed.
 
+### Supervised answer previews
+
+A running `agent_task_event` may carry a cumulative `partial_result` with
+`format: "supervised_answer_preview_v1"` and `user_visible: true`. For a
+structured response the Desktop projects only the answer text from a top-level
+`respond` disposition, not an action plan. Android can show this as an
+ephemeral Codex preview for the matching task and turn. A preview is neither
+a completion nor a durable transcript entry. The terminal response retains
+the original structured contract and must still be validated.
+
 ## Multiplexing
 
 One directional relationship mailbox carries all encrypted application classes:

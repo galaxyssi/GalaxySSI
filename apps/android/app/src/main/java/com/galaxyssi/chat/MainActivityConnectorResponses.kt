@@ -711,7 +711,7 @@ internal fun MainActivity.applyAgentConnectorStreamUpdate(update: AgentConnector
     val pendingAction = state?.plan?.actions?.firstOrNull { action ->
         action.id == pendingResult?.actionId
     }
-    if (!AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(
+    if (!update.supervisedAnswerPreview && !AgentSupervisedProjectPresentationPolicy.shouldExposeConnectorStream(
             phase = state?.phase ?: AgentPhase.OBSERVING,
             pendingAction = pendingAction,
             expectedSourceMessageId = pendingResult?.metadata
@@ -1646,7 +1646,9 @@ internal fun MainActivity.publishAgentTaskPartialResult(
     if (!partial.optBoolean("user_visible", true)) return
     val content = partial.optString("text").trim().take(64_000)
     if (content.isBlank()) return
-    if (sourceMessageId in supervisedProjectConnectorSourceIds) return
+    val answerPreview = partial.optString("format") == "supervised_answer_preview_v1" &&
+        partial.optBoolean("user_visible", false) && envelope.optString("agent_id") == "codex"
+    if (!answerPreview && sourceMessageId in supervisedProjectConnectorSourceIds) return
     if (AgentSupervisedProjectControlPayload.isControlPayloadFragment(content)) {
         supervisedProjectConnectorSourceIds.add(sourceMessageId)
         liveAgentConnectorStreams.remove(sourceMessageId)
@@ -1665,7 +1667,9 @@ internal fun MainActivity.publishAgentTaskPartialResult(
             conversationId = envelope.optString("conversation_id"),
             turnId = envelope.optString("turn_id"),
             taskId = envelope.optString("task_id"),
-            firstDelta = sequence <= 1L
+            firstDelta = sequence <= 1L,
+            previewOnly = answerPreview,
+            supervisedAnswerPreview = answerPreview
         )
     )
 }

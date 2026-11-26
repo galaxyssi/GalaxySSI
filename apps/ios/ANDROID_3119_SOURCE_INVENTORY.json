@@ -57,7 +57,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgent.kt",
       "sha256": "6152841da29de9c420c56c509343fce30777142d47fd58c148ba62240224be85",
-      "disposition": "Existing Desktop recovery uses fresh paired/verified same-Desktop ranking and original retry budget. Exact native waits retain legacy/journal status/result queries across observation expiry without synthetic failure. Generic timeout/candidate callback remains unwired; no journal Codex replay"
+      "disposition": "Existing Desktop recovery uses fresh paired/verified same-Desktop ranking and original retry budget. Exact native waits retain legacy/journal status/result queries across observation expiry without synthetic failure. Bounded confirmed-failure Codex attempts now enqueue on journal transport using exact current replay ownership, immutable original plan-only input and local original-message receipt mapping. Generic timeout/candidate callback and native runtime acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",

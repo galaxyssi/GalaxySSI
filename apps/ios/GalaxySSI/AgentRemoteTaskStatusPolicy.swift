@@ -67,6 +67,57 @@ struct AgentCodexReplaySeed: Codable, Equatable {
   }
 }
 
+enum AgentJournalCodexReplayPolicy {
+  static func matchesRequest(_ payload: [String: Any], record: AgentDesktopReplyRecoveryRecord, source: ChatMessage) -> Bool {
+    let binding = record.binding
+    guard binding.isValid, binding.attemptSourceId != nil, binding.managedSource == nil,
+          binding.teamSource == nil, binding.goalWork != true, !record.isManualTargetLocked,
+          record.terminalObservedAt == 0, record.acceptedReply == nil, record.pinnedTeamReply == nil,
+          !AgentDesktopReplyRecovery.terminalStatuses.contains(record.status),
+          let replay = record.codexReplay, !replay.budget.exhausted, replay.matches(source),
+          replay.budget.expectedTarget == binding.contactId, source.id == binding.sourceId,
+          source.contactId == binding.displayContactId, source.conversationId == binding.identity.conversationId,
+          source.turnId.ifBlank(source.id.uuidString) == binding.identity.turnId,
+          payload.string("type") == "text", payload["peer_chat"] as? Bool != true,
+          payload["agent_team_message"] as? Bool != true,
+          payload.string("message_id") == binding.sourceIdentity,
+          payload.string("source_message_id").ifBlank(payload.string("client_message_id")) == binding.sourceIdentity,
+          payload.string("client_message_id") == binding.sourceIdentity,
+          binding.fields.filter({ $0.key != "source_message_id" }).allSatisfy({ payload.string($0.key) == $0.value }),
+          payload.string("_galaxyssi_conversation_id") == binding.identity.conversationId,
+          payload.string("_galaxyssi_turn_id") == binding.identity.turnId,
+          payload.string("_galaxyssi_task_id") == binding.identity.taskId,
+          payload.string("desktop_id") == binding.desktopId, payload.string("content") == source.content,
+          payload.string("execution_mode") == AgentTaskExecutionMode.planOnly.rawValue,
+          payload.string("_galaxyssi_task_execution_mode") == AgentTaskExecutionMode.planOnly.rawValue,
+          payload.string("_galaxyssi_conversation_context") == replay.transportContext,
+          payload.string("_galaxyssi_long_term_write_allowed") == "false",
+          payload.string("_galaxyssi_conversation_has_attachments") == "false",
+          payload["attachments"] == nil, payload["voice_session_id"] == nil,
+          payload["run_id"] == nil else { return false }
+    let expected = replay.budget.origin == binding.contactId ? replay.invocation : nil
+    if let expected { return payload["agent_invocation"] as? [String: String] == expected }
+    return payload["agent_invocation"] == nil
+  }
+
+  static func presentationEvent(_ event: MqttDeliveryCompletions.Event, record: AgentDesktopReplyRecoveryRecord,
+                                source: ChatMessage) -> MqttDeliveryCompletions.Event? {
+    guard record.binding.isValid, record.binding.attemptSourceId != nil,
+          event.sourceMessageID == record.binding.sourceIdentity, event.messageID == record.binding.sourceIdentity,
+          event.contactID == record.binding.contactId, event.attachmentTransferID.isEmpty,
+          event.traffic == MqttMultipathPolicy.Traffic.message.rawValue,
+          source.id == record.binding.sourceId, source.contactId == record.binding.displayContactId,
+          source.conversationId == record.binding.identity.conversationId,
+          source.turnId.ifBlank(source.id.uuidString) == record.binding.identity.turnId,
+          record.codexReplay?.matches(source) == true else { return nil }
+    // Map only the local UI write; keep the real attempt ID/hash for receipt trace deduplication.
+    return MqttDeliveryCompletions.Event(identity: event.identity, messageID: event.messageID, wireHash: event.wireHash,
+      traffic: event.traffic, requestHash: event.requestHash, sourceMessageID: source.id.uuidString,
+      contactID: event.contactID, attachmentTransferID: event.attachmentTransferID, receivedAt: event.receivedAt,
+      consumedAt: event.consumedAt, topic: event.topic)
+  }
+}
+
 enum AgentCodexSilenceRecoveryPolicy {
   static let silenceMillis: Int64 = 180_000
 

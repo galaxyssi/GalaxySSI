@@ -218,6 +218,13 @@ starvation but do not guarantee ordering across independent brokers.
 
 ### Adaptive Small-Message Hedge
 
+On Android, durable Desktop-bound traffic classified as `final` (including
+Agent text requests with a task ID) is also eligible for delayed copies when
+its encoded packet bound is at most 256 KiB. Backup paths are scheduled at
+250 ms intervals from the primary attempt. Copies use only authorized paths,
+share the original message identity, and are cancelled on verified peer
+receipt. This exception does not change chunk scheduling or padding.
+
 Ordinary small messages and final results use a primary path and delayed copies.
 The delay uses the current peer's verified receipt p90 multiplied by 1.5, within
 the shared catalog's bounds. Twenty recent samples are required. Before the

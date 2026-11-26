@@ -44,7 +44,8 @@ data class AgentConnectorStreamUpdate(
     val firstDelta: Boolean = false,
     val attemptOrdinal: Int = 0,
     val receivedAtMillis: Long = System.currentTimeMillis(),
-    val previewOnly: Boolean = false
+    val previewOnly: Boolean = false,
+    val supervisedAnswerPreview: Boolean = false
 )
 
 fun interface AgentConnectorResponseListener {

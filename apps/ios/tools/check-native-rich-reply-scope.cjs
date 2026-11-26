@@ -1,7 +1,7 @@
 // Source contracts only; not Swift compilation, device presentation or Blob delivery acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '26e82a54754c11aab4e32c09fc1c389ff1b13628';
-const read = file => require('./check-progressive-tool-catalog-scope.cjs').retained(file,
+const read = file => require('./check-journal-codex-replay-scope.cjs').retained(file,
   fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const cache = new Map();
 function old(file) {
@@ -14,7 +14,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  source = require('./check-progressive-tool-catalog-scope.cjs').retained(file, source);
+  source = require('./check-journal-codex-replay-scope.cjs').retained(file, source);
   if (file.endsWith('check-managed-raw-attachments-scope.cjs')) return source
     .replace("const read = file => require('./check-native-rich-reply-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")

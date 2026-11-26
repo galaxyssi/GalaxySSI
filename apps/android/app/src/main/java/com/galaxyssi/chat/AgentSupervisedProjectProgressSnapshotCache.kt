@@ -6,7 +6,8 @@ internal data class AgentSupervisedProjectProgressSnapshot(
     val temporarilyBlockedToolIds: Set<String>,
     val detailedToolIds: Set<String>,
     val promptLedger: String?,
-    val latestObservation: String = ""
+    val latestObservation: String = "",
+    val recentlyUsedToolIds: Set<String> = emptySet()
 )
 
 internal object AgentSupervisedProjectProgressSnapshotCache {
@@ -26,7 +27,8 @@ internal object AgentSupervisedProjectProgressSnapshotCache {
                     AgentSupervisedProjectProgressPolicy.temporarilyBlockedToolIds(actions),
                 detailedToolIds = AgentSupervisedProjectProgressPolicy.detailedToolIds(actions),
                 promptLedger = ledger?.full,
-                latestObservation = ledger?.latest.orEmpty()
+                latestObservation = ledger?.latest.orEmpty(),
+                recentlyUsedToolIds = AgentProgressiveToolCatalog.recent(actions)
             )
         }
 

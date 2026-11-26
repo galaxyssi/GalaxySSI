@@ -2,7 +2,7 @@
 
 Reference: open PR #4584 at `51185d5a1ab8f9793b25944e03ad1f878548fe84`.
 Its 22 changed files and hashes are pinned in `ANDROID_4584_PORT_COVERAGE.json`.
-iOS baseline: main `8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b`.
+iOS baseline: main `5f60bac1b8571768f6f12f426dee5950c6f87bd0` (merged #4585).
 This is PARTIAL integration. Interactive MQTT delayed copies and supervised
 ephemeral answer previews remain outstanding and must not be counted complete.
 Continue those portions in this same corresponding iOS PR, not a duplicate PR.

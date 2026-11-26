@@ -108,11 +108,20 @@ The actual shortcut outcome-review provider path now binds an Auto turn only whe
 
 This is NOT completion of Android #3119. Main service selection still starts without a full scored privacy/budget/capacity decision; this change must not be described as adding that missing policy engine. The installed queued producer supports the scoped input/backend combinations above, not the full Android generic connector contract. Coordinator's direct model/Agent sending remains separate. The general control-plane timeout helper still lacks a Coordinator caller/candidate-observation source. Those missing timeout/deferred-observation and broader attachment connections require implementation, not just policy tests.
 
-The Desktop changes above are deliberately limited to the existing recovery implementation. Journal-backed publishLinkMessage explicitly rejects codexReplay records, so this patch does not claim that a new Codex replay works on journal transport. Broader asynchronous continuation, active pre-timeout observation/deferred discovery and broader scheduled/resumed provider identity still require integration. Parallel/attachment/native UI, network, process-restart and recovery acceptance are unverified. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn.
+The original Desktop changes above were limited to the existing recovery implementation. The journal Codex follow-up below removes its explicit replay rejection with exact current attempt authorization and original-message receipt projection. Broader asynchronous continuation, active pre-timeout observation/deferred discovery and broader scheduled/resumed provider identity still require integration. Parallel/attachment/native UI, network, process-restart and recovery acceptance are unverified. Older callbacks can still change legacy display labels; they cannot update the new exact Auto binding without its turn.
 
 All 17 Android changed files are pinned with explicit dispositions. Manual selection, planning factory and quality-ranking implementations remain exact. The scoped Auto, admission, host continuation and queued producer changes above are additive to those existing policies. No credential, version, Android, Desktop or IPA changes. Existing network engines/outboxes are reused, not replaced with a new protocol.
 
 ## Verification Limits
+
+### Journal Codex recovery follow-up
+
+See `ANDROID_3119_JOURNAL_CODEX_REPLAY.md`: pending bounded Codex attempts can
+enqueue through journal transport without legacy-client readiness. The projection
+resolves only an exact current replay owner and original plan-only payload; its
+delivery receipt maps locally to the original chat row without rewriting journal
+identity. Existing confirmed-failure qualification and retry budget are unchanged.
+Seven Swift fixtures are source only, not native replay acceptance.
 
 ### Owned native rich reply follow-up
 

@@ -1,6 +1,6 @@
 // Source contracts, not Swift compilation, executed discovery or model/device acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '5f60bac1b8571768f6f12f426dee5950c6f87bd0';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const git = args => cp.execFileSync('git', args, {cwd: root, maxBuffer: 32 * 1024 * 1024});
 const cache = new Map();
@@ -10,7 +10,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  if (file.endsWith('check-native-rich-reply-scope.cjs')) return source
+  if (file.endsWith('check-journal-codex-replay-scope.cjs')) return source
     .replace("const read = file => require('./check-progressive-tool-catalog-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-progressive-tool-catalog-scope.cjs').retained(file, source);\n", '');
@@ -36,7 +36,7 @@ function validate() {
   assert.deepEqual(manifest.files.map(file => file.path), files);
   for (const file of manifest.files) assert.equal(crypto.createHash('sha256').update(git(['show', `${manifest.androidHead}:${file.path}`])).digest('hex'), file.sha256, file.path);
   for (const file of [app + 'AgentNativeToolCore.swift', app + 'AgentNativeToolExecutionModels.swift', app + 'AgentPhoneNativeToolCatalog.swift',
-    app + 'AgentModelPlanningPrompt.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-native-rich-reply-scope.cjs'])
+    app + 'AgentModelPlanningPrompt.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-journal-codex-replay-scope.cjs'])
     assert.equal(retained(file, read(file)), old(file), file);
   const core = read(app + 'AgentNativeToolCore.swift'), registry = read(app + 'AgentNativeToolExecutionModels.swift');
   assert(core.indexOf('var toolCatalog:') > core.indexOf('struct AgentNativeToolInvocation {'));
