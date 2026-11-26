@@ -279,6 +279,7 @@ final class GlobalLongHorizonCoordinator {
       topicHints: topic.isEmpty ? [] : [topic],
       metadata: [
         "long_horizon_goal_id": goal.id,
+        "source_conversation_ids": goal.sourceConversationIds.sorted().joined(separator: ","),
         "checkpoint_count": "\(goal.checkpointCount + 1)",
         "origin": "global_long_horizon_scheduler"
       ],
