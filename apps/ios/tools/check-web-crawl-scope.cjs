@@ -3,7 +3,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), cp = requ
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '790a0e8e5f69e12da1427c9bf973a57d9823cf0a';
 const clean = value => value.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  let source = clean(fs.readFileSync(path.join(root, file), 'utf8'));
+  if (file.endsWith('AgentIOSPublicAddressPolicy.swift')) source = require('./check-special-use-address-scope.cjs').retainedPolicy(source);
+  return source;
+};
 const show = (ref, file) => clean(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function section(source, first, last) {
   const start = source.indexOf(first), end = source.indexOf(last, start + first.length);
