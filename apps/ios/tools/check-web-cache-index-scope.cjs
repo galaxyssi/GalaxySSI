@@ -11,7 +11,9 @@ function retainedMetadataProvider(source) {
     .replace('    case "status":\n      cacheMetadata = cacheStore.stats()', '    case "status":\n      break');
 }
 function validateIndexedCache() {
-  const cache = read(app + 'AgentIOSWebIntelligenceCache.swift'), index = read(app + 'AgentIOSWebCacheIndex.swift');
+  const retention = require('./check-search-retention-scope.cjs');
+  const cache = retention.retainedSearchCache(read(app + 'AgentIOSWebIntelligenceCache.swift')),
+    index = retention.retainedSearchIndex(read(app + 'AgentIOSWebCacheIndex.swift'));
   assert(isIndexedCache(cache));
   const prior = cp.execFileSync('git', ['show', base + ':' + app + 'AgentIOSWebIntelligenceCache.swift'],
     {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}).replace(/\r\n/g, '\n');

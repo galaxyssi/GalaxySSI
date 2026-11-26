@@ -53,7 +53,8 @@ final class AgentIOSWebCacheIndexTests: XCTestCase {
         entry(.search, "equal", expires: 1000), entry(.watch, "watch"), entry(.learned, "learned")] }
       let generation = try index.generation(), counts = try index.clear(expiredOnly: true, now: 1000)
       XCTAssertEqual(counts.documents, 1)
-      XCTAssertEqual(counts.searches, 1)
+      XCTAssertEqual(counts.searches, 0)
+      XCTAssertNotNil(try index.entry(.search, id: "equal"))
       XCTAssertEqual(counts.learned, 0)
       XCTAssertNotNil(try index.entry(.document, id: "equal"))
       XCTAssertNotNil(try index.entry(.learned, id: "learned"))

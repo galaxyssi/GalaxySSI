@@ -17,10 +17,12 @@ function retainedWatchProvider(source) {
     section(old(app + 'AgentIOSURLSessionWebIntelligenceProvider.swift'), '  private func watch(', '  private func search('));
 }
 function retainedWatchCache(source) {
+  source = require('./check-search-retention-scope.cjs').retainedSearchCache(source);
   if (!source.includes('  func watchRecord(')) return source;
   return source.replace(section(source, '  func watchRecord(', '  func watch(id:'), '');
 }
 function retainedWatchIndex(source) {
+  source = require('./check-search-retention-scope.cjs').retainedSearchIndex(source);
   if (!source.includes('  func compareAndPutWatch(')) return source;
   return source.replace(section(source, '  func compareAndPutWatch(', '  func clear('), '');
 }

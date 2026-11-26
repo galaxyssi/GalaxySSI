@@ -68,7 +68,7 @@ function validateSearchCapacity() {
     'ImageAndMixedRequestsAreNotCutAtTwenty', 'RawWebMediaCannotSelectCapacityFromJSON',
     'FindSimilarCanFillBeyondTwentyFourWithScopedRemoteSearch', 'ExactCacheAllowsLargeHundredRowsButRejectsOverBounds',
     'ResearchEvidenceSchemaRemainsTwentyFour']) assert(tests.includes('func test' + name + '('), name);
-  const updatedFixture = read('apps/ios/GalaxySSITests/AgentIOSWebSearchFusionTests.swift');
+  const updatedFixture = require('./check-search-retention-scope.cjs').retainedSearchFixture(read('apps/ios/GalaxySSITests/AgentIOSWebSearchFusionTests.swift'));
   assert.equal(updatedFixture.replace('count: AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1', 'count: 262_145'),
     old('apps/ios/GalaxySSITests/AgentIOSWebSearchFusionTests.swift'), 'Only obsolete fixture byte ceiling changed');
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');

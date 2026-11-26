@@ -196,7 +196,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     let key = String(repeating: "a", count: 64), response = cachedFixture()
     XCTAssertTrue(cache.putSearchResponse(key: key, result: response, ttlMillis: 60_000))
     XCTAssertNotNil(cache.searchResponse(key: key))
-    clock = 61_000
+    clock = 61_001
     XCTAssertNil(cache.searchResponse(key: key))
     XCTAssertEqual(cache.clear(expiredOnly: true)["searches_removed"], .int(1))
     let generation = cache.searchCacheGeneration()
@@ -215,8 +215,8 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
       let key = String(repeating: "a", count: 62) + String(format: "%02x", index)
       XCTAssertTrue(cache.putSearchResponse(key: key, result: cachedFixture(), ttlMillis: 60_000))
     }
-    XCTAssertEqual(cache.stats()["search_count"], .int(32))
-    XCTAssertNil(cache.searchResponse(key: String(repeating: "a", count: 62) + "00"))
+    XCTAssertEqual(cache.stats()["search_count"], .int(33))
+    XCTAssertNotNil(cache.searchResponse(key: String(repeating: "a", count: 62) + "00"))
     let key = String(repeating: "b", count: 64)
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .failure(code: "failed", message: "fixture"), ttlMillis: 60_000))
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .success(), ttlMillis: 60_000))

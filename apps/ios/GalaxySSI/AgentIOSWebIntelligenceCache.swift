@@ -101,7 +101,8 @@ final class AgentIOSWebIntelligenceCacheStore {
     let now = nowMillis()
     guard let row = try? cacheIndexUnlocked().entry(.search, id: key),
       let entry = try? JSONDecoder().decode(SearchResponse.self, from: row.payload), entry.isValid,
-      entry.key == key, entry.storedAtMillis <= now, now < entry.expiresAtMillis else { return nil }
+      entry.key == key, row.updated == entry.storedAtMillis, row.expires == entry.expiresAtMillis,
+      entry.storedAtMillis <= now, now <= entry.expiresAtMillis else { return nil }
     return entry.result
   }
 

@@ -169,11 +169,11 @@ final class AgentIOSWebCacheIndex {
     try finish(s)
   }
   func putSearch(_ entry: Entry, now: Int64, expected: UUID?) throws {
-    guard entry.kind == .search else { throw Failure.corrupt }
+    guard entry.kind == .search, now >= 0 else { throw Failure.corrupt }
     try transaction {
       if let expected, try generation() != expected { throw Failure.staleGeneration }
-      _ = try remove(.search, before: now)
-      try put(entry); try prune(.search, limit: 32)
+      // Match Android: retain independent search keys until explicit cache cleanup.
+      try put(entry)
     }
   }
   func compareAndPutWatch(_ updated: Entry, expected: AgentIOSWebIntelligenceCacheWatch) throws -> Bool {
@@ -196,7 +196,7 @@ final class AgentIOSWebCacheIndex {
   func clear(expiredOnly: Bool, now: Int64) throws -> (documents: Int64, searches: Int64, learned: Int64) {
     try transaction {
       let documents = try remove(.document, before: expiredOnly ? now : nil, inclusive: false)
-      let searches = try remove(.search, before: expiredOnly ? now : nil)
+      let searches = try remove(.search, before: expiredOnly ? now : nil, inclusive: false)
       let learned = expiredOnly ? 0 : try remove(.learned)
       if !expiredOnly { try writeMarker(Marker(namespace: namespace, generation: UUID())) }
       return (documents, searches, learned)
