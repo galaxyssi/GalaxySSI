@@ -39,6 +39,7 @@ function validatePlanningContextTiming() {
   for (const name of ['GalaxySSIStore', 'GalaxySSIStoreSessions', 'GalaxySSIGlobalAgentRuntime',
     'AgentConversationModels', 'LanguagePolicySettings', 'AgentModelToolLoop', 'CloudModelToolLoopAgentPlanningProvider', 'GalaxySSIDeviceIdentity'])
     assert.equal(name === 'GalaxySSIGlobalAgentRuntime' ? require('./check-context-prewarm-scope.cjs').retainedPrewarmRuntime(read(app + name + '.swift'))
+      : name === 'GalaxySSIDeviceIdentity' ? require('./check-local-workspace-device-scope.cjs').retainedLocalDeviceIdentity(read(app + name + '.swift'))
       : read(app + name + '.swift'), show(base, app + name + '.swift'), name);
   assert(read(app + 'GalaxySSIStore.swift').includes('@Published private(set) var profile: GalaxySSIProfile {'));
   const reference = show('65655f0c79c6ab04121150229a65b089180f82f2', 'apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt');

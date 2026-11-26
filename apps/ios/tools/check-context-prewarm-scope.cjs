@@ -56,7 +56,9 @@ function validateContextPrewarm() {
   const warm = section(provider, '  func prewarm(', '  func invalidate(');
   assert(warm.includes('refreshAsync(nowMillis: nowMillis)') && !warm.includes('loadSnapshot'));
   for (const name of ['GalaxySSIStore', 'GalaxySSIStoreSessions', 'GlobalRealtimeContext', 'AgentModelToolLoop', 'GalaxySSIDeviceIdentity'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(name === 'GalaxySSIDeviceIdentity'
+      ? require('./check-local-workspace-device-scope.cjs').retainedLocalDeviceIdentity(read(app + name + '.swift'))
+      : read(app + name + '.swift'), old(app + name + '.swift'), name);
   const android = clean(cp.execFileSync('git', ['show', '65655f0c79c6ab04121150229a65b089180f82f2:apps/android/app/src/main/java/com/galaxyssi/chat/MainActivity.kt'], {cwd: root, encoding: 'utf8'}));
   assert(android.includes('navigationContentExecutor.execute {\n            runCatching { globalSuperAgentRuntime.prewarmContextSnapshot() }'));
   const tests = read('apps/ios/GalaxySSITests/GlobalRealtimePrewarmTests.swift');

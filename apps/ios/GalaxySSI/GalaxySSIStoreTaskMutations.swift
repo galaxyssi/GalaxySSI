@@ -47,9 +47,10 @@ extension GalaxySSIStore {
   }
 
   func persistLocalWorkspaceCancellation(for task: AgentTaskRecord, at timestamp: Int64) -> Bool {
+    let localDeviceId = GalaxySSIDeviceIdentity.localDeviceId(profile: profile)
     for _ in 0..<3 {
       guard let current = agentWorkspaceStore.find(task.taskId),
-            Self.isLocalWorkspace(current, for: task) else { return true }
+            Self.isLocalWorkspace(current, for: task, localDeviceId: localDeviceId) else { return true }
       let cancellation = AgentTaskWorkspaceControlReducer.cancel(workspace: current, observedAtMillis: timestamp)
       guard cancellation.changed else { return cancellation.shouldCancelExecution }
       do {
@@ -71,15 +72,18 @@ extension GalaxySSIStore {
     guard !candidates.isEmpty else { return [] }
     let cancelled = Dictionary(uniqueKeysWithValues: agentWorkspaceStore.list().lazy
       .filter { $0.status == .cancelled && $0.cancellationRequested }.map { ($0.workspaceId, $0) })
+    let localDeviceId = GalaxySSIDeviceIdentity.localDeviceId(profile: profile)
     return candidates.filter { task in
-      cancelled[task.taskId].map { Self.isLocalWorkspace($0, for: task) } ?? false
+      cancelled[task.taskId].map { Self.isLocalWorkspace($0, for: task, localDeviceId: localDeviceId) } ?? false
     }
   }
 
-  private static func isLocalWorkspace(_ workspace: AgentWorkspace, for task: AgentTaskRecord) -> Bool {
+  private static func isLocalWorkspace(_ workspace: AgentWorkspace, for task: AgentTaskRecord,
+                                       localDeviceId: String) -> Bool {
     !task.sessionId.isBlank && workspace.workspaceId == task.taskId && workspace.taskId == task.taskId &&
       workspace.sessionId == task.sessionId && workspace.conversationId == task.sessionId &&
-      workspace.parentRunId.isBlank && workspace.agentId.isBlank && workspace.deviceId.isBlank &&
+      workspace.parentRunId.isBlank && workspace.agentId.isBlank &&
+      (workspace.deviceId.isBlank || workspace.deviceId == localDeviceId) &&
       workspace.remoteRunId.isBlank && workspace.deliveryMode == AgentDeliveryMode.respond.rawValue
   }
 
@@ -115,6 +119,7 @@ extension GalaxySSIStore {
           let session = agentSession(id: task.sessionId), !session.privateMode, !session.trackingPaused,
           session.mergedIntoConversationId.isBlank else { return }
     let calls = AgentWorkspaceToolCallProjection.records(task: task, recovered: recovered)
+    let localDeviceId = GalaxySSIDeviceIdentity.localDeviceId(profile: profile)
     let status: AgentWorkspaceStatus
     switch task.phase {
     case .observing, .planning: status = .queued
@@ -133,13 +138,15 @@ extension GalaxySSIStore {
       let existing = agentWorkspaceStore.find(task.taskId)
       guard existing != nil || !calls.isEmpty else { return }
       var base = existing ?? AgentWorkspace(workspaceId: task.taskId, sessionId: task.sessionId,
-        conversationId: task.sessionId, taskId: task.taskId, goal: task.goal, createdAtMillis: task.createdAtMillis)
+        conversationId: task.sessionId, taskId: task.taskId, goal: task.goal,
+        deviceId: localDeviceId, createdAtMillis: task.createdAtMillis)
       let last = base.eventJournal.last
       let sourceTimestamp = last?.kind == AgentTaskEventKinds.localToolProjection
         ? last?.timestampMillis ?? 0 : base.updatedAtMillis
-      guard Self.isLocalWorkspace(base, for: task),
+      guard Self.isLocalWorkspace(base, for: task, localDeviceId: localDeviceId),
             sourceTimestamp <= task.updatedAtMillis, !base.cancellationRequested || status == .cancelled
       else { return }
+      if base.deviceId.isBlank { base.deviceId = localDeviceId }
       // An explicit local retry may reopen a failed workspace, but never one that was cancelled.
       if base.status == .failed && status != .failed && status != .cancelled && previous?.phase == .failed {
         base.status = status
@@ -154,6 +161,7 @@ extension GalaxySSIStore {
       var next = AgentWorkspaceExecutionSnapshotReducer.apply(snapshot: snapshot, to: base,
         observedAtMillis: task.updatedAtMillis).workspace
       if let existing, next.status == existing.status && next.toolCalls == existing.toolCalls &&
+        next.deviceId == existing.deviceId &&
         next.errorMessage == existing.errorMessage &&
         next.cancellationRequested == existing.cancellationRequested { return }
       if next.eventJournal.last?.kind == AgentTaskEventKinds.snapshot {

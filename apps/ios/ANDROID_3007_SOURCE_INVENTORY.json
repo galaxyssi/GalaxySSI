@@ -132,7 +132,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
       "sha256": "106ba129ed70b93ed47005298dc863ff5caa91b32f1df3a408844c2a64bd64af",
-      "disposition": "Reviewed the changed localDeviceRouteId fast profile-read concern. Existing iOS profile is a MainActor Published stored value, not a reconstructing JSON/disk getter; do not duplicate the Android helper or change Signal/MQTT identities. This is source-path evidence only, not full device-route equivalence: local workspace device attribution/initialization-repair behavior still needs separate comparison. No native performance/identity acceptance"
+      "disposition": "Existing iOS profile is a MainActor Published stored value, not a reconstructing JSON/disk getter. Local workspace attribution now uses a cached-profile-only localDeviceId helper extracted from the existing pairing identity algorithm, without constructing UIKit device metadata. Pairing IDs, Signal and MQTT identities remain unchanged. Android route initialization/repair is not newly reproduced; native performance/identity/legacy ownership acceptance remains unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudImageSearchEvidence.kt",
@@ -177,7 +177,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
       "sha256": "70f2254073ce911997372e4b8771e0101982aa9850baa0e5ddd329578837343a",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Platform adaptation: actual iOS local tool task projection now stamps the existing phone device identity via a cached-profile-only getter extracted without changing the existing pairing identifier algorithm. Eligible blank-device legacy rows upgrade on update; foreign-device workspaces are not relabeled. Cancellation/recovery accept current or legacy blank devices with unchanged task/conversation/remote/delivery gates. Workspace-only task projection recognizes the current phone device; explicit remote routes remain Desktop. Lower-level creation timing retained, not Android full submission elapsed timing. No identity/MQTT derivation or schema change; legacy ownership and native migration/cancellation/UI/performance acceptance remain unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
@@ -202,7 +202,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntime.kt",
       "sha256": "2d2802664db1748c669b39390ef226d90c5a8358cdfee2a2dd4a3309876a42ac",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Reviewed actual startExecutionLoop diff: Android appends reasoning audit before persisting the loop event to avoid a second session save and adds monotonic prepare/persist diagnostics. iOS has execution-loop model/timeline types but no equivalent production startExecutionLoop/persistExecutionLoopEvent path. Existing task records, native audits and encrypted plan-node journal are distinct stores, so broad loop-start/audit batching and timing equivalence are NOT implemented or claimed complete"
     },
     {
       "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
