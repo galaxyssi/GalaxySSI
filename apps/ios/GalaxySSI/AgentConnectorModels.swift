@@ -83,11 +83,13 @@ struct AgentInvocationProfile: Codable, Equatable {
   var defaultModelId: String
   var models: [AgentModelOption]
   var reasoningEfforts: [AgentModelReasoningEffort]
+  var modelAliases: [String: String]
 
   init(
     defaultModelId: String = "",
     models: [AgentModelOption] = [],
-    reasoningEfforts: [AgentModelReasoningEffort] = []
+    reasoningEfforts: [AgentModelReasoningEffort] = [],
+    modelAliases: [String: String] = [:]
   ) {
     let availableModels = models.reduce(into: [AgentModelOption]()) { result, option in
       guard !option.id.isEmpty, !RetiredAgentModelPolicy.isRetired(option.id),
@@ -95,7 +97,12 @@ struct AgentInvocationProfile: Codable, Equatable {
       result.append(option)
     }
     self.models = availableModels
-    self.defaultModelId = RetiredAgentModelPolicy.availableOrDefault(defaultModelId)
+    let knownIds = Set(availableModels.map(\.id))
+    let aliases = modelAliases.filter {
+      !$0.key.isEmpty && !knownIds.contains($0.key) && knownIds.contains($0.value)
+    }
+    self.modelAliases = aliases
+    self.defaultModelId = RetiredAgentModelPolicy.availableOrDefault(aliases[defaultModelId] ?? defaultModelId)
       .ifBlank(availableModels.first?.id ?? "")
     self.reasoningEfforts = reasoningEfforts.reduce(into: []) { result, effort in
       guard effort != .automatic, !result.contains(effort) else { return }
@@ -108,17 +115,24 @@ struct AgentInvocationProfile: Codable, Equatable {
   }
 
   func normalizedModelId(_ requested: String) -> String {
-    let clean = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+    let clean = canonicalModelId(requested)
     return models.first(where: { $0.id == clean })?.id
       ?? models.first(where: { $0.id == defaultModelId })?.id
       ?? models.first?.id
       ?? ""
   }
 
+  // Resolve advertised aliases only; unknown saved choices must not become a different model.
+  func canonicalModelId(_ requested: String) -> String {
+    let clean = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+    return modelAliases[clean] ?? clean
+  }
+
   enum CodingKeys: String, CodingKey {
     case defaultModelId = "default_model"
     case models
     case reasoningEfforts = "reasoning_efforts"
+    case modelAliases = "model_aliases"
   }
 
   init(from decoder: Decoder) throws {
@@ -129,7 +143,8 @@ struct AgentInvocationProfile: Codable, Equatable {
       reasoningEfforts: try container.decodeIfPresent(
         [AgentModelReasoningEffort].self,
         forKey: .reasoningEfforts
-      ) ?? []
+      ) ?? [],
+      modelAliases: try container.decodeIfPresent([String: String].self, forKey: .modelAliases) ?? [:]
     )
   }
 }

@@ -63,7 +63,7 @@ struct GalaxySSICloudModelSwitchView: View {
             badge: ""
           )
         }
-        if let selected = contact.selectedCloudModel {
+        if let selected = CloudModelRequestRoutingPolicy.model(in: contact, modelId: contact.selectedCloudModelId) {
           GalaxySSISecuritySectionTitle(title: t("galaxyssi.cloud.switch.current_section", "Current"))
           GalaxySSISecurityStatusRow(
             title: selected.displayName.ifBlank(selected.modelId),
@@ -146,78 +146,19 @@ struct GalaxySSICloudModelSwitchView: View {
   }
 
   private func switchOptions(for contact: GalaxySSIContact) -> [CloudModelSwitchOption] {
-    let provider = provider(for: contact)
-    var rows: [CloudModelSwitchOption] = []
-    var indexesByModelId: [String: Int] = [:]
-
-    func upsert(_ option: CloudModelSwitchOption) {
-      if let index = indexesByModelId[option.modelId] {
-        rows[index] = option
-      } else {
-        indexesByModelId[option.modelId] = rows.count
-        rows.append(option)
-      }
+    CloudModelRequestRoutingPolicy.models(for: contact).map { model in
+      CloudModelSwitchOption(
+        displayName: model.displayName.ifBlank(model.modelId),
+        provider: model.provider.ifBlank(provider(for: contact)),
+        modelId: model.modelId, endpoint: model.endpoint, apiStyle: model.apiStyle, storedModel: model)
     }
-
-    CloudModelPreset.androidParity
-      .filter { $0.provider.localizedCaseInsensitiveCompare(provider) == .orderedSame }
-      .forEach { preset in
-        upsert(
-          CloudModelSwitchOption(
-            displayName: preset.name,
-            provider: preset.provider,
-            modelId: preset.modelId,
-            endpoint: preset.endpoint,
-            apiStyle: preset.apiStyle,
-            storedModel: nil
-          )
-        )
-      }
-
-    contact.cloudModels.forEach { model in
-      upsert(
-        CloudModelSwitchOption(
-          displayName: model.displayName.ifBlank(model.modelId),
-          provider: model.provider.ifBlank(provider),
-          modelId: model.modelId,
-          endpoint: model.endpoint,
-          apiStyle: model.apiStyle,
-          storedModel: model
-        )
-      )
-    }
-
-    return rows
   }
 
   private func select(_ option: CloudModelSwitchOption, contact: GalaxySSIContact) {
     if store.setSelectedCloudModel(contactId: contact.id, modelId: option.modelId) {
       showSelectionSuccess(option)
-      return
-    }
-    guard let apiKey = reusableAPIKey(from: contact) else {
-      statusMessage = String(
-        format: t("galaxyssi.cloud.configure_api_key_first", "Configure the API Key for %@ first."),
-        option.provider
-      )
-      return
-    }
-    do {
-      let updated = try store.addCloudModelContact(
-        displayName: option.displayName,
-        provider: option.provider,
-        modelId: option.modelId,
-        endpoint: option.endpoint,
-        apiKey: apiKey,
-        apiStyle: option.apiStyle
-      )
-      if store.setSelectedCloudModel(contactId: updated.id, modelId: option.modelId) {
-        showSelectionSuccess(option)
-      } else {
-        statusMessage = t("galaxyssi.cloud.switch.failed", "Model switch failed. Please configure the model first.")
-      }
-    } catch {
-      statusMessage = error.localizedDescription
+    } else {
+      statusMessage = t("galaxyssi.cloud.switch.failed", "Model switch failed. Please configure the model first.")
     }
   }
 
@@ -231,18 +172,13 @@ struct GalaxySSICloudModelSwitchView: View {
     }
   }
 
-  private func reusableAPIKey(from contact: GalaxySSIContact) -> String? {
-    contact.cloudModels
-      .compactMap { store.apiKey(for: $0) }
-      .first { CloudModelCredentialPolicy.isStoredCredential($0) }
-  }
-
   private func provider(for contact: GalaxySSIContact) -> String {
     contact.cloudProvider.ifBlank(contact.displayName).ifBlank("Custom")
   }
 
   private func heroSubtitle(for contact: GalaxySSIContact) -> String {
-    let selected = contact.selectedCloudModel?.modelId ?? t("galaxyssi.settings.no_model", "No model")
+    let selected = CloudModelRequestRoutingPolicy.model(in: contact, modelId: contact.selectedCloudModelId)?.modelId
+      ?? t("galaxyssi.settings.no_model", "No model")
     let count = String(
       format: t("galaxyssi.cloud.switch.model_count", "%d configured"),
       contact.cloudModels.count
@@ -272,7 +208,7 @@ struct GalaxySSICloudModelSwitchView: View {
   }
 
   private func isSelected(_ option: CloudModelSwitchOption, contact: GalaxySSIContact) -> Bool {
-    contact.selectedCloudModel?.modelId == option.modelId
+    CloudModelRequestRoutingPolicy.invocationProfile(contact).canonicalModelId(contact.selectedCloudModelId) == option.modelId
   }
 
   private func t(_ key: String, _ fallback: String) -> String {

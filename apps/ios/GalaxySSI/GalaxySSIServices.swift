@@ -9947,7 +9947,7 @@ final class MessageCoordinator: ObservableObject {
             }
             let needsImages = attachments.contains { $0.mimeType.lowercased().hasPrefix("image/") }
             guard CloudModelRequestRoutingPolicy.effectiveModelId(selectedModelId: model.modelId,
-              hasImageInput: needsImages) == model.modelId else {
+              hasImageInput: needsImages, endpoint: model.endpoint) == model.modelId else {
               throw GalaxySSIError.invalidPayload("Select an image-capable model for this collaboration member")
             }
             memberContact.selectedCloudModelId = model.modelId
@@ -12914,7 +12914,7 @@ final class MessageCoordinator: ObservableObject {
     let profile = contact.connectorInvocationProfile
     let manual = selection.mode == .manual
     let modelId = manual && !selection.modelId.isBlank
-      ? selection.modelId : profile.normalizedModelId("")
+      ? profile.canonicalModelId(selection.modelId) : profile.normalizedModelId("")
     let effort = manual ? selection.reasoningEffort : .automatic
     guard effort == .automatic || profile.reasoningEfforts.contains(effort),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }) else {
@@ -17301,7 +17301,7 @@ final class MessageCoordinator: ObservableObject {
       )
       if selectedAgentMatchesContact {
         let effectiveInvocation = AgentDirectVisionPolicy.invocation(
-          modelId: selection.modelId,
+          modelId: contact.connectorInvocationProfile.canonicalModelId(selection.modelId),
           reasoningEffort: selection.reasoningEffort,
           mimeTypes: attachments.map(\.mimeType)
         )

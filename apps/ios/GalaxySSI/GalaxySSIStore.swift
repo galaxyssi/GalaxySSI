@@ -2311,10 +2311,16 @@ final class GalaxySSIStore: ObservableObject {
   @discardableResult
   func setSelectedCloudModel(contactId: String, modelId: String) -> Bool {
     guard var contact = contact(id: contactId),
-          contact.cloudModels.contains(where: { $0.modelId == modelId }) else {
+          let model = CloudModelRequestRoutingPolicy.model(in: contact, modelId: modelId) else {
       return false
     }
-    contact.selectedCloudModelId = modelId
+    // Persist a derived official preset only after an explicit user selection.
+    if let index = contact.cloudModels.firstIndex(where: { $0.modelId == model.modelId }) {
+      guard contact.cloudModels[index] == model else { return false }
+    } else {
+      contact.cloudModels.append(model)
+    }
+    contact.selectedCloudModelId = model.modelId
     contact.updatedAt = Date()
     upsert(contact)
     save()

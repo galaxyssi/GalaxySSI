@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "source": {
+    "androidPR": 4558,
+    "headCommit": "9229e18652978c14e3bb4fe3454b32d77ff3f0a7",
+    "baseIOSCommit": "ee17e7cac043350e3f65c10ba025ecf55cde10c7",
+    "stateAtReview": "OPEN",
+    "note": "Review only this head's incremental commit; Android #4556 new-chat changes are isolated in iOS PR #4557."
+  },
+  "verification": "source-structure-and-grammar-only-no-native-execution",
+  "files": [
+    {
+      "source": "apps/android/app/build.gradle.kts",
+      "sourceSHA256": "1eec5df541ec6efc287e40b4cd67c9a4a88f7c493f466fec3e42a58a6827c784",
+      "note": "Platform version metadata only; intentionally not copied to iOS.",
+      "ios": []
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelSelectionSettings.kt",
+      "sourceSHA256": "8dadc5cd3080544b6578422174d3c3a196bbbaf1bb21c6ff533b87f8a5e15582",
+      "note": "Optional validated model_aliases decoding and canonical selection resolution; persisted selections/effort are not migrated.",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConnectorModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIAgentModelSelectionView.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelRequestRoutingPolicy.kt",
+      "sourceSHA256": "94b526f1f2ab8181c1f8f19efdccb48a7c67ffb6455d62ee560054678f74a8cd",
+      "note": "Official provider endpoint/style scoped catalogs, legacy DeepSeek alias credential priority and image Pro to current Flash; custom endpoints preserved. iOS additionally rejects userinfo/nondefault ports for direct DeepSeek and query/fragment on provider preset reuse.",
+      "ios": [
+        "apps/ios/GalaxySSI/CloudModelRequestRoutingPolicy.swift",
+        "apps/ios/GalaxySSI/GalaxySSIStore.swift",
+        "apps/ios/GalaxySSI/GalaxySSICloudModelSwitchView.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
+      "sourceSHA256": "9b37083abbb0ea890ccfa3a58bcae557191a9942e903d74e2bec20a0d58ad492",
+      "note": "Canonical model labels in manual home header; cloud requests and Desktop invocation consume advertised aliases without changing saved settings.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIAgentHomeHeaderPresentation.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentSessions.kt",
+      "sourceSHA256": "0548eb16ed39ec6bd70619204b5a7f55180ab379298e1ea77abb20f21ecaeff9",
+      "note": "Picker selected state, configuration model and subtitle resolve canonical IDs.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSIAgentModelSelectionView.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityConstants.kt",
+      "sourceSHA256": "260475367dc6bcd95bb059d44f4d8e0afa22f6d1d660f4b1df37edbccbd293fd",
+      "note": "Exact 21 preset rows including API styles/endpoints; GPT-6.2 only via OpenRouter, no Responses API transport invented.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSICoreModels.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityHistoryAndContacts.kt",
+      "sourceSHA256": "ffe6f68dcb4f551da5f1d1a12ecce07eb19bfdff0ebc105301a1c3340ac1d5c9",
+      "note": "Switch rows use safe derived catalog, suppress legacy aliases and select current ID. Removed broad any-key fallback; explicit switch persists Keychain reference on same contact.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSICloudModelSwitchView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIStore.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-b+zh+Hans+CN/strings.xml",
+      "sourceSHA256": "13182c548810e7489b7ea72152c20ffe00a06799f07155dd489fad1b4b0bab88",
+      "note": "English provider descriptions and Simplified Chinese resources updated; iOS uses one zh-Hans resource rather than duplicate Android locale folders.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSICloudModelOnboardingView.swift",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/Localizable.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+      "sourceSHA256": "789a3b0dc693690c2ba37610c6f5f23495ec346b1ba42876019b3005ba40f25a",
+      "note": "English provider descriptions and Simplified Chinese resources updated; iOS uses one zh-Hans resource rather than duplicate Android locale folders.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSICloudModelOnboardingView.swift",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/Localizable.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/main/res/values/strings.xml",
+      "sourceSHA256": "dc0de3e360ba9d41fa7508601b4535792c1c7bd038bbc83c42669da362495460",
+      "note": "English provider descriptions and Simplified Chinese resources updated; iOS uses one zh-Hans resource rather than duplicate Android locale folders.",
+      "ios": [
+        "apps/ios/GalaxySSI/GalaxySSICloudModelOnboardingView.swift",
+        "apps/ios/GalaxySSI/zh-Hans.lproj/Localizable.strings"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentModelSelectionPolicyTest.kt",
+      "sourceSHA256": "a8342579f269e1752ce58054fcc2cbf2733fa8ccfa6593b7935df2e762494d6f",
+      "note": "Native fixture source added/updated for aliases, current catalog protocols, legacy keys, image turns and custom endpoint isolation. NOT executed.",
+      "ios": [
+        "apps/ios/GalaxySSITests/CloudModelRequestRoutingPolicyTests.swift"
+      ]
+    },
+    {
+      "source": "apps/android/app/src/test/java/com/galaxyssi/chat/CloudModelRequestRoutingPolicyTest.kt",
+      "sourceSHA256": "e47dde853a75cbd157645c5b41b1ae737cf33b841b9d49bbc2f29bbb5d1ee9a7",
+      "note": "Native fixture source added/updated for aliases, current catalog protocols, legacy keys, image turns and custom endpoint isolation. NOT executed.",
+      "ios": [
+        "apps/ios/GalaxySSITests/CloudModelRequestRoutingPolicyTests.swift"
+      ]
+    },
+    {
+      "source": "apps/desktop/core/galaxyssi-link/backend/agent_invocation_profiles.py",
+      "sourceSHA256": "e6a89a848e6d4800f3d93f636dcac6406160ff1ccf2eb1f8a78fd10c2695ee5d",
+      "note": "Consume Desktop-advertised model entries and validated aliases, including new Codex/Claude entries; do not manufacture local desktop fallback catalogs or alter Desktop code.",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConnectorModels.swift",
+        "apps/ios/GalaxySSI/GalaxySSIAgentModelSelectionView.swift",
+        "apps/ios/GalaxySSI/GalaxySSIServices.swift"
+      ]
+    },
+    {
+      "source": "apps/desktop/core/galaxyssi-link/backend/test_agent_invocation_profiles.py",
+      "sourceSHA256": "a2fee347a3f79f0c443fb95225c5b51a239fd01b0652c0c3181453a7670400b1",
+      "note": "Reviewed Desktop canonical alias expectations; iOS profile decoding/round-trip fixture source covers client contract, not Python backend execution.",
+      "ios": [
+        "apps/ios/GalaxySSITests/CloudModelRequestRoutingPolicyTests.swift"
+      ]
+    },
+    {
+      "source": "apps/desktop/package-lock.json",
+      "sourceSHA256": "f6106c035206972ebf87f93b5549ecd5b139e42b0fc77902d722d26da888e3ff",
+      "note": "Platform version metadata only; intentionally not copied to iOS.",
+      "ios": []
+    },
+    {
+      "source": "apps/desktop/package.json",
+      "sourceSHA256": "7fbf5f9e9c519f6811763d77fc3c4e22fadde54693c2b02698d995c902cef534",
+      "note": "Platform version metadata only; intentionally not copied to iOS.",
+      "ios": []
+    },
+    {
+      "source": "apps/desktop/scripts/check.js",
+      "sourceSHA256": "06bc3d4d3b2eccee444791d5330915b42fd62e89236fb53a52ccb8288a6a2b57",
+      "note": "Desktop/ADB smoke source only; reviewed current Flash identifier. No native/live/provider acceptance or Desktop changes in this iOS PR.",
+      "ios": []
+    },
+    {
+      "source": "apps/desktop/scripts/smoke-android-cloud-models.js",
+      "sourceSHA256": "80d60b35d71724dd27db0e9d53e2d5b1099c4f924229eb9dcc09b6e89dbfc173",
+      "note": "Desktop/ADB smoke source only; reviewed current Flash identifier. No native/live/provider acceptance or Desktop changes in this iOS PR.",
+      "ios": []
+    },
+    {
+      "source": "docs/protocol/README.md",
+      "sourceSHA256": "ead6a59ab02e8f30a04294107f6ce4e5893cce72f5355d7ff12d1ffae3992e7f",
+      "note": "Optional invocation_profile.model_aliases contract consumed by iOS; no saved conversation/effort rewriting.",
+      "ios": [
+        "apps/ios/GalaxySSI/AgentConnectorModels.swift"
+      ]
+    }
+  ]
+}

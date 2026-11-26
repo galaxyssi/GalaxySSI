@@ -839,13 +839,13 @@ struct GalaxySSIAgentModelSelectionView: View {
   private func isSelectedCloud(_ contact: GalaxySSIContact, model: CloudModelConfig) -> Bool {
     selection.mode == .manual &&
       selection.targetId == contact.id &&
-      selection.modelId == model.modelId
+      CloudModelRequestRoutingPolicy.invocationProfile(contact).canonicalModelId(selection.modelId) == model.modelId
   }
 
   private func selectedCloudModel(in contact: GalaxySSIContact, modelId: String) -> CloudModelConfig? {
     let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
     if cleanModelId.isEmpty {
-      return contact.selectedCloudModel
+      return CloudModelRequestRoutingPolicy.model(in: contact, modelId: contact.selectedCloudModelId)
     }
     return CloudModelRequestRoutingPolicy.model(in: contact, modelId: cleanModelId)
   }
@@ -922,9 +922,10 @@ struct GalaxySSIAgentModelSelectionView: View {
       t("galaxyssi.agent.model_selection.agent_subtitle", "Connected and ready Agent")
     ]
     if selected, !selection.modelId.isEmpty {
+      let modelId = target.invocationProfile.canonicalModelId(selection.modelId)
       values.append(
-        target.invocationProfile.models.first(where: { $0.id == selection.modelId })?.displayName
-          ?? selection.modelId
+        target.invocationProfile.models.first(where: { $0.id == modelId })?.displayName
+          ?? modelId
       )
     }
     if selected, selection.reasoningEffort != .automatic {
@@ -953,7 +954,7 @@ struct GalaxySSIAgentModelSelectionView: View {
               } label: {
                 Label(
                   model.displayName,
-                  systemImage: selection.modelId == model.id ? "checkmark" : "circle"
+                  systemImage: profile.canonicalModelId(selection.modelId) == model.id ? "checkmark" : "circle"
                 )
               }
             }
