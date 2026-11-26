@@ -4,5 +4,7 @@ _gs_memory_begin
 _gs_memory_append
 _gs_memory_search
 _gs_memory_node_count
+_gs_memory_records_partitioned
+_gs_memory_migrate_records
 _gs_memory_cancel
 _gs_memory_close
