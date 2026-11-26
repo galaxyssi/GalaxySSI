@@ -971,17 +971,18 @@ enum AgentCallableTargetCatalog {
       .filter { !["phone", "local-system", "cloud-models"].contains($0.id) }
       .filter { $0.id != "local-llm" }
     if let profile = activeLocalProfiles.first {
-      targets.append(
-        AgentCallableTarget(
-          id: "local-llm",
-          title: profile.displayName.ifBlank(profile.id),
-          kind: .model,
-          status: localModelReady(profile) ? .available : .needsSetup,
-          capabilities: [.chat, .reasoning, .toolUse, .localInference],
-          failureDomain: "local-model",
-          adapterType: "ios-local-model"
-        )
+      var local = AgentCallableTarget(
+        id: "local-llm",
+        title: profile.displayName.ifBlank(profile.id),
+        kind: .model,
+        status: localModelReady(profile) ? .available : .needsSetup,
+        capabilities: [.chat, .reasoning, .toolUse, .localInference],
+        failureDomain: "local-model",
+        adapterType: "ios-local-model"
       )
+      local.providerProfile = ProviderProfileCatalog.phoneLocalModelProfile(for: local, modelId: profile.id,
+        contextWindowTokens: min(LocalModelRuntimeSettings.contextTokens(), profile.maximumContextTokens))
+      targets.append(local)
     }
     return targets
   }
@@ -1315,6 +1316,7 @@ enum AgentResourceCatalog {
   }
 
   private static func targetType(_ target: AgentCallableTarget, lowerId: String) -> AgentResourceType {
+    if ProviderProfileCatalog.isPhoneLocalModel(target) { return .onDeviceModel }
     if lowerId == "home-assistant" {
       return .homeAssistant
     }
