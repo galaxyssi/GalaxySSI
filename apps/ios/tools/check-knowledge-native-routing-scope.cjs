@@ -1,0 +1,52 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '..');
+const read = name => fs.readFileSync(path.join(root, name), 'utf8');
+const driver = read('GalaxySSI/AgentKnowledgeNativeIndex.swift');
+assert.match(driver, /maxPages: Int = 4/);
+assert.match(driver, /\(1\.\.\.16\).contains\(maxPages\)/);
+assert.match(driver, /try files.open\(provenance: provenance/);
+assert.match(driver, /database.nativeRootSeed\(/);
+assert.match(driver, /afterSequence: checkpoint.sequence, limit: 1/);
+assert.match(driver, /pending.event != event/);
+assert.match(driver, /afterChunkIndex: Int\(next\), limit: 64/);
+assert.match(driver, /session.begin\(event, skip: vectors == nil\)/);
+assert.match(driver, /session.append\(vectors\)/);
+assert.match(driver, /checkpoint.sequence == current.head, checkpoint.pending == nil/);
+assert.match(driver, /generation == token/);
+assert.match(driver, /database.resolveNativeMatches/);
+const search = read('GalaxySSI/AgentKnowledgeHybridSearch.swift');
+assert.match(search, /index.advance\(token: token\)/);
+assert.match(search, /if ready \{ semantic = try index.search/);
+assert.match(search, /database.validatedLexicalHits/);
+assert.match(search, /withTaskCancellationHandler/);
+assert.doesNotMatch(search, /USearch|loadCatalog|entriesByLabel|catalogSignature|vectorCatalogPage/);
+const controller = read('GalaxySSI/AgentKnowledgeSemanticModel.swift');
+assert.match(controller, /search.advanceReplay\(\)/);
+assert.match(controller, /&& !replayPending/);
+assert.match(controller, /activeQueries == 0/);
+assert.match(controller, /30_000_000_000/);
+assert.match(controller, /database.nativeFiles.activeToken\(\) == token/);
+assert.match(controller, /UIApplication.shared.applicationState == .active/);
+assert.match(controller, /await opened.close\(\)/);
+const database = read('GalaxySSI/AgentKnowledgeDatabase.swift');
+assert.match(database, /CREATE TABLE IF NOT EXISTS knowledge_vector_native_root_seek/);
+assert.match(database, /contract_hash != excluded.contract_hash OR epoch != excluded.epoch OR head != excluded.head/);
+assert.match(database, /source_revision != excluded.source_revision/);
+assert.match(database, /func validatedLexicalHits/);
+const files = read('GalaxySSI/AgentKnowledgeNativeFiles.swift');
+assert.match(files, /suspended \|\| protectedUnavailable/);
+assert.match(files, /didBecomeActiveNotification/);
+assert.match(files, /protectedDataDidBecomeAvailableNotification/);
+const tests = read('GalaxySSITests/AgentKnowledgeNativeIndexTests.swift');
+for (const name of ['ReplayResumesPartialChunksAcrossOwnerRecreation', 'ObsoletePublicationIsSkippedWithoutAppendingItsVectors',
+  'RemovalAndReadditionRetireOldNativeMatches', 'InvalidationRejectsLateAppendAndSearchButKeepsCommittedProgress',
+  'RootSeekIsBoundedAndResumesAfterDatabaseReopen', 'LexicalFallbackCannotReuseSourcesFromAnOlderPolicySnapshot']) {
+  assert.ok(tests.includes(`func test${name}(`), name);
+}
+assert.match(tests, /Simulated ABI boundary only/);
+const project = read('GalaxySSI.xcodeproj/project.pbxproj');
+assert.match(project, /AgentKnowledgeNativeIndex.swift in Sources/);
+assert.match(project, /AgentKnowledgeNativeIndexTests.swift in Sources/);
+console.log('iOS native replay/default semantic routing source checks passed; no native execution');

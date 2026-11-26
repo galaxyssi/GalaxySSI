@@ -1203,6 +1203,7 @@ internal fun MainActivity.parseIncomingMessage(payload: String): ChatMessage {
         json?.optJSONArray("connector_agents")?.let { agents ->
             AppStore.updateConnectorAgentStatuses(this, agents)
             refreshDirectoryContacts()
+            refreshOpenAgentModelPicker()
         }
         return ChatMessage(newMessageId(), "", false, CONTACT_SYSTEM, isSystem = true, deliveryTrace = incomingTrace)
     }

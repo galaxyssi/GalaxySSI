@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const cp = require('node:child_process'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8b4049723a707c692b8fefdc56fa617fcd45163c';
+const base = '3fed6016e822f13c08b4ae1b6b2f0c791af1b24a';
 const android = '27339973ae8f598b6ad4d64794a1c73dcf525d9f';
 const androidBase = '9229e18652978c14e3bb4fe3454b32d77ff3f0a7';
 const clean = s => s.replace(/\r\n/g, '\n');
@@ -74,6 +74,8 @@ for (const name of ['ActiveOlderModelStaysVisibleWithoutOpeningOtherOlderModels'
   'LegacyFoldingIsSpecificToAgentFamilyNotCloudOrOtherAgents', 'RetiredModelsStayExcludedEvenIfManuallyAddedToProfile',
   'SourceDefaultsFollowLocalCloudSelectedDesktopAndAvailableFallbacks', 'PresentationLabelsDoNotChangeIdentifiersOrCatalogs'])
   assert(tests.includes('func test' + name + '('), name);
+assert(tests.includes('func testAliasedOlderSelectionUsesTheMergedCanonicalInvocationProfile('));
+assert(content.includes('CloudModelRequestRoutingPolicy.model(in: item.contact, modelId: requested)?.modelId == item.model.modelId'));
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const name of ['AgentModelPickerPolicy', 'GalaxySSIAgentModelPickerContent', 'AgentModelPickerPolicyTests'])
   assert.equal(project.split(name + '.swift in Sources */').length, 3, name);
@@ -81,8 +83,8 @@ const files = git('diff', '--name-only', androidBase, android).trim().split('\n'
 assert.equal(files.length, 14);
 function disposition(file) {
   if (file.endsWith('build.gradle.kts')) return 'Android version excluded; no iOS version bump';
-  if (file.includes('/androidTest/') || file.includes('/src/test/')) return 'Reference fixture source inspected; eight iOS policy fixtures authored, not executed; no native device/UI equivalence claim';
-  if (file.endsWith('AgentModelPickerPolicy.kt')) return 'Native source/group policy: stable selected/Codex ordering, concrete Desktop dedup, family-specific legacy folding, active legacy retention, old-only fallback, future IDs and labels; reuse public normalizedModelId, alias catalog support remains separately tracked by #4559';
+  if (file.includes('/androidTest/') || file.includes('/src/test/')) return 'Reference fixture source inspected; nine iOS policy fixtures authored including canonical alias selection, not executed; no native device/UI equivalence claim';
+  if (file.endsWith('AgentModelPickerPolicy.kt')) return 'Native source/group policy: stable selected/Codex ordering, concrete Desktop dedup, family-specific legacy folding, active legacy retention, old-only fallback, future IDs and labels. Reuse the now-merged main invocation-profile normalization/alias methods without changing catalogs or schema';
   if (file.endsWith('MainActivityAgentModelPicker.kt')) return 'Native current-route summary, segmented Desktop/cloud/local, inline model rows, one expanded provider, legacy disclosure, real logos, pinned supported reasoning, reload/setup controls and stay-open selection. Coalesced off-main source read and current conversation/identity/visible-page/capability rechecks. No native layout or concurrency acceptance';
   if (file.endsWith('MainActivityAgentSessions.kt')) return 'Existing iOS entry reused; removed old menu/configuration rendering from model picker only, unchanged persistence schema and routing';
   if (file.endsWith('MainActivityAgentSettings.kt') || file.endsWith('MainActivityCloudAndImages.kt')) return 'Existing routing/import/pairing notifications reused for open-picker refresh; no manifest request from routing notifications and no MQTT/service changes';

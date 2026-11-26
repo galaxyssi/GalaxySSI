@@ -12,6 +12,15 @@ Additional protocol contracts:
 - [Web Evidence Pack v1](Web-Evidence-Pack-v1.md)
 - [Collaboration Research Workspace v1](Collaboration-Research-Workspace-v1.md)
 
+## Connector Model Options
+
+A connector's `invocation_profile` can advertise an optional `model_aliases`
+object mapping an older model ID to a canonical ID in `models`. A picker shows
+only the canonical entries and can resolve a stored alias before building the
+invocation. The desktop also accepts its advertised legacy IDs from older
+clients. Alias resolution does not rewrite a saved conversation or its reasoning
+effort.
+
 ## Agent Conversation Identity
 
 Agent messages use three independent identifiers:

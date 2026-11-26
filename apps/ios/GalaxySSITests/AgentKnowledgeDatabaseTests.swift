@@ -4,6 +4,416 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentKnowledgeDatabaseTests: XCTestCase {
+  func testNativeEnrollmentResumesBoundedLegacyMigration() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let items = (0..<130).map { nativeSourceItem("migration-\($0)", content: "body") }
+    let spec = nativeSourceCheckpoint(items[0]).provenance
+    let model = spec.modelSHA256
+    XCTAssertTrue(database.replaceAll(items))
+    XCTAssertFalse(try database.maintainNativeVectorEnrollment(provenance: spec))
+    XCTAssertEqual(try database.vectorCountSnapshot(modelSHA256: model).pending, 64)
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    XCTAssertFalse(try reopened.maintainNativeVectorEnrollment(provenance: spec))
+    XCTAssertEqual(try reopened.vectorCountSnapshot(modelSHA256: model).pending, 128)
+    XCTAssertTrue(try reopened.maintainNativeVectorEnrollment(provenance: spec))
+    XCTAssertEqual(try reopened.vectorCountSnapshot(modelSHA256: model).pending, 130)
+    XCTAssertTrue(try reopened.maintainNativeVectorEnrollment(provenance: spec))
+    XCTAssertEqual(try reopened.vectorCountSnapshot(modelSHA256: model).pending, 130)
+    XCTAssertThrowsError(try reopened.maintainNativeVectorEnrollment(provenance: spec, pageSize: 65))
+  }
+
+  func testLegacyVectorMigrationRequiresRealRangesAndPublishesReplacement() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let item = nativeSourceItem("legacy-upgrade", content: "body")
+    var legacy = nativeSourceCheckpoint(item)
+    legacy.sourceStartUTF16 = nil
+    legacy.sourceEndUTF16 = nil
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertTrue(database.storeVectorCheckpoint(legacy))
+    XCTAssertTrue(try database.pendingVectorItems(modelSHA256: legacy.provenance.modelSHA256).isEmpty)
+    XCTAssertTrue(try database.maintainNativeVectorEnrollment(provenance: legacy.provenance))
+    XCTAssertEqual(try database.pendingVectorItems(modelSHA256: legacy.provenance.modelSHA256).map(\.id), [item.id])
+    XCTAssertTrue(database.clearVectorCheckpoints(itemId: item.id, modelSHA256: legacy.provenance.modelSHA256))
+    XCTAssertTrue(database.storeVectorCheckpoint(nativeSourceCheckpoint(item)))
+    XCTAssertTrue(try database.pendingVectorItems(modelSHA256: legacy.provenance.modelSHA256).isEmpty)
+    let ready = try XCTUnwrap(database.vectorChangePage(modelSHA256: legacy.provenance.modelSHA256).events.last)
+    XCTAssertNotNil(try database.vectorReplayPage(event: ready, provenance: legacy.provenance))
+  }
+
+  func testNativeEnrollmentSkipsCurrentRangesWithoutRepublishing() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let item = nativeSourceItem("already-current", content: "body")
+    let checkpoint = nativeSourceCheckpoint(item)
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let before = try database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256)
+    XCTAssertTrue(try database.maintainNativeVectorEnrollment(provenance: checkpoint.provenance))
+    XCTAssertTrue(try database.pendingVectorItems(modelSHA256: checkpoint.provenance.modelSHA256).isEmpty)
+    XCTAssertEqual(try database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256), before)
+    var changed = checkpoint.provenance
+    changed.contextTokens += 32
+    XCTAssertTrue(try database.maintainNativeVectorEnrollment(provenance: changed))
+    XCTAssertEqual(try database.pendingVectorItems(modelSHA256: changed.modelSHA256).map(\.id), [item.id])
+  }
+
+  func testNativeFileIdentityIsolatesDatabaseModelEpochAndInvalidatesTokens() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let secrets = InMemorySecretStore()
+    let files = AgentKnowledgeNativeFiles(databaseURL: directory.appendingPathComponent("a.sqlite"), secrets: secrets)
+    let other = AgentKnowledgeNativeFiles(databaseURL: directory.appendingPathComponent("b.sqlite"), secrets: secrets)
+    let spec = nativeSourceCheckpoint(nativeSourceItem("identity", content: "body")).provenance
+    let epoch = UUID().uuidString
+    let identity = try files.identity(provenance: spec, epoch: epoch)
+    XCTAssertEqual(identity.count, 32)
+    XCTAssertEqual(try files.identity(provenance: spec, epoch: epoch.lowercased()), identity)
+    XCTAssertNotEqual(try other.identity(provenance: spec, epoch: epoch), identity)
+    XCTAssertNotEqual(try files.identity(provenance: spec, epoch: UUID().uuidString), identity)
+    var changed = spec
+    changed.chunkingContract = "new-contract"
+    XCTAssertNotEqual(try files.identity(provenance: changed, epoch: epoch), identity)
+    let token = files.token()
+    files.invalidate()
+    XCTAssertNotEqual(files.token(), token)
+    XCTAssertThrowsError(try files.open(provenance: spec, epoch: epoch, token: token, root: [0.6, 0.8]))
+    XCTAssertNil(secrets.string(account: files.masterKeyAccount))
+  }
+
+  func testNativeFileResetDeletesDerivedFilesAndMasterKey() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let secrets = InMemorySecretStore()
+    let files = AgentKnowledgeNativeFiles(databaseURL: directory.appendingPathComponent("a.sqlite"), secrets: secrets)
+    try FileManager.default.createDirectory(at: files.rootDirectory, withIntermediateDirectories: true)
+    try Data([1, 2, 3]).write(to: files.rootDirectory.appendingPathComponent("encrypted-fixture"))
+    try secrets.setString(Data(repeating: 7, count: 32).base64EncodedString(), account: files.masterKeyAccount)
+    let token = files.token()
+    try files.destroy()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: files.rootDirectory.path))
+    XCTAssertNil(secrets.string(account: files.masterKeyAccount))
+    XCTAssertNotEqual(files.token(), token)
+    try files.destroy()
+  }
+
+  func testNativeFilesRejectMissingKeyAndSymlinkWithoutReplacingSecrets() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let secrets = InMemorySecretStore()
+    let files = AgentKnowledgeNativeFiles(databaseURL: directory.appendingPathComponent("a.sqlite"), secrets: secrets)
+    let spec = nativeSourceCheckpoint(nativeSourceItem("files", content: "body")).provenance
+    try FileManager.default.createDirectory(at: files.rootDirectory, withIntermediateDirectories: true)
+    XCTAssertThrowsError(try files.open(provenance: spec, epoch: UUID().uuidString, token: files.token(), root: [0.6, 0.8]))
+    XCTAssertNil(secrets.string(account: files.masterKeyAccount))
+    try FileManager.default.removeItem(at: files.rootDirectory)
+    let target = directory.appendingPathComponent("unrelated")
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: files.rootDirectory, withDestinationURL: target)
+    XCTAssertThrowsError(try files.open(provenance: spec, epoch: UUID().uuidString, token: files.token(), root: [0.6, 0.8]))
+    XCTAssertThrowsError(try files.destroy())
+    XCTAssertTrue(FileManager.default.fileExists(atPath: target.path))
+    XCTAssertNil(secrets.string(account: files.masterKeyAccount))
+  }
+
+  func testNativeEventUsesExactRustLittleEndianRecord() throws {
+    let event = AgentKnowledgeNativeEvent(sequence: 42, previous: 7,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: false)
+    let data = try AgentKnowledgeNativeWire.event(event)
+    let expected = Data("GSE1".utf8) + wireNumber(42) + wireNumber(7) +
+      Data(repeating: 0xaa, count: 32) + Data(repeating: 0xbb, count: 32) + wireNumber(3) + Data([0])
+    XCTAssertEqual(data, expected)
+    XCTAssertEqual(data.count, 93)
+    var invalid = event
+    invalid.previous = 42
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+    invalid = event
+    invalid.key = String(repeating: "A", count: 64)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+    invalid = event
+    invalid.chunks = -1
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.event(invalid))
+  }
+
+  func testNativeCheckpointDecodesCommittedAndPendingProgress() throws {
+    let epoch = try AgentKnowledgeNativeWire.epoch("00010203-0405-0607-0809-0a0b0c0d0e0f")
+    XCTAssertEqual(epoch, Data((0..<16).map(UInt8.init)))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.epoch("invalid"))
+    let last = AgentKnowledgeNativeEvent(sequence: 42, previous: 7,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: false)
+    var next = last
+    next.sequence = 43
+    next.previous = 42
+    let data = Data("GSC1".utf8) + epoch + Data([1]) + (try AgentKnowledgeNativeWire.event(last)).dropFirst(4) +
+      Data([1]) + (try AgentKnowledgeNativeWire.event(next)).dropFirst(4) + wireNumber(1)
+    XCTAssertEqual(data.count, 208)
+    let decoded = try AgentKnowledgeNativeWire.checkpoint(data)
+    XCTAssertEqual(decoded.epoch, "000102030405060708090a0b0c0d0e0f")
+    XCTAssertEqual(decoded.last, last)
+    XCTAssertEqual(decoded.pending?.event, next)
+    XCTAssertEqual(decoded.pending?.next, 1)
+    XCTAssertEqual(decoded.sequence, 42)
+    var invalid = data
+    invalid.replaceSubrange((invalid.count - 8)..<invalid.count, with: wireNumber(3))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(invalid))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(data + Data([0])))
+    for end in 0..<data.count { XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(Data(data.prefix(end)))) }
+  }
+
+  func testNativeCheckpointRejectsInvalidFlagsAndRemovedPendingEvents() throws {
+    let prefix = Data("GSC1".utf8) + Data(repeating: 0, count: 16)
+    XCTAssertEqual(try AgentKnowledgeNativeWire.checkpoint(prefix + Data([0, 0])).sequence, 0)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(prefix + Data([2, 0])))
+    let removed = AgentKnowledgeNativeEvent(sequence: 1, previous: 0,
+      key: String(repeating: "a", count: 64), revision: String(repeating: "b", count: 64), chunks: 3, removed: true)
+    let pending = prefix + Data([0, 1]) + (try AgentKnowledgeNativeWire.event(removed)).dropFirst(4) + wireNumber(0)
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.checkpoint(pending))
+  }
+
+  func testNativeMatchesValidateCountsBoundsAndFiniteScores() throws {
+    let prefix = Data("GSM1".utf8) + Data([1, 0, 0, 0]) + Data("GSN1".utf8) +
+      Data(repeating: 0xaa, count: 32) + Data(repeating: 0xbb, count: 32)
+    let data = prefix + wireNumber(42) + wireNumber(2) + wireNumber(4) + wireNumber(9) + Data([0, 0, 0, 63])
+    let matched = try XCTUnwrap(AgentKnowledgeNativeWire.matches(data).first)
+    XCTAssertEqual(matched.sequence, 42)
+    XCTAssertEqual(matched.ordinal, 2)
+    XCTAssertEqual(matched.startUTF16, 4)
+    XCTAssertEqual(matched.endUTF16, 9)
+    XCTAssertEqual(matched.similarity, 0.5)
+    XCTAssertEqual(matched.key, String(repeating: "a", count: 64))
+    XCTAssertEqual(try AgentKnowledgeNativeWire.matches(Data("GSM1".utf8) + Data([0, 0, 0, 0])), [])
+    var invalid = data
+    invalid.replaceSubrange((data.count - 4)..<data.count, with: [0, 0, 192, 127])
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(invalid))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(prefix + wireNumber(42) + wireNumber(2) + wireNumber(9) + wireNumber(4) + Data([0, 0, 0, 63])))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(data + Data([0])))
+    XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(Data("GSM1".utf8) + Data([1, 1, 0, 0])))
+    for end in 0..<data.count { XCTAssertThrowsError(try AgentKnowledgeNativeWire.matches(Data(data.prefix(end)))) }
+  }
+
+  private func wireNumber(_ value: UInt64) -> Data {
+    Data((0..<8).map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) })
+  }
+
+  func testPublishedVectorReplayUsesBoundedOrdinalPagesAndResumesAfterReopen() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let item = nativeSourceItem("replay", content: String(repeating: "x", count: 130))
+    XCTAssertTrue(database.replaceAll([item]))
+    let spec = nativeSourceCheckpoint(item).provenance
+    for index in 0..<130 {
+      var checkpoint = nativeSourceCheckpoint(item)
+      checkpoint.chunkIndex = index
+      checkpoint.chunkCount = 130
+      checkpoint.sourceStartUTF16 = index
+      checkpoint.sourceEndUTF16 = index + 1
+      XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+      if index < 129 { XCTAssertTrue(try database.vectorChangePage(modelSHA256: spec.modelSHA256).events.isEmpty) }
+    }
+    let event = try XCTUnwrap(database.vectorChangePage(modelSHA256: spec.modelSHA256).events.last)
+    let first = try XCTUnwrap(database.vectorReplayPage(event: event, provenance: spec, limit: 10_000))
+    XCTAssertEqual(first.checkpoints.map(\.chunkIndex), Array(0..<64))
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let second = try XCTUnwrap(reopened.vectorReplayPage(event: event, provenance: spec,
+      afterChunkIndex: try XCTUnwrap(first.nextChunkIndex)))
+    XCTAssertEqual(second.checkpoints.map(\.chunkIndex), Array(64..<128))
+    let last = try XCTUnwrap(reopened.vectorReplayPage(event: event, provenance: spec,
+      afterChunkIndex: try XCTUnwrap(second.nextChunkIndex)))
+    XCTAssertEqual(last.checkpoints.map(\.chunkIndex), [128, 129])
+    XCTAssertNil(last.nextChunkIndex)
+    XCTAssertThrowsError(try reopened.vectorReplayPage(event: event, provenance: spec, afterChunkIndex: -1))
+    XCTAssertThrowsError(try reopened.vectorReplayPage(event: event, provenance: spec, afterChunkIndex: 130))
+  }
+
+  func testVectorReplayRejectsLegacyRangesAndForgedPublication() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let item = nativeSourceItem("legacy-replay", content: "body")
+    XCTAssertTrue(database.replaceAll([item]))
+    var checkpoint = nativeSourceCheckpoint(item)
+    checkpoint.sourceStartUTF16 = nil
+    checkpoint.sourceEndUTF16 = nil
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let event = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertNil(try database.vectorReplayPage(event: event, provenance: checkpoint.provenance))
+    checkpoint = nativeSourceCheckpoint(item)
+    checkpoint.updatedAtMillis += 1
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    XCTAssertNotNil(try database.vectorReplayPage(event: event, provenance: checkpoint.provenance))
+    var forged = event
+    forged.updatedAtMillis += 1
+    XCTAssertNil(try database.vectorReplayPage(event: forged, provenance: checkpoint.provenance))
+    forged = event
+    forged.epoch = UUID().uuidString
+    XCTAssertThrowsError(try database.vectorReplayPage(event: forged, provenance: checkpoint.provenance))
+    var wrongSpec = checkpoint.provenance
+    wrongSpec.chunkingContract = "other-contract"
+    XCTAssertNil(try database.vectorReplayPage(event: event, provenance: wrongSpec))
+  }
+
+  func testVectorReplayRejectsRemovedReaddedAndPolicyChangedSources() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    var item = nativeSourceItem("publication", content: "body")
+    XCTAssertTrue(database.replaceAll([item]))
+    let checkpoint = nativeSourceCheckpoint(item)
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let original = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertTrue(database.clearVectorCheckpoints(itemId: item.id, modelSHA256: checkpoint.provenance.modelSHA256))
+    XCTAssertNil(try database.vectorReplayPage(event: original, provenance: checkpoint.provenance))
+    XCTAssertTrue(database.storeVectorCheckpoint(checkpoint))
+    let readded = try XCTUnwrap(database.vectorChangePage(modelSHA256: checkpoint.provenance.modelSHA256).events.last)
+    XCTAssertGreaterThan(readded.sequence, original.sequence)
+    XCTAssertNil(try database.vectorReplayPage(event: original, provenance: checkpoint.provenance))
+    XCTAssertNotNil(try database.vectorReplayPage(event: readded, provenance: checkpoint.provenance))
+    item.cloudAccess = .full
+    XCTAssertTrue(database.replaceAll([item]))
+    XCTAssertNil(try database.vectorReplayPage(event: readded, provenance: checkpoint.provenance))
+  }
+
+  func testSourceRangesLocateRepeatedChunksWithoutSplittingSurrogates() throws {
+    let content = "  \u{1f600} a \u{1f600} a  "
+    let first = try XCTUnwrap(AgentKnowledgeVectorCheckpoint.locateSourceRange(
+      chunk: "\u{1f600} a", content: content, afterUTF16: 0))
+    let second = try XCTUnwrap(AgentKnowledgeVectorCheckpoint.locateSourceRange(
+      chunk: "\u{1f600} a", content: content, afterUTF16: NSMaxRange(first)))
+    XCTAssertEqual(first, NSRange(location: 2, length: 4))
+    XCTAssertEqual(second, NSRange(location: 7, length: 4))
+    XCTAssertNil(AgentKnowledgeVectorCheckpoint.locateSourceRange(chunk: "missing", content: content, afterUTF16: 0))
+    XCTAssertNil(AgentKnowledgeVectorCheckpoint.locateSourceRange(chunk: "", content: content, afterUTF16: 0))
+    XCTAssertNil(AgentKnowledgeVectorCheckpoint.locateSourceRange(chunk: "a", content: content, afterUTF16: -1))
+    XCTAssertNil(AgentKnowledgeVectorCheckpoint.locateSourceRange(chunk: "a", content: content, afterUTF16: 100))
+  }
+
+  func testSourceRangeStorageRoundTripAndLegacyCompatibility() throws {
+    let item = nativeSourceItem("range", content: "\u{1f600} text")
+    var checkpoint = nativeSourceCheckpoint(item)
+    let restored = try AgentKnowledgeVectorStorage.decode(AgentKnowledgeVectorStorage.encode(checkpoint))
+    XCTAssertEqual(restored, checkpoint)
+    XCTAssertEqual(String(item.content[try XCTUnwrap(restored.validatedSourceRange(in: item))]), item.content)
+    checkpoint.sourceStartUTF16 = nil
+    checkpoint.sourceEndUTF16 = nil
+    let legacyJSON = try JSONEncoder.galaxySSI.encode(checkpoint)
+    let legacy = try AgentKnowledgeVectorStorage.decode(legacyJSON)
+    XCTAssertTrue(legacy.isValid)
+    XCTAssertNil(legacy.validatedSourceRange(in: item))
+    XCTAssertNil(try AgentKnowledgeVectorStorage.decode(AgentKnowledgeVectorStorage.encode(legacy)).sourceStartUTF16)
+  }
+
+  func testSourceRangeRejectsPartialReversedOutOfBoundsAndStaleSource() {
+    let item = nativeSourceItem("invalid", content: "\u{1f600} text")
+    var checkpoint = nativeSourceCheckpoint(item)
+    for (start, end) in [(nil, Optional(2)), (Optional(0), nil), (-1, 2), (2, 2), (3, 2)] as [(Int?, Int?)] {
+      checkpoint.sourceStartUTF16 = start
+      checkpoint.sourceEndUTF16 = end
+      XCTAssertFalse(checkpoint.isValid)
+      XCTAssertNil(checkpoint.validatedSourceRange(in: item))
+    }
+    for (start, end) in [(0, 1), (1, 2), (0, 100)] {
+      checkpoint.sourceStartUTF16 = start
+      checkpoint.sourceEndUTF16 = end
+      XCTAssertNil(checkpoint.validatedSourceRange(in: item))
+    }
+    checkpoint = nativeSourceCheckpoint(item)
+    var changed = item
+    changed.content = "different"
+    XCTAssertNil(checkpoint.validatedSourceRange(in: changed))
+    changed = item
+    changed.id = "another"
+    XCTAssertNil(checkpoint.validatedSourceRange(in: changed))
+  }
+
+  func testSourceRangeWriteRejectionPreservesVectorFeed() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let item = nativeSourceItem("atomic", content: "\u{1f600} text")
+    XCTAssertTrue(database.replaceAll([item]))
+    let valid = nativeSourceCheckpoint(item)
+    XCTAssertTrue(database.storeVectorCheckpoint(valid))
+    let before = try database.vectorChangePage(modelSHA256: valid.provenance.modelSHA256)
+    var invalid = valid
+    invalid.updatedAtMillis += 1
+    invalid.sourceEndUTF16 = 1
+    XCTAssertFalse(database.storeVectorCheckpoint(invalid))
+    invalid = valid
+    invalid.updatedAtMillis += 1
+    invalid.sourceRevision = String(repeating: "f", count: 64)
+    XCTAssertFalse(database.storeVectorCheckpoint(invalid))
+    XCTAssertEqual(try database.vectorCheckpoints(itemId: item.id, modelSHA256: valid.provenance.modelSHA256), [valid])
+    XCTAssertEqual(try database.vectorChangePage(modelSHA256: valid.provenance.modelSHA256), before)
+  }
+
+  func testKeysetCatalogSurvivesReopenAndIsolatesModels() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let items = (0..<5).map { nativeSourceItem("item-\($0)", content: "body \($0)") }
+    XCTAssertTrue(database.replaceAll(items))
+    let checkpoints = items.map { nativeSourceCheckpoint($0) }
+    for checkpoint in checkpoints { XCTAssertTrue(database.storeVectorCheckpoint(checkpoint)) }
+    var other = nativeSourceCheckpoint(items[0])
+    other.provenance.modelSHA256 = String(repeating: "c", count: 64)
+    XCTAssertTrue(database.storeVectorCheckpoint(other))
+    let model = checkpoints[0].provenance.modelSHA256
+    let first = try database.vectorCatalogPage(modelSHA256: model, limit: 2)
+    XCTAssertEqual(first.checkpoints.count, 2)
+    let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    var cursor = try XCTUnwrap(first.nextVectorKey)
+    var found = first.checkpoints
+    while true {
+      let page = try reopened.vectorCatalogPage(modelSHA256: model, afterVectorKey: cursor, limit: 2)
+      found.append(contentsOf: page.checkpoints)
+      guard let next = page.nextVectorKey else { break }
+      XCTAssertGreaterThan(next, cursor)
+      cursor = next
+    }
+    XCTAssertEqual(Set(found.map(\.id)), Set(checkpoints.map(\.id)))
+    XCTAssertEqual(found.count, checkpoints.count)
+    XCTAssertEqual(try reopened.vectorCatalogPage(modelSHA256: other.provenance.modelSHA256).checkpoints, [other])
+    XCTAssertThrowsError(try reopened.vectorCatalogPage(modelSHA256: model, afterVectorKey: "bad"))
+    XCTAssertEqual(try reopened.vectorCatalogPage(modelSHA256: model, limit: 0).checkpoints.count, 1)
+  }
+
+  func testBoundedSourceLookupDeduplicatesAndReflectsDeletion() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let database = AgentKnowledgeDatabase(fileURL: directory.appendingPathComponent("knowledge.sqlite"), secrets: InMemorySecretStore())
+    let first = nativeSourceItem("first", content: "one")
+    let second = nativeSourceItem("second", content: "two")
+    XCTAssertTrue(database.replaceAll([first, second]))
+    XCTAssertEqual(try database.items(ids: [second.id, "missing", first.id, second.id]), [second, first])
+    XCTAssertEqual(try database.items(ids: []), [])
+    XCTAssertThrowsError(try database.items(ids: Array(repeating: first.id, count: 257)))
+    XCTAssertTrue(database.replaceAll([second]))
+    XCTAssertEqual(try database.items(ids: [first.id, second.id]), [second])
+  }
+
+  private func nativeSourceItem(_ id: String, content: String) -> AgentKnowledgeItem {
+    AgentKnowledgeItem(id: id, kind: .note, title: "Source", content: content, source: "local")
+  }
+
+  private func nativeSourceCheckpoint(_ item: AgentKnowledgeItem) -> AgentKnowledgeVectorCheckpoint {
+    AgentKnowledgeVectorCheckpoint(itemId: item.id,
+      sourceRevision: AgentKnowledgeVectorCheckpoint.sourceRevision(for: item), chunkIndex: 0,
+      vector: [0.6, 0.8], provenance: AgentKnowledgeVectorProvenance(
+        modelSHA256: String(repeating: "b", count: 64), dimensions: 2,
+        contextTokens: 512, chunkingContract: AgentKnowledgeEmbeddingChunker.contract),
+      updatedAtMillis: 10, sourceStartUTF16: 0, sourceEndUTF16: item.content.utf16.count)
+  }
+
   func testAdaptiveVectorStorageCompactsAndRestoresDirection() throws {
     let dimensions = 512
     let raw = (0..<dimensions).map { Float(sin(Double($0 + 1))) }

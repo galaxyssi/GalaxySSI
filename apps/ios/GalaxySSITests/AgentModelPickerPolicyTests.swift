@@ -51,6 +51,15 @@ final class AgentModelPickerPolicyTests: XCTestCase {
     XCTAssertFalse((groups.visible + groups.folded).contains { RetiredAgentModelPolicy.isRetired($0.id) })
   }
 
+  func testAliasedOlderSelectionUsesTheMergedCanonicalInvocationProfile() {
+    var claude = target("desktop:claude", ["claude-opus-5-5", "claude-opus-5", "claude-sonnet-5"])
+    claude.invocationProfile.modelAliases = ["old-opus": "claude-opus-5"]
+    let groups = AgentModelPickerPolicy.modelGroups(claude, selectedModelId: "old-opus")
+    XCTAssertEqual(groups.visible.map(\.id), ["claude-opus-5-5", "claude-opus-5"])
+    XCTAssertEqual(groups.folded.map(\.id), ["claude-sonnet-5"])
+    XCTAssertEqual(claude.invocationProfile.canonicalModelId("old-opus"), "claude-opus-5")
+  }
+
   func testSourceDefaultsFollowLocalCloudSelectedDesktopAndAvailableFallbacks() {
     XCTAssertEqual(AgentModelPickerPolicy.initialSource(selection: .init(), agents: [], hasCloud: false, hasLocal: false), .desktop)
     XCTAssertEqual(AgentModelPickerPolicy.initialSource(selection: .init(), agents: [], hasCloud: true, hasLocal: true), .cloud)

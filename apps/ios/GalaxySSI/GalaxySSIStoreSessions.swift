@@ -565,13 +565,15 @@ extension GalaxySSIStore {
   }
 
   @discardableResult
-  func createAgentSession(title: String = "", privateMode: Bool = false, globalTopicKey: String = "") -> AgentConversation {
+  func createAgentSession(title: String = "", privateMode: Bool = false, globalTopicKey: String = "",
+                          useRememberedSelection: Bool = false) -> AgentConversation {
     createAgentSession(
       title: title,
       createdByAgent: false,
       parentConversationId: "",
       globalTopicKey: globalTopicKey,
-      privateMode: privateMode
+      privateMode: privateMode,
+      useRememberedSelection: useRememberedSelection
     )
   }
 
@@ -634,13 +636,15 @@ extension GalaxySSIStore {
     parentConversationId: String,
     globalTopicKey: String,
     privateMode: Bool,
-    collaborationRoster: AgentCollaborationRoster? = nil
+    collaborationRoster: AgentCollaborationRoster? = nil,
+    useRememberedSelection: Bool = false
   ) -> AgentConversation {
     let now = Self.nowMillis()
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank("New session")
     let conversationId = "ios-agent-\(UUID().uuidString.lowercased())"
-    AgentModelSelectionSettings.inheritDefault(for: conversationId, defaults: defaults)
+    AgentModelSelectionSettings.initializeConversation(for: conversationId,
+      useRememberedSelection: useRememberedSelection && !createdByAgent && collaborationRoster == nil, defaults: defaults)
     let inheritedSelection = AgentModelSelectionSettings.selection(for: conversationId, defaults: defaults)
     let inheritedLabel = inheritedSelection.mode == .manual
       ? inheritedSelection.displayName.ifBlank(inheritedSelection.modelId).ifBlank("Automatic")

@@ -12,13 +12,18 @@ struct GalaxySSILocalDeviceProfile {
 }
 
 enum GalaxySSIDeviceIdentity {
+  static func localDeviceId(profile: GalaxySSIProfile) -> String {
+    let fingerprint = clean(profile.identityFingerprint)
+    return "ios-\(fingerprint.prefix(16))"
+  }
+
   static func current(profile: GalaxySSIProfile) -> GalaxySSILocalDeviceProfile {
     let model = clean(UIDevice.current.model)
     let configuredName = clean(UIDevice.current.name)
     let deviceName = configuredName.ifBlank(model).ifBlank("iPhone")
     let fingerprint = clean(profile.identityFingerprint)
     return GalaxySSILocalDeviceProfile(
-      deviceId: "ios-\(fingerprint.prefix(16))",
+      deviceId: localDeviceId(profile: profile),
       displayName: composeDisplayName(
         deviceName: deviceName,
         model: model,

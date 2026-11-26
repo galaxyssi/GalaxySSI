@@ -189,9 +189,9 @@ struct GalaxySSIAgentModelPickerContent: View {
   }
 
   private func isChosenCloud(_ item: AgentModelPickerCloudChoice) -> Bool {
-    !automatic && selection.targetId == item.contact.id &&
-      (selection.modelId == item.model.modelId ||
-        (selection.modelId.isEmpty && item.contact.selectedCloudModel?.modelId == item.model.modelId))
+    guard !automatic, selection.targetId == item.contact.id else { return false }
+    let requested = selection.modelId.isEmpty ? item.contact.selectedCloudModelId : selection.modelId
+    return CloudModelRequestRoutingPolicy.model(in: item.contact, modelId: requested)?.modelId == item.model.modelId
   }
 
   private func modelDetail(_ model: AgentModelOption) -> String {

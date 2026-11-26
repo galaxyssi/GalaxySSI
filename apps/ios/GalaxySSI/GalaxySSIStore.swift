@@ -2311,10 +2311,16 @@ final class GalaxySSIStore: ObservableObject {
   @discardableResult
   func setSelectedCloudModel(contactId: String, modelId: String) -> Bool {
     guard var contact = contact(id: contactId),
-          contact.cloudModels.contains(where: { $0.modelId == modelId }) else {
+          let model = CloudModelRequestRoutingPolicy.model(in: contact, modelId: modelId) else {
       return false
     }
-    contact.selectedCloudModelId = modelId
+    // Persist a derived official preset only after an explicit user selection.
+    if let index = contact.cloudModels.firstIndex(where: { $0.modelId == model.modelId }) {
+      guard contact.cloudModels[index] == model else { return false }
+    } else {
+      contact.cloudModels.append(model)
+    }
+    contact.selectedCloudModelId = model.modelId
     contact.updatedAt = Date()
     upsert(contact)
     save()
@@ -3395,6 +3401,15 @@ final class GalaxySSIStore: ObservableObject {
       .replacingOccurrences(of: "agent-conversations-", with: "")
     return conversationURL.deletingLastPathComponent()
       .appendingPathComponent("chat-history-\(identifier).sqlite", isDirectory: false)
+  }
+
+  static func existingAgentKnowledgeDatabase(defaults: UserDefaults = .standard,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared) -> AgentKnowledgeDatabase? {
+    guard let identifier = defaults.string(forKey: "galaxyssi_agent_conversation_database_id_v1"),
+      UUID(uuidString: identifier) != nil else { return nil }
+    let url = agentKnowledgeDatabaseURL(defaults: defaults)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
   }
 
   private static func agentKnowledgeDatabaseURL(defaults: UserDefaults) -> URL {

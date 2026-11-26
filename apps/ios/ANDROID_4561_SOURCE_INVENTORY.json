@@ -2,7 +2,7 @@
   "androidPR": 4561,
   "androidCommit": "27339973ae8f598b6ad4d64794a1c73dcf525d9f",
   "androidBase": "9229e18652978c14e3bb4fe3454b32d77ff3f0a7",
-  "iosBase": "8b4049723a707c692b8fefdc56fa617fcd45163c",
+  "iosBase": "3fed6016e822f13c08b4ae1b6b2f0c791af1b24a",
   "scope": "Unified native model picker; existing catalog/default/routing semantics retained. No native build, XCTest, CI, UI/runtime acceptance or IPA",
   "files": [
     {
@@ -13,12 +13,12 @@
     {
       "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentModelPickerDeviceTest.kt",
       "sha256": "6d21d25bdc890df1cb0501764aeccea94f1cde55c0e722a5610b27d522ea3298",
-      "disposition": "Reference fixture source inspected; eight iOS policy fixtures authored, not executed; no native device/UI equivalence claim"
+      "disposition": "Reference fixture source inspected; nine iOS policy fixtures authored including canonical alias selection, not executed; no native device/UI equivalence claim"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelPickerPolicy.kt",
       "sha256": "7990704da71cd6c20e4da9c03b5ab0650d7fe53d2928155785a78975d66cbac2",
-      "disposition": "Native source/group policy: stable selected/Codex ordering, concrete Desktop dedup, family-specific legacy folding, active legacy retention, old-only fallback, future IDs and labels; reuse public normalizedModelId, alias catalog support remains separately tracked by #4559"
+      "disposition": "Native source/group policy: stable selected/Codex ordering, concrete Desktop dedup, family-specific legacy folding, active legacy retention, old-only fallback, future IDs and labels. Reuse the now-merged main invocation-profile normalization/alias methods without changing catalogs or schema"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentModelPicker.kt",
@@ -73,7 +73,7 @@
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentModelPickerPolicyTest.kt",
       "sha256": "bfc4e0cc9feedf07b0cd311ecd2bbdf53cc3b2f5160ef1ab23f04838fec0bfc2",
-      "disposition": "Reference fixture source inspected; eight iOS policy fixtures authored, not executed; no native device/UI equivalence claim"
+      "disposition": "Reference fixture source inspected; nine iOS policy fixtures authored including canonical alias selection, not executed; no native device/UI equivalence claim"
     }
   ]
 }

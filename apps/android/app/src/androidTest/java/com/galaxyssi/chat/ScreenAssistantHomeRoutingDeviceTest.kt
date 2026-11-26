@@ -18,13 +18,46 @@ class ScreenAssistantHomeRoutingDeviceTest {
     private val cloud = codex.copy(id = "cloud:deepseek", title = "DeepSeek", kind = AgentConnectorKind.MODEL)
     private val targets = listOf(cloud, codex)
 
-    @Test fun newSessionUsesAutoCodexWithoutChangingExistingManualSelection() = isolated { context ->
-        manual(context, "previous", cloud)
-        AgentModelSelectionSettings.inheritDefault(context, "new")
-        assertEquals(AgentModelSelectionMode.AUTO, AgentModelSelectionSettings.defaultSelection(context).mode)
-        assertEquals(AgentModelSelectionMode.AUTO, AgentModelSelectionSettings.selection(context, "new").mode)
-        assertEquals(codex.id, AgentStableAutoRouteStore.target(context, "new", targets)?.id)
-        assertEquals(cloud.id, AgentModelSelectionSettings.selection(context, "previous").targetId)
+    @Test fun newUserConversationSnapshotsTheRememberedTargetModelAndEffort() = isolated { context ->
+        val app = object : ContextWrapper(context) {
+            override fun getApplicationContext(): Context = this
+        }
+        val store = AgentTranscriptStore(app, "remember-model-${UUID.randomUUID()}")
+        val ids = mutableListOf<String>()
+        try {
+            val initial = store.createConversation("Initial fixture").id.also(ids::add)
+            assertEquals(AgentModelSelection(), AgentModelSelectionSettings.selection(app, initial))
+            manual(app, initial, codex)
+            AgentModelSelectionSettings.updateAgentConfiguration(app, initial, "gpt-6-astra", AgentModelReasoningEffort.XHIGH)
+            val remembered = AgentModelSelectionSettings.selection(app, initial)
+            val next = store.createConversation("Next fixture").id.also(ids::add)
+            assertEquals(remembered, AgentModelSelectionSettings.selection(app, next))
+            assertEquals(AgentTargetConfiguration("gpt-6-astra", AgentModelReasoningEffort.XHIGH),
+                AgentModelSelectionSettings.configurationForTarget(app, next, codex.id))
+
+            val programmatic = store.createAgentConversation("Independently routed fixture").id.also(ids::add)
+            assertEquals(AgentModelSelection(), AgentModelSelectionSettings.selection(app, programmatic))
+            manual(app, programmatic, cloud, remember = false)
+            assertEquals(remembered, AgentModelSelectionSettings.defaultSelection(app))
+
+            AgentModelSelectionSettings.selectAuto(app, next)
+            val afterAuto = store.createConversation("Auto fixture").id.also(ids::add)
+            assertEquals(AgentModelSelection(), AgentModelSelectionSettings.selection(app, afterAuto))
+            assertEquals(remembered, AgentModelSelectionSettings.selection(app, initial))
+        } finally {
+            ids.asReversed().forEach(store::deleteConversation)
+        }
+    }
+
+    @Test fun changingTheRememberedSelectionDoesNotOverwriteExistingChats() = isolated { context ->
+        manual(context, "first", codex)
+        AgentModelSelectionSettings.initializeConversation(context, "second", useRememberedSelection = true)
+        manual(context, "third", cloud)
+        AgentModelSelectionSettings.initializeConversation(context, "fourth", useRememberedSelection = true)
+        assertEquals(codex.id, AgentModelSelectionSettings.selection(context, "second").targetId)
+        assertEquals(cloud.id, AgentModelSelectionSettings.selection(context, "fourth").targetId)
+        AgentModelSelectionSettings.selectAutoForConversation(context, "fourth")
+        assertEquals(cloud.id, AgentModelSelectionSettings.defaultSelection(context).targetId)
     }
 
     @Test fun currentManualCodexWinsOverOldDefaultAndPreservesModelEffort() = isolated { context ->

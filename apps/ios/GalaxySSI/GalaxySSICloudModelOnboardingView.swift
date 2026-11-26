@@ -71,15 +71,15 @@ struct CloudModelProviderSelectionView: View {
   private func providerSubtitle(_ provider: String) -> String {
     switch provider {
     case "OpenAI":
-      return t("galaxyssi.cloud.provider.openai.subtitle", "GPT-5.5, GPT-5.4 mini/nano, and other OpenAI API models")
+      return t("galaxyssi.cloud.provider.openai.subtitle", "OpenAI Chat Completions models")
     case "Anthropic":
-      return t("galaxyssi.cloud.provider.anthropic.subtitle", "Claude Opus, Sonnet, Haiku; uses Messages API")
+      return t("galaxyssi.cloud.provider.anthropic.subtitle", "Claude Fable, Opus, Sonnet and Haiku")
     case "Google Gemini":
-      return t("galaxyssi.cloud.provider.gemini.subtitle", "Gemini Pro / Flash / Flash Lite; direct Google API from the phone")
+      return t("galaxyssi.cloud.provider.gemini.subtitle", "Gemini 4 and Flash-Lite")
     case "DeepSeek":
-      return t("galaxyssi.cloud.provider.deepseek.subtitle", "DeepSeek V4 Pro, V4 Flash, and V4 Flash Vision")
+      return t("galaxyssi.cloud.provider.deepseek.subtitle", "deepseek-v4-pro, deepseek-flash")
     case "Qwen":
-      return t("galaxyssi.cloud.provider.qwen.subtitle", "Qwen 3.7 Max/Plus, Qwen 3.6 Flash; DashScope OpenAI compatible")
+      return t("galaxyssi.cloud.provider.qwen.subtitle", "Qwen Max, Plus and Flash")
     case "OpenRouter":
       return t("galaxyssi.cloud.provider.openrouter.subtitle", "Unified access to multiple cloud models with custom routing")
     default:
@@ -360,15 +360,15 @@ private enum CloudModelOnboardingCopy {
   static func providerSubtitle(_ provider: String, language: String) -> String {
     switch provider {
     case "OpenAI":
-      return t("galaxyssi.cloud.provider.openai.subtitle", "GPT-5.5, GPT-5.4 mini/nano, and other OpenAI API models", language: language)
+      return t("galaxyssi.cloud.provider.openai.subtitle", "OpenAI Chat Completions models", language: language)
     case "Anthropic":
-      return t("galaxyssi.cloud.provider.anthropic.subtitle", "Claude Opus, Sonnet, Haiku; uses Messages API", language: language)
+      return t("galaxyssi.cloud.provider.anthropic.subtitle", "Claude Fable, Opus, Sonnet and Haiku", language: language)
     case "Google Gemini":
-      return t("galaxyssi.cloud.provider.gemini.subtitle", "Gemini Pro / Flash / Flash Lite; direct Google API from the phone", language: language)
+      return t("galaxyssi.cloud.provider.gemini.subtitle", "Gemini 4 and Flash-Lite", language: language)
     case "DeepSeek":
-      return t("galaxyssi.cloud.provider.deepseek.subtitle", "DeepSeek V4 Pro, V4 Flash", language: language)
+      return t("galaxyssi.cloud.provider.deepseek.subtitle", "deepseek-v4-pro, deepseek-flash", language: language)
     case "Qwen":
-      return t("galaxyssi.cloud.provider.qwen.subtitle", "Qwen 3.7 Max/Plus, Qwen 3.6 Flash; DashScope OpenAI compatible", language: language)
+      return t("galaxyssi.cloud.provider.qwen.subtitle", "Qwen Max, Plus and Flash", language: language)
     case "OpenRouter":
       return t("galaxyssi.cloud.provider.openrouter.subtitle", "Unified access to multiple cloud models with custom routing", language: language)
     default:

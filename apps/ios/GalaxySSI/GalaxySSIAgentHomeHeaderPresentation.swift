@@ -90,10 +90,10 @@ struct GalaxySSIAgentHomeHeaderPresentation {
         .ifBlank(fallbackLabel)
     }
     if let target = contacts.first(where: { $0.id == targetId }),
-       target.type == "agent" {
+       target.type == "agent", target.deliveryMode != .cloudAPI {
       var labels = [selection.displayName.ifBlank(target.displayName).ifBlank(target.id)]
       if !selection.modelId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        labels.append(selection.modelId)
+        labels.append(target.connectorInvocationProfile.canonicalModelId(selection.modelId))
       }
       if selection.reasoningEffort != .automatic {
         labels.append(reasoningEffortLabel(selection.reasoningEffort, language: language))
@@ -101,7 +101,7 @@ struct GalaxySSIAgentHomeHeaderPresentation {
       return labels.filter { !$0.isEmpty }.joined(separator: " · ")
     }
     if let target = contacts.first(where: { $0.id == targetId }),
-       let model = target.selectedCloudModel {
+       let model = CloudModelRequestRoutingPolicy.model(in: target, modelId: selection.modelId) {
       return model.displayName
         .ifBlank(model.modelId)
         .ifBlank(selection.displayName)

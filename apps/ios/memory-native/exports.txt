@@ -1,0 +1,8 @@
+_gs_memory_open
+_gs_memory_checkpoint
+_gs_memory_begin
+_gs_memory_append
+_gs_memory_search
+_gs_memory_node_count
+_gs_memory_cancel
+_gs_memory_close

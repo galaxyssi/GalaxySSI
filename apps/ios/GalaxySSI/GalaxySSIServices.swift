@@ -6007,27 +6007,41 @@ final class MessageCoordinator: ObservableObject {
       return true
     }
     if !readOnlyAnalysis, taskExecutionMode != .planOnly,
-       contact.deliveryMode == .local,
-       effectiveAttachments.isEmpty,
-       let commandResult = AgentPersonalDataCommandRouter.handle(displayText, store: store) {
-      store.appendDeliveryTrace(
-        outgoing.id,
-        contactId: contact.id,
-        stage: commandResult.actionId,
-        detail: "Local personal data command",
-        status: .delivered
-      )
-      let response = store.appendIncoming(
-        commandResult.text,
-        from: contact.id,
-        remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
-        status: .delivered,
-        traceStage: commandResult.actionId,
-        conversationId: outgoing.conversationId,
-        turnId: outgoing.turnId
-      )
-      onIncomingMessage?(response)
-      return true
+       contact.deliveryMode == .local, effectiveAttachments.isEmpty {
+      let dataScope = store.agentKnowledgeDatabase.nativeFiles.token()
+      let knowledgeRead = AgentPersonalDataCommandRouter.isKnowledgeRead(displayText)
+      if knowledgeRead { beginPendingAgentReply(for: outgoing) }
+      defer { if knowledgeRead { finishPendingAgentReply(for: outgoing) } }
+      let commandResult: AgentPersonalDataCommandRouter.Result?
+      do { commandResult = try await AgentPersonalDataCommandRouter.handle(displayText, store: store) }
+      catch is CancellationError { return false }
+      catch {
+        lastError = error.localizedDescription
+        store.appendDeliveryTrace(outgoing.id, contactId: contact.id,
+          stage: "knowledge_retrieval_failed", detail: error.localizedDescription, status: .failed)
+        return false
+      }
+      guard !Task.isCancelled, store.agentKnowledgeDatabase.nativeFiles.token() == dataScope else { return false }
+      if let commandResult {
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: commandResult.actionId,
+          detail: "Local personal data command",
+          status: .delivered
+        )
+        let response = store.appendIncoming(
+          commandResult.text,
+          from: contact.id,
+          remoteMessageId: "local-\(commandResult.actionId)-\(UUID().uuidString.lowercased())",
+          status: .delivered,
+          traceStage: commandResult.actionId,
+          conversationId: outgoing.conversationId,
+          turnId: outgoing.turnId
+        )
+        onIncomingMessage?(response)
+        return true
+      }
     }
     if contact.id == "hermes",
        taskExecutionMode != .planOnly,
@@ -9947,7 +9961,7 @@ final class MessageCoordinator: ObservableObject {
             }
             let needsImages = attachments.contains { $0.mimeType.lowercased().hasPrefix("image/") }
             guard CloudModelRequestRoutingPolicy.effectiveModelId(selectedModelId: model.modelId,
-              hasImageInput: needsImages) == model.modelId else {
+              hasImageInput: needsImages, endpoint: model.endpoint) == model.modelId else {
               throw GalaxySSIError.invalidPayload("Select an image-capable model for this collaboration member")
             }
             memberContact.selectedCloudModelId = model.modelId
@@ -12914,7 +12928,7 @@ final class MessageCoordinator: ObservableObject {
     let profile = contact.connectorInvocationProfile
     let manual = selection.mode == .manual
     let modelId = manual && !selection.modelId.isBlank
-      ? selection.modelId : profile.normalizedModelId("")
+      ? profile.canonicalModelId(selection.modelId) : profile.normalizedModelId("")
     let effort = manual ? selection.reasoningEffort : .automatic
     guard effort == .automatic || profile.reasoningEfforts.contains(effort),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }) else {
@@ -17301,7 +17315,7 @@ final class MessageCoordinator: ObservableObject {
       )
       if selectedAgentMatchesContact {
         let effectiveInvocation = AgentDirectVisionPolicy.invocation(
-          modelId: selection.modelId,
+          modelId: contact.connectorInvocationProfile.canonicalModelId(selection.modelId),
           reasoningEffort: selection.reasoningEffort,
           mimeTypes: attachments.map(\.mimeType)
         )

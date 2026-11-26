@@ -45,13 +45,14 @@ data class AgentModelOption(
 data class AgentInvocationProfile(
     val defaultModelId: String = "",
     val models: List<AgentModelOption> = emptyList(),
-    val reasoningEfforts: List<AgentModelReasoningEffort> = emptyList()
+    val reasoningEfforts: List<AgentModelReasoningEffort> = emptyList(),
+    val modelAliases: Map<String, String> = emptyMap()
 ) {
     val configurable: Boolean
         get() = models.isNotEmpty() || reasoningEfforts.isNotEmpty()
 
     fun normalizedModelId(requested: String): String {
-        val clean = requested.trim()
+        val clean = requested.trim().let { modelAliases[it] ?: it }
         val available = models.filterNot { RetiredAgentModelPolicy.isRetired(it.id) }
         return available.firstOrNull { it.id == clean }?.id
             ?: available.firstOrNull { it.id == defaultModelId }?.id
@@ -95,7 +96,14 @@ object AgentInvocationProfileJsonCodec {
             defaultModelId = RetiredAgentModelPolicy.availableOrDefault(root.optString("default_model"))
                 .ifBlank { models.firstOrNull()?.id.orEmpty() },
             models = models,
-            reasoningEfforts = efforts
+            reasoningEfforts = efforts,
+            modelAliases = root.optJSONObject("model_aliases")?.let { aliases ->
+                val availableIds = models.mapTo(hashSetOf(), AgentModelOption::id)
+                aliases.keys().asSequence().mapNotNull { old ->
+                    aliases.optString(old).takeIf { it in availableIds && old !in availableIds }
+                        ?.let { old to it }
+                }.toMap()
+            }.orEmpty()
         )
     }
 }
@@ -194,8 +202,12 @@ object AgentContactNavigationPolicy {
 }
 
 object AgentModelSelectionSettings {
-    // New sessions start in Auto; manual choices belong to their existing conversation.
-    fun defaultSelection(context: Context): AgentModelSelection = AgentModelSelection()
+    fun defaultSelection(context: Context): AgentModelSelection {
+        val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+        return readSelection(preferences, ::defaultKey)
+            .takeIf { it.mode == AgentModelSelectionMode.MANUAL && it.targetId.isNotBlank() }
+            ?: AgentModelSelection()
+    }
 
     fun selection(context: Context, conversationId: String): AgentModelSelection {
         val scope = normalizedConversationId(conversationId)
@@ -204,11 +216,11 @@ object AgentModelSelectionSettings {
         return readSelection(preferences) { field -> key(scope, field) }
     }
 
-    fun inheritDefault(context: Context, conversationId: String) {
+    internal fun initializeConversation(context: Context, conversationId: String, useRememberedSelection: Boolean) {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val inherited = defaultSelection(context)
-        writeSelection(preferences.edit(), { field -> key(scope, field) }, inherited).apply()
+        val initial = if (useRememberedSelection) defaultSelection(context) else AgentModelSelection()
+        writeSelection(preferences.edit(), { field -> key(scope, field) }, initial).apply()
     }
 
     private fun readSelection(

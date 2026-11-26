@@ -255,7 +255,7 @@ struct GalaxySSIConversationHubView: View {
               systemImage: "square.and.pencil",
               accessibilityLabel: t("galaxyssi.agent_session.new", "New session")
             ) {
-              _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"))
+              _ = store.createAgentSession(title: t("galaxyssi.agent_session.new", "New session"), useRememberedSelection: true)
               dismiss()
             }
           }
