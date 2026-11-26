@@ -2274,6 +2274,9 @@
     A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */; };
     A10000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */; };
     A10000000000000000003E3C /* AgentIOSOriginalPageDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3C /* AgentIOSOriginalPageDocument.swift */; };
+    A10000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */; };
+    A10000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */; };
+    A10000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4604,6 +4607,9 @@
     A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVerifiedTimerStartTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneLocalModelResourceTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E3C /* AgentIOSOriginalPageDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageDocument.swift; sourceTree = "<group>"; };
+    A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveStore.swift; sourceTree = "<group>"; };
+    A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveRuntime.swift; sourceTree = "<group>"; };
+    A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveStoreTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5571,6 +5577,8 @@
 		D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000003E3C /* AgentIOSOriginalPageDocument.swift */,
+        A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */,
+        A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
         A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */,
@@ -6934,6 +6942,7 @@
         D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */,
         D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */,
         D22634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift */,
+        A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */,
         D22636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift */,
         D22636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift */,
         D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */,
@@ -8430,6 +8439,8 @@
 		D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000003E3C /* AgentIOSOriginalPageDocument.swift in Sources */,
+        A10000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift in Sources */,
+        A10000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
         A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */,
@@ -9374,6 +9385,7 @@
         D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */,
         D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */,
         D12634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift in Sources */,
+        A10000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift in Sources */,
         D12636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift in Sources */,
         D12636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift in Sources */,
         D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */,
@@ -9602,7 +9614,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index com.galaxyssi.chat.ios.original-page-archive";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -9670,7 +9682,7 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index com.galaxyssi.chat.ios.original-page-archive";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";

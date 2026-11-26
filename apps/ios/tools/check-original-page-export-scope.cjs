@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const cp = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
 const app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-original-page-archive-queue-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function between(source, start, end) {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);

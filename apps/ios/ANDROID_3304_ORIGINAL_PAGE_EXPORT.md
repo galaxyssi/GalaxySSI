@@ -39,13 +39,59 @@ Chinese incompleteness notices use existing localized resource bundles.
 
 ## Boundaries
 
-This implements the explicit user Files export path, not Android's WorkManager
-automatic background Downloads archive. It does not introduce an iOS background
-archive queue, resume/retry lifecycle or automatic Files writes. A deadline may
-leave resources missing; the notice and missing-asset metadata say so. Fonts,
+The explicit export increment is now complemented by the scoped automatic
+archive queue described below. A deadline may leave resources missing; the
+notice and missing-asset metadata say so. Fonts,
 dynamic media and unsupported/escaped CSS may not reproduce publisher layout.
 The old raw source archive remains separate, not a safe page to execute.
 Full Android #3304 parity and the overall backlog are not claimed complete.
+
+## Durable automatic archive follow-up
+
+The actual paired-Desktop public-page path now captures the profile before its
+asynchronous fetch and enqueues only that same profile's exact conversation and
+user turn. Encrypted job IDs bind profile/conversation/turn/URL/source hash;
+private source filenames are hash-checked before copying. Pending source and
+prepared output use the existing attachment cipher with profile/job/type-bound
+purposes in Application Support, not public Downloads. Re-enqueue is idempotent.
+
+The queue wakes independently of MQTT at coordinator startup/foreground recovery
+and on store changes. A registered BGProcessingTask network request permits one
+bounded background job; foreground slices process up to four. The OS may defer
+or decline grants. A cold grant before a runtime is bound reschedules rather
+than constructing a different account or publishing without an owner. Returning
+to the App also scans the current profile's queue even without a pending flag.
+
+Require protected data, readable transcript, current profile, an active,
+nonprivate/nonpaused/unmerged conversation, the original user turn and current
+execution/connector policy before work and again before publication. Privacy,
+lock, foreground-loss and runtime replacement cancel active work. Cancellation
+propagates to the detached builder; a current blocking transport or synchronous
+DOM parse is cooperative, not instantaneously interruptible. Each background
+build retains the original Android-style 120-second total/15-second resource
+budgets. Normal failures back off one/two minutes and stop after three failures;
+OS cancellation does not consume a normal failure. Corrupt jobs remain retained
+and are not overwritten or executed.
+
+Prepared output is encrypted before publication and reused after interruption.
+Publish a deterministic fully protected HTML file under Files / GalaxySSI /
+Downloads / WebPages / profile-hash. Existing identical output is recognized;
+an edited, symlinked or mismatched user file is never overwritten. Link a fully
+written temporary file into place without replacing an existing name. Commit
+the encrypted completion marker before removing pending source/output. Failed
+cleanup can be retried without another network build. This is not a cross-store
+transaction or proof of fsync/power-loss durability. Final file publication runs
+on the main actor to retain its live ownership boundary and can incur file-IO
+latency; no UI performance acceptance is claimed.
+
+Three additional authored-only Swift fixtures cover encrypted reopen/staging/
+deduplication, account isolation/retry bounds, and refusal to overwrite a user's
+edited output. None are compiled or executed. The queue guard pins the original
+export increment `5e6167ab76ee808fa271504fb324c879916bb86b`, freezes its provider,
+builder and attachment sources, and verifies exact Coordinator/AppDelegate/
+project additions and the older guard's read hook. Scheduling, privacy races,
+process restart, filesystem faults and Files rendering still require native
+acceptance; no Android WorkManager or iOS BGTask behavioral equivalence is proven.
 
 ## Verification limits
 
@@ -65,3 +111,8 @@ Source verification: the new original-page export scope guard, its JavaScript
 syntax check, iOS project structure check, changed-source/document literal-Han
 placement and diff whitespace checks passed. No full repository or historical
 Web scope-guard pass is claimed.
+
+The durable queue increment additionally passed its dedicated retained-source
+guard and JavaScript syntax check, alongside the same project/localization/
+whitespace checks. These remain source evidence only, not encrypted IO, Files
+publication, background-grant, cold-launch, cancellation or device acceptance.
