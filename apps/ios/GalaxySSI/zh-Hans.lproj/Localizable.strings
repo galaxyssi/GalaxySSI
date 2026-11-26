@@ -1,4 +1,5 @@
 "galaxyssi.tab.agent" = "Agent";
+"galaxyssi.agent.connector.waiting_original_result" = "正在等待原连接器任务的结果。";
 "cloud_web_fallback_sources" = "已获取以下来源，但尚未完成可靠汇总：";
 "cloud_web_fallback_empty" = "暂时没有取得可可靠汇总的联网证据。你可以稍后重试，或缩小查询范围。";
 

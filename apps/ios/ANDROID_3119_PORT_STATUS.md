@@ -114,4 +114,12 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Owned task-status observation follow-up
+
+See `ANDROID_3119_OWNED_STATUS_OBSERVATION.md`: authenticated Desktop recovery
+observations now project strictly advancing, exact-owner status into native
+waiting receipts on both transports and existing recovery sweeps. Status-only
+terminal observations do not authorize completion or fallback. This is not the
+missing generic active timeout scheduler or broader attachment implementation.
+
 Source contracts and grammar/project checks do not establish Swift type correctness, executed XCTest or real routed delivery. No Xcode, native/network/device acceptance, ten-conversation test, privacy/budget gate execution or runtime fallback verification is claimed.
