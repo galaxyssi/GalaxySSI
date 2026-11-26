@@ -1,7 +1,7 @@
 // Source-only cache-size contracts. No SQLite/CryptoKit/XCTest execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
-const base = '0bdfc81662cc27f638f0b3360f13c399ad2ba704';
+const base = 'c7fe57aedc90de24c31b6e86f4b7c04db6e8e49f';
 const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));

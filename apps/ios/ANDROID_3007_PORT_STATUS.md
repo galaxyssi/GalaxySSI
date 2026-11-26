@@ -1,6 +1,8 @@
 # Android #3007 Public Search Parsing
 
 Reference merge: `65655f0c79c6ab04121150229a65b089180f82f2`.
+
+Search response size update: ANDROID_3007_SEARCH_RESPONSE_SIZE.md removes the earlier 2 MB application cap and fixed search-row blob ceiling, using the current SQLite backend limit instead. The older remaining-scope byte-limit note below is historical; exact platform-limit equivalence and native memory/storage acceptance are still unverified.
 Historical #4535 incremental predecessor: #4534 at `492bebe922013c2f707b38e4ddc849a655deba68`.
 Original implementation #4535 merged through `1497fc0171a0cbedde5e3d52de1cead10a857d06`.
 The image-presentation follow-up starts from fetched main `7e91ac6862e59fdf5a168fee89c925db281d4919`; its PR diff contains only that follow-up. The inventory/checker's older baseline remains the historical cumulative Android comparison, not this new PR's diff base.
