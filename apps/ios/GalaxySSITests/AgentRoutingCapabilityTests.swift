@@ -9,12 +9,12 @@ extension GalaxySSIStoreTests {
     func score() -> Int {
       AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment).score
     }
-    XCTAssertEqual(score(), 519)
+    XCTAssertEqual(score(), 699)
     requirements.mode = .quality
     resource.quality = .frontier
-    XCTAssertEqual(score(), 800)
+    XCTAssertEqual(score(), 980)
     resource.quality = .basic
-    XCTAssertEqual(score(), 475)
+    XCTAssertEqual(score(), 655)
     requirements.mode = .fast
     resource.quality = .strong
     resource.latency = .fast
@@ -23,9 +23,9 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(score(), 319)
     requirements.mode = .economy
     resource.latency = .fast
-    XCTAssertEqual(score(), 639)
+    XCTAssertEqual(score(), 769)
     resource.cost = .high
-    XCTAssertEqual(score(), 279)
+    XCTAssertEqual(score(), 409)
   }
 
   func testProviderRankingConfidentialTrustAndBackgroundArePreferencesNotGrants() {
@@ -83,18 +83,18 @@ extension GalaxySSIStoreTests {
     resource.providerProfile = profile
     let candidate = AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
       environment: AgentRuntimeEnvironment())
-    XCTAssertEqual(candidate.score, 309)
+    XCTAssertEqual(candidate.score, 489)
     XCTAssertTrue(candidate.reasons.contains("provider_failure_penalty:110"))
     XCTAssertTrue(candidate.reasons.contains("provider_latency_penalty:100"))
     profile.performance.failureRate = .nan
     profile.performance.ewmaLatencyMs = .infinity
     resource.providerProfile = profile
     XCTAssertEqual(AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
-      environment: AgentRuntimeEnvironment()).score, 339)
+      environment: AgentRuntimeEnvironment()).score, 519)
     profile.performance.attempts = 0
     resource.providerProfile = profile
     XCTAssertEqual(AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
-      environment: AgentRuntimeEnvironment()).score, 519)
+      environment: AgentRuntimeEnvironment()).score, 699)
   }
 
   func testProviderRankingKeepsInferredCapabilitiesSoftAndDeclaredRequirementsHard() throws {
@@ -133,6 +133,95 @@ extension GalaxySSIStoreTests {
 
   private func normalEnvironment() -> AgentRuntimeEnvironment {
     AgentRuntimeEnvironment(networkAvailable: true, networkValidated: true)
+  }
+
+  func testProviderRankingFamilyPreferencesFollowAndroidWithoutChangingIdentity() {
+    let code = AgentTaskRequirements(capabilities: [.code])
+    for (id, bonus) in [("desk:codex", 180), ("claude", 130), ("cloud-model:test", 90), ("local-llm", 50), ("desk:hermes", 20)] {
+      XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: id, requirements: code, hasPairedDesktop: true), bonus)
+    }
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "desk:codex", requirements: code, hasPairedDesktop: false), 0)
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "cloud-model:test", requirements: code, hasPairedDesktop: false), 180)
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "local-llm", requirements: code, hasPairedDesktop: false), 130)
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "cloud-model:test",
+      requirements: AgentTaskRequirements(mode: .fast), hasPairedDesktop: false), 0)
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "local-llm",
+      requirements: AgentTaskRequirements(mode: .fast), hasPairedDesktop: false), 180)
+    XCTAssertEqual(AgentProviderResourceRanking.preferenceBonus(targetId: "local-llm",
+      requirements: AgentTaskRequirements(mode: .quality), hasPairedDesktop: false), 0)
+    let resource = routingResource(targetId: "unpaired:codex", type: .remoteAgent, location: .trustedDesktop)
+    let candidate = AgentProviderResourceRanking.candidate(resource: resource, requirements: code,
+      environment: normalEnvironment(), hasPairedDesktop: true)
+    XCTAssertEqual(candidate.resource, resource)
+    XCTAssertEqual(candidate.resource.trust, .unknown)
+    XCTAssertTrue(candidate.reasons.contains("preference_bonus:180"))
+  }
+
+  func testProviderRankingBaselineConsumesExplicitPairedDesktopPreference() throws {
+    let codex = routeTarget("desk:codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:preference-fixture", kind: .model)
+    for (paired, expected) in [(true, 180), (false, 0)] {
+      let decision = try XCTUnwrap(AgentQualityRoutingService.baselineDecision(goal: "", targets: [codex, cloud],
+        primaryTargetId: codex.id, requirements: AgentTaskRequirements(),
+        environment: normalEnvironment(), hasPairedDesktop: paired))
+      XCTAssertTrue(decision.primary?.reasons.contains("preference_bonus:\(expected)") == true)
+      XCTAssertEqual(decision.primary?.resource.targetId, codex.id)
+    }
+  }
+
+  func testProviderRankingFallbacksPreferIndependentDomainsAndRetainCalibratedOrder() {
+    var primary = routingResource(targetId: "primary", type: .remoteAgent, location: .trustedDesktop)
+    primary.failureDomain = "desktop-a"
+    var same = routingResource(targetId: "same", type: .remoteAgent, location: .trustedDesktop)
+    same.failureDomain = "desktop-a"
+    var other = routingResource(targetId: "other", type: .remoteAgent, location: .trustedDesktop)
+    other.failureDomain = "desktop-b"
+    let cloud = routingResource(targetId: "cloud", type: .cloudModel, location: .cloud)
+    let phone = routingResource(targetId: "phone", type: .onDeviceModel, location: .phone)
+    let privateNode = routingResource(targetId: "private", type: .remoteLocalModel, location: .privateNetwork)
+    let candidates = [same, other, cloud, phone, privateNode].enumerated().map {
+      AgentResourceCandidate(resource: $0.element, score: 1000 - $0.offset)
+    }
+    let fallback = AgentProviderResourceRanking.fallbackCandidates(primary: primary, candidates: candidates)
+    XCTAssertEqual(fallback.map(\.resource.targetId), ["cloud", "phone", "other", "private", "same"])
+    XCTAssertEqual(fallback.last?.resource.failureDomain, "desktop-a")
+    primary.location = .phone
+    XCTAssertEqual(AgentProviderResourceRanking.fallbackCandidates(primary: primary,
+      candidates: candidates).map(\.resource.targetId), candidates.map(\.resource.targetId))
+  }
+
+  func testProviderRankingFallbackLimitDeduplicatesExactIdsBeforeTruncation() {
+    let primary = routingResource(targetId: "primary", type: .cloudModel, location: .cloud)
+    let candidates = (0..<10).map { index in
+      AgentResourceCandidate(resource: routingResource(targetId: "node-\(index)", type: .cloudModel, location: .cloud), score: 100 - index)
+    }
+    let duplicate = candidates[0]
+    let blank = AgentResourceCandidate(resource: routingResource(targetId: "", type: .cloudModel, location: .cloud), score: 1000)
+    let result = AgentProviderResourceRanking.fallbackCandidates(primary: primary,
+      candidates: [AgentResourceCandidate(resource: primary, score: 2000), blank, duplicate] + candidates)
+    XCTAssertEqual(result.map(\.resource.targetId), (0..<6).map { "node-\($0)" })
+    XCTAssertEqual(result.count, 6)
+  }
+
+  func testProviderRankingSelectorPublishesOnlySixAdmittedAlternatives() throws {
+    let primaryTarget = routeTarget("primary", kind: .agent)
+    var primary = routingResource(targetId: primaryTarget.id, type: .remoteAgent, location: .trustedDesktop)
+    primary.failureDomain = "desktop-a"
+    let fallbackTargets = (0..<9).map { routeTarget("alternative-\($0)", kind: .model) }
+    let excluded = routeTarget("catalog-only", kind: .model)
+    let candidates = fallbackTargets.enumerated().map { index, target in
+      AgentResourceCandidate(resource: routingResource(targetId: target.id, type: .cloudModel, location: .cloud), score: 100_000 - index * 10_000)
+    }
+    let excludedResource = routingResource(targetId: excluded.id, type: .cloudModel, location: .cloud)
+    let decision = AgentRoutingDecision(requirements: AgentTaskRequirements(),
+      primary: AgentResourceCandidate(resource: primary, score: 1_000_000), fallbacks: candidates,
+      catalog: [primary, excludedResource] + candidates.map(\.resource))
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [primaryTarget, excluded] + fallbackTargets,
+      decision: decision, preferredTargetId: primaryTarget.id))
+    XCTAssertEqual(selected.target.id, primaryTarget.id)
+    XCTAssertEqual(selected.decision?.fallbacks.count, 6)
+    XCTAssertEqual(selected.decision?.fallbacks.map(\.resource.targetId), Array(fallbackTargets.prefix(6)).map(\.id))
+    XCTAssertFalse(selected.decision?.orderedTargetIds.contains(excluded.id) == true)
   }
 
   func testGlobalCapabilityObservationExtractorAuthorizationAndSafetyUseLocalOnlyProjection() {

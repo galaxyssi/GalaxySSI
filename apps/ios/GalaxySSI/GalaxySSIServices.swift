@@ -6736,6 +6736,7 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
     return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
       preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
       routingHealth: automaticRoutingHealth(targets: targets))
   }
 
@@ -14481,6 +14482,7 @@ final class MessageCoordinator: ObservableObject {
     let targets = automaticRoutingTargets(goal: goal)
     let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
       preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
       routingHealth: automaticRoutingHealth(targets: targets))
     return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
   }
@@ -15542,6 +15544,7 @@ final class MessageCoordinator: ObservableObject {
       targets: targets,
       decision: nil,
       goal: goal,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
       routingHealth: automaticRoutingHealth(targets: targets)
     )
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
