@@ -312,20 +312,20 @@ struct GalaxySSIAgentModelSelectionPreparedContent {
 }
 
 struct GalaxySSIAgentModelSelectionView: View {
-  private struct ReadyCloudModel: Identifiable {
-    var contact: GalaxySSIContact
-    var model: CloudModelConfig
+  private typealias ReadyCloudModel = AgentModelPickerCloudChoice
 
-    var id: String { "\(contact.id):\(model.modelId)" }
-  }
-
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
 
   var onSelectionChanged: (() -> Void)?
   @State private var contentLoading = true
+  @State private var preparedConversationId = ""
+  @State private var preparedIdentityFingerprint = ""
+  @State private var pickerVisible = false
+  @State private var bypassPreparedCache = false
+  @State private var contentLoadInFlight = false
+  @State private var reloadPending = false
   @State private var modelSelectionRefreshToken = UUID()
   @State private var selectionRevision = 0
   @State private var navigationContentGate = GalaxySSINavigationContentGate()
@@ -369,15 +369,7 @@ struct GalaxySSIAgentModelSelectionView: View {
   }
 
   private var agentTargets: [AgentCallableTarget] {
-    AgentCallableTargetCatalog.selectableAgentTargets(callableTargets)
-      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-  }
-
-  private var preferredTargetId: String {
-    AgentCallableTargetCatalog.preferredTargetId(
-      selection: selection,
-      targets: callableTargets
-    )
+    AgentModelPickerPolicy.desktopTargets(callableTargets, selectedId: selection.targetId)
   }
 
   private var selectedManualTargetIsVisible: Bool {
@@ -408,233 +400,70 @@ struct GalaxySSIAgentModelSelectionView: View {
       GalaxySSITopBar(
         title: t("galaxyssi.agent.model_selection.title", "Select model or Agent"),
         leading: { GalaxySSIBackButton() },
-        trailing: { Color.clear }
-      )
-      ScrollView {
-        if contentLoading {
-          modelSelectionLoadingContent
-        } else {
-          VStack(alignment: .leading, spacing: 12) {
-          GalaxySSISecurityHeroView(
-            title: t("galaxyssi.agent.model_selection.hero_title", "Agent model"),
-            subtitle: selectionSubtitle,
-            systemImage: "cpu.fill",
-            tint: .galaxySSIAccent,
-            badge: t("galaxyssi.agent.model_selection.badge", "Routing")
-          )
-          GalaxySSISecuritySectionTitle(
-            title: t("galaxyssi.agent.model_selection.routing_section", "ROUTING")
-          )
-          GalaxySSISecurityActionRow(
-            title: t("galaxyssi.agent.model_selection.automatic", "Automatic"),
-            subtitle: t(
-              "galaxyssi.agent.model_selection.automatic_subtitle",
-              "Choose by task, speed, privacy, and availability"
-            ),
-            systemImage: isAutomatic ? "checkmark.circle.fill" : "arrow.triangle.branch",
-            tint: isAutomatic ? .galaxySSIAccent : .galaxySSIInsightText,
-            badge: isAutomatic
-              ? t("galaxyssi.agent.model_selection.current", "Current")
-              : t("galaxyssi.common.select", "Select")
-          ) {
-            selectAutomatic()
+        trailing: {
+          GalaxySSIAndroidIconButton(systemName: "arrow.clockwise") {
+            bypassPreparedCache = true
+            modelSelectionRefreshToken = UUID()
+            _ = coordinator.requestCapabilityManifestRefresh(force: true)
           }
-
-          if selection.mode == .manual,
-             let selectedManualTarget,
-             !selectedManualTargetIsVisible {
-            GalaxySSISecurityStatusRow(
-              title: selectedManualTarget.title,
-              subtitle: t(
-                "galaxyssi.agent.model_selection.unavailable_subtitle",
-                "The selected target is currently unavailable. Choose Automatic or another ready target."
-              ),
-              systemImage: "exclamationmark.triangle.fill",
-              tint: .orange,
-              badge: t("galaxyssi.agent.model_selection.unavailable", "Unavailable")
-            )
-          }
-
-          if !localProfiles.isEmpty {
-            GalaxySSISecuritySectionTitle(
-              title: t("galaxyssi.agent.model_selection.local_section", "ON-DEVICE MODELS")
-            )
-            GalaxySSISecurityNavigationRow(
-              title: t("galaxyssi.settings.local_model", "Local Model Settings"),
-              subtitle: t(
-                "galaxyssi.settings.local_model.status",
-                "Configure on-device inference"
-              ),
-              systemImage: "arrow.down.circle",
-              tint: .galaxySSIAccent,
-              badge: t("galaxyssi.common.manage", "Manage")
-            ) {
-              GalaxySSILocalModelLabView()
-            }
-            ForEach(localProfiles) { profile in
-              let selected = isSelectedLocal(profile)
-              GalaxySSISecurityActionRow(
-                title: profile.displayName,
-                subtitle: t(
-                  "galaxyssi.agent.model_selection.local_subtitle",
-                  "Installed and ready on this iPhone"
-                ),
-                systemImage: selected ? "checkmark.circle.fill" : "iphone",
-                tint: selected ? .galaxySSIAccent : .blue,
-                badge: selected
-                  ? t("galaxyssi.agent.model_selection.current", "Current")
-                  : t("galaxyssi.common.select", "Select"),
-                monospacedSubtitle: true
-              ) {
-                selectLocal(profile)
-              }
-            }
-          } else {
-            GalaxySSISecuritySectionTitle(
-              title: t("galaxyssi.agent.model_selection.local_section", "ON-DEVICE MODELS")
-            )
-            GalaxySSISecurityNavigationRow(
-              title: t("galaxyssi.settings.local_model", "Local Model Settings"),
-              subtitle: t(
-                "galaxyssi.agent.model_selection.local_manage_subtitle",
-                "Download and prepare an on-device model for private Agent work"
-              ),
-              systemImage: "arrow.down.circle",
-              tint: .galaxySSIAccent,
-              badge: t("galaxyssi.common.manage", "Manage")
-            ) {
-              GalaxySSILocalModelLabView()
-            }
-          }
-
-          if !agentTargets.isEmpty {
-            GalaxySSISecuritySectionTitle(
-              title: t("galaxyssi.agent.model_selection.agent_section", "AGENTS")
-            )
-            ForEach(agentTargets) { target in
-              let selected = isSelectedAgent(target)
-              GalaxySSISecurityActionRow(
-                title: target.title,
-                subtitle: agentSubtitle(target, selected: selected),
-                systemImage: selected ? "checkmark.circle.fill" : "person.2.fill",
-                assetImage: agentLogoAssetName(for: target),
-                tint: selected ? .galaxySSIAccent : .indigo,
-                badge: selected
-                  ? t("galaxyssi.agent.model_selection.current", "Current")
-                  : t("galaxyssi.common.select", "Select")
-              ) {
-                selectAgent(target)
-              }
-              if selected && target.invocationProfile.configurable {
-                agentConfigurationView(target)
-              }
-            }
-          }
-
-          GalaxySSISecuritySectionTitle(
-            title: t("galaxyssi.agent.model_selection.connect_section", "CONNECT AN AGENT")
-          )
-          GalaxySSISecurityNavigationRow(
-            title: t("galaxyssi.agent.model_selection.scan_agent", "Scan or paste Agent QR"),
-            subtitle: t(
-              "galaxyssi.agent.model_selection.scan_agent_subtitle",
-              "Pair a trusted Desktop Agent or local model through the Android-compatible QR flow"
-            ),
-            systemImage: "qrcode.viewfinder",
-            tint: .orange,
-            badge: t("security_scan", "Scan")
-          ) {
-            AddContactView(autoOpenScanner: true)
-          }
-
-          if !readyCloudModels.isEmpty {
-            GalaxySSISecuritySectionTitle(
-              title: t("galaxyssi.agent.model_selection.cloud_section", "CLOUD MODELS")
-            )
-            ForEach(readyCloudModels) { item in
-              let selected = isSelectedCloud(item.contact, model: item.model)
-              GalaxySSISecurityActionRow(
-                title: item.model.displayName.ifBlank(item.model.modelId),
-                subtitle: "\(item.contact.displayName) - \(item.model.modelId)",
-                systemImage: selected ? "checkmark.circle.fill" : "cloud.fill",
-                assetImage: cloudLogoAssetName(for: item.contact.cloudProvider),
-                tint: selected ? .galaxySSIAccent : cloudModelTint(item.contact.cloudProvider),
-                badge: selected
-                  ? t("galaxyssi.agent.model_selection.current", "Current")
-                  : t("galaxyssi.common.select", "Select"),
-                monospacedSubtitle: true
-              ) {
-                selectCloud(item.contact, model: item.model)
-              }
-            }
-          }
-
-          if localProfiles.isEmpty && agentTargets.isEmpty && readyCloudModels.isEmpty {
-            GalaxySSISecurityStatusRow(
-              title: t("galaxyssi.agent.model_selection.no_models", "No ready models"),
-              subtitle: t(
-                "galaxyssi.agent.model_selection.no_models_subtitle",
-                "Configure a cloud model, install a local model, or connect an Agent in Settings."
-              ),
-              systemImage: "exclamationmark.triangle.fill",
-              tint: .orange,
-              badge: t("galaxyssi.status.needs_setup", "Needs Setup")
-            )
-            GalaxySSISecurityNavigationRow(
-              title: t("galaxyssi.discover.add_cloud_model", "Add Cloud Model"),
-              subtitle: t(
-                "galaxyssi.discover.add_cloud_model_subtitle",
-                "Call OpenAI, Claude, Gemini, DeepSeek, Qwen, and other APIs directly on the phone"
-              ),
-              systemImage: "cloud.fill",
-              tint: .galaxySSIInsightText,
-              badge: t("galaxyssi.common.add", "Add")
-            ) {
-              CloudModelProviderSelectionView()
-            }
-            GalaxySSISecurityNavigationRow(
-              title: t("galaxyssi.agent_connection.scan_qr", "Scan or Paste Agent QR"),
-              subtitle: t(
-                "galaxyssi.agent_connection.scan_qr_subtitle",
-                "Pair a trusted Desktop Agent or local model through the Android-compatible QR flow"
-              ),
-              systemImage: "qrcode.viewfinder",
-              tint: .orange,
-              badge: t("security_scan", "Scan")
-            ) {
-              AddContactView(autoOpenScanner: true)
-            }
-          }
-          }
-          .padding(.horizontal, 12)
-          .padding(.top, 12)
-          .padding(.bottom, 18)
+          .accessibilityLabel(Text(t("agent_model_picker.retry", "Reload models")))
+          .accessibilityIdentifier("ios.agent.model-picker.reload")
         }
+      )
+      if contentLoading {
+        modelSelectionLoadingContent
+      } else {
+        GalaxySSIAgentModelPickerContent(
+          conversationId: store.activeAgentConversationId,
+          selection: selection,
+          localProfiles: localProfiles,
+          agents: agentTargets,
+          clouds: readyCloudModels,
+          currentDetail: selectionSubtitle,
+          manualAvailable: selectedManualTargetIsVisible,
+          remembersNewChats: AgentModelSelectionSettings.defaultSelection() == selection,
+          onAutomatic: selectAutomatic,
+          onLocal: selectLocal,
+          onCloud: { selectCloud($0.contact, model: $0.model) },
+          onAgent: { selectAgent($0, modelId: $1) },
+          onEffort: { updateAgentConfiguration(modelId: $0, reasoningEffort: $1) },
+          agentLogo: agentLogoAssetName,
+          cloudLogo: cloudLogoAssetName,
+          effortLabel: reasoningEffortLabel
+        )
+        .id(store.activeAgentConversationId)
       }
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear {
+      pickerVisible = true
       contentLoading = true
       modelSelectionRefreshToken = UUID()
-      _ = coordinator.requestCapabilityManifestRefresh()
+      _ = coordinator.requestCapabilityManifestRefresh(force: true)
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIContactImportDidComplete)) { _ in
+      guard pickerVisible else { return }
+      bypassPreparedCache = true
       contentLoading = true
       modelSelectionRefreshToken = UUID()
       _ = coordinator.requestCapabilityManifestRefresh(force: true)
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIDesktopPairingDidComplete)) { _ in
+      guard pickerVisible else { return }
+      bypassPreparedCache = true
       contentLoading = true
       modelSelectionRefreshToken = UUID()
       _ = coordinator.requestCapabilityManifestRefresh(force: true)
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentRoutingDidUpdate)) { _ in
-      contentLoading = true
+      guard pickerVisible else { return }
+      bypassPreparedCache = true
       modelSelectionRefreshToken = UUID()
-      _ = coordinator.requestCapabilityManifestRefresh(force: true)
     }
     .onDisappear {
+      pickerVisible = false
+      reloadPending = false
       navigationContentGate.invalidate()
     }
     .task(id: "\(modelSelectionContentTaskID)|\(modelSelectionRefreshToken.uuidString)") {
@@ -670,18 +499,34 @@ struct GalaxySSIAgentModelSelectionView: View {
       let models = $0.cloudModels.map { "\($0.modelId):\($0.displayName):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: ",")
       return "\($0.id):\($0.updatedAt.timeIntervalSince1970):\($0.setupStatus):\($0.selectedCloudModelId):\(models)"
     }.joined(separator: "|")
-    return "\(store.activeAgentConversationId)|\(contacts)"
+    return "\(store.profile.identityFingerprint)|\(store.activeAgentConversationId)|\(contacts)"
   }
 
   private func prepareModelSelectionContent() async {
+    guard pickerVisible, !Task.isCancelled else { return }
+    guard !contentLoadInFlight else { reloadPending = true; return }
+    contentLoadInFlight = true
+    defer {
+      contentLoadInFlight = false
+      if reloadPending && pickerVisible {
+        reloadPending = false
+        modelSelectionRefreshToken = UUID()
+      }
+    }
     let generation = navigationContentGate.begin()
-    if let cached = GalaxySSINavigationContentPrewarm.snapshot(for: store)?.modelSelection,
+    let conversationId = store.activeAgentConversationId
+    let identityFingerprint = store.profile.identityFingerprint
+    if !bypassPreparedCache,
+       let cached = GalaxySSINavigationContentPrewarm.snapshot(for: store)?.modelSelection,
        !Task.isCancelled {
       preparedContent = cached
+      preparedConversationId = conversationId
+      preparedIdentityFingerprint = identityFingerprint
       contentLoading = false
       return
     }
-    contentLoading = true
+    bypassPreparedCache = false
+    if preparedConversationId != conversationId { contentLoading = true }
     let sourceContacts = store.visibleContacts
     let sourceCloudContacts = store.cloudModelContacts
     let apiKeys = sourceCloudContacts.reduce(into: [String: String]()) { result, contact in
@@ -691,15 +536,6 @@ struct GalaxySSIAgentModelSelectionView: View {
         }
       }
     }
-    let fastContent = Self.modelSelectionContent(
-      sourceContacts: sourceContacts,
-      sourceCloudContacts: sourceCloudContacts,
-      apiKeys: apiKeys
-    )
-    if Self.hasRenderableModelSelectionContent(fastContent) {
-      preparedContent = fastContent
-      contentLoading = false
-    }
     let prepared = await Task.detached(priority: .userInitiated) {
       Self.modelSelectionContent(
         sourceContacts: sourceContacts,
@@ -707,8 +543,12 @@ struct GalaxySSIAgentModelSelectionView: View {
         apiKeys: apiKeys
       )
     }.value
-    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
+    guard !Task.isCancelled, navigationContentGate.isCurrent(generation), pickerVisible,
+          store.activeAgentConversationId == conversationId,
+          store.profile.identityFingerprint == identityFingerprint else { return }
     preparedContent = prepared
+    preparedConversationId = conversationId
+    preparedIdentityFingerprint = identityFingerprint
     contentLoading = false
   }
 
@@ -830,18 +670,6 @@ struct GalaxySSIAgentModelSelectionView: View {
       ?? t("galaxyssi.agent.model_selection.automatic", "Automatic")
   }
 
-  private func isSelectedLocal(_ profile: LocalModelRuntimeProfile) -> Bool {
-    selection.mode == .manual &&
-      selection.targetId == "local-llm" &&
-      selection.modelId == profile.id
-  }
-
-  private func isSelectedCloud(_ contact: GalaxySSIContact, model: CloudModelConfig) -> Bool {
-    selection.mode == .manual &&
-      selection.targetId == contact.id &&
-      CloudModelRequestRoutingPolicy.invocationProfile(contact).canonicalModelId(selection.modelId) == model.modelId
-  }
-
   private func selectedCloudModel(in contact: GalaxySSIContact, modelId: String) -> CloudModelConfig? {
     let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
     if cleanModelId.isEmpty {
@@ -850,11 +678,8 @@ struct GalaxySSIAgentModelSelectionView: View {
     return CloudModelRequestRoutingPolicy.model(in: contact, modelId: cleanModelId)
   }
 
-  private func isSelectedAgent(_ target: AgentCallableTarget) -> Bool {
-    preferredTargetId == target.id
-  }
-
   private func selectAutomatic() {
+    guard canSelectPreparedContent else { return }
     AgentModelSelectionSettings.selectAutomatic(for: store.activeAgentConversationId)
     store.setAgentSessionSelectedModelOrAgent(
       id: store.activeAgentConversationId,
@@ -864,6 +689,7 @@ struct GalaxySSIAgentModelSelectionView: View {
   }
 
   private func selectLocal(_ profile: LocalModelRuntimeProfile) {
+    guard canSelectPreparedContent, LocalModelRuntimeSettings.activeProfiles().contains(where: { $0.id == profile.id }) else { return }
     LocalModelRuntimeSettings.setSelectedProfile(profile.id)
     AgentModelSelectionSettings.selectManual(
       for: store.activeAgentConversationId,
@@ -879,6 +705,10 @@ struct GalaxySSIAgentModelSelectionView: View {
   }
 
   private func selectCloud(_ contact: GalaxySSIContact, model: CloudModelConfig) {
+    guard canSelectPreparedContent, let current = store.contact(id: contact.id),
+          let currentModel = CloudModelRequestRoutingPolicy.model(in: current, modelId: model.modelId),
+          AgentConnectorAvailability.cloudModelReady(model: currentModel, apiKey: store.apiKey(for: currentModel),
+            provider: current.cloudProvider, setupStatus: current.setupStatus) else { return }
     AgentModelSelectionSettings.selectManual(
       for: store.activeAgentConversationId,
       targetId: contact.id,
@@ -892,7 +722,14 @@ struct GalaxySSIAgentModelSelectionView: View {
     finishSelection()
   }
 
-  private func selectAgent(_ target: AgentCallableTarget) {
+  private func selectAgent(_ target: AgentCallableTarget, modelId: String? = nil) {
+    guard canSelectPreparedContent,
+          let current = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+            apiKey: { store.apiKey(for: $0) }).first(where: { $0.id == target.id }),
+          AgentConnectorRouteSelector.isDeliverable(current),
+          modelId == nil || (modelId == "" && current.invocationProfile.models.isEmpty) ||
+            current.invocationProfile.models.contains(where: { $0.id == modelId }) else { return }
+    let target = current
     let title = target.title
     let remembered = AgentModelSelectionSettings.configurationForTarget(
       conversationId: store.activeAgentConversationId,
@@ -905,7 +742,7 @@ struct GalaxySSIAgentModelSelectionView: View {
     AgentModelSelectionSettings.selectManual(
       for: store.activeAgentConversationId,
       targetId: target.id,
-      modelId: target.invocationProfile.normalizedModelId(remembered?.modelId ?? ""),
+      modelId: target.invocationProfile.normalizedModelId(modelId ?? remembered?.modelId ?? ""),
       displayName: title,
       reasoningEffort: effort
     )
@@ -917,109 +754,17 @@ struct GalaxySSIAgentModelSelectionView: View {
     onSelectionChanged?()
   }
 
-  private func agentSubtitle(_ target: AgentCallableTarget, selected: Bool) -> String {
-    var values = [
-      t("galaxyssi.agent.model_selection.agent_subtitle", "Connected and ready Agent")
-    ]
-    if selected, !selection.modelId.isEmpty {
-      let modelId = target.invocationProfile.canonicalModelId(selection.modelId)
-      values.append(
-        target.invocationProfile.models.first(where: { $0.id == modelId })?.displayName
-          ?? modelId
-      )
-    }
-    if selected, selection.reasoningEffort != .automatic {
-      values.append(reasoningEffortLabel(selection.reasoningEffort))
-    }
-    return values.joined(separator: " · ")
-  }
-
-  @ViewBuilder
-  private func agentConfigurationView(_ target: AgentCallableTarget) -> some View {
-    let profile = target.invocationProfile
-    VStack(alignment: .leading, spacing: 10) {
-      if !profile.models.isEmpty {
-        HStack(spacing: 12) {
-          Text(t("galaxyssi.agent.model_selection.model", "Model"))
-            .font(.system(size: 13))
-            .foregroundColor(.galaxySSITextSecondary)
-          Spacer(minLength: 12)
-          Menu {
-            ForEach(profile.models) { model in
-              Button {
-                updateAgentConfiguration(
-                  modelId: model.id,
-                  reasoningEffort: selection.reasoningEffort
-                )
-              } label: {
-                Label(
-                  model.displayName,
-                  systemImage: profile.canonicalModelId(selection.modelId) == model.id ? "checkmark" : "circle"
-                )
-              }
-            }
-          } label: {
-            HStack(spacing: 5) {
-              Text(selectedModelLabel(profile))
-                .lineLimit(1)
-              Image(systemName: "chevron.down")
-                .font(.system(size: 11, weight: .semibold))
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundColor(.galaxySSITextPrimary)
-          }
-        }
-        .frame(minHeight: 40)
-      }
-
-      if !profile.reasoningEfforts.isEmpty {
-        Text(t("galaxyssi.agent.model_selection.reasoning_effort", "Reasoning effort"))
-          .font(.system(size: 12))
-          .foregroundColor(.galaxySSITextSecondary)
-        HStack(spacing: 5) {
-          ForEach(profile.reasoningEfforts) { effort in
-            Button {
-              updateAgentConfiguration(
-                modelId: profile.normalizedModelId(selection.modelId),
-                reasoningEffort: effort
-              )
-            } label: {
-              Text(reasoningEffortLabel(effort))
-                .font(.system(size: 11.5, weight: .medium))
-                .foregroundColor(
-                  selection.reasoningEffort == effort ? .galaxySSIAccent : .galaxySSITextPrimary
-                )
-                .frame(maxWidth: .infinity, minHeight: 34)
-                .background(
-                  selection.reasoningEffort == effort
-                    ? Color.galaxySSIAccent.opacity(0.12)
-                    : Color.galaxySSITextSecondary.opacity(0.08)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            }
-            .buttonStyle(.plain)
-          }
-        }
-      }
-
-      Text(t("galaxyssi.agent.model_selection.new_session_default", "Default for new conversations"))
-        .font(.system(size: 11))
-        .foregroundColor(.galaxySSITextSecondary)
-    }
-    .padding(.leading, 54)
-    .padding(.trailing, 6)
-    .padding(.bottom, 12)
-  }
-
-  private func selectedModelLabel(_ profile: AgentInvocationProfile) -> String {
-    let modelId = profile.normalizedModelId(selection.modelId)
-    return profile.models.first(where: { $0.id == modelId })?.displayName ?? modelId
-  }
-
   private func updateAgentConfiguration(
     modelId: String,
     reasoningEffort: AgentModelReasoningEffort
   ) {
+    guard canSelectPreparedContent,
+          let current = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
+            apiKey: { store.apiKey(for: $0) }).first(where: { $0.id == selection.targetId }),
+          AgentConnectorRouteSelector.isDeliverable(current),
+          current.invocationProfile.reasoningEfforts.contains(reasoningEffort),
+          current.invocationProfile.models.isEmpty || current.invocationProfile.models.contains(where: { $0.id == modelId })
+    else { return }
     AgentModelSelectionSettings.updateAgentConfiguration(
       for: store.activeAgentConversationId,
       modelId: modelId,
@@ -1044,20 +789,14 @@ struct GalaxySSIAgentModelSelectionView: View {
     }
   }
 
-  private func finishSelection() {
-    onSelectionChanged?()
-    dismiss()
+  private var canSelectPreparedContent: Bool {
+    pickerVisible && !contentLoading && preparedConversationId == store.activeAgentConversationId &&
+      preparedIdentityFingerprint == store.profile.identityFingerprint
   }
 
-  private func cloudModelTint(_ provider: String) -> Color {
-    switch provider.lowercased() {
-    case "openai": return .green
-    case "anthropic", "claude": return .orange
-    case "gemini", "google gemini": return .blue
-    case "deepseek": return .indigo
-    case "qwen": return .teal
-    default: return .galaxySSIInsightText
-    }
+  private func finishSelection() {
+    selectionRevision += 1
+    onSelectionChanged?()
   }
 
   private func agentLogoAssetName(for target: AgentCallableTarget) -> String? {
