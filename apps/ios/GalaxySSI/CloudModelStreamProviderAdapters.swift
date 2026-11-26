@@ -136,6 +136,15 @@ private final class AnthropicModelStreamAdapter: ModelStreamProviderAdapter {
   }
 
   private var toolBlocks: [Int: ToolBlock] = [:]
+  private var usageFields: [String: Any] = [:]
+
+  private func cumulativeUsage(_ update: [String: Any]?) -> ModelUsage? {
+    guard let update else { return nil }
+    for key in ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] {
+      if let value = update[key] { usageFields[key] = value }
+    }
+    return usageFields.anthropicUsage()
+  }
 
   func parse(data: String, eventName: String?) -> ParsedModelStreamFrame {
     guard let json = Self.object(data, invalidCode: "INVALID_STREAM_JSON") else {
@@ -147,8 +156,9 @@ private final class AnthropicModelStreamAdapter: ModelStreamProviderAdapter {
     }
     switch type {
     case "message_start":
+      usageFields.removeAll()
       return ParsedModelStreamFrame(
-        usage: json.object("message")?.object("usage")?.anthropicUsage(),
+        usage: cumulativeUsage(json.object("message")?.object("usage")),
         providerSequence: json.optionalSequence()
       )
     case "content_block_start":
@@ -190,7 +200,7 @@ private final class AnthropicModelStreamAdapter: ModelStreamProviderAdapter {
       }
     case "message_delta":
       return ParsedModelStreamFrame(
-        usage: json.object("usage")?.anthropicUsage(),
+        usage: cumulativeUsage(json.object("usage")),
         finishReason: json.object("delta")?.string("stop_reason").nonBlank,
         providerSequence: json.optionalSequence()
       )
@@ -387,11 +397,27 @@ private extension Dictionary where Key == String, Value == Any {
   }
 
   func anthropicUsage() -> ModelUsage {
-    ModelUsage(
-      inputTokens: int64("input_tokens"),
-      outputTokens: int64("output_tokens"),
-      cachedInputTokens: int64("cache_read_input_tokens")
-    )
+    do {
+      let fields = filter { ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"].contains($0.key) }
+      let data = try JSONSerialization.data(withJSONObject: fields)
+      let typed = try JSONDecoder().decode(AgentMcpJSONObject.self, from: data)
+      func count(_ key: String) -> Int64? {
+        guard let value = typed[key] else { return 0 }
+        guard case .int(let count) = value, count >= 0 else { return nil }
+        return count
+      }
+      guard let input = count("input_tokens"), let written = count("cache_creation_input_tokens"),
+            let cached = count("cache_read_input_tokens"), let output = count("output_tokens") else {
+        return ModelUsage(inputTokens: -1)
+      }
+      let first = input.addingReportingOverflow(written)
+      let total = first.partialValue.addingReportingOverflow(cached)
+      guard !first.overflow, !total.overflow else { return ModelUsage(inputTokens: -1) }
+      return ModelUsage(inputTokens: total.partialValue, outputTokens: output, cachedInputTokens: cached)
+    } catch {
+      // An invalid telemetry marker is ignored by usage consumers, not a text-delivery failure.
+      return ModelUsage(inputTokens: -1)
+    }
   }
 
   func geminiUsage() -> ModelUsage {
