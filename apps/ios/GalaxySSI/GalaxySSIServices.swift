@@ -15126,11 +15126,12 @@ final class MessageCoordinator: ObservableObject {
         (verifiedStep && !needsOutcomeDecision ? .delivered : .failed)
     )
     if !verifiedStep || (!hasRemainingActions && !rollingBatchBoundary) {
-      var richOutput = unresolvedEffect || needsOutcomeDecision ? "" : localNativeRichOutput(result: result, responseText: reply)
+      var richOutput = unresolvedEffect || needsOutcomeDecision ? "" : localNativeRichOutput(result: result, responseText: reply,
+        action: executionAction, outgoing: outgoing, task: task)
       if verifiedStep, !needsOutcomeDecision, let teamOutput = task.teamResultRichOutput {
         richOutput = AgentTeamArtifactOutput.appendingArtifacts(teamOutput, to: reply, richOutput: richOutput)
       }
-      _ = store.appendIncoming(
+      let nativeIncoming = store.appendIncoming(
         needsOutcomeDecision ? task.verification : reply,
         from: outgoing.contactId,
         remoteMessageId: outgoing.turnId,
@@ -15141,6 +15142,11 @@ final class MessageCoordinator: ObservableObject {
         turnId: outgoing.turnId,
         richOutputJson: richOutput
       )
+      if executionAction.kind == .callConnector, !richOutput.isBlank,
+         store.persistedMessage(id: nativeIncoming.id, contactId: nativeIncoming.contactId) == nativeIncoming {
+        hydrateBlobArtifactPresentation(message: nativeIncoming, contactId: result.metadata["contact_id"] ?? outgoing.contactId,
+          sourceMessageId: result.metadata["source_message_id"] ?? "")
+      }
     }
     if shouldReviewOutcome {
       let taskId = task.taskId
@@ -15937,9 +15943,18 @@ final class MessageCoordinator: ObservableObject {
 
   private func localNativeRichOutput(
     result: AgentActionResult,
-    responseText: String
+    responseText: String,
+    action: AgentAction,
+    outgoing: ChatMessage,
+    task: AgentTaskRecord
   ) -> String {
     guard result.success else { return "" }
+    if action.kind == .callConnector {
+      let record = try? managedDesktopReplyLedger.recoveryRecord(owner: result.metadata["control_plane_run_id"] ?? "")
+      guard let rich = AgentNativeConnectorRichReplyPolicy.validated(result: result, action: action, outgoing: outgoing,
+        task: task, profile: store.profile.identityFingerprint, record: record) else { return "" }
+      return richContentMaterializer.materialize(rich)
+    }
     let toolId = result.metadata["native_tool_id"] ?? ""
     if AgentIOSVisibleCaptureNativeToolCatalog.toolIds.contains(toolId) {
       return visibleCaptureRichOutput(
@@ -19695,6 +19710,7 @@ final class MessageCoordinator: ObservableObject {
       })
         .filter { !$0.isEmpty }
     )
+    let presentationOwner = store.profile.identityFingerprint
     Task { @MainActor [weak self] in
       guard let self else { return }
       let presentations = await blobArtifactReceiver.terminalPresentations(
@@ -19702,6 +19718,7 @@ final class MessageCoordinator: ObservableObject {
         sourceMessageId: sourceMessageId,
         transferIds: transferIds
       )
+      guard store.profile.identityFingerprint == presentationOwner else { return }
       for presentation in presentations {
         guard let manifest = try? JSONSerialization.jsonObject(
           with: presentation.manifestData
@@ -20238,6 +20255,14 @@ final class MessageCoordinator: ObservableObject {
     let turn = manifest.string("turn_id")
     guard mayRecoverSavedDesktopSource(conversation: conversation, turn: turn, sourceID: source) else { return false }
     do {
+      if UUID(uuidString: source) == nil {
+        guard contact.trustState == .verified,
+              let generation = try? MqttRouteProtocol.integer(manifest, "execution_generation"),
+              let numeric = Int64(source),
+              let record = try managedDesktopReplyLedger.recoveryRecord(matching: AgentConnectorResponse(sourceMessageId: numeric,
+                contactId: contact.id, conversationId: conversation, turnId: turn, taskId: manifest.string("task_id"),
+                executionGeneration: generation)), AgentManagedArtifactScopePolicy.authorizes(manifest, record: record) else { return false }
+      }
       if try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source, conversation: conversation,
         turn: turn, contact: contact.id) != nil {
         let projection = MqttPeerChatProjection(store: store, localFingerprint: signalEngine.identity.fingerprint)
@@ -20380,12 +20405,11 @@ final class MessageCoordinator: ObservableObject {
     ])
     guard let update else { return }
     for contactId in candidates {
-      let match = store.messages(for: contactId).reversed().first { message in
+      let messages = store.messages(for: contactId)
+      let match = update.peerChat ? messages.reversed().first { message in
         message.remoteMessageId == sourceMessageId || message.turnId == turnId ||
-          AgentRichContentCodec.decode(message.richOutputJson).contains {
-            $0.metadata["transfer_id"] == transferId
-          }
-      }
+          AgentRichContentCodec.decode(message.richOutputJson).contains { $0.metadata["transfer_id"] == transferId }
+      } : GalaxySSIPeerAttachmentTransferProgress.agentArtifactMessage(update, messages: messages)
       guard let match else { continue }
       let richOutput = GalaxySSIPeerAttachmentTransferProgress.applying(
         update,
