@@ -2,7 +2,7 @@
   "androidPR": 4584,
   "androidHead": "51185d5a1ab8f9793b25944e03ad1f878548fe84",
   "androidBase": "8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b",
-  "scope": "Partial: scoped native discovery/inspection, progressive planning catalog and authorized bounded interactive Desktop packet hedges are wired. Supervised ephemeral answer preview remains incomplete. No native acceptance.",
+  "scope": "Source integration: scoped native discovery/inspection, progressive planning catalog, authorized bounded interactive Desktop packet hedges and invocation-bound ephemeral supervised answer previews. Native compilation/runtime acceptance unverified; wider backlog incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -12,7 +12,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentConnectorResponseBus.kt",
       "sha256": "fe53bef0fcec1d5d685f6e2e8b463bcb096bba59091c9c510fc8f7b2aa5dc6ee",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "iOS consumes marked preview events only in the current verified paired-phone planning invocation; strictly scoped, memory-only presentation, no final-result mutation. Desktop progress-credit allocation remains producer-owned."
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentPhoneInteractionPrompt.kt",
@@ -47,7 +47,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityConnectorResponses.kt",
       "sha256": "a07bca309259b43bf1409235f68d5914ec9226ee5461892a0c3c91d79f546cac",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "Adapted to exact outgoing-turn preview presentation and lifecycle clearing, intercepted before normal durable progress/transcript paths. Eight authored-only Swift fixtures; no native acceptance."
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MqttDeliveryDispatch.kt",
@@ -72,27 +72,27 @@
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/agent_answer_preview.py",
       "sha256": "9e96b88d905746c80f3838edb2f34111cd27b662136f8291055b0195ba41b262",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "Desktop-only prose extraction; iOS consumes its explicit supervised_answer_preview_v1 output with strict scope, visibility, control-fragment and sequence validation. No Desktop edits."
     },
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/mqtt_bridge.py",
       "sha256": "776b8d2d6721a1646eacb8374e3fae8cb645825afb4726b05c29ab7119ac6ccf",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "Desktop producer unchanged; iOS journal and legacy Signal paths consume marked previews without final-result mutation. Interactive request copies use existing authenticated transport and receipt kernels."
     },
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/task_progress_window.py",
       "sha256": "b728a19d0e5d735b9042f0bad08e451118f5fc55f9de7e508693eb1596b7f653",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "Desktop-only preview progress-credit reservation and diagnostic stripping; iOS retains existing receipt pipeline and validates incoming marked prose. No Desktop edits."
     },
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/test_agent_answer_preview.py",
       "sha256": "5489a2a483326c49bb7d4573dce457e1969438b6eb3c49c037c76ed7cd44428d",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "Desktop extraction fixtures remain producer-owned. iOS adds eight source-only fixture methods for strict preview scope, payloads, sequence and authenticated projection isolation; not executed."
     },
     {
       "path": "apps/desktop/core/galaxyssi-link/backend/test_mqtt_task_turn_routing.py",
       "sha256": "5b2dea366934dc4c285e760255613d90240d031d9327c1ca002fba986ed31c14",
-      "disposition": "Inspected pinned reference; interactive hedge and/or stream transport integration still pending in this iOS PR."
+      "disposition": "Desktop routing fixtures remain unchanged. iOS adds six authored-only scheduling/receipt fixtures and a preview projection fixture without altering wire identities or final-result schemas."
     },
     {
       "path": "apps/desktop/package-lock.json",
@@ -107,7 +107,7 @@
     {
       "path": "docs/protocol/GalaxySSI-Link-Protocol.md",
       "sha256": "9c8cc8e815a6e5f1d3a63c6faa58a97cd957175931aabec2ff9081df0e6adea5",
-      "disposition": "Inspected pinned reference; supervised answer preview and progress-credit behavior still pending or Desktop-only; not claimed ported."
+      "disposition": "Consumes the documented preview format with exact active invocation identity and generation; no inferred completion, diagnostics display or new wire schema. Runtime interoperability remains unverified."
     },
     {
       "path": "docs/protocol/MQTT_MULTIPATH.md",

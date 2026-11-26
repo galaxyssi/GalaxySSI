@@ -1,7 +1,8 @@
 // Source contracts only; no native timing, multipath, receipt, restart or capacity acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '3b86319460c7bdc9ea73f037c8d6817262f458de';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-supervised-answer-preview-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const cache = new Map();
 function old(file) { if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n')); return cache.get(file); }
@@ -10,6 +11,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
+  source = require('./check-supervised-answer-preview-scope.cjs').retained(file, source);
   if (file.endsWith('check-progressive-tool-catalog-scope.cjs')) return source
     .replace("const read = file => require('./check-interactive-request-hedge-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
