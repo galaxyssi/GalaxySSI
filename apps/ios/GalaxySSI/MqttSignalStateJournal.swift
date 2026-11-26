@@ -182,8 +182,10 @@ final class MqttSignalStateJournal {
             saved.key == item.key, saved.payload == item.payload,
             let payload = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
             payload.string("type") == "input_attachment_receipt", let source = transfer.scope.clientMessageId,
-            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID,
-            transfer.matchesStoredReceipt(payload)
+            source == bodyID || MqttAttachmentBodyIdentity.bodyID(source: source, taskID: transfer.scope.taskId) == bodyID,
+            transfer.matchesStoredReceipt(payload),
+            let body = try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?.deferredRequest,
+            try MqttAttachmentBodyIdentity.matches(body, transfer: transfer, bodyID: bodyID)
       else { throw MqttRouteError.invalidPayload }
       if try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?
         .deferredRequest?.blobAttachmentDependencies?.contains(transfer.transferId) == true {
@@ -206,9 +208,11 @@ final class MqttSignalStateJournal {
             var proof = try JSONSerialization.jsonObject(with: saved.payload) as? [String: Any],
             proof.string("type") == "input_attachment_receipt", proof.string("status") == "failed",
             let source = transfer.scope.clientMessageId,
-            source == bodyID || UUID(uuidString: source)?.uuidString == bodyID else { throw MqttRouteError.invalidPayload }
+            source == bodyID || MqttAttachmentBodyIdentity.bodyID(source: source, taskID: transfer.scope.taskId) == bodyID else { throw MqttRouteError.invalidPayload }
       proof["status"] = "stored"
-      guard transfer.matchesStoredReceipt(proof), AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: proof)
+      guard transfer.matchesStoredReceipt(proof), AgentBlobProtocol.receiptMatches(attachment: transfer, receipt: proof),
+            let body = try outbox.entry(identity: item.identity, messageID: bodyID, transaction: token)?.deferredRequest,
+            try MqttAttachmentBodyIdentity.matches(body, transfer: transfer, bodyID: bodyID)
       else { throw MqttRouteError.invalidPayload }
       try outbox.discardDeferredBlobBody(identity: item.identity, messageID: bodyID,
         transferID: transfer.transferId, transaction: token)

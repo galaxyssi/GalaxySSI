@@ -7,6 +7,7 @@ struct MqttDesktopConnectorProjection {
     var team: AgentTeamReplyOwner? = nil
     var teamID: String? = nil
     var maySend = true
+    var managedOwnerRunID: String? = nil
 
     var projectsAttachmentToTranscript: Bool { team?.deliveryMode != .observe }
 
@@ -34,6 +35,9 @@ struct MqttDesktopConnectorProjection {
   var recordTeamAttachmentFailure: ((AgentTeamReplyOwner) throws -> Void)? = nil
   var recordTeamProgress: (([String: Any], AgentTeamReplyOwner) throws -> Bool)? = nil
   var authorizePrivateHealthSource: ((AgentTaskIdentity, String, Int64, MqttPeerChatProjection.Destination) -> Bool)? = nil
+  var resolveManagedAttachmentOwner: (([String: Any], GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
+  var recordManagedAttachmentFailure: (([String: Any], AgentPreparedOutboundAttachment) throws -> Void)? = nil
+  var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -105,8 +109,13 @@ struct MqttDesktopConnectorProjection {
         throw MqttRouteError.identityChanged
       }
       if !attachments.isEmpty, uuid != sourceID { throw MqttRouteError.invalidPayload }
-    } else if !attachments.isEmpty || payload["agent_team_message"] as? Bool == true || (Int64(source) ?? 0) <= 0 {
-      throw MqttRouteError.invalidPayload
+    } else {
+      guard payload["agent_team_message"] as? Bool != true, (Int64(source) ?? 0) > 0 else { throw MqttRouteError.invalidPayload }
+      if !attachments.isEmpty {
+        guard MqttAttachmentBodyIdentity.bodyID(source: source, taskID: payload.string("task_id")) == uuid.uuidString,
+              let owner = try managedAttachmentOwner(payload, contact: contact, target: target), owner.maySend,
+              ownerContactID == nil || owner.message.contactId == ownerContactID else { throw MqttRouteError.identityChanged }
+      }
     }
     application["message_id"] = uuid.uuidString
     let identity = try MqttBusinessIdentity(target.peer.binding)
@@ -169,13 +178,44 @@ struct MqttDesktopConnectorProjection {
                        target: MqttPeerChatProjection.Destination) throws -> TaskOwner? {
     let payload = try body.applicationPayload()
     let contact = try contact(payload, target: target)
-    guard body.contactID == contact.id, let id = UUID(uuidString: body.sourceMessageID), body.messageID == id.uuidString,
+    guard body.contactID == contact.id, try MqttAttachmentBodyIdentity.matches(body, bodyID: body.messageID),
           matchesAttachment(attachment, payload: payload, target: target, contactID: contact.id, source: body.sourceMessageID)
     else { throw MqttRouteError.identityChanged }
+    guard let id = UUID(uuidString: body.sourceMessageID) else {
+      return try managedAttachmentOwner(payload, contact: contact, target: target)
+    }
     guard let owner = try taskOwner(source: body.sourceMessageID, id: id, contact: contact, target: target,
       requiresTeam: payload["agent_team_message"] as? Bool == true),
           owner.matches(payload) else { return nil }
     return owner
+  }
+
+  private func managedAttachmentOwner(_ payload: [String: Any], contact: GalaxySSIContact,
+                                      target: MqttPeerChatProjection.Destination) throws -> TaskOwner? {
+    let source = payload.string("source_message_id")
+    guard let identity = identities.identity(contactId: contact.id, sourceMessageId: source), identity.isComplete,
+          identity.clientRouteId == target.routeId, payload.string("conversation_id") == identity.conversationId,
+          payload.string("turn_id") == identity.turnId, payload.string("task_id") == identity.taskId,
+          MqttAttachmentBodyIdentity.bodyID(source: source, taskID: identity.taskId) == payload.string("message_id"),
+          let owner = try resolveManagedAttachmentOwner?(payload, contact, identity, target), owner.managedOwnerRunID != nil,
+          owner.matches(payload) else { return nil }
+    return owner
+  }
+
+  func managedAttachmentSendIsCurrent(_ request: MqttSignalSendRequest, target: MqttPeerChatProjection.Destination) throws -> Bool {
+    let payload = try request.applicationPayload()
+    let contact = try contact(payload, target: target)
+    return try MqttAttachmentBodyIdentity.matches(request, bodyID: request.messageID) &&
+      managedAttachmentOwner(payload, contact: contact, target: target)?.maySend == true
+  }
+
+  func isCurrentManagedAttachmentSource(contactID: String, source: String, target: MqttPeerChatProjection.Destination) -> Bool {
+    guard target.desktop, let contact = store.contact(id: contactID), contact.isCommunicable, contact.trustState == .verified,
+          contact.desktopId == target.peer.remoteSignalName, contact.deliveryMode.isGalaxySSILinkFamily,
+          let identity = identities.identity(contactId: contactID, sourceMessageId: source), identity.isComplete,
+          identity.clientRouteId == target.routeId,
+          MqttAttachmentBodyIdentity.bodyID(source: source, taskID: identity.taskId) != nil else { return false }
+    return managedAttachmentSourceIsCurrent?(source, contact, identity, target) == true
   }
 
   func isCurrentSendOwner(contactID: String, source: String, target: MqttPeerChatProjection.Destination) -> Bool {

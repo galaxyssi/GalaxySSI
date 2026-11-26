@@ -114,6 +114,15 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Raw paired connector attachment follow-up
+
+See `ANDROID_3119_MANAGED_RAW_ATTACHMENTS.md`: native paired requests now save
+their exact raw attachment intent and reuse journal/Blob/chunk/deferred-body
+paths with numeric-source receipt binding. Known file-delivery failures retain
+scoped evidence and are not provider outages. Earlier text-only restrictions in
+this historical port log describe their original baselines, not this follow-up.
+Native/transport/fault/device acceptance and the broader parity work remain open.
+
 ### Owned task-status observation follow-up
 
 See `ANDROID_3119_OWNED_STATUS_OBSERVATION.md`: authenticated Desktop recovery
