@@ -294,7 +294,13 @@ struct AgentRichBlock: Codable, Equatable, Identifiable {
       return "data:\(dataB64.hashValue):\(artifactName)"
     }
     if !uri.isEmpty {
-      return "uri:\(uri.replacingOccurrences(of: "\\", with: "/").trimmingCharacters(in: .whitespacesAndNewlines).lowercased())"
+      let rawURI = uri.replacingOccurrences(of: "\\", with: "/").trimmingCharacters(in: .whitespacesAndNewlines)
+      if var components = URLComponents(string: rawURI), let scheme = components.scheme {
+        components.scheme = scheme.lowercased()
+        if let host = components.host { components.host = host.lowercased() }
+        return "uri:\(components.string ?? rawURI)"
+      }
+      return "uri:\(rawURI)"
     }
     if !fallbackText.isEmpty || !title.isEmpty {
       return "name:\(fallbackText.lowercased()):\(title.lowercased())"

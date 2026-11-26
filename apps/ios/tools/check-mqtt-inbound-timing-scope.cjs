@@ -2,10 +2,11 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '2d6678d8aed5cd0d9bf9afff051efaca00c9c931';
 const app = 'apps/ios/GalaxySSI/', fixture = 'apps/ios/GalaxySSITests/URLSessionCloudModelStreamClientTests.swift';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-ordered-reply-images-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(f, s) {
+  s = require('./check-ordered-reply-images-scope.cjs').retained(f, s);
   if (f === app + 'MqttBusinessTransportRuntime.swift' && s.includes('enum MqttInboundDebugTiming {')) {
     s = s.slice(0, s.indexOf('\n// Stages are a fixed allowlist.'));
     return s.replace('import Foundation\nimport os\n\nprivate struct MqttTimedIngress {\n  let ingress: MqttAuthenticatedIngress\n  let queued = MqttInboundDebugTiming.start(.queue)\n}\n', 'import Foundation\n')

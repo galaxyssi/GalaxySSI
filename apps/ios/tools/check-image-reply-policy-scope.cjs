@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../..');
 const base = '4adcd727ffd5d3a62301ce5c8132f1432755abb0';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-ordered-reply-images-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}).replace(/\r\n/g, '\n');
 const file = 'apps/ios/GalaxySSI/AgentRichContentMaterializer.swift';
 const policy = read(file);

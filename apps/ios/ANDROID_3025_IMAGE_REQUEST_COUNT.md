@@ -36,9 +36,10 @@ guidance, source verification, permission/consent and disclosure paths remain.
 - Desktop ACK-credit/coalescing and task priority: backend-only changes are not
   reimplemented in iOS. No encrypted packet deletion, ACK relaxation or concurrency
   reduction is introduced. End-to-end credit behavior is not accepted here.
-- Desktop ordered image parsing/captions: current iOS renderer is retained, not
-  claimed fully equivalent based on this parameter correction. Ordered creation,
-  linked-image wrapper and task-local caption behavior require separate comparison.
+- Desktop ordered image parsing/captions: the later #4610 increment fixes iOS
+  linked-wrapper parsing and case-sensitive artifact identity; see
+  ANDROID_3025_ORDERED_IMAGE_REPLIES.md. Creation/transfer ordering and validated
+  task-local caption equivalence remain unverified, not completed by this fix.
 
 This does not close all #3025 latency/media work or the Android-to-iOS backlog.
 Android/Desktop code and versions remain unchanged. iOS 15 minimum is unchanged.

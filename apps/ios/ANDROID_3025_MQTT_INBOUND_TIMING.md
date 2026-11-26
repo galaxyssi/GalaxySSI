@@ -45,6 +45,7 @@ acceptance is claimed. Source guards compare retained production code against
 the incremental parent and confirm DEBUG containment and existing ingress bounds.
 They do not prove runtime log redaction or measured latency.
 
-No CI watching, IPA or raw/private evidence is included. Full ordered-image and
-task-local-caption equivalence remains a separate #3025 comparison; all Android
+No CI watching, IPA or raw/private evidence is included. A later increment fixes
+linked-image wrapper and URI identity issues in ANDROID_3025_ORDERED_IMAGE_REPLIES.md;
+full ordered-image/task-local-caption equivalence remains unverified. All Android
 and Desktop runtime sources remain unchanged.
