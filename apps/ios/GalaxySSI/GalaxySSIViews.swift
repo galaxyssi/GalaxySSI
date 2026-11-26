@@ -138,6 +138,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     GalaxySSIContactReminderNotification.register()
     GalaxySSIHealthCareModelAttentionBackground.register()
     GalaxySSIHealthAppointmentBackground.register()
+    AgentKnowledgeBackgroundScheduler.register()
     return true
   }
 
@@ -296,6 +297,7 @@ final class GalaxySSIStartupRuntime {
     self.voiceAgentRunRecovery = .shared
     self.workflowTriggerCoordinator = AgentWorkflowTriggerCoordinator(coordinator: coordinator)
     self.backgroundScheduler = AgentProactiveBackgroundScheduler(store: store, coordinator: coordinator)
+    AgentKnowledgeBackgroundScheduler.bind(database: store.agentKnowledgeDatabase)
     galaxySSIStartupLogger.notice("GalaxySSI runtime restoration finished")
   }
 }

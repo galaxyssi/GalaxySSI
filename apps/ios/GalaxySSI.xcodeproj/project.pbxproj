@@ -7,6 +7,8 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    F30050000000000000000001 /* GalaxySSIMemory in Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; };
+    F30050000000000000000002 /* GalaxySSIMemory in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
     C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */; };
     C42790000000000000000001 /* AgentConversationScheduleProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */; };
     C42790000000000000000003 /* ScheduleProvenance.strings in Resources */ = {isa = PBXBuildFile; fileRef = C42790000000000000000004 /* ScheduleProvenance.strings */; };
@@ -1866,9 +1868,18 @@
     A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000536 /* AgentKnowledgeModels.swift */; };
     A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000880 /* AgentKnowledgeDatabase.swift */; };
     A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */; };
+    F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */; };
+    F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */; };
+    F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */; };
+    F30050000000000000000018 /* AgentKnowledgeBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */; };
+    F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */; };
     A10000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */; };
     A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */; };
     A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */; };
+    F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */; };
+    F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */; };
+    F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */; };
+    F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */; };
     A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
     A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
     E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */; };
@@ -2261,6 +2272,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    F30050000000000000000003 /* GalaxySSIMemory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GalaxySSIMemory.framework; sourceTree = BUILT_PRODUCTS_DIR; };
     C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSConnectorDispatch.swift; sourceTree = "<group>"; };
     C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationScheduleProvenance.swift; sourceTree = "<group>"; };
     C42790000000000000000005 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/ScheduleProvenance.strings; sourceTree = "<group>"; };
@@ -4095,9 +4107,18 @@
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000880 /* AgentKnowledgeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabase.swift; sourceTree = "<group>"; };
     A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabaseTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativePublicationTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndexTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeAsyncRAGTests.swift; sourceTree = "<group>"; };
+    F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeBackgroundScheduler.swift; sourceTree = "<group>"; };
+    F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeBackgroundTests.swift; sourceTree = "<group>"; };
     A20000000000000000000882 /* GalaxySSIEmbeddingRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIEmbeddingRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorModels.swift; sourceTree = "<group>"; };
+    F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeWire.swift; sourceTree = "<group>"; };
+    F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeBridge.swift; sourceTree = "<group>"; };
+    F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeFiles.swift; sourceTree = "<group>"; };
+    F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndex.swift; sourceTree = "<group>"; };
     A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
     A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
     E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSemanticModel.swift; sourceTree = "<group>"; };
@@ -4551,9 +4572,21 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E50000000000000000002401 /* onnxruntime in Frameworks */, E50000000000000000002402 /* USearch in Frameworks */, E50000000000000000003007 /* SwiftSoup in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
+    A30000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (F30050000000000000000001 /* GalaxySSIMemory in Frameworks */, E50000000000000000002401 /* onnxruntime in Frameworks */, E50000000000000000002402 /* USearch in Frameworks */, E50000000000000000003007 /* SwiftSoup in Frameworks */,); runOnlyForDeploymentPostprocessing = 0; };
     A30000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+    F30050000000000000000004 /* Embed native memory framework */ = {
+      isa = PBXCopyFilesBuildPhase;
+      buildActionMask = 2147483647;
+      dstPath = "";
+      dstSubfolderSpec = 10;
+      files = (F30050000000000000000002 /* GalaxySSIMemory in Embed Frameworks */,);
+      name = "Embed native memory framework";
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
     A40000000000000000000001 = {
@@ -5645,6 +5678,11 @@
         A20000000000000000000536 /* AgentKnowledgeModels.swift */,
         A20000000000000000000880 /* AgentKnowledgeDatabase.swift */,
         A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */,
+        F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */,
+        F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */,
+        F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */,
+        F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */,
+        F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */,
         A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
         E29320000000000000000011 /* AgentKnowledgeSemanticModel.swift */,
         A20000000000000000000667 /* AgentOfficeDocumentExtractor.swift */,
@@ -6539,6 +6577,10 @@
         A20000000000000000000430 /* AgentInlineMarkdownTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
+        F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */,
+        F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */,
+        F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */,
+        F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
         E29320000000000000000013 /* AgentKnowledgeSemanticModelTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
@@ -6895,9 +6937,11 @@
       buildPhases = (
         A60000000000000000000003 /* Build iOS native llama runtime */,
         A60000000000000000000004 /* Build iOS native Whisper runtime */,
+        F30050000000000000000005 /* Build native memory framework */,
         A60000000000000000000001 /* Sources */,
         A30000000000000000000001 /* Frameworks */,
         A70000000000000000000001 /* Resources */,
+        F30050000000000000000004 /* Embed native memory framework */,
       );
       buildRules = ();
       dependencies = ();
@@ -6978,6 +7022,18 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+    F30050000000000000000005 /* Build native memory framework */ = {
+      isa = PBXShellScriptBuildPhase;
+      alwaysOutOfDate = 1;
+      buildActionMask = 2147483647;
+      files = ();
+      inputPaths = ("$(SRCROOT)/tools/build-knowledge-native.cjs", "$(SRCROOT)/memory-native/Cargo.lock",);
+      outputPaths = ("$(BUILT_PRODUCTS_DIR)/GalaxySSIMemory.framework/GalaxySSIMemory", "$(BUILT_PRODUCTS_DIR)/GalaxySSIMemory.framework/Headers/GalaxySSIMemory.h", "$(BUILT_PRODUCTS_DIR)/GalaxySSIMemory.framework/Modules/module.modulemap", "$(BUILT_PRODUCTS_DIR)/GalaxySSIMemory.framework/Info.plist",);
+      name = "Build native memory framework";
+      runOnlyForDeploymentPostprocessing = 0;
+      shellPath = /bin/bash;
+      shellScript = "node \"${SRCROOT}/tools/build-knowledge-native.cjs\"\n";
+    };
     A60000000000000000000003 /* Build iOS native llama runtime */ = {
       isa = PBXShellScriptBuildPhase;
       buildActionMask = 2147483647;
@@ -7909,6 +7965,11 @@
         A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */,
         A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */,
         A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */,
+        F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */,
+        F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */,
+        F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */,
+        F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */,
+        F30050000000000000000018 /* AgentKnowledgeBackgroundScheduler.swift in Sources */,
         A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
         E29320000000000000000001 /* AgentKnowledgeSemanticModel.swift in Sources */,
         A10000000000000000000667 /* AgentOfficeDocumentExtractor.swift in Sources */,
@@ -8916,6 +8977,10 @@
         A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
+        F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */,
+        F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */,
+        F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */,
+        F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,
         E29320000000000000000003 /* AgentKnowledgeSemanticModelTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
@@ -9413,7 +9478,7 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -9445,6 +9510,8 @@
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
+        ENABLE_USER_SCRIPT_SANDBOXING = NO;
+        FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(BUILT_PRODUCTS_DIR)",);
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",
@@ -9479,7 +9546,7 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh";
+        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -9511,6 +9578,8 @@
         GALAXYSSI_REALTIME_ASR_CREDENTIAL_BROKER_URL = "";
         SWIFT_EMIT_LOC_STRINGS = YES;
         SWIFT_ACTIVE_COMPILATION_CONDITIONS = "GALAXYSSI_NATIVE_LLAMA GALAXYSSI_NATIVE_WHISPER $(GALAXYSSI_HEALTHKIT_CONDITION)";
+        ENABLE_USER_SCRIPT_SANDBOXING = NO;
+        FRAMEWORK_SEARCH_PATHS = ("$(inherited)", "$(BUILT_PRODUCTS_DIR)",);
         INFOPLIST_KEY_NSHealthShareUsageDescription = "Preview and import only the Apple Health measurements you select into your local health archive.";
         LIBRARY_SEARCH_PATHS = (
           "$(inherited)",

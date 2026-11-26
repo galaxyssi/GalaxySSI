@@ -1,0 +1,4 @@
+framework module GalaxySSIMemory {
+  umbrella header "GalaxySSIMemory.h"
+  export *
+}
