@@ -8,6 +8,8 @@
     <color name="text_primary">#F2F4F7</color>
     <color name="attention_unread_title">#CCB5EC</color>
     <color name="text_secondary">#A5ABB6</color>
+    <color name="agent_model_picker_accent">#82DEBE</color>
+    <color name="agent_model_picker_muted">#B2C1BB</color>
     <color name="agent_session_title">#CCD0D7</color>
     <color name="accent_green">#19D36B</color>
     <color name="sent_bubble">#2E8B57</color>
