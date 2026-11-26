@@ -60,14 +60,14 @@ final class AgentEvalOpsTests: XCTestCase {
     }
   }
 
-  func testKnowledgeGapResearchCarriesAllSourcesAndUsesCurrentScope() throws {
-    try withKnowledgeGapStores { governance, research, _ in
+  func testKnowledgeGapResearchCarriesAllSourcesAndUsesCurrentScope() async throws {
+    try await withKnowledgeGapStoresAsync { governance, research, _ in
       var gap = knowledgeGap(); gap.sourceConversationIds = ["a", "b"]
       _ = governance.upsertGap(gap)
       let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
-      bridge.install { false }; bridge.observe(gap)
+      bridge.install { false }; await bridge.observe(gap).value
       XCTAssertTrue(research.state().tasks.isEmpty)
-      bridge.install { true }; bridge.observe(gap); bridge.observe(gap)
+      bridge.install { true }; await bridge.observe(gap).value; await bridge.observe(gap).value
       let state = research.state()
       XCTAssertEqual(state.tasks.count, 1)
       let task = try XCTUnwrap(state.tasks.first)
@@ -87,14 +87,14 @@ final class AgentEvalOpsTests: XCTestCase {
     }
   }
 
-  func testKnowledgeGapResearchDoesNotAuthorizeMissingEmptyOrMalformedSources() throws {
-    try withKnowledgeGapStores { governance, research, _ in
+  func testKnowledgeGapResearchDoesNotAuthorizeMissingEmptyOrMalformedSources() async throws {
+    try await withKnowledgeGapStoresAsync { governance, research, _ in
       let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
       bridge.install { true }
       let cases: [Set<String>?] = [nil, [], [""], [" a "]]
       for sources in cases {
         var gap = knowledgeGap(); gap.sourceConversationIds = sources
-        _ = governance.upsertGap(gap); bridge.observe(gap)
+        _ = governance.upsertGap(gap); await bridge.observe(gap).value
       }
       XCTAssertTrue(research.state().tasks.isEmpty)
       XCTAssertTrue(governance.decisions().isEmpty)
@@ -102,8 +102,8 @@ final class AgentEvalOpsTests: XCTestCase {
     }
   }
 
-  func testKnowledgeGapFailedResearchSaveDoesNotAdvanceGovernance() throws {
-    try withKnowledgeGapStores { governance, _, file in
+  func testKnowledgeGapFailedResearchSaveDoesNotAdvanceGovernance() async throws {
+    try await withKnowledgeGapStoresAsync { governance, _, file in
       try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
       let blocker = file.deletingLastPathComponent().appendingPathComponent("blocker")
       try Data("file instead of directory".utf8).write(to: blocker)
@@ -111,21 +111,21 @@ final class AgentEvalOpsTests: XCTestCase {
       let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
       bridge.install { true }
       var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
-      _ = governance.upsertGap(gap); bridge.observe(gap)
+      _ = governance.upsertGap(gap); await bridge.observe(gap).value
       XCTAssertFalse(research.lastErrorDescription.isEmpty)
       XCTAssertEqual(governance.gaps().first?.status, .open)
       XCTAssertTrue(governance.decisions().isEmpty)
     }
   }
 
-  func testKnowledgeGapUnreadableResearchStateIsNotOverwritten() throws {
-    try withKnowledgeGapStores { governance, research, file in
+  func testKnowledgeGapUnreadableResearchStateIsNotOverwritten() async throws {
+    try await withKnowledgeGapStoresAsync { governance, research, file in
       try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
       let bytes = Data("unreadable state".utf8); try bytes.write(to: file)
       let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
       bridge.install { true }
       var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
-      _ = governance.upsertGap(gap); bridge.observe(gap)
+      _ = governance.upsertGap(gap); await bridge.observe(gap).value
       XCTAssertEqual(try Data(contentsOf: file), bytes)
       XCTAssertEqual(governance.gaps().first?.status, .open)
       XCTAssertTrue(governance.decisions().isEmpty)
@@ -145,6 +145,44 @@ final class AgentEvalOpsTests: XCTestCase {
     }
   }
 
+  func testKnowledgeGapPolicyRunsOnMainActorAfterPreviousObservationCompletes() async throws {
+    try await withKnowledgeGapStoresAsync { governance, research, _ in
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      let probe = KnowledgeGapPolicyProbe()
+      probe.research = research
+      bridge.install {
+        XCTAssertTrue(Thread.isMainThread)
+        XCTAssertEqual(probe.research?.state().tasks.count ?? -1, probe.reads)
+        probe.reads += 1
+        return true
+      }
+      var first = knowledgeGap(); first.id = "first"; first.sourceConversationIds = ["a"]
+      var second = first; second.id = "second"
+      _ = governance.upsertGap(first); _ = governance.upsertGap(second)
+      let firstTask = bridge.observe(first)
+      let secondTask = bridge.observe(second)
+      await secondTask.value; await firstTask.value
+      XCTAssertEqual(probe.reads, 2)
+      XCTAssertEqual(research.state().tasks.count, 2)
+    }
+  }
+
+  func testKnowledgeGapPolicyIsReadWhenQueuedWorkExecutesNotWhenEnqueued() async throws {
+    try await withKnowledgeGapStoresAsync { governance, research, _ in
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      let probe = KnowledgeGapPolicyProbe()
+      bridge.install { probe.reads += 1; return probe.enabled }
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      _ = governance.upsertGap(gap)
+      let work = bridge.observe(gap)
+      probe.enabled = false
+      await work.value
+      XCTAssertEqual(probe.reads, 1)
+      XCTAssertTrue(research.state().tasks.isEmpty)
+      XCTAssertEqual(governance.gaps().first?.status, .open)
+    }
+  }
+
   private func withKnowledgeGapStores(_ body: (AgentCognitiveGovernanceStore, GalaxySSIGlobalResearchRuntimeStore, URL) throws -> Void) throws {
     let suite = "gap-sources-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
@@ -152,6 +190,15 @@ final class AgentEvalOpsTests: XCTestCase {
     let governance = AgentCognitiveGovernanceStore(defaults: defaults, secrets: InMemorySecretStore())
     let file = directory.appendingPathComponent("state.json")
     try body(governance, GalaxySSIGlobalResearchRuntimeStore(fileURL: file), file)
+  }
+
+  private func withKnowledgeGapStoresAsync(_ body: @MainActor (AgentCognitiveGovernanceStore, GalaxySSIGlobalResearchRuntimeStore, URL) async throws -> Void) async throws {
+    let suite = "gap-sources-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+    let governance = AgentCognitiveGovernanceStore(defaults: defaults, secrets: InMemorySecretStore())
+    let file = directory.appendingPathComponent("state.json")
+    try await body(governance, GalaxySSIGlobalResearchRuntimeStore(fileURL: file), file)
   }
 
   private func knowledgeGap() -> AgentKnowledgeGap {
@@ -822,4 +869,11 @@ final class AgentEvalOpsTests: XCTestCase {
       updatedAtMillis: 1
     )
   }
+}
+
+@MainActor
+private final class KnowledgeGapPolicyProbe {
+  var reads = 0
+  var enabled = true
+  var research: GalaxySSIGlobalResearchRuntimeStore?
 }

@@ -152,11 +152,12 @@ enum AgentKnowledgeGapResearchPolicy {
   }
 }
 
-final class AgentKnowledgeGapResearchBridge {
+final class AgentKnowledgeGapResearchBridge: @unchecked Sendable {
   static let shared = AgentKnowledgeGapResearchBridge()
 
   private let lock = NSRecursiveLock()
-  private var autonomousResearchEnabled: () -> Bool = { false }
+  private var autonomousResearchEnabled: @MainActor @Sendable () -> Bool = { false }
+  private var pendingObservation: (id: UUID, task: Task<Void, Never>)?
   private let researchStore: GalaxySSIGlobalResearchRuntimeStore
   private let governance: AgentCognitiveGovernanceStore
 
@@ -166,17 +167,42 @@ final class AgentKnowledgeGapResearchBridge {
     self.governance = governance
   }
 
-  func install(autonomousResearchEnabled: @escaping () -> Bool) {
+  func install(autonomousResearchEnabled: @escaping @MainActor @Sendable () -> Bool) {
     lock.lock()
     self.autonomousResearchEnabled = autonomousResearchEnabled
     lock.unlock()
   }
 
-  func observe(_ gap: AgentKnowledgeGap) {
-    locked { observeLocked(gap) }
+  @discardableResult
+  func observe(_ gap: AgentKnowledgeGap) -> Task<Void, Never> {
+    locked {
+      let previous = pendingObservation?.task
+      let id = UUID()
+      // Never hold the store lock across the main-actor policy hop.
+      let task = Task.detached(priority: .utility) { [self] in
+        defer { finishObservation(id) }
+        await previous?.value
+        let enabled: Bool
+        if gap.status == .resolved {
+          enabled = false
+        } else {
+          let policy = locked { autonomousResearchEnabled }
+          enabled = await policy()
+        }
+        locked { observeLocked(gap, enabled: enabled) }
+      }
+      pendingObservation = (id, task)
+      return task
+    }
   }
 
-  private func observeLocked(_ gap: AgentKnowledgeGap) {
+  private func finishObservation(_ id: UUID) {
+    locked {
+      if pendingObservation?.id == id { pendingObservation = nil }
+    }
+  }
+
+  private func observeLocked(_ gap: AgentKnowledgeGap, enabled: Bool) {
     if gap.status == .resolved {
       governance.decisions().filter { $0.evidenceRefs.contains("knowledge-gap:\(gap.id)") && $0.outcome == "pending" }
         .forEach {
@@ -193,7 +219,6 @@ final class AgentKnowledgeGapResearchBridge {
     var state = researchStore.state()
     guard researchStore.lastErrorDescription.isEmpty else { return }
     let sourceEventId = "knowledge-gap:\(gap.id)"
-    let enabled = locked { autonomousResearchEnabled() }
     guard AgentKnowledgeGapResearchPolicy.shouldQueue(
       gap: gap,
       autonomousResearchEnabled: enabled,
