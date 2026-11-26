@@ -306,6 +306,16 @@ final class MessageCoordinator: ObservableObject {
     return runtime
   }()
   private lazy var globalRealtimeContextProvider = GlobalRealtimeContextProvider()
+  private var globalRealtimeContextIdentity = ""
+
+  private func scopedGlobalRealtimeContextProvider() -> GlobalRealtimeContextProvider {
+    let identity = store.profile.identityFingerprint
+    if globalRealtimeContextIdentity != identity {
+      globalRealtimeContextProvider.invalidate()
+      globalRealtimeContextIdentity = identity
+    }
+    return globalRealtimeContextProvider
+  }
   private lazy var localConfirmationConsentStore: AgentConfirmationConsentStore =
     SessionScopedAgentConfirmationConsentStore(
       base: UserDefaultsAgentConfirmationConsentStore(
@@ -732,6 +742,7 @@ final class MessageCoordinator: ObservableObject {
     }
     _ = localSkillRuntime.installAvailable(AgentIOSBuiltInSkills.manifests)
     _ = localNativeToolRuntime
+    if store.globalAgentSettings.enabled { scopedGlobalRealtimeContextProvider().prewarm() }
     AgentKnowledgeGapResearchBridge.shared.install { [weak self] in
       guard let settings = self?.store.globalAgentSettings else { return false }
       return settings.enabled && settings.autonomousResearchEnabled
@@ -12634,7 +12645,8 @@ final class MessageCoordinator: ObservableObject {
       store: store,
       query: requestText,
       conversationId: outgoing.conversationId,
-      turnId: outgoing.turnId
+      turnId: outgoing.turnId,
+      realtimeProvider: scopedGlobalRealtimeContextProvider()
     )
     let globalRead = AgentPlanningContextTiming.monotonicMillis()
     let context = AgentConversationContext(
@@ -13167,7 +13179,7 @@ final class MessageCoordinator: ObservableObject {
         ).owns($0)
       },
       globalRealtimeContext: selectedForPhoneTurn ? "" : conversationOverride?.globalContext ??
-        globalRealtimeContextProvider.buildNonBlocking(
+        scopedGlobalRealtimeContextProvider().buildNonBlocking(
           query: requestText,
           currentConversationId: outgoing.conversationId,
           excludedConversationIds: Set(
@@ -17167,7 +17179,8 @@ final class MessageCoordinator: ObservableObject {
         query: text,
         conversationId: conversationId,
         turnId: turnId,
-        runId: taskId
+        runId: taskId,
+        realtimeProvider: scopedGlobalRealtimeContextProvider()
       ),
       trackingPaused: session?.trackingPaused ?? false
     ).applyingGlobalContextDispatchPolicy(

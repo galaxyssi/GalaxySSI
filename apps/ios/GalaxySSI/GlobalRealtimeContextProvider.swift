@@ -18,7 +18,7 @@ final class GlobalRealtimeContextProvider {
   private let refreshQueue: DispatchQueue
   private let lock = NSLock()
   private var cachedSnapshot: Snapshot?
-  private var refreshInProgress = false
+  private var refreshToken: UUID?
 
   init(
     cognitionTasksSource: @escaping () -> [GlobalCognitionTask] = { GlobalAgentDeliberationStore().cognitionTasks() },
@@ -68,11 +68,17 @@ final class GlobalRealtimeContextProvider {
     excludedKeys: Set<String> = [],
     maximumItems: Int = GlobalRealtimeContextPolicy.defaultMaximumItems,
     maximumCharacters: Int = GlobalRealtimeContextPolicy.defaultMaximumCharacters,
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    allowedConversationIds: Set<String>? = nil
   ) -> String {
     let snapshot = cachedSnapshotSnapshot()
-    if snapshot == nil || nowMillis - snapshot!.capturedAtMillis >= Self.snapshotTTLMillis {
-      refreshAsync()
+    let needsRefresh: Bool
+    if let snapshot {
+      let age = nowMillis.subtractingReportingOverflow(snapshot.capturedAtMillis)
+      needsRefresh = age.overflow || age.partialValue < 0 || age.partialValue >= Self.snapshotTTLMillis
+    } else { needsRefresh = true }
+    if needsRefresh {
+      refreshAsync(nowMillis: nowMillis)
     }
     guard let snapshot else { return "" }
     return render(
@@ -83,12 +89,20 @@ final class GlobalRealtimeContextProvider {
       excludedKeys: excludedKeys,
       maximumItems: maximumItems,
       maximumCharacters: maximumCharacters,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      allowedConversationIds: allowedConversationIds
     )
   }
 
   func prewarm(nowMillis: Int64 = GlobalRealtimeClock.nowMillis()) {
-    refreshNow(nowMillis: nowMillis)
+    refreshAsync(nowMillis: nowMillis)
+  }
+
+  func invalidate() {
+    lock.lock()
+    cachedSnapshot = nil
+    refreshToken = nil
+    lock.unlock()
   }
 
   private func render(
@@ -99,7 +113,8 @@ final class GlobalRealtimeContextProvider {
     excludedKeys: Set<String>,
     maximumItems: Int,
     maximumCharacters: Int,
-    nowMillis: Int64
+    nowMillis: Int64,
+    allowedConversationIds: Set<String>? = nil
   ) -> String {
     let items = GlobalRealtimeContextPolicy.project(
       cognitionTasks: snapshot.cognitionTasks,
@@ -111,7 +126,9 @@ final class GlobalRealtimeContextProvider {
       continuitySnapshot: snapshot.continuitySnapshot
     )
     let selected = GlobalRealtimeContextPolicy.select(
-      items: items,
+      items: items.filter { item in
+        allowedConversationIds.map { item.conversationIds.isSubset(of: $0) } ?? true
+      },
       query: query,
       currentConversationId: currentConversationId,
       excludedKeys: excludedKeys,
@@ -127,36 +144,31 @@ final class GlobalRealtimeContextProvider {
     return cachedSnapshot
   }
 
-  private func refreshAsync() {
+  private func refreshAsync(nowMillis: Int64) {
     lock.lock()
-    guard !refreshInProgress else {
+    guard refreshToken == nil else {
       lock.unlock()
       return
     }
-    refreshInProgress = true
+    let token = UUID()
+    refreshToken = token
     lock.unlock()
     refreshQueue.async { [weak self] in
       guard let self else { return }
-      self.finishRefresh(self.loadSnapshot(nowMillis: GlobalRealtimeClock.nowMillis()))
+      self.lock.lock()
+      let current = self.refreshToken == token
+      self.lock.unlock()
+      guard current else { return }
+      self.finishRefresh(self.loadSnapshot(nowMillis: nowMillis), token: token)
     }
   }
 
-  private func refreshNow(nowMillis: Int64) {
+  private func finishRefresh(_ snapshot: Snapshot, token: UUID) {
     lock.lock()
-    guard !refreshInProgress else {
-      lock.unlock()
-      return
-    }
-    refreshInProgress = true
-    lock.unlock()
-    finishRefresh(loadSnapshot(nowMillis: nowMillis))
-  }
-
-  private func finishRefresh(_ snapshot: Snapshot) {
-    lock.lock()
+    defer { lock.unlock() }
+    guard refreshToken == token else { return }
     cachedSnapshot = snapshot
-    refreshInProgress = false
-    lock.unlock()
+    refreshToken = nil
   }
 
   private func loadSnapshot(nowMillis: Int64) -> Snapshot {

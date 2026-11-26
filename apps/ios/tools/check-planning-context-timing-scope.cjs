@@ -10,6 +10,7 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retainedPlanningServices(source) {
+  source = require('./check-context-prewarm-scope.cjs').retainedPrewarmServices(source);
   if (!source.includes('let started = AgentPlanningContextTiming.monotonicMillis()')) return source;
   for (const label of ['started', 'metadataRead', 'historyRead', 'globalRead'])
     source = once(source, '    let ' + label + ' = AgentPlanningContextTiming.monotonicMillis()\n', '');
@@ -37,7 +38,8 @@ function validatePlanningContextTiming() {
   assert(!/Date\(|URLSession|UserDefaults|FileManager|Task\.detached|DispatchQueue/.test(helper));
   for (const name of ['GalaxySSIStore', 'GalaxySSIStoreSessions', 'GalaxySSIGlobalAgentRuntime',
     'AgentConversationModels', 'LanguagePolicySettings', 'AgentModelToolLoop', 'CloudModelToolLoopAgentPlanningProvider', 'GalaxySSIDeviceIdentity'])
-    assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name);
+    assert.equal(name === 'GalaxySSIGlobalAgentRuntime' ? require('./check-context-prewarm-scope.cjs').retainedPrewarmRuntime(read(app + name + '.swift'))
+      : read(app + name + '.swift'), show(base, app + name + '.swift'), name);
   assert(read(app + 'GalaxySSIStore.swift').includes('@Published private(set) var profile: GalaxySSIProfile {'));
   const reference = show('65655f0c79c6ab04121150229a65b089180f82f2', 'apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt');
   assert(reference.includes('val contextReadStartedAt = SystemClock.elapsedRealtime()'));

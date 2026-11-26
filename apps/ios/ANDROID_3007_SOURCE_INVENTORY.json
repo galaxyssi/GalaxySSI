@@ -172,7 +172,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivity.kt",
       "sha256": "dc69378de7b9737df1e75200409c265c0d5878c91329df281106e7a9a4533473",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial platform adaptation: actual iOS planning/voice bridge now reuses a coordinator-retained realtime provider instead of discarding a temporary nonblocking provider on every call. Enabled startup prewarm queues source I/O on the existing separate utility queue, coalesces loads, skips obsolete queued work and fences late publication with refresh tokens. Fingerprint changes invalidate cached snapshots; compiled output rechecks current eligible/non-private/non-paused conversation IDs. Existing mandatory MainActor native catalog/recovery initialization remains; moving native catalog construction off that path and full startup/runtime acceptance are not completed"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
