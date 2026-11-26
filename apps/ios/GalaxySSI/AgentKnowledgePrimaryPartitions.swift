@@ -14,6 +14,7 @@ final class AgentKnowledgePrimaryPartitions {
     var removed: Int
     var complete: Bool
     var deferred: Bool
+    var moved: Int = 0
   }
 
   struct LegacyReclaimPage {
@@ -135,6 +136,7 @@ final class AgentKnowledgePrimaryPartitions {
       "CREATE TABLE IF NOT EXISTS knowledge_primary_migration(id INTEGER PRIMARY KEY CHECK(id=1),after_item_hash TEXT NOT NULL DEFAULT '',complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0,1)))",
       "INSERT OR IGNORE INTO knowledge_primary_migration(id) VALUES(1)"
     ] { try execute(catalog, sql) }
+    try AgentKnowledgePrimaryCompaction.setup(catalog)
     let marker = try prepare(catalog, "SELECT sealed FROM knowledge_primary_namespace WHERE id=1")
     defer { AgentKnowledgeSQLiteStatements.shared.release(marker) }
     let state = sqlite3_step(marker)
@@ -296,11 +298,7 @@ final class AgentKnowledgePrimaryPartitions {
     return try readPayload(itemHash: itemHash, catalog: catalog, checkActive: checkActive)
   }
 
-  private func readPayload(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
-    try checkActive()
-    if let batch = writeBatch, batch.catalog == catalog {
-      guard batch.thread === Thread.current, !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    }
+  private func reference(itemHash: String, catalog: OpaquePointer) throws -> Reference? {
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
     defer { AgentKnowledgeSQLiteStatements.shared.release(lookup) }
@@ -316,6 +314,16 @@ final class AgentKnowledgePrimaryPartitions {
           reference.frames > 0, reference.plainBytes > 0, reference.plainBytes <= Int64(Int.max),
           Int64(reference.frames) == 1 + (reference.plainBytes - 1) / Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes),
           Self.digest(reference.sha256) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return reference
+  }
+
+  private func readPayload(itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws -> Data? {
+    try checkActive()
+    if let batch = writeBatch, batch.catalog == catalog {
+      guard batch.thread === Thread.current, !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    }
+    guard let reference = try reference(itemHash: itemHash, catalog: catalog) else { return nil }
+    let partition = reference.partition
     let pending: OpaquePointer?
     if let batch = writeBatch, batch.catalog == catalog, batch.thread === Thread.current {
       guard !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -338,10 +346,21 @@ final class AgentKnowledgePrimaryPartitions {
 
   private func readFrames(_ database: OpaquePointer, reference: Reference, itemHash: String, partition: String,
                           checkActive: () throws -> Void) throws -> Data {
-    let frames = try prepare(database, "SELECT ordinal,sealed FROM frames WHERE entry_id=? ORDER BY ordinal")
+    var result = Data()
+    try walkFrames(database, reference: reference, itemHash: itemHash, partition: partition, checkActive: checkActive) {
+      _, plain, _ in result.append(plain)
+    }
+    return result
+  }
+
+  // Authenticate and hash bounded frames; consumers need not retain complete bodies.
+  private func walkFrames(_ database: OpaquePointer, reference: Reference, itemHash: String, partition: String,
+                          checkActive: () throws -> Void, consume: (Data, Data, Int) throws -> Void) throws {
+    let frames = try prepare(database, "SELECT ordinal,substr(sealed,1,196609) FROM frames WHERE entry_id=? ORDER BY ordinal")
     defer { AgentKnowledgeSQLiteStatements.shared.release(frames) }
     try bind(reference.entry, index: 1, statement: frames)
-    var result = Data(), ordinal = 0
+    var plainBytes: Int64 = 0, ordinal = 0
+    var hash = SHA256()
     while true {
       try Task.checkCancellation()
       try checkActive()
@@ -354,14 +373,17 @@ final class AgentKnowledgePrimaryPartitions {
       let encoded = try cipher.decrypt(sealed,
         expectedPurpose: framePurpose(itemHash, partition: partition, entry: reference.entry, ordinal: ordinal))
       let plain = try AgentKnowledgePrimaryFrameCodec.decode(encoded)
-      let expected = min(Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes), reference.plainBytes - Int64(result.count))
+      let expected = min(Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes), reference.plainBytes - plainBytes)
       guard Int64(plain.count) == expected else { throw AgentKnowledgeDatabaseError.corruptRecord }
-      result.append(plain)
+      hash.update(data: plain)
+      try consume(encoded, plain, ordinal)
+      plainBytes += Int64(plain.count)
       ordinal += 1
     }
-    guard ordinal == reference.frames, Int64(result.count) == reference.plainBytes,
-          Self.sha256(result) == reference.sha256 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    return result
+    guard ordinal == reference.frames, plainBytes == reference.plainBytes,
+          hash.finalize().map({ String(format: "%02x", $0) }).joined() == reference.sha256 else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
   }
 
   // Independent catalog snapshots pin files until their SQLite transaction has closed.
@@ -396,7 +418,7 @@ final class AgentKnowledgePrimaryPartitions {
       }, checkActive: checkActive)
       let retired = try reclaimExclusively(catalog: catalog, pageSize: pageSize, checkActive: checkActive)
       return ReclaimPage(removed: retired.removed + recovered.orphaned,
-        complete: retired.complete && recovered.complete, deferred: false)
+        complete: retired.complete && recovered.complete, deferred: false, moved: retired.moved)
     } ?? ReclaimPage(removed: 0, complete: false, deferred: true)
   }
 
@@ -477,28 +499,92 @@ final class AgentKnowledgePrimaryPartitions {
     } ?? LegacyReclaimPage(visited: 0, released: 0, complete: false, deferred: true)
   }
 
-  private func reclaimExclusively(catalog: OpaquePointer, pageSize: Int, checkActive: () throws -> Void) throws -> ReclaimPage {
+  // Already inside withExclusiveAccess: never reacquire a public writer lock or SH lease.
+  private func compactExclusively(catalog: OpaquePointer, checkActive: () throws -> Void) throws -> Int {
     try checkActive()
+    guard writeBatch == nil, sqlite3_get_autocommit(catalog) != 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
+    let batch = WriteBatch(catalog: catalog)
+    writeBatch = batch
     var committed = false
-    defer { if !committed { try? execute(catalog, "ROLLBACK") } }
-    let retire = try prepare(catalog, """
-      INSERT OR IGNORE INTO knowledge_primary_retired(partition_id)
-      SELECT p.partition_id FROM knowledge_primary_partitions p
-      WHERE NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id)
-      ORDER BY p.partition_id LIMIT MAX(0, ? - (SELECT COUNT(*) FROM knowledge_primary_retired))
-      """)
-    defer { AgentKnowledgeSQLiteStatements.shared.release(retire) }
-    sqlite3_bind_int(retire, 1, Int32(pageSize))
-    guard sqlite3_step(retire) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
-    try execute(catalog, """
-      DELETE FROM knowledge_primary_partitions WHERE partition_id IN(SELECT partition_id FROM knowledge_primary_retired)
-      AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=knowledge_primary_partitions.partition_id)
-      """)
+    defer {
+      if !committed { try? execute(catalog, "ROLLBACK") }
+      for writer in writers.values {
+        if batch.pending.contains(writer.id) { try? execute(writer.database, "ROLLBACK") }
+        AgentKnowledgeSQLiteStatements.shared.close(writer.database)
+      }
+      writers.removeAll(); writeBatch = nil
+    }
+    let moved = try AgentKnowledgePrimaryCompaction.advance(catalog, checkActive: checkActive) { key, source in
+      try relocate(itemHash: key, source: source, catalog: catalog, batch: batch, checkActive: checkActive)
+    }
+    for bucket in writers.keys.sorted() { try flushWriter(bucket: bucket, checkActive: checkActive) }
+    if batch.hasWrites { try syncRoot(); try beforeCatalogPublication() }
+    try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
     try checkActive()
     try Task.checkCancellation()
     try execute(catalog, "COMMIT")
     committed = true
+    return moved
+  }
+
+  private func relocate(itemHash: String, source: String, catalog: OpaquePointer, batch: WriteBatch,
+                        checkActive: () throws -> Void) throws {
+    guard let old = try reference(itemHash: itemHash, catalog: catalog), old.partition == source,
+          let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let bucket = prefix & 3
+    let destination = try partition(catalog: catalog, bucket: bucket, checkActive: checkActive)
+    guard destination != source else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let database = try writer(id: destination, bucket: bucket)
+    if !batch.pending.contains(destination) {
+      try execute(database, "BEGIN IMMEDIATE TRANSACTION")
+      batch.pending.insert(destination)
+    }
+    batch.hasWrites = true
+    let entry = UUID().uuidString.lowercased()
+    let insert = try prepare(database, "INSERT INTO frames(entry_id,ordinal,sealed) VALUES(?,?,?)")
+    defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
+    var storedBytes: Int64 = 0
+    let slot = try readerSlots.acquire(checkActive: checkActive)
+    defer { slot.end() }
+    try readConnections.read(root: root, file: root.appendingPathComponent(source + ".sqlite"),
+      directoryDescriptor: directoryDescriptor, checkActive: checkActive,
+      open: { try open(source, create: false, readOnly: true) }) { reader in
+      try walkFrames(reader, reference: old, itemHash: itemHash, partition: source, checkActive: checkActive) { encoded, _, ordinal in
+        try checkActive()
+        let sealed = try cipher.encrypt(encoded, purpose: framePurpose(itemHash, partition: destination, entry: entry, ordinal: ordinal))
+        guard sealed.count <= Self.maximumSealedFrame, storedBytes <= Int64.max - Int64(sealed.count) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        guard sqlite3_reset(insert) == SQLITE_OK, sqlite3_clear_bindings(insert) == SQLITE_OK else {
+          AgentKnowledgeSQLiteStatements.shared.markFailed(insert); throw AgentKnowledgeDatabaseError.unavailable
+        }
+        try bind(entry, index: 1, statement: insert)
+        sqlite3_bind_int64(insert, 2, Int64(ordinal))
+        try bind(sealed, index: 3, statement: insert)
+        guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+        storedBytes += Int64(sealed.count)
+      }
+    }
+    try Task.checkCancellation(); try checkActive()
+    let next = Reference(version: old.version, partition: destination, entry: entry, frames: old.frames,
+      plainBytes: old.plainBytes, sha256: old.sha256)
+    let sealed = try cipher.encrypt(JSONEncoder().encode(next), purpose: referencePurpose(itemHash))
+    guard sealed.count <= 8 * 1_024 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let update = try prepare(catalog, "UPDATE knowledge_primary_refs SET partition_id=?,sealed_ref=? WHERE item_hash=? AND partition_id=?")
+    defer { AgentKnowledgeSQLiteStatements.shared.release(update) }
+    try bind(destination, index: 1, statement: update); try bind(sealed, index: 2, statement: update)
+    try bind(itemHash, index: 3, statement: update); try bind(source, index: 4, statement: update)
+    guard sqlite3_step(update) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let stats = try prepare(catalog, "UPDATE knowledge_primary_partitions SET bytes=bytes+?,records=records+1 WHERE partition_id=? AND bytes<=? AND records<?")
+    defer { AgentKnowledgeSQLiteStatements.shared.release(stats) }
+    sqlite3_bind_int64(stats, 1, storedBytes); try bind(destination, index: 2, statement: stats)
+    sqlite3_bind_int64(stats, 3, Int64.max - storedBytes); sqlite3_bind_int64(stats, 4, Int64.max)
+    guard sqlite3_step(stats) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+  }
+
+  private func reclaimExclusively(catalog: OpaquePointer, pageSize: Int, checkActive: () throws -> Void) throws -> ReclaimPage {
+    let moved = try compactExclusively(catalog: catalog, checkActive: checkActive)
     let queued = try prepare(catalog, "SELECT partition_id FROM knowledge_primary_retired ORDER BY partition_id LIMIT ?")
     defer { AgentKnowledgeSQLiteStatements.shared.release(queued) }
     sqlite3_bind_int(queued, 1, Int32(pageSize))
@@ -528,19 +614,11 @@ final class AgentKnowledgePrimaryPartitions {
       try bind(id, index: 1, statement: remove)
       guard sqlite3_step(remove) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     }
-    return ReclaimPage(removed: ids.count, complete: try !reclaimPending(catalog), deferred: false)
+    return ReclaimPage(removed: ids.count, complete: try !reclaimPending(catalog), deferred: false, moved: moved)
   }
 
   private func reclaimPending(_ catalog: OpaquePointer) throws -> Bool {
-    let statement = try prepare(catalog, """
-      SELECT 1 FROM knowledge_primary_retired UNION ALL
-      SELECT 1 FROM knowledge_primary_partitions p WHERE NOT EXISTS(
-        SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id) LIMIT 1
-      """)
-    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
-    let state = sqlite3_step(statement)
-    guard state == SQLITE_ROW || state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
-    return state == SQLITE_ROW
+    try AgentKnowledgePrimaryCompaction.pending(catalog)
   }
 
   private func unlinkRetired(_ id: String) throws {
