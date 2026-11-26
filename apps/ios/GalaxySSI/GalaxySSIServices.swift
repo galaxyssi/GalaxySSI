@@ -14315,22 +14315,46 @@ final class MessageCoordinator: ObservableObject {
     let boundAction = AgentSupervisorRecoveryPolicy.restoreBinding(action, history: history)
     var original = scopedLocalNativeExecutionAction(boundAction, outgoing: outgoing, task: task)
     if let language = boundAction.parameters["response_language"] { original.parameters["response_language"] = language }
-    let priorDispatch = runtime.nativeActionExecutor.observedConnectorDispatch(action: original)
+    let replay: AgentSequentialPlanNodeDispatch.Replay?
+    do {
+      replay = try AgentSequentialPlanNodeDispatch.replay(plan: task.activePlan, actionId: action.id,
+        sessionId: task.sessionId.ifBlank(outgoing.conversationId), conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString), journal: localPlanNodeJournal)
+    } catch {
+      let previous = store.agentTask(id: task.taskId)
+      task.phase = .blocked
+      task.blocked = true
+      task.verification = "The durable plan-node journal is unavailable; no action was dispatched."
+      task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+      _ = store.commitOwnedAgentTaskState(expected: previous, updated: task)
+      return true
+    }
+    let priorDispatch = replay?.result ?? runtime.nativeActionExecutor.observedConnectorDispatch(action: original)
     let routed = priorDispatch == nil
       ? refreshAutomaticConnectorAction(boundAction, outgoing: outgoing, goal: task.goal) : boundAction
-    var executionAction = priorDispatch == nil
-      ? scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task) : original
+    var executionAction = replay?.action ?? (priorDispatch == nil
+      ? scopedLocalNativeExecutionAction(routed, outgoing: outgoing, task: task) : original)
     if executionAction.kind == .callConnector, priorDispatch == nil {
       executionAction.parameters[AgentIOSConnectorDispatch.sourceKey] = outgoing.id.uuidString
       executionAction.parameters[AgentIOSConnectorDispatch.profileKey] = store.profile.identityFingerprint
       executionAction.parameters[AgentIOSConnectorDispatch.permissionKey] = store.agentSafetySettings.permissionMode.rawValue
-      guard checkpointNativeConnectorDispatch(executionAction, task: &task) else { return true }
+    }
+    var dispatch: AgentSequentialPlanNodeDispatch.Prepared?
+    if priorDispatch == nil, task.activePlan != nil || executionAction.kind == .callConnector {
+      guard let prepared = checkpointSequentialPlanNodeDispatch(executionAction, outgoing: outgoing, screen: screen, task: &task) else { return true }
+      dispatch = prepared
     }
     recordAutomaticConnectorTarget(executionAction, outgoing: outgoing)
-    var result = priorDispatch ?? runtime.actionExecutor.execute(
-      action: executionAction,
-      screen: screen
-    )
+    var result: AgentActionResult
+    if let priorDispatch {
+      result = priorDispatch
+    } else if let dispatch {
+      result = AgentSequentialPlanNodeDispatch.execute(dispatch, journal: localPlanNodeJournal) {
+        runtime.actionExecutor.execute(action: executionAction, screen: screen)
+      }
+    } else {
+      result = runtime.actionExecutor.execute(action: executionAction, screen: screen)
+    }
     if !result.success,
        action.kind == .callConnector,
        AgentSupervisorRecoveryPolicy.stopReason(action: executionAction, result: result, history: history) == nil,
@@ -14342,7 +14366,7 @@ final class MessageCoordinator: ObservableObject {
       fallbackAction.parameters[AgentIOSConnectorDispatch.sourceKey] = outgoing.id.uuidString
       fallbackAction.parameters[AgentIOSConnectorDispatch.profileKey] = store.profile.identityFingerprint
       fallbackAction.parameters[AgentIOSConnectorDispatch.permissionKey] = store.agentSafetySettings.permissionMode.rawValue
-      guard checkpointNativeConnectorDispatch(fallbackAction, task: &task) else { return true }
+      guard let fallbackDispatch = checkpointSequentialPlanNodeDispatch(fallbackAction, outgoing: outgoing, screen: screen, task: &task) else { return true }
       task.executionLog.append(
         "Connector fallback: \(action.parameters["connector_id"] ?? action.target) -> " +
           (fallbackAction.parameters["connector_id"] ?? fallbackAction.target)
@@ -14356,7 +14380,9 @@ final class MessageCoordinator: ObservableObject {
       )
       executionAction = fallbackAction
       recordAutomaticConnectorTarget(fallbackAction, outgoing: outgoing)
-      result = runtime.actionExecutor.execute(action: fallbackAction, screen: screen)
+      result = AgentSequentialPlanNodeDispatch.execute(fallbackDispatch, journal: localPlanNodeJournal) {
+        runtime.actionExecutor.execute(action: fallbackAction, screen: screen)
+      }
     }
     if action.kind == .callConnector {
       recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
@@ -14685,24 +14711,24 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
-  private func checkpointNativeConnectorDispatch(_ action: AgentAction, task: inout AgentTaskRecord) -> Bool {
+  private func checkpointSequentialPlanNodeDispatch(_ action: AgentAction, outgoing: ChatMessage,
+    screen: AgentScreenContext, task: inout AgentTaskRecord) -> AgentSequentialPlanNodeDispatch.Prepared? {
     let previous = store.agentTask(id: task.taskId)
-    if var plan = task.activePlan, plan.actions.filter({ $0.id == action.id }).count == 1,
-       let index = plan.actions.firstIndex(where: { $0.id == action.id }) {
-      var running = action
-      running.status = .running
-      plan.actions[index] = running
-      task.activePlan = plan
-      task.planContext = AgentTaskPlanContext(plan: plan)
+    if let plan = task.activePlan, let prepared = AgentSequentialPlanNodeDispatch.prepare(plan: plan, action: action,
+      screen: screen, sessionId: task.sessionId.ifBlank(outgoing.conversationId), conversationId: outgoing.conversationId,
+      turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
+      task.activePlan = prepared.plan
+      task.planContext = AgentTaskPlanContext(plan: prepared.plan)
       task.phase = .executing
       task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
-      if store.commitOwnedAgentTaskState(expected: previous, updated: task) { return true }
+      if store.commitOwnedAgentTaskState(expected: previous, updated: task) { return prepared }
     }
     task.phase = .blocked
     task.blocked = true
-    task.verification = localizedReply("galaxyssi.agent.connector.checkpoint_unsaved",
-      fallback: "The next connector dispatch was not sent because its checkpoint could not be saved.")
-    return false
+    task.verification = "The next action was not dispatched because its checkpoint could not be saved."
+    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    _ = store.commitOwnedAgentTaskState(expected: previous, updated: task)
+    return nil
   }
 
   private func retainWaitingNativeConnector(
