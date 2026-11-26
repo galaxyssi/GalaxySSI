@@ -87,6 +87,7 @@ struct AgentKnowledgeGap: Codable, Equatable, Identifiable {
   var missingEvidence: [String]
   var relatedGoal: String
   var sourceRunIds: [String]
+  var sourceConversationIds: Set<String>?
   var priority: Double
   var status: AgentKnowledgeGapStatus
   var createdAtMillis: Int64
@@ -105,7 +106,8 @@ struct AgentKnowledgeGap: Codable, Equatable, Identifiable {
     status: AgentKnowledgeGapStatus = .open,
     createdAtMillis: Int64 = AgentEvalClock.nowMillis(),
     updatedAtMillis: Int64? = nil,
-    recheckAfterMillis: Int64 = 0
+    recheckAfterMillis: Int64 = 0,
+    sourceConversationIds: Set<String>? = nil
   ) {
     self.id = id
     self.topic = String(topic.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
@@ -114,6 +116,7 @@ struct AgentKnowledgeGap: Codable, Equatable, Identifiable {
     self.missingEvidence = Self.unique(missingEvidence, limit: 20)
     self.relatedGoal = String(relatedGoal.trimmingCharacters(in: .whitespacesAndNewlines).prefix(1_000))
     self.sourceRunIds = Array(Self.unique(sourceRunIds, limit: 40).suffix(40))
+    self.sourceConversationIds = sourceConversationIds
     self.priority = min(max(priority, 0), 1)
     self.status = status
     self.createdAtMillis = max(0, createdAtMillis)
@@ -209,7 +212,8 @@ final class AgentCognitiveGovernanceStore {
       status: gap.status,
       createdAtMillis: gap.createdAtMillis,
       updatedAtMillis: nowMillis(),
-      recheckAfterMillis: gap.recheckAfterMillis
+      recheckAfterMillis: gap.recheckAfterMillis,
+      sourceConversationIds: gap.sourceConversationIds
     )
     guard !normalized.topic.isEmpty, !normalized.unknownQuestions.isEmpty else { return nil }
     return locked {
@@ -324,6 +328,7 @@ enum AgentKnowledgeGapDetector {
     sample: AgentEvalSample,
     nowMillis: Int64 = AgentEvalClock.nowMillis()
   ) -> AgentKnowledgeGap? {
+    guard sample.runId == run.runId else { return nil }
     let topic = AgentLearningAnalyzer.safeTitle(run.originalRequest)
     let existing = store.gaps().first {
       [.open, .researching].contains($0.status) && AgentLearningAnalyzer.sameTaskFamily($0.topic, topic)
@@ -332,6 +337,15 @@ enum AgentKnowledgeGapDetector {
     if missing.isEmpty {
       guard sample.passed, let existing else { return nil }
       return store.updateGapStatus(id: existing.id, status: .resolved)
+    }
+    let conversationId = run.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let sources: Set<String>?
+    if conversationId.isEmpty || !AgentEvalSideEffectPolicy.allowsPersonalLearning(conversationId: conversationId) {
+      sources = nil
+    } else if let existing {
+      sources = existing.sourceConversationIds.map { $0.union([conversationId]) }
+    } else {
+      sources = [conversationId]
     }
     let gap = AgentKnowledgeGap(
       id: existing?.id ?? UUID().uuidString,
@@ -344,7 +358,8 @@ enum AgentKnowledgeGapDetector {
       priority: max(existing?.priority ?? 0, sample.verdict == .failed ? 0.80 : 0.65),
       status: existing?.status ?? .open,
       createdAtMillis: existing?.createdAtMillis ?? nowMillis,
-      recheckAfterMillis: nowMillis + 7 * 24 * 60 * 60_000
+      recheckAfterMillis: nowMillis + 7 * 24 * 60 * 60_000,
+      sourceConversationIds: sources
     )
     return store.upsertGap(gap)
   }

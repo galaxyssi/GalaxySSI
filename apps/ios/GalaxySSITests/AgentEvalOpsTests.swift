@@ -4,6 +4,167 @@ import XCTest
 
 @MainActor
 final class AgentEvalOpsTests: XCTestCase {
+  func testKnowledgeGapSourceProofRoundtripAndLegacyDecode() throws {
+    var gap = knowledgeGap()
+    gap.sourceConversationIds = ["a", "b"]
+    let bytes = try JSONEncoder().encode(gap)
+    XCTAssertEqual(try JSONDecoder().decode(AgentKnowledgeGap.self, from: bytes), gap)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    object.removeValue(forKey: "sourceConversationIds")
+    let legacy = try JSONDecoder().decode(AgentKnowledgeGap.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertNil(legacy.sourceConversationIds)
+  }
+
+  func testKnowledgeGapDetectorUnionsAllObservedConversationSources() throws {
+    try withKnowledgeGapStores { governance, _, _ in
+      var first = recordedRun(runId: "first", request: "Verify app compatibility", status: .failed)
+      first.conversationId = "a"
+      let gap = try XCTUnwrap(AgentKnowledgeGapDetector.observe(store: governance, run: first, sample: gapSample("first")))
+      XCTAssertEqual(gap.sourceConversationIds, ["a"])
+      var second = first; second.runId = "second"; second.conversationId = "b"
+      let merged = try XCTUnwrap(AgentKnowledgeGapDetector.observe(store: governance, run: second, sample: gapSample("second")))
+      XCTAssertEqual(merged.id, gap.id)
+      XCTAssertEqual(merged.sourceConversationIds, ["a", "b"])
+      XCTAssertEqual(governance.gaps().first?.sourceConversationIds, ["a", "b"])
+    }
+  }
+
+  func testKnowledgeGapLegacyProseDoesNotAcquireInferredSourceProof() throws {
+    try withKnowledgeGapStores { governance, _, _ in
+      let run = recordedRun(runId: "first", request: "Verify app compatibility", status: .failed)
+      var gap = try XCTUnwrap(AgentKnowledgeGapDetector.observe(store: governance, run: run, sample: gapSample("first")))
+      gap.sourceConversationIds = nil
+      _ = governance.upsertGap(gap)
+      var next = run; next.runId = "next"; next.conversationId = "new-source"
+      let merged = try XCTUnwrap(AgentKnowledgeGapDetector.observe(store: governance, run: next, sample: gapSample("next")))
+      XCTAssertNil(merged.sourceConversationIds)
+    }
+  }
+
+  func testKnowledgeGapBlankAndLabOriginsRemainUnproven() throws {
+    try withKnowledgeGapStores { governance, _, _ in
+      for origin in ["", "lab:fixture"] {
+        var run = recordedRun(runId: "run-\(origin)", request: "Verify app compatibility", status: .failed)
+        run.conversationId = origin
+        let gap = try XCTUnwrap(AgentKnowledgeGapDetector.observe(store: governance, run: run, sample: gapSample(run.runId)))
+        XCTAssertNil(gap.sourceConversationIds)
+      }
+    }
+  }
+
+  func testKnowledgeGapRejectsMismatchedRunAndEvaluation() throws {
+    try withKnowledgeGapStores { governance, _, _ in
+      let run = recordedRun(runId: "owner", request: "Verify app compatibility", status: .failed)
+      XCTAssertNil(AgentKnowledgeGapDetector.observe(store: governance, run: run, sample: gapSample("other")))
+      XCTAssertTrue(governance.gaps().isEmpty)
+    }
+  }
+
+  func testKnowledgeGapResearchCarriesAllSourcesAndUsesCurrentScope() throws {
+    try withKnowledgeGapStores { governance, research, _ in
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a", "b"]
+      _ = governance.upsertGap(gap)
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      bridge.install { false }; bridge.observe(gap)
+      XCTAssertTrue(research.state().tasks.isEmpty)
+      bridge.install { true }; bridge.observe(gap); bridge.observe(gap)
+      let state = research.state()
+      XCTAssertEqual(state.tasks.count, 1)
+      let task = try XCTUnwrap(state.tasks.first)
+      XCTAssertEqual(task.sourceConversationId, "a")
+      XCTAssertEqual(task.sourceConversationIds, ["a", "b"])
+      XCTAssertEqual(governance.gaps().first?.status, .researching)
+      let allowed = GlobalRealtimePlanningScope(enabled: true, conversations: [
+        AgentConversation(id: "a", title: "A", createdAt: 1, updatedAt: 1),
+        AgentConversation(id: "b", title: "B", createdAt: 1, updatedAt: 1)
+      ])
+      XCTAssertTrue(GlobalResearchSourceScope.allows(task, scope: allowed))
+      let revoked = GlobalRealtimePlanningScope(enabled: true, conversations: [
+        AgentConversation(id: "a", title: "A", createdAt: 1, updatedAt: 1),
+        AgentConversation(id: "b", title: "B", createdAt: 1, updatedAt: 1, privateMode: true)
+      ])
+      XCTAssertFalse(GlobalResearchSourceScope.allows(task, scope: revoked))
+    }
+  }
+
+  func testKnowledgeGapResearchDoesNotAuthorizeMissingEmptyOrMalformedSources() throws {
+    try withKnowledgeGapStores { governance, research, _ in
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      bridge.install { true }
+      let cases: [Set<String>?] = [nil, [], [""], [" a "]]
+      for sources in cases {
+        var gap = knowledgeGap(); gap.sourceConversationIds = sources
+        _ = governance.upsertGap(gap); bridge.observe(gap)
+      }
+      XCTAssertTrue(research.state().tasks.isEmpty)
+      XCTAssertTrue(governance.decisions().isEmpty)
+      XCTAssertEqual(governance.gaps().first?.status, .open)
+    }
+  }
+
+  func testKnowledgeGapFailedResearchSaveDoesNotAdvanceGovernance() throws {
+    try withKnowledgeGapStores { governance, _, file in
+      try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let blocker = file.deletingLastPathComponent().appendingPathComponent("blocker")
+      try Data("file instead of directory".utf8).write(to: blocker)
+      let research = GalaxySSIGlobalResearchRuntimeStore(fileURL: blocker.appendingPathComponent("state.json"))
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      bridge.install { true }
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      _ = governance.upsertGap(gap); bridge.observe(gap)
+      XCTAssertFalse(research.lastErrorDescription.isEmpty)
+      XCTAssertEqual(governance.gaps().first?.status, .open)
+      XCTAssertTrue(governance.decisions().isEmpty)
+    }
+  }
+
+  func testKnowledgeGapUnreadableResearchStateIsNotOverwritten() throws {
+    try withKnowledgeGapStores { governance, research, file in
+      try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let bytes = Data("unreadable state".utf8); try bytes.write(to: file)
+      let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance)
+      bridge.install { true }
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      _ = governance.upsertGap(gap); bridge.observe(gap)
+      XCTAssertEqual(try Data(contentsOf: file), bytes)
+      XCTAssertEqual(governance.gaps().first?.status, .open)
+      XCTAssertTrue(governance.decisions().isEmpty)
+    }
+  }
+
+  func testKnowledgeGapSourceSetIsNotTruncatedWithRunReferenceHistory() throws {
+    try withKnowledgeGapStores { governance, _, _ in
+      for index in 0..<45 {
+        var run = recordedRun(runId: "run-\(index)", request: "Verify app compatibility", status: .failed)
+        run.conversationId = "conversation-\(index)"
+        _ = AgentKnowledgeGapDetector.observe(store: governance, run: run, sample: gapSample(run.runId))
+      }
+      let gap = try XCTUnwrap(governance.gaps().first)
+      XCTAssertEqual(gap.sourceRunIds.count, 40)
+      XCTAssertEqual(gap.sourceConversationIds?.count, 45)
+    }
+  }
+
+  private func withKnowledgeGapStores(_ body: (AgentCognitiveGovernanceStore, GalaxySSIGlobalResearchRuntimeStore, URL) throws -> Void) throws {
+    let suite = "gap-sources-\(UUID().uuidString)", defaults = UserDefaults(suiteName: suite)!
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: directory) }
+    let governance = AgentCognitiveGovernanceStore(defaults: defaults, secrets: InMemorySecretStore())
+    let file = directory.appendingPathComponent("state.json")
+    try body(governance, GalaxySSIGlobalResearchRuntimeStore(fileURL: file), file)
+  }
+
+  private func knowledgeGap() -> AgentKnowledgeGap {
+    AgentKnowledgeGap(id: "gap", topic: "Compatibility", knownSummary: "Missing evidence",
+      unknownQuestions: ["Which official evidence is available?"], missingEvidence: ["final_response"], priority: 0.8)
+  }
+
+  private func gapSample(_ runId: String) -> AgentEvalSample {
+    var value = sample(runId: runId, passed: false, completedAtMillis: 200)
+    value.failureReasons = ["missing_evidence:final_response"]
+    return value
+  }
+
   func testCompletionWorkerDoesNotBlockMainActorAndDeduplicatesPendingRuns() async {
     let queue = AgentCompletionWorkQueue()
     let release = DispatchSemaphore(value: 0)
