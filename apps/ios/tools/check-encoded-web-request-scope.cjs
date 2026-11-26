@@ -3,7 +3,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c8a48aaa9c24427d606b32d894848b9bdd48c648', android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const clean = text => text.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  let source = clean(fs.readFileSync(path.join(root, file), 'utf8'));
+  if (file.endsWith('AgentIOSPublicAddressPolicy.swift')) source = require('./check-special-use-address-scope.cjs').retainedPolicy(source);
+  return source;
+};
 const show = (ref, file) => clean(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(source, from, to) {
   assert.equal(source.split(from).length, 2, 'One encoded-address hook: ' + from);
