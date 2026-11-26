@@ -16,6 +16,7 @@ function section(source, first, last) {
 }
 const watchGate = '      guard invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission),\n        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent) else {\n        return failure("public_web_scope_required", "Checking saved page watches requires public web permission and consent")\n      }\n';
 function retainedDiffProvider(source) {
+  source = require('./check-web-watch-scope.cjs').retainedWatchProvider(source);
   if (!source.includes('AgentIOSWebPageDiff.summarize(')) return source;
   source = once(source, section(source, '  private func diff(', '  private func extract('),
     section(old(app + 'AgentIOSURLSessionWebIntelligenceProvider.swift'), '  private func diff(', '  private func extract('));
@@ -38,7 +39,7 @@ function validatePageDiff() {
     'Only diff/extract timeout input maxima change; required permissions, effects, executor, fetch/schema/output/pack policies retained');
   for (const name of ['AgentIOSURLSessionWebMediaProvider', 'AgentIOSWebIntelligenceCache', 'AgentIOSWebCacheIndex',
     'AgentIOSWebCrawlPolicy', 'AgentIOSWebLocalExtraction', 'AgentIOSWebExecutionBudget', 'AgentIOSWebEvidencePack'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(require('./check-web-watch-scope.cjs').retainedWatchFile(name, read(app + name + '.swift')), old(app + name + '.swift'), name);
   const diff = section(provider, '  private func diff(', '  private func extract(');
   for (const token of ['try invocation.checkpoint()', 'grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission)',
     'grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent)',

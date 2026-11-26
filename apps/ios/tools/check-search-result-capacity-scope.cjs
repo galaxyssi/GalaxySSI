@@ -41,6 +41,7 @@ function retainedCapacityProvider(source) {
   ]);
 }
 function retainedCapacityCache(source) {
+  source = require('./check-web-watch-scope.cjs').retainedWatchCache(source);
   if (!source.includes('<= AgentIOSWebSearchCapacity.maximumResults')) return source;
   return undo(source, [
     ['<= AgentIOSWebSearchCapacity.maximumResults', '<= 24'],
@@ -55,7 +56,7 @@ function validateSearchCapacity() {
   for (const name of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSWebMediaNativeTools', 'AgentIOSWebSearchFusion',
     'AgentIOSPublicSearchParser', 'AgentIOSImageSearchRequestPolicy', 'AgentIOSWebEvidencePack', 'AgentIOSWebEvidenceReader',
     'AgentIOSWebCacheIndex', 'AgentIOSWebExecutionBudget']) assert.equal(name === 'AgentIOSWebIntelligenceNativeTools'
-      ? require('./check-web-page-diff-scope.cjs').retainedDiffCatalog(read(app + name + '.swift')) : read(app + name + '.swift'), old(app + name + '.swift'), name);
+      ? require('./check-web-page-diff-scope.cjs').retainedDiffCatalog(read(app + name + '.swift')) : require('./check-web-watch-scope.cjs').retainedWatchFile(name, read(app + name + '.swift')), old(app + name + '.swift'), name);
   const limits = read(app + 'AgentIOSWebSearchCapacity.swift');
   for (const token of ['maximumResults = 100', 'defaultResults = 10', 'maximumCachedResponseBytes = 2_000_000',
     'case webMedia, intelligence', 'self == .intelligence', ': 24', '? 4_096 : 1_024', ': 20']) assert(limits.includes(token), token);

@@ -23,7 +23,7 @@ function validateWebExtraction() {
   for (const name of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSURLSessionWebMediaProvider', 'AgentIOSWebEvidencePack',
     'AgentIOSWebIntelligenceCache', 'AgentIOSWebCacheIndex', 'AgentIOSWebExecutionBudget', 'AgentIOSPublicArticleParser'])
     assert.equal(name === 'AgentIOSWebIntelligenceNativeTools' ? require('./check-web-page-diff-scope.cjs')
-      .retainedDiffCatalog(read(app + name + '.swift')) : read(app + name + '.swift'), old(app + name + '.swift'), name);
+      .retainedDiffCatalog(read(app + name + '.swift')) : require('./check-web-watch-scope.cjs').retainedWatchFile(name, read(app + name + '.swift')), old(app + name + '.swift'), name);
   const extract = section(provider, '  private func extract(', '  private func crawl(');
   for (const token of ['try invocation.checkpoint()', 'if !url.isEmpty', 'guard cacheScope else',
     'grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)',

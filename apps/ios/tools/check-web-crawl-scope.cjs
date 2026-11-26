@@ -37,7 +37,7 @@ function validateWebCrawl() {
   for (const file of ['AgentIOSWebIntelligenceNativeTools', 'AgentIOSWebIntelligenceCache', 'AgentIOSWebCacheIndex',
     'AgentIOSWebExecutionBudget', 'AgentIOSWebEvidencePack', 'AgentIOSGenericArticleParser', 'AgentIOSPublicAddressPolicy'])
     assert.equal(file === 'AgentIOSWebIntelligenceNativeTools' ? require('./check-web-page-diff-scope.cjs')
-      .retainedDiffCatalog(read(app + file + '.swift')) : read(app + file + '.swift'), show(base, app + file + '.swift'), file);
+      .retainedDiffCatalog(read(app + file + '.swift')) : require('./check-web-watch-scope.cjs').retainedWatchFile(file, read(app + file + '.swift')), show(base, app + file + '.swift'), file);
   const crawl = section(provider, '  private func crawl(', '  private func research(');
   for (const token of ['AgentIOSWebCrawlPolicy(input: input)', 'AgentIOSWebCrawlDeadline(durationMillis: policy.timeoutMillis, startedAtMillis: started, now: uptimeMillis)',
     'grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission)',

@@ -176,6 +176,23 @@ final class AgentIOSWebCacheIndex {
       try put(entry); try prune(.search, limit: 32)
     }
   }
+  func compareAndPutWatch(_ updated: Entry, expected: AgentIOSWebIntelligenceCacheWatch) throws -> Bool {
+    guard updated.kind == .watch, updated.id == expected.id else { throw Failure.corrupt }
+    let replacement = try JSONDecoder().decode(AgentIOSWebIntelligenceCacheWatch.self, from: updated.payload)
+    guard replacement.id == updated.id, replacement.updatedAtMillis == updated.updated else { throw Failure.corrupt }
+    try execute("BEGIN IMMEDIATE TRANSACTION")
+    var committed = false
+    defer { if !committed { try? execute("ROLLBACK") } }
+    guard let current = try entry(.watch, id: expected.id) else { return false }
+    let saved = try JSONDecoder().decode(AgentIOSWebIntelligenceCacheWatch.self, from: current.payload)
+    guard saved.id == current.id, saved.updatedAtMillis == current.updated else { throw Failure.corrupt }
+    guard saved == expected else { return false }
+    try put(updated)
+    try beforeCommit()
+    try execute("COMMIT")
+    committed = true
+    return true
+  }
   func clear(expiredOnly: Bool, now: Int64) throws -> (documents: Int64, searches: Int64, learned: Int64) {
     try transaction {
       let documents = try remove(.document, before: expiredOnly ? now : nil, inclusive: false)

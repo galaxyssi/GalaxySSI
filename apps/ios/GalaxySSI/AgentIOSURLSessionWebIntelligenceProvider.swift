@@ -293,17 +293,32 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
+    guard invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission),
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent) else {
+      return failure("cache_scope_required", "Saved page watches require encrypted cache permission and consent")
+    }
+    do { try invocation.checkpoint() }
+    catch { return failure(invocation.isCancellationRequested ? "cancelled" : "timeout", "Page watch operation was interrupted", retryable: true) }
     let action = string(input, "action", limit: 32).ifBlank("list")
     let now = max(0, nowMillis())
     var watchMetadata: AgentMcpJSONObject = ["action": .string(action)]
     var watchValue: AgentMcpJSONObject = [:]
     var diffValue: AgentMcpJSONObject?
+    var status = "completed", stopped = ""
+    var receipts: [AgentMcpJSONValue] = [], failures: [AgentMcpJSONValue] = [], outcomes: [AgentMcpJSONValue] = []
+    func recordFailure(_ item: AgentIOSWebIntelligenceCacheWatch, code: String, message: String,
+      phase: String, retryable: Bool = false, addReceipt: Bool = true) {
+      var value: AgentMcpJSONObject = ["watch_id": .string(item.id), "url": .string(item.url),
+        "status": .string("failed"), "code": .string(code), "message": .string(String(message.prefix(512))),
+        "phase": .string(phase), "retryable": .bool(retryable), "watch_update_committed": .bool(false)]
+      if phase == "validation" { value["network_attempted"] = .bool(false) }
+      failures.append(.object(value)); outcomes.append(.object(value))
+      if addReceipt { receipts.append(.object(value)) }
+    }
     switch action {
     case "create":
-      let url = canonicalURL(string(input, "url", limit: 4_096))
-      guard !url.isEmpty else { return failure("watch_url_required", "Web watch creation requires a URL") }
-      guard URL(string: url)?.scheme?.lowercased() == "https" else {
-        return failure("watch_url_invalid", "Web watch creation requires an HTTPS URL")
+      guard let url = AgentIOSWebCrawlPolicy.canonical(string(input, "url", limit: 4_096)) else {
+        return failure("watch_url_invalid", "Web watch creation requires a public HTTPS URL")
       }
       let watch = AgentIOSWebIntelligenceCacheWatch(
         id: watchID(string(input, "watch_id", limit: 96)),
@@ -326,7 +341,9 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       }
       watchMetadata["watches"] = .array(watches.map { .object($0.value()) })
     case "remove":
-      guard let removed = cacheStore.removeWatch(id: string(input, "watch_id", limit: 96)) else {
+      let id = string(input, "watch_id", limit: 96)
+      guard !id.isEmpty else { return failure("watch_id_required", "Removing a saved watch requires its ID") }
+      guard let removed = cacheStore.removeWatch(id: id) else {
         return failure("cache_persistence_failed", "The web watch change could not be saved.", retryable: true)
       }
       watchMetadata["removed"] = .bool(removed)
@@ -335,58 +352,112 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
         invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent) else {
         return failure("public_web_scope_required", "Checking saved page watches requires public web permission and consent")
       }
-      guard let watches = cacheStore.watchSnapshot() else {
-        return failure("cache_unavailable", "The saved web watches could not be read.", retryable: true)
-      }
       let selected: [AgentIOSWebIntelligenceCacheWatch]
       if action == "check" {
-        selected = watches.filter { $0.id == string(input, "watch_id", limit: 96) }
+        let id = string(input, "watch_id", limit: 96)
+        guard !id.isEmpty else { return failure("watch_id_required", "Checking a saved watch requires its ID") }
+        do { selected = try cacheStore.watchRecord(id: id).map { [$0] } ?? [] }
+        catch { return failure("cache_unavailable", "The saved web watch could not be read.", retryable: true) }
       } else {
-        selected = watches.filter { watch in
-          watch.enabled && (watch.lastCheckedAtMillis == 0 || now - watch.lastCheckedAtMillis >= Int64(watch.intervalMinutes) * 60_000)
-        }.prefix(int(input, "limit", defaultValue: 20, minimum: 1, maximum: 100)).map { $0 }
+        guard let watches = cacheStore.watchSnapshot() else {
+          return failure("cache_unavailable", "The saved web watches could not be read.", retryable: true)
+        }
+        watchMetadata["invalid_watch_count"] = .int(Int64(watches.filter { !AgentIOSWebWatchPolicy.isValid($0) }.count))
+        selected = Array(watches.filter { item in
+          (item.enabled && !AgentIOSWebWatchPolicy.isValid(item)) || AgentIOSWebWatchPolicy.isDue(item, now: now)
+        }.prefix(int(input, "limit", defaultValue: 20, minimum: 1, maximum: 100)))
       }
       var checked: [AgentMcpJSONValue] = []
+      var attempted = 0
       for item in selected {
-        try? invocation.checkpoint()
+        do { try invocation.checkpoint() }
+        catch { stopped = invocation.isCancellationRequested ? "cancelled" : "deadline"; break }
+        attempted += 1
+        guard AgentIOSWebWatchPolicy.isValid(item) else {
+          recordFailure(item, code: "invalid_saved_watch", message: "Saved watch fields are invalid; no request was started", phase: "validation")
+          continue
+        }
         let result = diff(
-          input: ["url": .string(item.url)],
+          input: ["url": .string(item.url), "timeout_ms": .int(int64(input, "timeout_ms", defaultValue: 15_000, minimum: 1_000, maximum: 60_000))],
           invocation: invocation
         )
-        guard result.isSuccess else { continue }
-        let currentHash = result.output["current_sha256"]?.stringValue ?? ""
-        let changed = !item.lastSHA256.isEmpty && item.lastSHA256 != currentHash
-        let updated = AgentIOSWebIntelligenceCacheWatch(
-          id: item.id,
-          url: item.url,
-          intervalMinutes: item.intervalMinutes,
-          enabled: item.enabled,
-          lastCheckedAtMillis: now,
-          lastChangedAtMillis: changed ? now : item.lastChangedAtMillis,
-          lastSHA256: currentHash,
-          createdAtMillis: item.createdAtMillis,
-          updatedAtMillis: now
-        )
-        guard cacheStore.putWatch(updated) else {
-          return failure("cache_persistence_failed", "The web watch check could not be saved.", retryable: true)
+        let pageReceipts = result.output["source_receipts"]?.arrayValue ?? []
+        receipts.append(contentsOf: pageReceipts.map { receipt in
+          guard var value = receipt.objectValue else { return receipt }
+          value["watch_id"] = .string(item.id)
+          return .object(value)
+        })
+        guard result.isSuccess else {
+          recordFailure(item, code: result.error?.code ?? "watch_fetch_failed", message: result.error?.message ?? result.message,
+            phase: "fetch", retryable: result.error?.retryable ?? false, addReceipt: pageReceipts.isEmpty)
+          if invocation.isCancellationRequested || result.error?.code == "cancelled" { stopped = "cancelled"; break }
+          if invocation.isTimedOut { stopped = "deadline"; break }
+          continue
         }
-        var value = updated.value()
-        value["changed"] = .bool(changed)
+        guard result.output["cache"]?.objectValue?["write_committed"] == .bool(true) else {
+          recordFailure(item, code: "cache_persistence_failed", message: "Current snapshot was not committed; watch cursor retained",
+            phase: "snapshot", retryable: true, addReceipt: false)
+          stopped = "persistence_failed"; break
+        }
+        let currentHash = result.output["current_sha256"]?.stringValue ?? ""
+        guard let completed = AgentIOSWebWatchPolicy.completed(item, hash: currentHash, now: nowMillis()) else {
+          recordFailure(item, code: "invalid_snapshot_hash", message: "Fetched snapshot has no valid content hash; watch cursor retained", phase: "snapshot_validation", addReceipt: false)
+          continue
+        }
+        do { try invocation.checkpoint() }
+        catch {
+          stopped = invocation.isCancellationRequested ? "cancelled" : "deadline"
+          recordFailure(item, code: stopped == "cancelled" ? "cancelled" : "timeout", message: "Watch state was not committed after retrieval",
+            phase: "watch", retryable: stopped != "cancelled", addReceipt: false)
+          break
+        }
+        guard let committed = cacheStore.commitWatchCheck(completed.watch, expected: item) else {
+          recordFailure(item, code: "cache_persistence_failed", message: "The watch check could not be committed; prior watch retained",
+            phase: "watch", retryable: true, addReceipt: false)
+          stopped = "persistence_failed"; break
+        }
+        guard committed else {
+          recordFailure(item, code: "watch_changed", message: "The watch was edited or removed during retrieval; no stale update was applied",
+            phase: "watch", addReceipt: false)
+          continue
+        }
+        var value = completed.watch.value()
+        value["changed"] = .bool(completed.changed)
         checked.append(.object(value))
+        watchValue = completed.watch.value()
+        outcomes.append(.object(["watch_id": .string(item.id), "url": .string(item.url), "status": .string("completed"),
+          "changed": .bool(completed.changed), "watch_update_committed": .bool(true)]))
         diffValue = result.output["diff"]?.objectValue
       }
       watchMetadata["checked"] = .array(checked)
+      watchMetadata["selected_count"] = .int(Int64(selected.count))
+      watchMetadata["attempted_count"] = .int(Int64(attempted))
+      watchMetadata["remaining_count"] = .int(Int64(selected.count - attempted))
+      watchMetadata["checked_count"] = .int(Int64(checked.count))
+      watchMetadata["failed_count"] = .int(Int64(failures.count))
+      watchMetadata["stop_reason"] = .string(stopped.isEmpty ? "selection_exhausted" : stopped)
+      if !failures.isEmpty || !stopped.isEmpty { status = checked.isEmpty ? "failed" : "partial" }
     default:
       return failure("invalid_watch_action", "Unsupported iOS web watch action")
     }
-    var output = baseOutput(operation: .watch, invocation: invocation, status: "completed")
+    var output = baseOutput(operation: .watch, invocation: invocation, status: status)
     output["watch"] = .object(watchValue)
     output["cache"] = .object(cacheStore.cacheMetadata().merging(["hit": .bool(false)]) { _, next in next })
     output["metadata"] = .object(watchMetadata)
+    output["source_receipts"] = .array(receipts)
+    output["outcomes"] = .array(outcomes)
+    output["failures"] = .array(failures)
     if let diffValue { output["diff"] = .object(diffValue) }
+    if status == "failed" {
+      let code = stopped == "cancelled" ? "cancelled" : (stopped == "deadline" ? "timeout" : (stopped == "persistence_failed" ? "cache_persistence_failed" : "watch_check_failed"))
+      var result = AgentNativeToolExecutionResult.failure(code: code, message: "No selected page watch check was committed",
+        retryable: stopped != "cancelled" && (stopped == "deadline" || stopped == "persistence_failed" || failures.contains { $0.objectValue?["retryable"] == .bool(true) }), details: output)
+      result.output = output; result.metadata = metadata(operation: .watch)
+      return result
+    }
     return AgentNativeToolExecutionResult.success(
       output: output,
-      message: "iOS web watch operation completed",
+      message: status == "partial" ? "Page watch checks partially completed" : "iOS web watch operation completed",
       metadata: metadata(operation: .watch)
     )
   }

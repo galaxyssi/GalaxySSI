@@ -487,6 +487,29 @@ final class AgentIOSWebIntelligenceCacheStore {
     } catch { return false }
   }
 
+  func watchRecord(id: String) throws -> AgentIOSWebIntelligenceCacheWatch? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let row = try cacheIndexUnlocked().entry(.watch, id: id) else { return nil }
+    let watch = try JSONDecoder().decode(AgentIOSWebIntelligenceCacheWatch.self, from: row.payload)
+    guard watch.id == id, watch.updatedAtMillis == row.updated else { throw AgentIOSWebCacheIndex.Failure.corrupt }
+    return watch
+  }
+
+  func commitWatchCheck(_ updated: AgentIOSWebIntelligenceCacheWatch, expected: AgentIOSWebIntelligenceCacheWatch) -> Bool? {
+    var permitted = expected
+    permitted.lastSHA256 = updated.lastSHA256
+    permitted.lastCheckedAtMillis = updated.lastCheckedAtMillis
+    permitted.lastChangedAtMillis = updated.lastChangedAtMillis
+    permitted.updatedAtMillis = updated.updatedAtMillis
+    guard permitted == updated, updated.lastCheckedAtMillis >= expected.lastCheckedAtMillis,
+      updated.lastChangedAtMillis >= expected.lastChangedAtMillis, updated.updatedAtMillis >= expected.updatedAtMillis else { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    do { return try cacheIndexUnlocked().compareAndPutWatch(try watchEntry(updated), expected: expected) }
+    catch { return nil }
+  }
+
   func watch(id: String) -> AgentIOSWebIntelligenceCacheWatch? {
     lock.lock()
     defer { lock.unlock() }
