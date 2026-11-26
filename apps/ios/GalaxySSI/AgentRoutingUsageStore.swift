@@ -116,6 +116,7 @@ final class AgentRoutingUsageStore {
   private static func average(_ values: [Int64]) -> Int64 {
     guard !values.isEmpty else { return 0 }
     let count = Int64(values.count)
+    // Separate quotients from small remainders so large valid counters cannot overflow the mean.
     let quotients = values.reduce(Int64(0)) { $0 + $1 / count }
     let remainders = values.reduce(Int64(0)) { $0 + $1 % count }
     return quotients + remainders / count

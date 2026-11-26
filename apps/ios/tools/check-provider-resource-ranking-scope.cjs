@@ -9,7 +9,7 @@ const android = 'e7c6af6ef3eed21c7fb697b4458d1cf742833dc4';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 const clean = source => source.replace(/\r\n/g, '\n');
 const read = file => require('./check-routing-health-scope.cjs').retained(file,
-  clean(fs.readFileSync(path.join(root, file), 'utf8')));
+  require('./check-routing-usage-scope.cjs').retained(file, clean(fs.readFileSync(path.join(root, file), 'utf8'))));
 const old = file => clean(git('show', `${base}:${file}`));
 function once(source, from, to) {
   assert.equal(source.split(from).length, 2, from);
