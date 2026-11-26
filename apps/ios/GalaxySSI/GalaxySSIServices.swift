@@ -14736,6 +14736,51 @@ final class MessageCoordinator: ObservableObject {
     _ = store.commitOwnedAgentTaskState(expected: task, updated: updated)
   }
 
+  private func recordNativeConnectorTransportAccepted(_ event: MqttDeliveryCompletions.Event,
+    identity: AgentTaskIdentity, target: MqttPeerChatProjection.Destination) throws {
+    guard UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript else {
+      throw MqttDeliveryDispatch.Failure.unavailable
+    }
+    guard let contact = store.contact(id: event.contactID), contact.trustState == .verified,
+          contact.desktopId == target.peer.remoteSignalName, target.routeId == identity.clientRouteId,
+          event.identity == (try MqttBusinessIdentity(target.peer.binding)),
+          let task = store.agentTask(id: identity.turnId), task.sessionId == identity.conversationId,
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          let session = store.agentSession(id: task.sessionId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          task.phase == .waitingResponse || task.phase == .paused ||
+            (task.phase == .blocked && task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true"),
+          var plan = task.activePlan else { return }
+    let matches = plan.actions.indices.filter {
+      let pending = AgentNativeConnectorContinuation.pendingResult(plan.actions[$0])
+      return pending?.metadata["source_message_id"] == event.sourceMessageID &&
+        pending?.metadata["contact_id"] == event.contactID
+    }
+    guard matches.count == 1, let index = matches.first,
+          let pending = AgentNativeConnectorContinuation.pendingResult(plan.actions[index]),
+          task.lastNativeActionResult?.actionId == pending.actionId,
+          task.lastNativeActionResult?.metadata["control_plane_run_id"] == pending.metadata["control_plane_run_id"],
+          plan.actions[index].parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint,
+          let dispatch = AgentIOSConnectorDispatch(action: plan.actions[index], receipt: pending),
+          let outgoing = store.persistedMessage(id: dispatch.outgoingId, contactId: "hermes"),
+          AgentNativeConnectorContinuation.waitingAction(plan.actions[index], result: pending, task: task, outgoing: outgoing) != nil,
+          let record = try managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner), record.state == .pending,
+          let updated = try AgentNativeConnectorTransportAcceptance.apply(action: plan.actions[index], pending: pending,
+            managed: record, event: event, taskIdentity: identity,
+            expectedIdentity: MqttBusinessIdentity(target.peer.binding), expectedTopic: target.peer.binding.sendTopic,
+            expectedRouteID: target.routeId),
+          let retained = AgentNativeConnectorContinuation.waitingAction(plan.actions[index], result: updated,
+            task: task, outgoing: outgoing) else { return }
+    var saved = task
+    plan.actions[index] = retained
+    saved.activePlan = plan
+    saved.planContext = AgentTaskPlanContext(plan: plan)
+    saved.lastNativeActionResult = updated
+    if saved.pendingAction?.id == retained.id { saved.pendingAction = retained }
+    saved.updatedAtMillis = max(task.updatedAtMillis, event.receivedAt)
+    guard store.commitOwnedAgentTaskState(expected: task, updated: saved) else { throw MqttChunkStorageError.databaseFailure }
+  }
+
   private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord) -> Bool {
     guard record.state == .pending, let task = store.agentTask(id: record.turnId),
           task.sessionId == record.conversationId,
@@ -18248,6 +18293,9 @@ final class MessageCoordinator: ObservableObject {
         self?.journalCodexReplayOwner(source, contact: contact, identity: identity, target: target)
       }, receiveAnswerPreview: { [weak self] payload, desktop, route in
         self?.receiveSupervisedAnswerPreview(payload, desktopId: desktop, routeId: route)
+      }, recordManagedTransportAccepted: { [weak self] event, identity, target in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        try self.recordNativeConnectorTransportAccepted(event, identity: identity, target: target)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
