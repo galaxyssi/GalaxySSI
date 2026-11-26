@@ -1,8 +1,8 @@
 # Knowledge-gap Research Source Follow-up
 
-Baseline: main 2362b3ffe6a3114feb55e699c0054b794ebe9fac after #4568 merged during the policy-isolation correction. Independent iOS increment; no duplicate autonomous implementation or Android/Desktop changes. Compose both autonomous and gap checker hooks after resolving their shared reader conflict.
+Original source-membership #4569 merged through 008d6e775 during this correction. Actual policy-isolation follow-up baseline: main bb1b6b938450781de6b0580d839cb7ffb16617c7. The new PR contains only actor/worker changes and corresponding fixture/checker/documentation changes, not a duplicate of the source implementation below. No Android/Desktop changes.
 
-The remote branch also received merge 008d6e775 while this correction was being published. Preserve that merge and its autonomous-normalized reader. The checker retains historical ca36efb28 after that explicit normalization; the actual synchronized PR diff base remains 2362b3ffe, not the checker's historical comparison.
+Preserve remote merge 008d6e775 and its autonomous-normalized reader. The cumulative source checker retains historical ca36efb28 after that explicit normalization. An additional whole-file comparison pins the actor/worker correction to actual main bb1b6b938, restoring only declared actor/worker hooks before requiring byte-identical producer/storage logic.
 
 ## Implemented
 
@@ -15,7 +15,7 @@ The remote branch also received merge 008d6e775 while this correction was being 
 
 ## Evidence
 
-- Twelve new XCTest methods authored SOURCE ONLY in the existing AgentEvalOpsTests file: the ten source/persistence methods plus main-actor policy placement/ordered observation and policy read at execution rather than enqueue. Bridge fixtures now explicitly await their work handles before inspecting storage.
+- Cumulative twelve XCTest fixture methods authored SOURCE ONLY: ten source/persistence methods already merged in #4569, plus TWO new actor/ordering/execution-time-policy methods in this correction. Existing bridge fixtures now explicitly await work handles before inspecting storage. None executed.
 - Fixtures were NOT executed. They do not establish native Swift compilation, protected-data/keychain behavior, process/thread races or privacy revocation during work.
 - Dedicated gap and existing research/cognition/foreground source guards, `npm run check:ios`, checker syntax and `git diff --check` passed. The new guard compares complete governance files outside declared hooks and freezes recorded-run, eval/trajectory, runtime/dispatch and Xcode project dependencies. No native acceptance claimed.
 

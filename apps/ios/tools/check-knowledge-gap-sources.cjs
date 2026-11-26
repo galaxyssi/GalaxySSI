@@ -2,6 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'ca36efb28c5e2e72c620e20c4e88ccfe30e1549a';
+const isolationBase = 'bb1b6b938450781de6b0580d839cb7ffb16617c7';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-autonomous-source-scope.cjs').retained(f,
   clean(fs.readFileSync(path.join(root, f), 'utf8')));
@@ -39,6 +40,19 @@ function validate() {
   const detector = section(model, 'enum AgentKnowledgeGapDetector {', 'enum AgentStandardProtocol:');
   assert(detector.indexOf('guard sample.runId') < detector.indexOf('let topic'));
   const runtime = read(app + 'AgentCognitiveGovernanceRuntime.swift');
+  const beforeIsolation = f => clean(cp.execFileSync('git', ['show', isolationBase + ':' + f],
+    {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
+  const priorRuntime = beforeIsolation(app + 'AgentCognitiveGovernanceRuntime.swift');
+  let restored = once(runtime, 'final class AgentKnowledgeGapResearchBridge: @unchecked Sendable {', 'final class AgentKnowledgeGapResearchBridge {');
+  restored = once(restored, 'private var autonomousResearchEnabled: @MainActor @Sendable () -> Bool', 'private var autonomousResearchEnabled: () -> Bool');
+  restored = once(restored, '  private var pendingObservation: (id: UUID, task: Task<Void, Never>)?\n', '');
+  restored = once(restored, '@escaping @MainActor @Sendable () -> Bool', '@escaping () -> Bool');
+  restored = once(restored, section(restored, '  @discardableResult\n  func observe(_ gap: AgentKnowledgeGap)', '  private func observeLocked('),
+    section(priorRuntime, '  func observe(_ gap: AgentKnowledgeGap)', '  private func observeLocked('));
+  restored = once(restored, '  private func observeLocked(_ gap: AgentKnowledgeGap, enabled: Bool)', '  private func observeLocked(_ gap: AgentKnowledgeGap)');
+  restored = once(restored, '    let sourceEventId = "knowledge-gap:\\(gap.id)"\n',
+    '    let sourceEventId = "knowledge-gap:\\(gap.id)"\n    let enabled = locked { autonomousResearchEnabled() }\n');
+  assert.equal(restored, priorRuntime, 'Policy correction preserves complete production file outside declared actor/worker hooks');
   const bridge = section(runtime, 'final class AgentKnowledgeGapResearchBridge', 'struct AgentProtocolEndpointGrant:');
   for (const token of ['locked { observeLocked(gap, enabled: enabled) }', 'guard let sources = gap.sourceConversationIds, !sources.isEmpty',
     'sources.allSatisfy', 'sourceConversationId: sources.sorted().first ?? ""', 'sourceConversationIds: sources',
@@ -57,6 +71,7 @@ function validate() {
   assert(!bridge.includes('locked { autonomousResearchEnabled() }'));
   const tests = 'apps/ios/GalaxySSITests/AgentEvalOpsTests.swift';
   assert.equal((read(tests).match(/  func test/g) || []).length - (old(tests).match(/  func test/g) || []).length, 12);
+  assert.equal((read(tests).match(/  func test/g) || []).length - (beforeIsolation(tests).match(/  func test/g) || []).length, 2);
   for (const file of ['GalaxySSIServices', 'AgentObservationModels', 'AgentRecordedRunStore', 'AgentEvalOpsStore',
     'AgentTrajectoryLearning', 'GlobalResearchExecutorModels', 'GlobalResearchExecutorPolicy', 'GalaxySSIGlobalAgentRuntime']) {
     assert.equal(read(app + file + '.swift'), old(app + file + '.swift'), file + ': unchanged dependency');
