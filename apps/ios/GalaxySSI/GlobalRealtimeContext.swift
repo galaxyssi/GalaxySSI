@@ -1222,7 +1222,9 @@ enum GlobalRealtimeContextPolicy {
     var items: [GlobalRealtimeContextItem] = []
 
     for task in cognitionTasks {
-      if excludedConversationIds.contains(task.sourceEvent.conversationId) ||
+      guard let eventSources = GlobalBackgroundCognitionScope.sourceConversationIds(task) else { continue }
+      let sources = eventSources.union(task.contextConversationIds ?? [])
+      if !sources.isDisjoint(with: excludedConversationIds) ||
         GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(task.lastError) ||
         !retainTerminal(status: task.status.rawValue, updatedAtMillis: task.updatedAtMillis, nowMillis: nowMillis) {
         continue
@@ -1239,7 +1241,7 @@ enum GlobalRealtimeContextPolicy {
         title: title,
         topic: topic,
         detail: intent.isEmpty ? "" : "intent=\(intent)",
-        conversationIds: Set([task.sourceEvent.conversationId].filter { !$0.isEmpty }),
+        conversationIds: sources,
         needsAttention: [.waitingForResource, .failed].contains(task.status),
         active: ![.completed, .failed].contains(task.status),
         updatedAtMillis: task.updatedAtMillis
@@ -1247,7 +1249,8 @@ enum GlobalRealtimeContextPolicy {
     }
 
     for task in researchTasks {
-      if excludedConversationIds.contains(task.sourceConversationId) ||
+      let sources = (task.sourceConversationIds ?? []).union([task.sourceConversationId].filter { !$0.isEmpty })
+      if !sources.isDisjoint(with: excludedConversationIds) ||
         GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(task.lastError) ||
         !retainTerminal(status: task.status.rawValue, updatedAtMillis: task.updatedAtMillis, nowMillis: nowMillis) {
         continue
@@ -1267,7 +1270,7 @@ enum GlobalRealtimeContextPolicy {
         title: compact(task.question).ifBlank("Research task"),
         topic: compact(task.topic),
         detail: detailParts.joined(separator: "; "),
-        conversationIds: Set([task.sourceConversationId].filter { !$0.isEmpty }),
+        conversationIds: sources,
         needsAttention: [.waitingForResource, .failed].contains(task.status),
         active: ![.completed, .failed, .paused].contains(task.status),
         updatedAtMillis: task.updatedAtMillis
@@ -1275,7 +1278,8 @@ enum GlobalRealtimeContextPolicy {
     }
 
     for run in autonomousRuns {
-      if excludedConversationIds.contains(run.sourceConversationId) ||
+      let sources = (run.sourceConversationIds ?? []).union([run.sourceConversationId].filter { !$0.isEmpty })
+      if !sources.isDisjoint(with: excludedConversationIds) ||
         GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(run.lastError) ||
         !retainTerminal(status: run.status.rawValue, updatedAtMillis: run.updatedAtMillis, nowMillis: nowMillis) {
         continue
@@ -1303,7 +1307,7 @@ enum GlobalRealtimeContextPolicy {
         title: compact(run.goal).ifBlank("Autonomous task"),
         topic: compact(run.topic),
         detail: detailParts.joined(separator: "; "),
-        conversationIds: Set([run.sourceConversationId].filter { !$0.isEmpty }),
+        conversationIds: sources,
         needsAttention: [
           .waitingConfirmation,
           .waitingForResource,
@@ -1316,8 +1320,7 @@ enum GlobalRealtimeContextPolicy {
     }
 
     for goal in longHorizonGoals {
-      let visibleConversations = goal.sourceConversationIds.subtracting(excludedConversationIds)
-      if (!goal.sourceConversationIds.isEmpty && visibleConversations.isEmpty) ||
+      if !goal.sourceConversationIds.isDisjoint(with: excludedConversationIds) ||
         !retainTerminal(status: goal.status.rawValue, updatedAtMillis: goal.updatedAtMillis, nowMillis: nowMillis) {
         continue
       }
@@ -1328,7 +1331,7 @@ enum GlobalRealtimeContextPolicy {
         title: compact(goal.title).ifBlank("Long-horizon goal"),
         topic: compact(goal.topic),
         detail: compact(goal.status == .blocked ? goal.blocker : goal.progressSummary),
-        conversationIds: visibleConversations,
+        conversationIds: goal.sourceConversationIds,
         needsAttention: [
           .waitingConfirmation,
           .waitingDependency,

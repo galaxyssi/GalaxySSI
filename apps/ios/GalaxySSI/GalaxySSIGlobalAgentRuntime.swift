@@ -808,7 +808,13 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       context: researchContext(store: store, state: state, task: task, nowMillis: nowMillis),
       nowMillis: nowMillis
     )
-    guard let step else { return false }
+    guard var step else { return false }
+    if !PublicAttentionResearchPolicy.isPublicTask(task.id) {
+      guard let contextSources = request.contextConversationIds, var updated = step.state.task(id: task.id),
+            let existingSources = updated.sourceConversationIds else { return false }
+      updated.sourceConversationIds = existingSources.union(contextSources)
+      step.state.upsert(updated)
+    }
     stateStore.save(step.state)
     guard stateStore.lastErrorDescription.isEmpty else { return false }
     store.appendGlobalProactiveMessages(step.state.proactiveMessages)
@@ -826,7 +832,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     let state = stateStore.state()
     let scope = GlobalRealtimePlanningScope(enabled: true, conversations: store.agentSessions(includeArchived: true))
     guard stateStore.lastErrorDescription.isEmpty, state.dispatchRequests.contains(request),
-          let task = state.task(id: request.taskId), GlobalResearchSourceScope.allows(task, scope: scope) else { return false }
+          let task = state.task(id: request.taskId), GlobalResearchSourceScope.allows(task, scope: scope),
+          GlobalResearchSourceScope.allowsContext(request, scope: scope) else { return false }
     if PublicAttentionResearchPolicy.isPublicTask(task.id) {
       return PublicAttentionResearchPolicy.allows(request, settings: settings)
     }
@@ -1023,7 +1030,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       .joined(separator: "\n")
     let realtime = GlobalRealtimeContextProvider(
       researchTasksSource: { state.tasks.filter { GlobalResearchSourceScope.allows($0, scope: scope) } }
-    ).build(
+    ).buildProjection(
       query: task.question,
       currentConversationId: conversationId,
       excludedConversationIds: scope.excludedConversationIds,
@@ -1034,7 +1041,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     )
     return GlobalResearchExecutionContext(
       conversationContext: String(conversationContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters)),
-      realtimeContext: realtime
+      realtimeContext: realtime.text,
+      conversationIds: realtime.conversationIds.union(conversationContext.isEmpty || conversationId.isEmpty ? [] : [conversationId])
     )
   }
 

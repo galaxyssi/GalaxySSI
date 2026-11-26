@@ -2,6 +2,64 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalResearchExecutorPolicyTests: XCTestCase {
+  func testResearchDispatchContextProofRoundtripAndLegacyQuarantine() throws {
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: .init(tasks: [task(.quickFact)]),
+      resources: [resource("model", .cloudModel)], context: .init(conversationIds: ["a", "b"]), nowMillis: now))
+    let request = try XCTUnwrap(step.state.dispatchRequests.first)
+    XCTAssertEqual(request.contextConversationIds, ["a", "b"])
+    let bytes = try JSONEncoder().encode(request)
+    XCTAssertEqual(try JSONDecoder().decode(GlobalResearchDispatchRequest.self, from: bytes), request)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    object.removeValue(forKey: "context_conversation_ids")
+    let legacy = try JSONDecoder().decode(GlobalResearchDispatchRequest.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertNil(legacy.contextConversationIds)
+    XCTAssertFalse(GlobalResearchSourceScope.allowsContext(legacy, scope: researchScope()))
+    let context = GlobalResearchExecutionContext(conversationIds: ["a", "b"])
+    XCTAssertEqual(try JSONDecoder().decode(GlobalResearchExecutionContext.self, from: JSONEncoder().encode(context)), context)
+  }
+
+  func testResearchDispatchContextRevalidationRejectsRevokedSourcesAndPublicContamination() throws {
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: .init(tasks: [task(.quickFact)]),
+      resources: [resource("model", .cloudModel)], context: .init(conversationIds: ["conversation-main"]), nowMillis: now))
+    var request = try XCTUnwrap(step.state.dispatchRequests.first)
+    XCTAssertTrue(GlobalResearchSourceScope.allowsContext(request, scope: researchScope()))
+    request.contextConversationIds = ["conversation-main", "private"]
+    XCTAssertFalse(GlobalResearchSourceScope.allowsContext(request, scope: researchScope()))
+    request.contextConversationIds = ["removed"]
+    XCTAssertFalse(GlobalResearchSourceScope.allowsContext(request, scope: researchScope()))
+    request.taskId = PublicAttentionResearchPolicy.taskPrefix + "fixture"
+    request.contextConversationIds = ["conversation-main"]
+    XCTAssertFalse(GlobalResearchSourceScope.allowsContext(request, scope: researchScope()))
+    request.contextConversationIds = []
+    XCTAssertTrue(GlobalResearchSourceScope.allowsContext(request, scope: researchScope()))
+  }
+
+  func testResearchEvidenceAndSynthesisRequestsRetainTheirContextSourceSet() throws {
+    let sources: Set<String> = ["conversation-main", "secondary"]
+    let context = GlobalResearchExecutionContext(conversationContext: "Question", realtimeContext: "Context", conversationIds: sources)
+    let evidence = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: .init(tasks: [task(.quickFact)]),
+      resources: [resource("model", .cloudModel)], context: context, nowMillis: now))
+    XCTAssertTrue(evidence.state.dispatchRequests.allSatisfy { $0.contextConversationIds == sources })
+    var synthesis = task(.quickFact)
+    synthesis.researchPlan = completedPlan(for: synthesis, result: evidenceResult("iOS supports this task."))
+    synthesis.researchPlan.qualityExpansionCount = 2
+    synthesis.evidenceLedger = GlobalEvidenceEvaluator.build(plan: synthesis.researchPlan, nowMillis: now)
+    let next = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: .init(tasks: [synthesis]),
+      resources: [resource("model", .cloudModel)], context: context, nowMillis: now))
+    let request = try XCTUnwrap(next.state.dispatchRequests.first)
+    XCTAssertEqual(request.stage, .synthesis)
+    XCTAssertEqual(request.contextConversationIds, sources)
+  }
+
+  func testResearchDispatchEqualityBindsContextProofToStoredRequest() throws {
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: .init(tasks: [task(.quickFact)]),
+      resources: [resource("model", .cloudModel)], context: .init(conversationIds: ["conversation-main"]), nowMillis: now))
+    var request = try XCTUnwrap(step.state.dispatchRequests.first)
+    XCTAssertTrue(step.state.dispatchRequests.contains(request))
+    request.contextConversationIds = []
+    XCTAssertFalse(step.state.dispatchRequests.contains(request))
+  }
+
   func testResearchScopeRequiresCompleteKnownEligibleSources() {
     var candidate = task(.quickFact)
     let scope = researchScope()

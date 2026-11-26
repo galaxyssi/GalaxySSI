@@ -135,13 +135,17 @@ final class GlobalRealtimeContextProvider {
     allowedConversationIds: Set<String>? = nil,
     captureConversationIds: Bool = false
   ) -> GlobalRealtimeContextProjection {
+    let researchTasks = allowedConversationIds == nil ? snapshot.researchTasks :
+      snapshot.researchTasks.filter { $0.sourceConversationIds != nil }
+    let autonomousRuns = allowedConversationIds == nil ? snapshot.autonomousRuns :
+      snapshot.autonomousRuns.filter { $0.sourceConversationIds != nil }
     let allowedGoals = allowedConversationIds.map { allowed in
       snapshot.longHorizonGoals.filter { $0.sourceConversationIds.isSubset(of: allowed) }
     } ?? snapshot.longHorizonGoals
     let items = GlobalRealtimeContextPolicy.project(
       cognitionTasks: snapshot.cognitionTasks,
-      researchTasks: snapshot.researchTasks,
-      autonomousRuns: snapshot.autonomousRuns,
+      researchTasks: researchTasks,
+      autonomousRuns: autonomousRuns,
       longHorizonGoals: allowedGoals,
       excludedConversationIds: excludedConversationIds,
       nowMillis: nowMillis,

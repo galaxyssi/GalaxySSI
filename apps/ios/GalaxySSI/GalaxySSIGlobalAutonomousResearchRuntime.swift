@@ -57,6 +57,7 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     let accepted = [.supported, .verified].contains(verification)
     guard let updated = deliberationStore.updateAutonomousRun(runId: runId, transform: { current in
       var next = current
+      next.sourceConversationIds = current.sourceConversationIds.map { $0.union(researchSources) }
       next.actions = current.actions.map { candidate in
         guard candidate.id == actionId else { return candidate }
         var copy = candidate
