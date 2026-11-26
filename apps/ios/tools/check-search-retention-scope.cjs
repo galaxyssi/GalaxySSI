@@ -3,18 +3,20 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
 const base = 'b42b5f77f87b2b8359b5dd4a51c81c32591bb7ea';
 const clean = text => text.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => require('./check-search-response-size-parity.cjs').retained(file, clean(fs.readFileSync(path.join(root, file), 'utf8')));
 const old = file => clean(cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(source, from, to) {
   assert.equal(source.split(from).length, 2, 'One declared retention hook: ' + from);
   return source.replace(from, to);
 }
 function retainedSearchCache(source) {
+  source = require('./check-search-response-size-parity.cjs').retained(app + 'AgentIOSWebIntelligenceCache.swift', source);
   if (!source.includes('row.updated == entry.storedAtMillis, row.expires == entry.expiresAtMillis')) return source;
   return once(source, 'entry.key == key, row.updated == entry.storedAtMillis, row.expires == entry.expiresAtMillis,\n      entry.storedAtMillis <= now, now <= entry.expiresAtMillis',
     'entry.key == key, entry.storedAtMillis <= now, now < entry.expiresAtMillis');
 }
 function retainedSearchIndex(source) {
+  source = require('./check-search-response-size-parity.cjs').retained(app + 'AgentIOSWebCacheIndex.swift', source);
   if (!source.includes('// Match Android: retain independent search keys until explicit cache cleanup.')) return source;
   source = once(source, 'guard entry.kind == .search, now >= 0 else { throw Failure.corrupt }', 'guard entry.kind == .search else { throw Failure.corrupt }');
   source = once(source, '      // Match Android: retain independent search keys until explicit cache cleanup.\n      try put(entry)',
@@ -23,6 +25,7 @@ function retainedSearchIndex(source) {
     'let searches = try remove(.search, before: expiredOnly ? now : nil)');
 }
 function retainedSearchFixture(source) {
+  source = require('./check-search-response-size-parity.cjs').retained(tests + 'AgentIOSWebSearchFusionTests.swift', source);
   if (!source.includes('clock = 61_001')) return source;
   source = once(source, 'clock = 61_001', 'clock = 61_000');
   return once(source, 'XCTAssertEqual(cache.stats()["search_count"], .int(33))\n    XCTAssertNotNil(cache.searchResponse(key: String(repeating: "a", count: 62) + "00"))',

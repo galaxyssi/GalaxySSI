@@ -3,7 +3,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'd6793a31dc7bfedfdf50372101b8fc4f377e8249';
 const clean = value => value.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => require('./check-search-response-size-parity.cjs').retained(file, clean(fs.readFileSync(path.join(root, file), 'utf8')));
 const old = file => clean(cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function undo(source, changes) {
   for (const [before, after] of changes) {
@@ -41,6 +41,7 @@ function retainedCapacityProvider(source) {
   ]);
 }
 function retainedCapacityCache(source) {
+  source = require('./check-search-response-size-parity.cjs').retained(app + 'AgentIOSWebIntelligenceCache.swift', source);
   source = require('./check-web-watch-scope.cjs').retainedWatchCache(source);
   if (!source.includes('<= AgentIOSWebSearchCapacity.maximumResults')) return source;
   return undo(source, [

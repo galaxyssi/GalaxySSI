@@ -3,7 +3,6 @@ import Foundation
 enum AgentIOSWebSearchCapacity {
   static let maximumResults = 100
   static let defaultResults = 10
-  static let maximumCachedResponseBytes = 2_000_000
 
   // Selected by native code, never by an input JSON field or a permission grant.
   enum Scope: Equatable {

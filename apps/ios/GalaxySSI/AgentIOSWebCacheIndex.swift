@@ -22,7 +22,7 @@ final class AgentIOSWebCacheIndex {
   private let beforeCommit: () throws -> Void
   private let didDecode: () -> Void
 
-  init(url: URL, master: SymmetricKey, identity: String, beforeCommit: @escaping () throws -> Void,
+  init(url: URL, master: SymmetricKey, identity: String, maximumRowBytes: Int32? = nil, beforeCommit: @escaping () throws -> Void,
     didDecode: @escaping () -> Void = {}) throws {
     guard url.isFileURL else { throw Failure.unavailable }
     let salt = Data(identity.utf8)
@@ -57,6 +57,10 @@ final class AgentIOSWebCacheIndex {
       "CREATE TABLE IF NOT EXISTS cache_marker(id INTEGER PRIMARY KEY CHECK(id=1),payload BLOB NOT NULL)"] { try execute(sql) }
     for path in [url.path, url.path + "-wal", url.path + "-shm"] where FileManager.default.fileExists(atPath: path) {
       try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication, .posixPermissions: 0o600], ofItemAtPath: path)
+    }
+    if let maximumRowBytes {
+      guard maximumRowBytes > 0 else { throw Failure.corrupt }
+      sqlite3_limit(database, SQLITE_LIMIT_LENGTH, maximumRowBytes)
     }
     ready = true
   }
@@ -123,12 +127,13 @@ final class AgentIOSWebCacheIndex {
     try bind(kind.rawValue, 1, statement)
     if let id { try bind(opaque(kind, id), 2, statement) }
     sqlite3_bind_int(statement, id == nil ? 2 : 3, Int32(min(max(limit, 1), 2_745)))
+    let maximumBytes = try rowByteLimit(kind)
     while true {
       let status = sqlite3_step(statement)
       if status == SQLITE_DONE { return }
       guard status == SQLITE_ROW, let text = sqlite3_column_text(statement, 0) else { throw Failure.corrupt }
       let digest = String(cString: text)
-      let entry = try JSONDecoder().decode(Entry.self, from: open(blob(statement, 5), purpose: kind.rawValue + ":" + digest))
+      let entry = try JSONDecoder().decode(Entry.self, from: open(blob(statement, 5, maximumBytes: maximumBytes), purpose: kind.rawValue + ":" + digest))
       guard entry.kind == kind, opaque(kind, entry.id) == digest, id == nil || entry.id == id,
         entry.updated == sqlite3_column_int64(statement, 1), entry.expires == sqlite3_column_int64(statement, 2),
         entry.characters == sqlite3_column_int64(statement, 3), (entry.verified ? 1 : 0) == sqlite3_column_int(statement, 4) else { throw Failure.corrupt }
@@ -139,11 +144,15 @@ final class AgentIOSWebCacheIndex {
 
   func put(_ entry: Entry) throws {
     guard !entry.id.isEmpty, entry.id.utf8.count <= 4_096, entry.updated >= 0, entry.expires >= 0,
-      entry.characters >= 0, entry.payload.count <= 3_000_000 else { throw Failure.corrupt }
+      entry.characters >= 0, entry.kind == .search || entry.payload.count <= 3_000_000 else { throw Failure.corrupt }
     let digest = opaque(entry.kind, entry.id)
+    let maximumBytes = try rowByteLimit(entry.kind)
+    guard entry.payload.count <= maximumBytes else { throw Failure.corrupt }
     let encoded = try JSONEncoder().encode(entry)
-    guard encoded.count <= 4_099_000 else { throw Failure.corrupt }
+    // CryptoKit's combined AES-GCM box adds a 12-byte nonce and 16-byte tag.
+    guard encoded.count <= (entry.kind == .search ? maximumBytes - 28 : min(4_099_000, maximumBytes - 28)) else { throw Failure.corrupt }
     let data = try seal(encoded, purpose: entry.kind.rawValue + ":" + digest)
+    guard data.count <= maximumBytes else { throw Failure.corrupt }
     let s = try prepare("INSERT OR REPLACE INTO cache_rows(kind,entry_key,updated,expires,characters,verified,payload) VALUES(?,?,?,?,?,?,?)")
     defer { sqlite3_finalize(s) }
     try bind(entry.kind.rawValue, 1, s); try bind(digest, 2, s)
@@ -244,9 +253,14 @@ final class AgentIOSWebCacheIndex {
     return bytes
   }
   private func open(_ data: Data, purpose: String) throws -> Data { try AES.GCM.open(AES.GCM.SealedBox(combined: data), using: key, authenticating: aad(purpose)) }
-  private func blob(_ s: OpaquePointer, _ column: Int32) throws -> Data {
+  private func rowByteLimit(_ kind: Kind) throws -> Int {
+    let limit = Int(sqlite3_limit(database, SQLITE_LIMIT_LENGTH, -1))
+    guard limit > 28 else { throw Failure.unavailable }
+    return kind == .search ? limit : min(limit, 4_100_000)
+  }
+  private func blob(_ s: OpaquePointer, _ column: Int32, maximumBytes: Int = 4_100_000) throws -> Data {
     let count = Int(sqlite3_column_bytes(s, column))
-    guard (1...4_100_000).contains(count), let bytes = sqlite3_column_blob(s, column) else { throw Failure.corrupt }
+    guard count > 0, count <= maximumBytes, let bytes = sqlite3_column_blob(s, column) else { throw Failure.corrupt }
     return Data(bytes: bytes, count: count)
   }
   private func scalar(_ sql: String) throws -> Int64 {
@@ -265,7 +279,8 @@ final class AgentIOSWebCacheIndex {
     guard text.withCString({ sqlite3_bind_text(s, index, $0, -1, Self.transient) }) == SQLITE_OK else { throw Failure.unavailable }
   }
   private func bind(_ data: Data, _ index: Int32, _ s: OpaquePointer) throws {
-    guard data.withUnsafeBytes({ sqlite3_bind_blob(s, index, $0.baseAddress, Int32($0.count), Self.transient) }) == SQLITE_OK else { throw Failure.unavailable }
+    guard let length = Int32(exactly: data.count) else { throw Failure.corrupt }
+    guard data.withUnsafeBytes({ sqlite3_bind_blob(s, index, $0.baseAddress, length, Self.transient) }) == SQLITE_OK else { throw Failure.unavailable }
   }
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 }

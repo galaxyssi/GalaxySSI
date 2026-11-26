@@ -4,6 +4,37 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSWebCacheIndexTests: XCTestCase {
+  func testSearchRowsCrossLegacyBlobLimitWhileOtherKindsKeepTheirBounds() throws {
+    try fixture { url in
+      let index = try AgentIOSWebCacheIndex(url: url, master: SymmetricKey(size: .bits256), identity: "fixture", beforeCommit: {})
+      try index.initialize(allowImport: true) { [] }
+      var large = entry(.search, "large")
+      large.payload = Data(repeating: 120, count: 4_200_000)
+      try index.transaction { try index.put(large) }
+      XCTAssertEqual(try index.entry(.search, id: "large")?.payload, large.payload)
+      for kind in [AgentIOSWebCacheIndex.Kind.document, .watch, .learned] {
+        var bounded = large; bounded.kind = kind
+        XCTAssertThrowsError(try index.transaction { try index.put(bounded) })
+        XCTAssertNil(try index.entry(kind, id: "large"))
+      }
+    }
+  }
+
+  func testConfiguredSQLiteRowLimitRejectsReplacementWithoutLosingExistingData() throws {
+    try fixture { url in
+      let index = try AgentIOSWebCacheIndex(url: url, master: SymmetricKey(size: .bits256), identity: "fixture",
+        maximumRowBytes: 4_096, beforeCommit: {})
+      try index.initialize(allowImport: true) { [] }
+      let original = entry(.search, "saved")
+      try index.transaction { try index.put(original) }
+      let generation = try index.generation()
+      var replacement = original; replacement.payload = Data(repeating: 120, count: 4_000)
+      XCTAssertThrowsError(try index.transaction { try index.put(replacement) })
+      XCTAssertEqual(try index.entry(.search, id: "saved")?.payload, original.payload)
+      XCTAssertEqual(try index.generation(), generation)
+    }
+  }
+
   func testIndexedCountsAndPointReadsDoNotDecodeOtherBodies() throws {
     try fixture { url in
       var decodes = 0
