@@ -31,6 +31,9 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     guard researchStore.lastErrorDescription.isEmpty, deliberationStore.lastErrorDescription.isEmpty,
           GlobalAutonomousSourceScope.allows(run, scope: scope), task.sourceEventId == run.sourceEventId,
           task.sourceConversationId == run.sourceConversationId,
+          GlobalResearchSourceScope.allows(task, scope: scope),
+          let runSources = run.sourceConversationIds, let researchSources = task.sourceConversationIds,
+          runSources.isSubset(of: researchSources),
           action.status == .running, action.resourceId == task.id else { return false }
 
     let result = task.result.ifBlank(task.lastError)

@@ -8,6 +8,8 @@ This is a partial port, NOT completion of all #3007 behavior.
 
 Research source-membership follow-up: see ANDROID_3007_RESEARCH_SOURCE_FOLLOWUP.md for optional complete declared sources, dual queue selection, current dispatch/response gates and source-only verification. Missing legacy/autonomous/evalops source proof remains untrusted; selected-context provenance and full Android parity are NOT complete.
 
+Autonomous source-membership follow-up: see ANDROID_3007_AUTONOMOUS_SOURCE_FOLLOWUP.md for newly planned run provenance, eligible work claims, current dispatch/result gates and complete-source research queue production. Legacy missing proof and evalops research remain untrusted; no full runtime/privacy acceptance or #3007 completion is claimed.
+
 ## Implemented
 
 - Replace the actual URLSession public-search regex link extraction with an inert SwiftSoup DOM parser. Raw HTTP search stays separate from WebKit article rendering. Fixed dependency 2.6.0 uses Swift tools 5.0; exact upstream tag commit is pinned in Package.resolved and the app target links the product.

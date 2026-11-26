@@ -121,6 +121,16 @@ final class GlobalAgentDeliberationStoreTests: XCTestCase {
     XCTAssertFalse(GlobalAutonomousSourceScope.matches(response, run: candidate))
   }
 
+  func testAutonomousClaimDoesNotReplaceUnreadableStoredState() throws {
+    try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("unreadable store".utf8)
+    try bytes.write(to: fileURL)
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    XCTAssertNil(store.claimAutonomousWork(nowMillis: 200))
+    XCTAssertFalse(store.lastErrorDescription.isEmpty)
+    XCTAssertEqual(try Data(contentsOf: fileURL), bytes)
+  }
+
   private func autonomousScope() -> GlobalRealtimePlanningScope {
     GlobalRealtimePlanningScope(enabled: true, conversations: [
       AgentConversation(id: "conversation", title: "Main", createdAt: 1, updatedAt: 1),

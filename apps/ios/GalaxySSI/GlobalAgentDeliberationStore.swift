@@ -241,6 +241,7 @@ final class GlobalAgentDeliberationStore {
     eligible: (GlobalAutonomousRun) -> Bool = { _ in true }) -> GlobalAutonomousWorkClaim? {
     locked {
       var snapshot = load()
+      guard lastErrorDescription.isEmpty else { return nil }
       var runs = snapshot.autonomousRuns.map {
         eligible($0) ? GlobalAutonomousRunPolicy.recoverIfStale(run: $0, nowMillis: nowMillis) : $0
       }

@@ -75,7 +75,9 @@ enum GalaxySSIGlobalAutonomousRunPlanner {
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GlobalAutonomousRun? {
     guard !task.result.actions.isEmpty, let sources = GlobalAutonomousSourceScope.inheritedSources(task) else { return nil }
-    if let existing = store.autonomousRuns().first(where: {
+    let existingRuns = store.autonomousRuns()
+    guard store.lastErrorDescription.isEmpty else { return nil }
+    if let existing = existingRuns.first(where: {
       $0.sourceCognitionTaskId == task.id && $0.status != .failed
     }) {
       return existing.sourceEventId == task.sourceEvent.id && existing.sourceConversationIds == sources ? existing : nil
@@ -444,11 +446,14 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     action: GlobalAutonomousAction,
     nowMillis: Int64
   ) -> GlobalResearchTask? {
+    guard let sources = run.sourceConversationIds else { return nil }
     let researchStore = GalaxySSIGlobalResearchRuntimeStore()
     var state = researchStore.state()
+    guard researchStore.lastErrorDescription.isEmpty else { return nil }
     let id = "autonomous-research:\(run.id):\(action.id)"
     if let existing = state.task(id: id) {
-      return existing
+      return existing.sourceConversationIds == sources && existing.sourceEventId == run.sourceEventId &&
+        existing.sourceConversationId == run.sourceConversationId ? existing : nil
     }
     let question = action.goal.ifBlank(run.goal)
     guard !question.isBlank else { return nil }
@@ -464,11 +469,12 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
       status: .queued,
       monitorIntervalMillis: action.kind == .startMonitor ? 24 * 60 * 60 * 1_000 : 0,
       createdAtMillis: nowMillis,
-      updatedAtMillis: nowMillis
+      updatedAtMillis: nowMillis,
+      sourceConversationIds: sources
     )
     state.upsert(task)
     researchStore.save(state)
-    return task
+    return researchStore.lastErrorDescription.isEmpty ? task : nil
   }
 
   private static func waitForResearchEvidence(
