@@ -6787,7 +6787,8 @@ final class MessageCoordinator: ObservableObject {
     preserveHealthyPrimary: Bool = false) -> (targets: [AgentCallableTarget], selection: AgentConnectorRouteSelection?) {
     let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })
     let registrations = callableAgentRegistrations(targets: targets)
-    let health = automaticRoutingHealth(targets: targets)
+    let health = AgentRoutingHealthSnapshot.capture(registrations: registrations, ledger: routingHealthLedger,
+      nowMillis: AgentControlPlaneClock.nowMillis())
     let usage = automaticRoutingUsage()
     let paired = store.serverLinks.contains { $0.paired }
     let probe = AgentMediaNetworkDetector.shared.currentProbe

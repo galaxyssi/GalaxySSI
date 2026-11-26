@@ -74,7 +74,7 @@ function validate() {
   for (const token of ['UserDefaults', 'URLSession', '.observe(', '.adjustedDecision(', '.prefix(6)', 'reserve(', 'register(']) assert(!model.includes(token), token);
   const service = read(app + 'GalaxySSIServices.swift');
   const capture = section(service, '  private func scoredAutomaticConnectorRoute(', '  private func automaticRouteSelection(');
-  for (const token of ['callableAgentRegistrations(targets: targets)', 'automaticRoutingHealth(targets: targets)',
+  for (const token of ['callableAgentRegistrations(targets: targets)', 'AgentRoutingHealthSnapshot.capture(registrations: registrations, ledger: routingHealthLedger',
     'automaticRoutingUsage()', 'budget: store.agentTaskBudget', 'probe.validated',
     'store.agentSafetySettings.connectorCallsAllowed', 'decision: context.decision']) assert(capture.includes(token), token);
   assert(!capture.includes('decision: nil'));

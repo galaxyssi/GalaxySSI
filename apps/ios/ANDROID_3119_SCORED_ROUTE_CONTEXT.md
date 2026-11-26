@@ -73,6 +73,11 @@ pins Android reference/current-budget bytes, and retains existing ranking,
 calibration, health, usage, budget and transport implementations. No native
 build/typecheck/XCTest, CI watching or IPA is included.
 
+Checkpoint: sixteen related JS source-scope guards passed after synchronizing
+main's timer integration, alongside iOS project structure, changed-file literal-
+Han and diff whitespace checks. These do not assert an all-repository or native
+test pass.
+
 This connects scored admission/context to these main-service paths, not every
 rule-planner/global/scheduled entry point. Generic active pre-timeout observation,
 deferred discovery and broader dispatch/recovery acceptance remain incomplete.
