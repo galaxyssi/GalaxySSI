@@ -3,7 +3,8 @@
 ## Integration
 
 This continues the broader Android attachment-input parity work tracked in the
-iOS #3119 port. Source baseline: main `fee71d95c`. It is not a claim that #3119
+iOS #3119 port. Source baseline: main `4f4406c3b`, including the merged document
+input work in #4581. It is not a claim that #3119
 introduced these existing iOS transfer implementations or their limits.
 
 The native paired connector now prepares the actual restored current-turn bytes,
@@ -59,3 +60,10 @@ errors retain original uncertain ownership and may need explicit reconciliation.
 Staging cleanup, storage failure and restart behavior remain unverified; the
 existing bounded 256-record attachment-failure retention is not a full audit log.
 Broader context/rich-output/timeout and overall Android parity remain incomplete.
+
+Passed source checks: managed-raw, scoped document input, owned status observation,
+pre-shadow routing, reported usage, live health, provider ranking, observation
+timing, research context, autonomous/research source, background cognition,
+live planning and special-use address contracts. Project structure, changed
+JavaScript syntax/localization placement and diff whitespace also passed.
+These are not executed XCTest, Swift type checking or a full repository check.

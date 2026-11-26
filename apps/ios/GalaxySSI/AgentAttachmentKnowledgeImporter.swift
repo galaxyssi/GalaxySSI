@@ -57,6 +57,20 @@ enum AgentAttachmentKnowledgeImporter {
     }
   }
 
+  static func transientDocumentText(from attachment: AgentAttachmentKnowledgeInput) -> String? {
+    let mime = normalizedMimeType(attachment)
+    let extensionName = URL(fileURLWithPath: attachment.displayName).pathExtension.lowercased()
+    guard !attachment.data.isEmpty, attachment.data.count <= AgentKnowledgeImportPolicy.maxSourceBytes,
+          !mime.hasPrefix("image/"), !mime.hasPrefix("audio/"), !mime.hasPrefix("video/"),
+          !imageExtensions.contains(extensionName),
+          mime.hasPrefix("text/") || ["application/json", "application/xml", "application/javascript"].contains(mime) ||
+            ["txt", "md", "markdown", "csv", "tsv", "json", "jsonl", "xml", "yaml", "yml", "log"].contains(extensionName) ||
+            isHTML(attachment, extensionName: extensionName) || isPDF(attachment, extensionName: extensionName) ||
+            isDocx(attachment, extensionName: extensionName) || isXlsx(attachment, extensionName: extensionName) ||
+            isPptx(attachment, extensionName: extensionName) else { return nil }
+    return extractText(from: attachment)
+  }
+
   private static func extractText(from attachment: AgentAttachmentKnowledgeInput) -> String? {
     let extensionName = URL(fileURLWithPath: attachment.displayName).pathExtension.lowercased()
     let result: String?

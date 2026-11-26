@@ -1,9 +1,13 @@
 // Source contracts only; not native delivery, cryptography, fault/restart or privacy acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'fee71d95ce8b6d5c5d62863dd55e1bf93c866078';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '4f4406c3bc2e8a58c0ef0e9be2ad2de9f214447e';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
-const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
-  {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const originals = new Map();
+const old = file => {
+  if (!originals.has(file)) originals.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
+    {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n'));
+  return originals.get(file);
+};
 function section(source, start, end) {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
   assert(a >= 0 && b > a, start); return source.slice(a, b);
@@ -15,6 +19,10 @@ const fields = [
   '  var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil\n'
 ];
 function retained(file, source) {
+  if (file.endsWith('check-native-status-observation-scope.cjs') || file.endsWith('check-connector-document-input-scope.cjs')) return source
+    .replace("const read = file => require('./check-managed-raw-attachments-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
+      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
+    .replace("  source = require('./check-managed-raw-attachments-scope.cjs').retained(file, source);\n", '');
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('MqttManagedConnectorAttachmentTests.swift')).join('\n');
   if (file.endsWith('AgentConnectorResponseResolver.swift')) return source
@@ -96,6 +104,9 @@ function validate() {
   assert.equal((tests.match(/  func test/g) || []).length, 9);
   for (const token of ['testNumericReleaseAndInboxConsumptionRollBackTogether', 'testForeignNumericReceiptCannotReleaseOriginalBody',
     'testManagedNumericAttachmentsRequireAnExplicitCurrentOwnerAndExactOriginalBody', 'testAttachmentDeliveryFailureIsNotRecordedAsProviderFailure']) assert(tests.includes(token), token);
+  for (const name of ['check-native-status-observation-scope.cjs', 'check-connector-document-input-scope.cjs']) {
+    const file = 'apps/ios/tools/' + name; assert.equal(retained(file, read(file)), old(file));
+  }
   console.log('Managed numeric raw attachments: owned intent, dependency/receipt/body binding and failure attribution source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
