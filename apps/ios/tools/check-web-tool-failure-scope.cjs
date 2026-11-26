@@ -14,6 +14,7 @@ function retainedFailureMedia(source) {
   return source.includes(hook) ? once(source, hook, '') : source;
 }
 function retainedToolFailureFile(file, source) {
+  if (file.endsWith('/CloudWebGrounding.swift')) source = require('./check-fast-search-defaults-scope.cjs').retainedFastGrounding(source);
   if (!file.endsWith('/CloudWebGrounding.swift') || !source.includes('CloudWebToolFailurePolicy.failure(')) return source;
   source = once(source, '      return boundedModelJson(CloudWebToolFailurePolicy.failure(tool: name, error: error))',
     '      return boundedModelJson([\n        "status": .string("failed"),\n        "tool": .string(String(name.prefix(80))),\n        "error": .string(String(error.localizedDescription.prefix(300)))\n      ])');

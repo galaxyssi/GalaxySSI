@@ -314,8 +314,9 @@ enum CloudWebGrounding {
       ),
       functionTool(
         name: "web_search",
-        description: "Search and locally rerank current public web sources. Set read_pages=true when ranked source " +
-          "text is needed in the same operation.",
+        description: "Search current public web sources with snippets. Fast lookup queries three preferred sources, not every engine. " +
+          "Review relevance and refine the query when evidence is insufficient; choose balanced for extra " +
+          "cross-engine corroboration or deep for comprehensive research. Set read_pages=true when ranked source text is needed in the same operation.",
         properties: objectProperties([
           ("query", stringProperty()),
           ("max_results", integerProperty(minimum: 1, maximum: 100)),
@@ -901,6 +902,7 @@ enum CloudWebGrounding {
         "profile": .string("fast"), "verticals": .array([.string("image")]), "engine_fanout": .int(3)]
     }
     if operation(forToolName: name) == .search {
+      let ordinaryAlias = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_search"
       let imageSearch = result["verticals"]?.arrayValue?.contains {
         ($0.stringValue ?? "").caseInsensitiveCompare("image") == .orderedSame
       } == true
@@ -910,7 +912,11 @@ enum CloudWebGrounding {
       }
       result.removeValue(forKey: "max_results")
       if result["profile"] == nil {
-        result["profile"] = .string(imageSearch ? "fast" : "balanced")
+        result["profile"] = .string(imageSearch || ordinaryAlias ? "fast" : "balanced")
+      }
+      if ordinaryAlias, result["profile"] == .string("fast"),
+         result["engine_fanout"] == nil, result["engines"] == nil {
+        result["engine_fanout"] = .int(3)
       }
     }
     if operation(forToolName: name) == .research,

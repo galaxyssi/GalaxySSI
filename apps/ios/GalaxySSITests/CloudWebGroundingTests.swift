@@ -471,7 +471,8 @@ final class CloudWebGroundingTests: XCTestCase {
 
     XCTAssertEqual(provider.operations, [.search])
     XCTAssertEqual(provider.inputs.first?["limit"], .int(6))
-    XCTAssertEqual(provider.inputs.first?["profile"], .string("balanced"))
+    XCTAssertEqual(provider.inputs.first?["profile"], .string("fast"))
+    XCTAssertEqual(provider.inputs.first?["engine_fanout"], .int(3))
     XCTAssertEqual(payload["status"], .string("completed"))
     XCTAssertEqual(payload["operation"], .string("search"))
     XCTAssertEqual(payload["protocol"], .string(AgentIOSWebIntelligenceNativeToolCatalog.protocolId))
