@@ -8,6 +8,8 @@
     <color name="apple_voice_cancel">#FF3B30</color>
     <color name="galaxyssi_dark">#0B1110</color>
     <color name="galaxyssi_green">#14C66A</color>
+    <color name="agent_model_picker_accent">#06775F</color>
+    <color name="agent_model_picker_muted">#58635F</color>
     <color name="galaxyssi_blue">#5B6CFF</color>
     <color name="galaxyssi_glass">#F7FAF9</color>
     <color name="page_bg">#F6F7F8</color>

@@ -1326,6 +1326,7 @@ internal fun MainActivity.showFeaturePage(title: String, preserveDesktopControlI
     }
     featureContent.tag = null
     featureContent.removeAllViews()
+    clearFeaturePinnedFooter()
     featureContent.gravity = Gravity.NO_GRAVITY
     featureContent.setPadding(
         if (myAgentSurfaceActive()) 0 else dp(24), 0,
@@ -1367,6 +1368,7 @@ internal fun MainActivity.hideFeaturePage() {
     activeFriendRequestContactId = ""
     controlCenterDestination = null
     controlCenterBackStack.clear()
+    clearFeaturePinnedFooter()
     featurePage.visibility = View.GONE
     wakePage.visibility = if (activeMainTab == PAGE_VOICE) View.VISIBLE else View.GONE
     mainPage.visibility = View.VISIBLE
@@ -1375,6 +1377,13 @@ internal fun MainActivity.hideFeaturePage() {
         startVoiceAssistant()
     }
     agentVoiceConversation?.onNavigationChanged()
+}
+
+private fun MainActivity.clearFeaturePinnedFooter() {
+    findViewById<LinearLayout>(R.id.featurePinnedFooter).apply {
+        visibility = View.GONE
+        removeAllViews()
+    }
 }
 
 internal fun MainActivity.addSegmentTabs(labels: List<String>) {
