@@ -428,8 +428,10 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
   ) -> GalaxySSIGlobalCognitionDispatchRequest? {
     let settings = store.globalAgentSettings
     guard settings.enabled, settings.modelUnderstandingEnabled else { return nil }
+    let scope = GlobalBackgroundCognitionScope(enabled: true,
+      conversations: store.agentSessions(includeArchived: true))
     let deliberationStore = GlobalAgentDeliberationStore()
-    guard let claimed = deliberationStore.claimCognitionTask(nowMillis: nowMillis) else { return nil }
+    guard let claimed = deliberationStore.claimCognitionTask(nowMillis: nowMillis, eligible: scope.allowsSource) else { return nil }
     let resource = cognitionResource(
       from: store,
       allowPaired: settings.allowPairedAgentCognition,
@@ -451,25 +453,28 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     }
 
     let sourceMessageId = cognitionCorrelationId(taskId: claimed.id, nowMillis: nowMillis)
-    let running = deliberationStore.updateCognitionTask(taskId: claimed.id) { current in
-      var next = current
-      next.status = .running
-      next.resourceId = resource.id
-      next.sourceMessageId = sourceMessageId
-      next.leaseExpiresAtMillis = nowMillis + GlobalCognitionTaskPolicy.leaseMillis
-      next.lastError = ""
-      next.updatedAtMillis = nowMillis
-      return next
-    } ?? claimed
+    var running = claimed
+    running.status = .running
+    running.resourceId = resource.id
+    running.resourceTransport = resource.transport
+    running.sourceMessageId = sourceMessageId
+    running.leaseExpiresAtMillis = nowMillis + GlobalCognitionTaskPolicy.leaseMillis
+    running.lastError = ""
+    running.updatedAtMillis = nowMillis
     let context = GlobalRealtimeContextProvider(
       cognitionTasksSource: { [running] }
-    ).build(
+    ).buildProjection(
       query: running.sourceEvent.content,
       currentConversationId: running.sourceEvent.conversationId,
+      excludedConversationIds: scope.conversations.excludedConversationIds,
+      allowedConversationIds: scope.conversations.allowedConversationIds,
       maximumItems: 12,
       maximumCharacters: 12_000,
       nowMillis: nowMillis
     )
+    running.contextConversationIds = context.conversationIds
+    let prepared = deliberationStore.updateCognitionTask(taskId: claimed.id, expected: claimed) { _ in running }
+    guard deliberationStore.lastErrorDescription.isEmpty, prepared == running else { return nil }
     return GalaxySSIGlobalCognitionDispatchRequest(
       taskId: running.id,
       resourceId: resource.id,
@@ -479,24 +484,29 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       conversationId: "global-cognition:\(running.id)",
       turnId: running.id,
       systemPrompt: cognitionSystemPrompt,
-      prompt: cognitionPrompt(task: running, realtimeContext: context)
+      prompt: cognitionPrompt(task: running, realtimeContext: context.text)
     )
   }
 
   @discardableResult
   static func consumeCognitionResponse(
-    _ response: AgentConnectorResponse,
+    store: GalaxySSIStore,
+    response: AgentConnectorResponse,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> GalaxySSIGlobalCognitionExecutionResult? {
+    let settings = store.globalAgentSettings
+    let scope = GlobalBackgroundCognitionScope(enabled: settings.enabled && settings.modelUnderstandingEnabled,
+      conversations: store.agentSessions(includeArchived: true))
+    guard scope.conversations.canRead, response.sourceMessageId > 0 else { return nil }
     let deliberationStore = GlobalAgentDeliberationStore()
-    guard let task = deliberationStore.cognitionTasks().first(where: {
+    let matches = deliberationStore.cognitionTasks().filter {
       $0.status == .running && $0.sourceMessageId == response.sourceMessageId
-    }) else {
-      return nil
     }
+    guard matches.count == 1, let task = matches.first, scope.accepts(task, response: response),
+          cognitionResourceAuthorized(task, store: store) else { return nil }
     guard response.success,
           let understanding = GalaxySSIGlobalModelUnderstandingParser.parse(response.content) else {
-      let retry = deliberationStore.updateCognitionTask(taskId: task.id) { current in
+      let retry = deliberationStore.updateCognitionTask(taskId: task.id, expected: task) { current in
         var next = current
         next.status = current.attemptCount >= GlobalCognitionTaskPolicy.maxAttempts ? .failed : .waitingForResource
         next.sourceMessageId = 0
@@ -517,7 +527,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
         )
       }
     }
-    let completed = deliberationStore.updateCognitionTask(taskId: task.id) { current in
+    let completed = deliberationStore.updateCognitionTask(taskId: task.id, expected: task) { current in
       var next = current
       next.status = .completed
       next.sourceMessageId = 0
@@ -545,11 +555,41 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     }
   }
 
+  static func permitsCognitionRequest(store: GalaxySSIStore, request: GalaxySSIGlobalCognitionDispatchRequest,
+    requireAvailable: Bool = true) -> Bool {
+    let settings = store.globalAgentSettings
+    let scope = GlobalBackgroundCognitionScope(enabled: settings.enabled && settings.modelUnderstandingEnabled,
+      conversations: store.agentSessions(includeArchived: true))
+    guard scope.conversations.canRead else { return false }
+    let matches = GlobalAgentDeliberationStore().cognitionTasks().filter { $0.id == request.taskId }
+    guard matches.count == 1, let task = matches.first, scope.accepts(task, request: request),
+          cognitionResourceAuthorized(task, store: store) else { return false }
+    if !requireAvailable { return true }
+    guard let resource = cognitionResource(from: store, allowPaired: settings.allowPairedAgentCognition,
+      allowCloud: settings.allowCloudCognition, excluding: [], requiredResourceId: request.resourceId) else { return false }
+    return resource.transport == request.transport && resource.contactId == request.contactId
+  }
+
+  private static func cognitionResourceAuthorized(_ task: GlobalCognitionTask, store: GalaxySSIStore) -> Bool {
+    guard let transport = task.resourceTransport else { return false }
+    if transport == .onDeviceModel { return task.resourceId == "phone-local-model" }
+    guard let contact = store.contact(id: task.resourceId), !contact.deleted else { return false }
+    switch transport {
+    case .pairedAgent:
+      return store.globalAgentSettings.allowPairedAgentCognition && contact.trustState == .verified &&
+        contact.deliveryMode.isGalaxySSILinkFamily
+    case .cloudModel:
+      return store.globalAgentSettings.allowCloudCognition && contact.deliveryMode == .cloudAPI
+    case .onDeviceModel: return false
+    }
+  }
+
   private static func cognitionResource(
     from store: GalaxySSIStore,
     allowPaired: Bool,
     allowCloud: Bool,
-    excluding: Set<String>
+    excluding: Set<String>,
+    requiredResourceId: String? = nil
   ) -> GlobalResearchExecutorResource? {
     let localRuntime = LocalModelCooperativeRuntime.shared
     let localProfile = localRuntime.displayProfile()
@@ -563,7 +603,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       trust: .phoneSystem,
       supportsBackground: true
     )
-    if !excluding.contains(localResourceId),
+    if !excluding.contains(localResourceId), requiredResourceId == nil || requiredResourceId == localResourceId,
        GlobalBackgroundReasoningResourcePolicy.allowed(
          localDescriptor,
          allowPaired: allowPaired,
@@ -583,6 +623,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
         contact.deliveryMode.isGalaxySSILinkFamily &&
         AgentConnectorAvailability.desktopAgentReady(contact: contact) &&
         !excluding.contains(contact.id) &&
+        (requiredResourceId == nil || requiredResourceId == contact.id) &&
         GlobalBackgroundReasoningResourcePolicy.allowed(
           backgroundResourceDescriptor(
             id: contact.id,
@@ -610,6 +651,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       !contact.deleted &&
         contact.deliveryMode == .cloudAPI &&
         !excluding.contains(contact.id) &&
+        (requiredResourceId == nil || requiredResourceId == contact.id) &&
         AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: contact.selectedCloudModel.flatMap(store.apiKey(for:))) &&
         GlobalBackgroundReasoningResourcePolicy.allowed(
           backgroundResourceDescriptor(

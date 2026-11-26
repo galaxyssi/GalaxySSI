@@ -73,6 +73,8 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
   var lastError: String
   var result: GlobalModelUnderstanding
   var longHorizonGoalId: String
+  var contextConversationIds: Set<String>?
+  var resourceTransport: GlobalResearchResourceTransport?
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -92,7 +94,9 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
     result: GlobalModelUnderstanding = GlobalModelUnderstanding(),
     longHorizonGoalId: String = "",
     createdAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
-    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    contextConversationIds: Set<String>? = nil,
+    resourceTransport: GlobalResearchResourceTransport? = nil
   ) {
     self.id = id
     self.sourceEvent = sourceEvent
@@ -110,6 +114,8 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
     self.longHorizonGoalId = longHorizonGoalId
     self.createdAtMillis = max(createdAtMillis, 0)
     self.updatedAtMillis = max(updatedAtMillis, 0)
+    self.contextConversationIds = contextConversationIds
+    self.resourceTransport = resourceTransport
   }
 
   enum CodingKeys: String, CodingKey {
@@ -129,6 +135,8 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
     case longHorizonGoalId
     case createdAtMillis
     case updatedAtMillis
+    case contextConversationIds
+    case resourceTransport
   }
 
   init(from decoder: Decoder) throws {
@@ -150,7 +158,9 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
       result: try container.decodeIfPresent(GlobalModelUnderstanding.self, forKey: .result) ?? GlobalModelUnderstanding(),
       longHorizonGoalId: try container.decodeIfPresent(String.self, forKey: .longHorizonGoalId) ?? "",
       createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? GlobalRealtimeClock.nowMillis(),
-      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? GlobalRealtimeClock.nowMillis()
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? GlobalRealtimeClock.nowMillis(),
+      contextConversationIds: try container.decodeIfPresent(Set<String>.self, forKey: .contextConversationIds),
+      resourceTransport: try container.decodeIfPresent(GlobalResearchResourceTransport.self, forKey: .resourceTransport)
     )
   }
 }

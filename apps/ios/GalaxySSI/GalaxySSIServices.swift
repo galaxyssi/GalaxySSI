@@ -547,9 +547,10 @@ final class MessageCoordinator: ObservableObject {
     }
     self.globalCognitionResponseToken = connectorResponseBus.addListener { [weak self] response in
       Task { @MainActor in
-        let consumed = GalaxySSIGlobalAgentRuntimeBridge.consumeCognitionResponse(response) != nil
+        guard let self else { return }
+        let consumed = GalaxySSIGlobalAgentRuntimeBridge.consumeCognitionResponse(store: self.store, response: response) != nil
         if consumed {
-          self?.refreshAgentHomeState()
+          self.refreshAgentHomeState()
         }
       }
     }
@@ -1672,7 +1673,8 @@ final class MessageCoordinator: ObservableObject {
     guard await dispatchGlobalCognitionRequest(request) else {
       guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
       _ = GalaxySSIGlobalAgentRuntimeBridge.consumeCognitionResponse(
-        AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: request.contactId, content: "Global cognition request could not be dispatched", conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: false, receivedAtMillis: nowMillis),
+        store: store,
+        response: AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: request.contactId.ifBlank(request.resourceId), content: "Global cognition request could not be dispatched", conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: false, receivedAtMillis: nowMillis),
         nowMillis: nowMillis
       )
       return false
@@ -1683,7 +1685,7 @@ final class MessageCoordinator: ObservableObject {
   private func dispatchGlobalCognitionRequest(
     _ request: GalaxySSIGlobalCognitionDispatchRequest
   ) async -> Bool {
-    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    guard !Task.isCancelled, GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: store, request: request) else { return false }
     let nowMillis = GlobalRealtimeClock.nowMillis()
     switch request.transport {
     case .onDeviceModel:
@@ -1695,7 +1697,9 @@ final class MessageCoordinator: ObservableObject {
         taskId: request.taskId,
         systemPrompt: request.systemPrompt,
         prompt: request.prompt,
-        nowMillis: nowMillis
+        nowMillis: nowMillis,
+        stillAuthorized: { GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: self.store,
+          request: request, requireAvailable: false) }
       )
     case .pairedAgent:
       guard let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
@@ -1749,20 +1753,26 @@ final class MessageCoordinator: ObservableObject {
       var accumulated = ""
       do {
         for try await event in cloudStreamEngine.streamConversation(contact: contact, store: store, turns: [turn], images: [], requestId: "global-cognition-\(request.sourceMessageId)") {
-          guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+          guard !Task.isCancelled, store.globalAgentSettings.enabled, store.globalAgentSettings.modelUnderstandingEnabled,
+                store.globalAgentSettings.allowCloudCognition else { return false }
           switch event {
           case .textDelta(let delta): accumulated += delta.text
           case .failed(let failure):
+            guard GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: store,
+              request: request, requireAvailable: false) else { return false }
             _ = connectorResponseBus.publish(AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: contact.id, content: failure.error.message, conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: false, receivedAtMillis: nowMillis))
             return true
           case .connected, .usage, .toolCallDelta, .citationPreview, .completed: continue
           }
         }
         let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !content.isEmpty else { return false }
+        guard !content.isEmpty, GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: store,
+          request: request, requireAvailable: false) else { return false }
         _ = connectorResponseBus.publish(AgentConnectorResponse(sourceMessageId: request.sourceMessageId, contactId: contact.id, content: content, conversationId: request.conversationId, turnId: request.turnId, taskId: request.taskId, success: true, receivedAtMillis: nowMillis))
         return true
       } catch {
+        guard !Task.isCancelled, GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: store,
+          request: request, requireAvailable: false) else { return false }
         lastError = error.localizedDescription
         return false
       }
@@ -1777,9 +1787,10 @@ final class MessageCoordinator: ObservableObject {
     taskId: String,
     systemPrompt: String,
     prompt: String,
-    nowMillis: Int64
+    nowMillis: Int64,
+    stillAuthorized: () -> Bool = { true }
   ) async -> Bool {
-    guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+    guard !Task.isCancelled, store.globalAgentSettings.enabled, stillAuthorized() else { return false }
     let runtime = LocalModelCooperativeRuntime.shared
     guard runtime.readyForBackground() else { return false }
     do {
@@ -1794,6 +1805,7 @@ final class MessageCoordinator: ObservableObject {
         preferredProfileId: "",
         taskId: taskId
       )
+      guard !Task.isCancelled, store.globalAgentSettings.enabled, stillAuthorized() else { return false }
       _ = connectorResponseBus.publish(AgentConnectorResponse(
         sourceMessageId: sourceMessageId,
         contactId: resourceId,
@@ -1806,7 +1818,7 @@ final class MessageCoordinator: ObservableObject {
       ))
       return true
     } catch {
-      guard !Task.isCancelled, store.globalAgentSettings.enabled else { return false }
+      guard !Task.isCancelled, store.globalAgentSettings.enabled, stillAuthorized() else { return false }
       _ = connectorResponseBus.publish(AgentConnectorResponse(
         sourceMessageId: sourceMessageId,
         contactId: resourceId,

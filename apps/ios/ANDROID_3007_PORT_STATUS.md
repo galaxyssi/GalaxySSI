@@ -460,6 +460,7 @@ of each change. The current remaining scope is summarized after those records.
 ### Live foreground planning context correction
 
 - Follow-up after #4552/#4562: foreground replanning no longer bypasses the global Agent enable switch or current conversation allowlist through a direct retained-cache read or an old override global string. Share a lazy scope with the compiled bridge, preserve blank/selected-provider suppression and core memory, rebuild nonblank override global fields, and reject mixed-goal ORIGINAL source sets before projection can subtract excluded IDs. See [the scoped follow-up](ANDROID_3007_LIVE_CONTEXT_FOLLOWUP.md) for actual call paths, nine authored-only fixtures, source-check boundaries and remaining background/history/provenance limitations. This is an iOS cache integration correction, not completion of #3007 or all global privacy work.
+- A cognition-only follow-up after #4565 merged filters queue claims, records selected context-source IDs and transport in a backwards-readable optional proof, and rechecks current source/resource authorization before dispatch and reply consumption. Long-horizon production supplies its complete source metadata and identifies its synthetic scope explicitly. Fourteen additional fixture methods are SOURCE ONLY. See the background section in that follow-up for legacy, streaming, storage-lock and already-sent-work limitations. Research/autonomous paths are not claimed fixed.
 
 ### Local workspace device attribution and location projection
 
