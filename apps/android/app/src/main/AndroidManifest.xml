@@ -111,6 +111,8 @@
             android:launchMode="singleTop"
             android:theme="@style/Theme.GalaxySSI.Main"
             android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthAtlasDiscussionActivity" android:exported="false"
+            android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".NfcWatchContactActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" />
         <activity android:name=".ContactReminderActivity" android:exported="false"
             android:excludeFromRecents="true" android:launchMode="singleTop"

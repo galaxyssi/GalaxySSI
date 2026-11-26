@@ -80,7 +80,9 @@
     <string name="health_atlas_aging_note">Explore tissue maintenance and age-related research. Research associations do not establish an individual biological age or treatment benefit.</string>
     <string name="health_atlas_ask">Ask Agent</string>
     <string name="health_atlas_ask_context">Explain “%1$s”. Function: %2$s. Related teaching process: %3$s. Source: %4$s. Explain the mechanism and evidence limits. This is general learning, not personal health data; do not infer my diagnosis or treatment.</string>
-    <string name="health_atlas_ask_ready">Open this question in a new conversation?</string>
+    <string name="health_atlas_ask_ready">Ask about this view</string>
+    <string name="health_atlas_question_hint">What would you like to know about this step?</string>
+    <string name="health_atlas_user_question">My question: %1$s</string>
     <string name="health_atlas_week">Week</string>
     <string name="health_atlas_month">Month</string>
     <string name="health_atlas_year">Year</string>
