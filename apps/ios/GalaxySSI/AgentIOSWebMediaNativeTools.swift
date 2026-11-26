@@ -535,7 +535,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
         metadata["destination_scope"] = "file_url_user_authorized"
         metadata["writer_implementation"] = urlSessionProvider.downloadWriter.implementationId
       } else {
-        metadata["network_policy"] = "public_https_pinned_dns_v1"
+        metadata["network_policy"] = "provider_network_policy_unspecified"
         metadata["destination_scope"] = "user_authorized_content_uri"
       }
       metadata["auto_execute"] = "false"
@@ -557,7 +557,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
         metadata["redirect_policy"] = "manual_revalidate_each_hop"
         metadata["dns_resolution"] = "urlsession_managed"
       } else {
-        metadata["network_policy"] = "public_https_pinned_dns_v1"
+        metadata["network_policy"] = "provider_network_policy_unspecified"
       }
       if operation == .webOpen || operation == .browserRender {
         metadata["javascript"] = provider is AgentIOSURLSessionWebMediaToolProvider
@@ -843,7 +843,7 @@ struct AgentIOSWebMediaNativeToolExecutor {
     metadata["platform"] = metadata["platform"] ?? .string("ios_phone")
     metadata["bounded"] = metadata["bounded"] ?? .bool(true)
     if usesPublicHTTPS(operation) {
-      metadata["network_policy"] = metadata["network_policy"] ?? .string("public_https_pinned_dns_v1")
+      metadata["network_policy"] = metadata["network_policy"] ?? .string("provider_network_policy_unspecified")
       metadata["cookies"] = metadata["cookies"] ?? .string("none")
     }
     if operation == .browserRender || operation == .webOpen {
