@@ -1,7 +1,7 @@
 // Source wiring only; not Swift compilation, executed fixtures or runtime acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '5f60bac1b8571768f6f12f426dee5950c6f87bd0', cache = new Map();
+const base = '64e33aa934a5a4a6b89516533834070a6242e576', cache = new Map();
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -30,11 +30,10 @@ function replacement(original, indent) {
 function retained(file, source) {
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentResumedPlannerRouteTests.swift')).join('\n');
-  if (file.endsWith('check-journal-codex-replay-scope.cjs')) return source
-    .replace(".filter(line => !['MqttJournalCodexReplayTests.swift', 'AgentResumedPlannerRouteTests.swift'].some(name => line.includes(name))).join('\\n');",
-      ".filter(line => !line.includes('MqttJournalCodexReplayTests.swift')).join('\\n');")
-    .replace("source.includes('  private func journalCodexReplayOwner(')) source = source", "source.includes('  private func journalCodexReplayOwner(')) return source")
-    .replace("  return require('./check-resumed-planner-route-scope.cjs').retained(file, source);", '  return source;');
+  if (file.endsWith('check-supervised-answer-preview-scope.cjs')) return source
+    .replace("const read = file => require('./check-resumed-planner-route-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
+      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
+    .replace("  source = require('./check-resumed-planner-route-scope.cjs').retained(file, source);\n", '');
   if (file.endsWith('GalaxySSIServices.swift') && source.includes('  func resumedNativePlannerSnapshot(')) {
     source = source.replace(section(source, '  func resumedNativePlannerSnapshot(', '  private func shortcutReviewPlanner('), '');
     for (const [indent, end] of [[6, 'let input = AgentInitialPlanningInput('], [4, 'let planningInput = AgentInitialPlanningInput(']]) {
@@ -48,7 +47,7 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj',
-    'apps/ios/tools/check-journal-codex-replay-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-supervised-answer-preview-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const service = read(app + 'GalaxySSIServices.swift');
   const helper = section(service, '  func resumedNativePlannerSnapshot(', '  private func shortcutReviewPlanner(');
   for (const token of ['outgoing.isMine', '!outgoing.isSystem', 'outgoing.contactId == "hermes"',

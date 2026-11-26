@@ -1,9 +1,9 @@
 # Android #3119: Resumed Native Planner Identity
 
 Reference merge: `e7c6af6ef3eed21c7fb697b4458d1cf742833dc4`.
-Incremental baseline: main `5f60bac1b8571768f6f12f426dee5950c6f87bd0`.
-Separate from the pending #4584 tool/preview integration, with no prerequisite
-on its merge and no copied commits from that PR.
+Incremental baseline: main `64e33aa934a5a4a6b89516533834070a6242e576`.
+Originally branched independently of #4586; synchronized after that tool/preview
+PR merged. Its changes are retained, not part of this increment's main diff.
 
 ## Production Correction
 
@@ -53,6 +53,12 @@ preserves their error paths and freezes the surrounding service and provider/
 privacy/result/transport implementations. Historical guards normalize only the
 declared source increment. No Swift typecheck, XCTest, native/device/privacy
 acceptance, CI monitoring or IPA is included.
+
+After synchronizing main, fourteen related JS source-scope guards passed,
+including the newly merged preview/catalog/hedge guards and retained routing,
+status, document, raw-attachment, rich-reply and Codex-replay guards. iOS project
+structure, changed-file literal-Han and diff whitespace checks also passed.
+These are source checks, not an all-repository or native test pass.
 
 This closes the missing-snapshot provider-identity connection in these two
 resumed paths only. Full scored privacy/budget/capacity routing, generic active
