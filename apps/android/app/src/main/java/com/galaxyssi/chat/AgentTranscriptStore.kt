@@ -953,7 +953,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         draftConversation = conversation
         saveDraftConversation(conversation)
         clearActiveConversationId()
-        AgentModelSelectionSettings.inheritDefault(appContext, conversation.id)
+        AgentModelSelectionSettings.initializeConversation(appContext, conversation.id, useRememberedSelection = true)
         AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
@@ -983,7 +983,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         check(conversationDatabase.insertIfAbsent(conversation)) {
             "Agent conversation could not be persisted"
         }
-        AgentModelSelectionSettings.inheritDefault(appContext, conversation.id)
+        AgentModelSelectionSettings.initializeConversation(appContext, conversation.id, useRememberedSelection = false)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
         AgentConversationWindows.changed()

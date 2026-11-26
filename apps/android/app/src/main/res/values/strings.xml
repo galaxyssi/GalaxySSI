@@ -2735,7 +2735,7 @@
     <string name="agent_model_selection_selected">Selected</string>
     <string name="agent_model_selection_model">Model</string>
     <string name="agent_model_selection_reasoning_effort">Reasoning effort</string>
-    <string name="agent_model_selection_current_session">Applies to this conversation</string>
+    <string name="agent_model_selection_new_session_default">Default for new conversations</string>
     <string name="agent_model_selection_effort_auto">Auto</string>
     <string name="agent_model_selection_effort_low">Low</string>
     <string name="agent_model_selection_effort_medium">Medium</string>

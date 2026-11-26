@@ -716,7 +716,7 @@ private fun MainActivity.agentModelConfigurationView(
         })
     }
     addView(TextView(this@agentModelConfigurationView).apply {
-        text = getString(R.string.agent_model_selection_current_session)
+        text = getString(R.string.agent_model_selection_new_session_default)
         textSize = 11f
         setTextColor(getColorCompat(R.color.text_secondary))
         setPadding(dp(12), dp(8), 0, 0)
