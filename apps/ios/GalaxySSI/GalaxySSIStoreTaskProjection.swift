@@ -84,7 +84,8 @@ extension GalaxySSIStore {
   }
 
   private func workspaceLocationKind(_ workspace: AgentWorkspace, routeKind: AgentRouteKind) -> AgentExecutionLocationKind {
-    if !workspace.deviceId.isBlank || routeKind == .desktopAgent {
+    if (!workspace.deviceId.isBlank && workspace.deviceId != GalaxySSIDeviceIdentity.localDeviceId(profile: profile)) ||
+        routeKind == .desktopAgent {
       return .desktop
     }
     return .phone

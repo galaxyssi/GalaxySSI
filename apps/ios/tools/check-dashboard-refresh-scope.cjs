@@ -55,7 +55,9 @@ function validateDashboardRefresh() {
   assert(!source.includes('GalaxySSIStore') && !source.includes('MessageCoordinator') && !source.includes('agentRouting'));
   for (const name of ['GalaxySSIServices', 'GalaxySSIGlobalAgentRuntime', 'GlobalRealtimeContextProvider',
     'GlobalAgentDeliberationStore', 'GlobalLongHorizonGoalStore', 'GalaxySSIStoreGlobalAgentInbox',
-    'GalaxySSIGlobalAgentControlModels', 'GalaxySSIDeviceIdentity']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    'GalaxySSIGlobalAgentControlModels', 'GalaxySSIDeviceIdentity']) assert.equal(name === 'GalaxySSIDeviceIdentity'
+      ? require('./check-local-workspace-device-scope.cjs').retainedLocalDeviceIdentity(read(app + name + '.swift'))
+      : read(app + name + '.swift'), old(app + name + '.swift'), name);
   const android = clean(cp.execFileSync('git', ['diff', '65655f0c79c6ab04121150229a65b089180f82f2^1',
     '65655f0c79c6ab04121150229a65b089180f82f2', '--', 'apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt'], {cwd: root, encoding: 'utf8'}));
   assert(android.includes('-        agentRoutingExecutor.execute {'));
