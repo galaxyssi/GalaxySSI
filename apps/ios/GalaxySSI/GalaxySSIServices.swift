@@ -5177,6 +5177,7 @@ final class MessageCoordinator: ObservableObject {
     let replayTargets = automaticRoutingTargets(goal: source.content)
     let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(
       targets: replayTargets, eligibleIds: eligibleIds, goal: source.content,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
       routingHealth: automaticRoutingHealth(targets: replayTargets))
     let timeout = AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: status,
       failureCode: payload.string("failure_code"), error: payload.string("error"))

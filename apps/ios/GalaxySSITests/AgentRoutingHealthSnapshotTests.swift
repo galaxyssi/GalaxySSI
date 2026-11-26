@@ -131,4 +131,22 @@ final class AgentRoutingHealthSnapshotTests: XCTestCase {
     XCTAssertNil(AgentConnectorRouteSelector.select(targets: [targets[0]], decision: nil,
       preferredTargetId: first.agentId, preserveHealthyPrimary: true, routingHealth: health))
   }
+
+  func testReplayRankingRetainsEligibleIdsWhileConsumingPairedHealthSnapshot() {
+    let first = registration("desktop:claude-code")
+    let second = registration("desktop:hermes")
+    let targets = [first, second, registration("another-desktop:hermes")].map {
+      AgentCallableTarget(id: $0.agentId, title: $0.displayName, kind: .agent,
+        status: .available, capabilities: [.chat])
+    }
+    let failure = AgentProviderHealthSnapshot(scopeId: first.runtimeHealthScope(), failures: 1,
+      consecutiveFailures: 1, lastFailureAtMillis: 1000, circuitOpenUntilMillis: 9000,
+      lastFailureKind: .transportCrash, lastOperation: "start_run")
+    let health = AgentRoutingHealthSnapshot(registrations: [first, second], snapshots: [failure], nowMillis: 2000)
+    let ids = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(targets: targets,
+      eligibleIds: [first.agentId, second.agentId], goal: "Explain a note",
+      hasPairedDesktop: true, routingHealth: health)
+    XCTAssertEqual(ids, [second.agentId])
+    XCTAssertFalse(ids.contains("another-desktop:hermes"))
+  }
 }
