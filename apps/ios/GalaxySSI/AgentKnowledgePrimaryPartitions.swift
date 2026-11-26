@@ -1,8 +1,20 @@
 import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
 
 final class AgentKnowledgePrimaryPartitions {
+  final class SnapshotLease {
+    fileprivate let descriptor: Int32
+    fileprivate init(_ descriptor: Int32) { self.descriptor = descriptor }
+    deinit { Darwin.close(descriptor) }
+  }
+
+  struct ReclaimPage {
+    var removed: Int
+    var complete: Bool
+    var deferred: Bool
+  }
   struct Reference: Codable {
     var version: Int
     var partition: String
@@ -20,13 +32,20 @@ final class AgentKnowledgePrimaryPartitions {
   private let partitionRecords: Int64
   private let writerLock = NSLock()
   private let readerLock = NSLock()
+  private let leaseLock = NSLock()
+  private var directoryDescriptor: Int32 = -1
+  private var accessDescriptor: Int32 = -1
+  private var sharedLease = false
   private var writers: [Int: (id: String, database: OpaquePointer)] = [:]
   private let beforeCatalogPublication: () throws -> Void
+  private let beforeRetiredUnlink: () throws -> Void
+  private let afterRetiredUnlink: () throws -> Void
   private static let maximumSealedFrame = 192 * 1_024
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
   init(catalogURL: URL, secrets: GalaxySSISecretStore, partitionBytes: Int64 = 64 * 1_024 * 1_024,
-       partitionRecords: Int64 = 65_536, beforeCatalogPublication: @escaping () throws -> Void = {}) {
+       partitionRecords: Int64 = 65_536, beforeCatalogPublication: @escaping () throws -> Void = {},
+       beforeRetiredUnlink: @escaping () throws -> Void = {}, afterRetiredUnlink: @escaping () throws -> Void = {}) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -34,9 +53,15 @@ final class AgentKnowledgePrimaryPartitions {
     self.partitionBytes = partitionBytes
     self.partitionRecords = partitionRecords
     self.beforeCatalogPublication = beforeCatalogPublication
+    self.beforeRetiredUnlink = beforeRetiredUnlink
+    self.afterRetiredUnlink = afterRetiredUnlink
   }
 
-  deinit { writers.values.forEach { sqlite3_close_v2($0.database) } }
+  deinit {
+    writers.values.forEach { sqlite3_close_v2($0.database) }
+    if accessDescriptor >= 0 { Darwin.close(accessDescriptor) }
+    if directoryDescriptor >= 0 { Darwin.close(directoryDescriptor) }
+  }
 
   func setup(catalog: OpaquePointer) throws {
     guard partitionBytes > 0, partitionRecords > 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -50,6 +75,7 @@ final class AgentKnowledgePrimaryPartitions {
     var directory = root, resources = URLResourceValues()
     resources.isExcludedFromBackup = false
     try directory.setResourceValues(resources)
+    try setupLease()
     try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
     var committed = false
     defer { if !committed { try? execute(catalog, "ROLLBACK") } }
@@ -59,6 +85,7 @@ final class AgentKnowledgePrimaryPartitions {
       "CREATE UNIQUE INDEX IF NOT EXISTS knowledge_primary_active ON knowledge_primary_partitions(bucket) WHERE sealed=0",
       "CREATE TABLE IF NOT EXISTS knowledge_primary_refs(item_hash TEXT PRIMARY KEY,partition_id TEXT NOT NULL,sealed_ref BLOB NOT NULL)",
       "CREATE INDEX IF NOT EXISTS knowledge_primary_references ON knowledge_primary_refs(partition_id)",
+      "CREATE TABLE IF NOT EXISTS knowledge_primary_retired(partition_id TEXT PRIMARY KEY)",
       "CREATE TRIGGER IF NOT EXISTS knowledge_primary_delete AFTER DELETE ON knowledge_items BEGIN DELETE FROM knowledge_primary_refs WHERE item_hash=OLD.item_hash; END",
       "CREATE TABLE IF NOT EXISTS knowledge_primary_migration(id INTEGER PRIMARY KEY CHECK(id=1),after_item_hash TEXT NOT NULL DEFAULT '',complete INTEGER NOT NULL DEFAULT 0 CHECK(complete IN (0,1)))",
       "INSERT OR IGNORE INTO knowledge_primary_migration(id) VALUES(1)"
@@ -87,6 +114,7 @@ final class AgentKnowledgePrimaryPartitions {
   func append(_ plain: Data, itemHash: String, catalog: OpaquePointer) throws {
     writerLock.lock()
     defer { writerLock.unlock() }
+    try ensureSharedLease()
     guard Self.digest(itemHash), !plain.isEmpty, sqlite3_get_autocommit(catalog) == 0,
           let prefix = Int(itemHash.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let bucket = prefix & 3
@@ -149,6 +177,7 @@ final class AgentKnowledgePrimaryPartitions {
   func read(itemHash: String, catalog: OpaquePointer) throws -> Data? {
     readerLock.lock()
     defer { readerLock.unlock() }
+    try ensureSharedLease()
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
     defer { sqlite3_finalize(lookup) }
@@ -189,6 +218,157 @@ final class AgentKnowledgePrimaryPartitions {
     guard ordinal == reference.frames, Int64(result.count) == reference.plainBytes,
           Self.sha256(result) == reference.sha256 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     return result
+  }
+
+  // Independent catalog snapshots pin files until their SQLite transaction has closed.
+  func snapshotLease() throws -> SnapshotLease {
+    leaseLock.lock()
+    defer { leaseLock.unlock() }
+    guard directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    let descriptor = try openLeaseDescriptor()
+    do {
+      guard try Self.flock(descriptor, LOCK_SH) else { throw AgentKnowledgeDatabaseError.unavailable }
+      return SnapshotLease(descriptor)
+    } catch { Darwin.close(descriptor); throw error }
+  }
+
+  // Caller serializes catalog access, outside any transaction. Never waits for another snapshot.
+  func reclaim(catalog: OpaquePointer, pageSize: Int = 8) throws -> ReclaimPage {
+    guard (1...32).contains(pageSize), sqlite3_get_autocommit(catalog) != 0 else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    writerLock.lock()
+    defer { writerLock.unlock() }
+    readerLock.lock()
+    defer { readerLock.unlock() }
+    leaseLock.lock()
+    defer { leaseLock.unlock() }
+    guard accessDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    if try reclaimPending(catalog) == false { return ReclaimPage(removed: 0, complete: true, deferred: false) }
+    writers.values.forEach { sqlite3_close_v2($0.database) }
+    writers.removeAll()
+    // flock conversion may release SH even when nonblocking EX fails; all I/O rechecks SH.
+    sharedLease = false
+    defer { sharedLease = (try? Self.flock(accessDescriptor, LOCK_SH)) == true }
+    guard try Self.flock(accessDescriptor, LOCK_EX) else {
+      return ReclaimPage(removed: 0, complete: false, deferred: true)
+    }
+    try execute(catalog, "BEGIN IMMEDIATE TRANSACTION")
+    var committed = false
+    defer { if !committed { try? execute(catalog, "ROLLBACK") } }
+    let retire = try prepare(catalog, """
+      INSERT OR IGNORE INTO knowledge_primary_retired(partition_id)
+      SELECT p.partition_id FROM knowledge_primary_partitions p
+      WHERE NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id)
+      ORDER BY p.partition_id LIMIT MAX(0, ? - (SELECT COUNT(*) FROM knowledge_primary_retired))
+      """)
+    defer { sqlite3_finalize(retire) }
+    sqlite3_bind_int(retire, 1, Int32(pageSize))
+    guard sqlite3_step(retire) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+    try execute(catalog, """
+      DELETE FROM knowledge_primary_partitions WHERE partition_id IN(SELECT partition_id FROM knowledge_primary_retired)
+      AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=knowledge_primary_partitions.partition_id)
+      """)
+    try execute(catalog, "COMMIT")
+    committed = true
+    let queued = try prepare(catalog, "SELECT partition_id FROM knowledge_primary_retired ORDER BY partition_id LIMIT ?")
+    defer { sqlite3_finalize(queued) }
+    sqlite3_bind_int(queued, 1, Int32(pageSize))
+    var ids: [String] = []
+    while true {
+      let status = sqlite3_step(queued)
+      if status == SQLITE_DONE { break }
+      guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+      let id = try text(queued, column: 0)
+      guard Self.token(id) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      ids.append(id)
+    }
+    for id in ids {
+      try Task.checkCancellation()
+      let live = try prepare(catalog, "SELECT 1 FROM knowledge_primary_refs WHERE partition_id=? LIMIT 1")
+      try bind(id, index: 1, statement: live)
+      let state = sqlite3_step(live)
+      sqlite3_finalize(live)
+      guard state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      try beforeRetiredUnlink()
+      try unlinkRetired(id)
+      try afterRetiredUnlink()
+      let remove = try prepare(catalog, "DELETE FROM knowledge_primary_retired WHERE partition_id=?")
+      defer { sqlite3_finalize(remove) }
+      try bind(id, index: 1, statement: remove)
+      guard sqlite3_step(remove) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+    }
+    return ReclaimPage(removed: ids.count, complete: try !reclaimPending(catalog), deferred: false)
+  }
+
+  private func reclaimPending(_ catalog: OpaquePointer) throws -> Bool {
+    let statement = try prepare(catalog, """
+      SELECT 1 FROM knowledge_primary_retired UNION ALL
+      SELECT 1 FROM knowledge_primary_partitions p WHERE NOT EXISTS(
+        SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id) LIMIT 1
+      """)
+    defer { sqlite3_finalize(statement) }
+    let state = sqlite3_step(statement)
+    guard state == SQLITE_ROW || state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+    return state == SQLITE_ROW
+  }
+
+  private func unlinkRetired(_ id: String) throws {
+    guard Self.token(id), directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    for suffix in ["-wal", "-shm", ""] {
+      let name = id + ".sqlite" + suffix
+      var info = stat()
+      if Darwin.fstatat(directoryDescriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+        if errno == ENOENT { continue }
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+      guard (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      if Darwin.unlinkat(directoryDescriptor, name, 0) != 0, errno != ENOENT {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+    }
+    guard Darwin.fsync(directoryDescriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+  }
+
+  private func setupLease() throws {
+    leaseLock.lock()
+    defer { leaseLock.unlock() }
+    if directoryDescriptor < 0 {
+      directoryDescriptor = Darwin.open(root.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+      guard directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    }
+    if accessDescriptor < 0 { accessDescriptor = try openLeaseDescriptor() }
+    sharedLease = try Self.flock(accessDescriptor, LOCK_SH)
+    guard sharedLease else { throw AgentKnowledgeDatabaseError.unavailable }
+  }
+
+  private func openLeaseDescriptor() throws -> Int32 {
+    let descriptor = Darwin.openat(directoryDescriptor, ".access.lock", O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+    guard descriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    var info = stat()
+    guard Darwin.fstat(descriptor, &info) == 0, (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG), info.st_nlink == 1 else {
+      Darwin.close(descriptor)
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return descriptor
+  }
+
+  private func ensureSharedLease() throws {
+    leaseLock.lock()
+    defer { leaseLock.unlock() }
+    guard accessDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    if !sharedLease { sharedLease = try Self.flock(accessDescriptor, LOCK_SH) }
+    guard sharedLease else { throw AgentKnowledgeDatabaseError.unavailable }
+  }
+
+  private static func flock(_ descriptor: Int32, _ mode: Int32) throws -> Bool {
+    while Darwin.flock(descriptor, mode | LOCK_NB) != 0 {
+      let code = errno
+      if code == EINTR { continue }
+      if code == EWOULDBLOCK || code == EAGAIN { return false }
+      throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+    }
+    return true
   }
 
   private func partition(catalog: OpaquePointer, bucket: Int) throws -> String {

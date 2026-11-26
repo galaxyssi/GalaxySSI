@@ -98,6 +98,18 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       try sql("COMMIT")
       committed = true
     }
+    func partitionID() throws -> String {
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(catalog, "SELECT partition_id FROM knowledge_primary_refs WHERE item_hash='\(key)'", -1, &statement, nil) == SQLITE_OK else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_step(statement) == SQLITE_ROW, let text = sqlite3_column_text(statement, 0) else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      return String(cString: text)
+    }
+    func partitionURL(_ id: String) -> URL { store.root.appendingPathComponent(id + ".sqlite") }
   }
 
   func testFrameCodecRoundTripsCompressedRawAndBinaryBoundaries() throws {
@@ -163,6 +175,119 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     try f.write(replacement)
     XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: handle), old)
     XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), replacement)
+  }
+
+  func testReclaimDefersUntilTheOldCatalogSnapshotCloses() throws {
+    let f = try Fixture(records: 1)
+    let old = Data("old pinned body".utf8), fresh = Data("replacement body".utf8)
+    try f.write(old)
+    let retired = try f.partitionID()
+    do {
+      let lease = try f.store.snapshotLease()
+      defer { withExtendedLifetime(lease) {} }
+      var snapshot: OpaquePointer?
+      XCTAssertEqual(sqlite3_open_v2(f.url.path, &snapshot, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
+      let handle = try XCTUnwrap(snapshot)
+      defer { sqlite3_exec(handle, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(handle) }
+      XCTAssertEqual(sqlite3_exec(handle, "BEGIN", nil, nil, nil), SQLITE_OK)
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: handle), old)
+      try f.write(fresh)
+      let page = try f.store.reclaim(catalog: f.catalog)
+      XCTAssertTrue(page.deferred)
+      XCTAssertEqual(page.removed, 0)
+      XCTAssertTrue(FileManager.default.fileExists(atPath: f.partitionURL(retired).path))
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: handle), old)
+    }
+    let page = try f.store.reclaim(catalog: f.catalog)
+    XCTAssertFalse(page.deferred)
+    XCTAssertTrue(page.complete)
+    XCTAssertEqual(page.removed, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: f.partitionURL(retired).path))
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), fresh)
+  }
+
+  func testAnotherStoreLeaseDefersReclaimWithoutBreakingReads() throws {
+    let f = try Fixture(records: 1)
+    try f.write(Data("original".utf8))
+    var other: AgentKnowledgePrimaryPartitions? = AgentKnowledgePrimaryPartitions(catalogURL: f.url, secrets: f.secrets)
+    try other?.setup(catalog: f.catalog)
+    let fresh = Data("fresh".utf8)
+    try f.write(fresh)
+    XCTAssertTrue(try f.store.reclaim(catalog: f.catalog).deferred)
+    XCTAssertEqual(try other?.read(itemHash: f.key, catalog: f.catalog), fresh)
+    withExtendedLifetime(other) {}
+    other = nil
+    XCTAssertEqual(try f.store.reclaim(catalog: f.catalog).removed, 1)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), fresh)
+  }
+
+  func testRetirementQueueResumesBeforeAndAfterPhysicalUnlink() throws {
+    for afterUnlink in [false, true] {
+      let f = try Fixture(records: 1)
+      try f.write(Data("obsolete".utf8))
+      let retired = try f.partitionID()
+      let fresh = Data("still live".utf8)
+      try f.write(fresh)
+      f.store = nil
+      f.store = AgentKnowledgePrimaryPartitions(catalogURL: f.url, secrets: f.secrets,
+        beforeRetiredUnlink: { if !afterUnlink { throw AgentKnowledgeDatabaseError.unavailable } },
+        afterRetiredUnlink: { if afterUnlink { throw AgentKnowledgeDatabaseError.unavailable } })
+      try f.store.setup(catalog: f.catalog)
+      XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
+      XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_retired"), 1)
+      XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_partitions"), 1)
+      XCTAssertEqual(FileManager.default.fileExists(atPath: f.partitionURL(retired).path), !afterUnlink)
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), fresh)
+      f.store = nil
+      f.store = AgentKnowledgePrimaryPartitions(catalogURL: f.url, secrets: f.secrets)
+      try f.store.setup(catalog: f.catalog)
+      XCTAssertTrue(try f.store.reclaim(catalog: f.catalog).complete)
+      XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_retired"), 0)
+      XCTAssertFalse(FileManager.default.fileExists(atPath: f.partitionURL(retired).path))
+      XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), fresh)
+    }
+  }
+
+  func testReclaimRejectsLiveReferencesTraversalAndSymlinkTargets() throws {
+    let f = try Fixture()
+    let plain = Data("live".utf8)
+    try f.write(plain)
+    let live = try f.partitionID()
+    try f.sql("INSERT INTO knowledge_primary_retired VALUES('\(live)')")
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), plain)
+    try f.sql("DELETE FROM knowledge_primary_retired")
+    try f.sql("INSERT INTO knowledge_primary_retired VALUES('../outside')")
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
+    try f.sql("DELETE FROM knowledge_primary_retired")
+    let id = UUID().uuidString.lowercased()
+    let outside = f.directory.appendingPathComponent("outside.txt")
+    try Data("untouched".utf8).write(to: outside)
+    try FileManager.default.createSymbolicLink(at: f.partitionURL(id), withDestinationURL: outside)
+    try f.sql("INSERT INTO knowledge_primary_retired VALUES('\(id)')")
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
+    XCTAssertEqual(try Data(contentsOf: outside), Data("untouched".utf8))
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_retired"), 1)
+  }
+
+  func testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile() throws {
+    let f = try Fixture(records: 1)
+    for ordinal in 0..<4 { try f.write(Data("body \(ordinal)".utf8)) }
+    let unknown = f.partitionURL(UUID().uuidString.lowercased())
+    try Data("not registered".utf8).write(to: unknown)
+    let first = try f.store.reclaim(catalog: f.catalog, pageSize: 1)
+    XCTAssertEqual(first.removed, 1)
+    XCTAssertFalse(first.complete)
+    XCTAssertEqual(try f.store.reclaim(catalog: f.catalog, pageSize: 1).removed, 1)
+    XCTAssertTrue(try f.store.reclaim(catalog: f.catalog, pageSize: 1).complete)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_partitions"), 1)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), Data("body 3".utf8))
+    XCTAssertEqual(try Data(contentsOf: unknown), Data("not registered".utf8))
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog, pageSize: 0))
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog, pageSize: 33))
+    try f.sql("BEGIN")
+    XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
+    try f.sql("ROLLBACK")
   }
 
   func testReferenceSwapOrMalformedSealedReferenceDoesNotFallBack() throws {

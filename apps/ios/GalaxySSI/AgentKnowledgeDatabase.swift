@@ -150,6 +150,8 @@ final class AgentKnowledgeDatabase {
   func searchCandidates(query: String, limit: Int = 256) throws -> [AgentKnowledgeItem] {
     let tokens = searchTokens(query).map(keyedHash)
     guard !tokens.isEmpty else { return [] }
+    let primarySnapshotLease = try primaryPayloads.snapshotLease()
+    defer { withExtendedLifetime(primarySnapshotLease) {} }
     var snapshot: OpaquePointer?
     guard sqlite3_open_v2(
       fileURL.path,
@@ -1084,6 +1086,8 @@ final class AgentKnowledgeDatabase {
     guard !group.source.isBlank, group.chunkCount >= 0, !group.sourceRevision.isBlank else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
+    let primarySnapshotLease = try primaryPayloads.snapshotLease()
+    defer { withExtendedLifetime(primarySnapshotLease) {} }
     var snapshot: OpaquePointer?
     guard sqlite3_open_v2(
       fileURL.path,
@@ -1317,16 +1321,30 @@ final class AgentKnowledgeDatabase {
     schedulePrimaryPayloadMigration()
   }
 
-  private func schedulePrimaryPayloadMigration() {
-    primaryMigrationQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+  func reclaimPrimaryPartitions(pageSize: Int = 8) throws -> AgentKnowledgePrimaryPartitions.ReclaimPage {
+    try locked {
+      guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
+      return try primaryPayloads.reclaim(catalog: database, pageSize: pageSize)
+    }
+  }
+
+  private func schedulePrimaryPayloadMigration(delay: DispatchTimeInterval = .milliseconds(100)) {
+    primaryMigrationQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
       guard let self else { return }
-      guard let page = try? self.maintainPrimaryPayloads(pageSize: 8), !page.complete else {
-        self.primaryMigrationControl.lock()
-        self.primaryMigrationRunning = false
-        self.primaryMigrationControl.unlock()
-        return
+      do {
+        let page = try self.maintainPrimaryPayloads(pageSize: 8)
+        if !page.complete { self.schedulePrimaryPayloadMigration(); return }
+        let reclaim = try self.reclaimPrimaryPartitions(pageSize: 8)
+        if !reclaim.complete {
+          self.schedulePrimaryPayloadMigration(delay: reclaim.deferred ? .seconds(5) : .milliseconds(100))
+          return
+        }
+      } catch {
+        // Durable migration/retirement cursors remain retryable on the next explicit start.
       }
-      self.schedulePrimaryPayloadMigration()
+      self.primaryMigrationControl.lock()
+      self.primaryMigrationRunning = false
+      self.primaryMigrationControl.unlock()
     }
   }
 

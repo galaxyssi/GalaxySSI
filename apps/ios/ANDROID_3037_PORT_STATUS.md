@@ -68,10 +68,9 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Remaining implementation
 
-- Whole-dead partition retirement and snapshot-safe cleanup of retained legacy
-  copies are NOT implemented here. Old partition files are never deleted by the
-  new backend. Unknown orphan discovery and mixed-live compaction were not
-  delivered by the pinned Android PR either.
+- Snapshot-safe cleanup of retained legacy external copies is NOT implemented
+  here. Their references/files are still retained. Unknown orphan discovery and
+  mixed-live compaction were not delivered by the pinned Android PR either.
 - Physical commits are currently per record, before catalog publication. Native
   bulk partition-transaction batching and its performance investigation remain
   open; no latency improvement or universal resource-bound claim is made.
@@ -82,13 +81,17 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Source evidence
 
-Ten XCTest methods are authored only, NOT executed: compressed/raw/binary frame
+Fifteen XCTest methods are authored only, NOT executed: compressed/raw/binary frame
 bounds, Unicode multi-frame/reopen, rotation across four buckets, failed catalog
 publication, old snapshot retention, swapped/corrupt references, missing/corrupt
 frames, container relocation, resumed old inline/file migration with unchanged
 source/vector records, and actual small/large database writes. Two existing legacy
 tests now explicitly seed the pre-primary physical format; their original
 assertions are retained. Native fixture cleanup includes the new private root.
+Five additional methods cover snapshot/second-store deferral, interrupted queue
+replay before/after unlink, live-reference/traversal/symlink rejection, bounded
+pages and preservation of unknown files. These are not executed crash or device
+acceptance results.
 
 `check-knowledge-primary-partitions-scope.cjs` verifies pinned production sources,
 complete retained coordinator/catalog code outside declared hooks, actual writer/
@@ -98,3 +101,27 @@ Compression tests or migration acceptance. No native build, XCTest execution,
 CI watching, Android/Desktop change, version bump or IPA is performed.
 
 Compression API reference: [Apple buffer compression documentation](https://developer.apple.com/documentation/accelerate/compressing-and-decompressing-data-with-buffer-compression).
+
+## Whole-dead partition reclamation
+
+Every store holds a shared advisory file lease. Search/export transactions also
+hold their own shared lease until after rollback and SQLite handle closure, so
+the same store cannot unlink a partition still needed by one of its old snapshots.
+The catalog-serialized reclaimer closes cached writers before attempting a
+nonblocking exclusive conversion. Other stores (including idle live instances)
+or pinned snapshots conservatively defer reclamation; the worker retries after
+five seconds instead of spinning. All reads/writes recheck the shared lease if a
+failed conversion or downgrade dropped it. The lock file is never retired.
+
+Under the exclusive lease, at most eight known, wholly unreferenced partitions
+are queued per normal worker page and removed from allocation metadata in one
+catalog transaction. That transaction commits before any unlink. The persisted
+retirement queue survives failures before/after unlink; missing files are
+idempotent on retry. Current references are rechecked before deleting each entry.
+Only canonical UUID basenames and regular files in an anchored, non-symlink
+directory are eligible. No directory scan, recursive delete, unknown-file cleanup
+or live partition compaction is performed. The queue entry is cleared only after
+sidecars/database unlink and directory synchronization succeed. Native Darwin
+flock/filesystem/crash behavior remains unverified by execution.
+
+Lease API reference: [Apple flock manual](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/flock.2.html).

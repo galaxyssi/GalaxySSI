@@ -20,6 +20,7 @@ function retained(file, source) {
   if (file.endsWith('AgentKnowledgeDatabase.swift') && source.includes('  struct PrimaryMigrationPage:')) {
     const original = old(file);
     source = source.replace(properties, '')
+      .split('    let primarySnapshotLease = try primaryPayloads.snapshotLease()\n    defer { withExtendedLifetime(primarySnapshotLease) {} }\n').join('')
       .replace('    primaryPayloads = AgentKnowledgePrimaryPartitions(catalogURL: fileURL, secrets: secrets)\n', '')
       .replace(section(source, '  struct PrimaryMigrationPage:', '  @discardableResult\n  func maintainExternalPayloads('), '')
       .replace('        WHERE item_hash > ? AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs p WHERE p.item_hash=knowledge_items.item_hash)\n        ORDER BY item_hash ASC LIMIT ?',
@@ -95,18 +96,32 @@ function validate() {
     'expectedPurpose: framePurpose(itemHash, partition: partition, entry: reference.entry, ordinal: ordinal)',
     'guard ordinal == reference.frames', 'ordinal < reference.frames', 'sqlite3_close_v2(prior.database)',
     'SQLITE_OPEN_READONLY', 'FileProtectionType.completeUntilFirstUserAuthentication']) assert(storage.includes(token), token);
-  assert(!storage.includes('removeItem('));
+  assert(!storage.includes('removeItem(')); // No recursive/path-based removal of the private root.
+  for (const token of ['CREATE TABLE IF NOT EXISTS knowledge_primary_retired', 'func snapshotLease()',
+    'Self.flock(accessDescriptor, LOCK_EX)', 'sharedLease = false', 'try ensureSharedLease()',
+    'O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC', 'Darwin.openat(directoryDescriptor, ".access.lock"',
+    'AT_SYMLINK_NOFOLLOW', 'Darwin.unlinkat(directoryDescriptor, name, 0)', 'Darwin.fsync(directoryDescriptor)',
+    'guard state == SQLITE_DONE', 'try beforeRetiredUnlink()', 'try afterRetiredUnlink()']) assert(storage.includes(token), token);
+  const reclaim = section(storage, '  func reclaim(catalog:', '  private func reclaimPending(');
+  assert(reclaim.indexOf('try execute(catalog, "COMMIT")') < reclaim.indexOf('try unlinkRetired(id)'));
+  assert(reclaim.indexOf('try afterRetiredUnlink()') < reclaim.indexOf('DELETE FROM knowledge_primary_retired'));
+  assert(reclaim.includes('pageSize: Int = 8') && reclaim.includes('sqlite3_get_autocommit(catalog) != 0'));
+  assert.equal(database.split('let primarySnapshotLease = try primaryPayloads.snapshotLease()').length, 3);
+  for (const token of ['self.reclaimPrimaryPartitions(pageSize: 8)', 'reclaim.deferred ? .seconds(5) : .milliseconds(100)']) assert(worker.includes(token), token);
   const codec = read(app + names[0]);
   for (const token of ['maximumPlainBytes = 64 * 1_024', 'maximumEncodedBytes = 128 * 1_024', 'COMPRESSION_ZLIB',
     'frame.plainBytes + 1', 'guard count == frame.plainBytes', 'codec: compressed ? "zlib" : "raw"']) assert(codec.includes(token), token);
   const tests = read('apps/ios/GalaxySSITests/' + names[2]);
-  assert.equal((tests.match(/  func test/g) || []).length, 10);
+  assert.equal((tests.match(/  func test/g) || []).length, 15);
   for (const token of ['testCatalogPublicationFailureLeavesThePreviousRecordReadable', 'testOldCatalogSnapshotStillReadsTheOriginalImmutableFrames',
     'testMissingAndCorruptedFramesRejectAnOtherwiseValidReference', 'testPersistentNamespaceSurvivesAContainerPathChange',
-    'testPrimaryMigrationResumesWithoutChangingSourcesVectorsOrLogicalRecords']) assert(tests.includes(token), token);
+    'testPrimaryMigrationResumesWithoutChangingSourcesVectorsOrLogicalRecords',
+    'testReclaimDefersUntilTheOldCatalogSnapshotCloses', 'testAnotherStoreLeaseDefersReclaimWithoutBreakingReads',
+    'testRetirementQueueResumesBeforeAndAfterPhysicalUnlink', 'testReclaimRejectsLiveReferencesTraversalAndSymlinkTargets',
+    'testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   for (const name of names) assert.equal(project.split('\n').filter(line => line.includes(name)).length, 4, name);
-  console.log('Pinned Android #3037 storage, primary writer/read/migration hooks, retained logical/vector code and ten authored fixtures source contracts passed; no native acceptance.');
+  console.log('Pinned Android #3037 storage, primary writer/read/migration/reclamation hooks, retained logical/vector code and fifteen authored fixtures source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();
