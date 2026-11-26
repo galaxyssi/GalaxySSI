@@ -2,10 +2,11 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '97374e5882356fd28a3a251873b6c5cd7dfa6a54';
 const app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-primary-allocations-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const configureCatalog = '    do { try AgentKnowledgePrimaryDurability.configure(database, role: .catalog) }\n    catch { sqlite3_close_v2(database); self.database = nil; return }';
 function retained(file, source) {
+  source = require('./check-knowledge-primary-allocations-scope.cjs').retained(file, source);
   if (file.endsWith('AgentKnowledgeDatabase.swift')) return source.replace(configureCatalog,
     '    _ = execute("PRAGMA journal_mode = WAL")\n    _ = execute("PRAGMA synchronous = FULL")');
   if (file.endsWith('AgentKnowledgePrimaryPartitions.swift')) return source.split('\n')
