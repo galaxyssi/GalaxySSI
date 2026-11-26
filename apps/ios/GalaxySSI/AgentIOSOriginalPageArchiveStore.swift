@@ -18,12 +18,12 @@ final class AgentIOSOriginalPageArchiveStore {
 
   private let root: URL
   private let documents: URL
-  private let cipher: GalaxySSILocalAttachmentStoring
+  private let cipher: GalaxySSIAttachmentAtRestCipher
   private let profile: String
   private let lock = AgentIOSOriginalPageArchiveStore.globalLock
 
   init(profile: String, applicationSupport: URL? = nil, documents: URL? = nil,
-       cipher: GalaxySSILocalAttachmentStoring = GalaxySSIAttachmentAtRestCipher(keyAccount: "web.original.archive.aes256.v1")) {
+       cipher: GalaxySSIAttachmentAtRestCipher = GalaxySSIAttachmentAtRestCipher(keyAccount: "web.original.archive.aes256.v1")) {
     self.profile = profile
     let scope = Self.hash(Data(profile.utf8))
     self.root = GalaxySSIPrivateChatFiles.directory("OriginalPageQueue/" + scope, applicationSupport: applicationSupport)
@@ -141,7 +141,8 @@ final class AgentIOSOriginalPageArchiveStore {
   private func write(_ data: Data, _ id: String, _ ext: String) throws {
     try validate(id)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    try cipher.write(data, to: file(id, ext), purpose: purpose(id, ext))
+    let encrypted = try cipher.encrypt(data, purpose: purpose(id, ext))
+    try encrypted.write(to: file(id, ext), options: [.atomic, .completeFileProtection])
   }
   private static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
   private func validate(_ id: String) throws {

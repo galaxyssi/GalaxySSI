@@ -2277,6 +2277,8 @@
     A10000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */; };
     A10000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */; };
     A10000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */; };
+    A10000000000000000003E40 /* AgentIOSOriginalPageArchiveOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E40 /* AgentIOSOriginalPageArchiveOwner.swift */; };
+    A10000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4610,6 +4612,8 @@
     A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveStore.swift; sourceTree = "<group>"; };
     A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveStoreTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E40 /* AgentIOSOriginalPageArchiveOwner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveOwner.swift; sourceTree = "<group>"; };
+    A20000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveOwnerTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5579,6 +5583,7 @@
         A20000000000000000003E3C /* AgentIOSOriginalPageDocument.swift */,
         A20000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift */,
         A20000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift */,
+        A20000000000000000003E40 /* AgentIOSOriginalPageArchiveOwner.swift */,
         A20000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift */,
         A2000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift */,
         A20000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift */,
@@ -6943,6 +6948,7 @@
         D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */,
         D22634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift */,
         A20000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift */,
+        A20000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift */,
         D22636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift */,
         D22636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift */,
         D22636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift */,
@@ -8441,6 +8447,7 @@
         A10000000000000000003E3C /* AgentIOSOriginalPageDocument.swift in Sources */,
         A10000000000000000003E3D /* AgentIOSOriginalPageArchiveStore.swift in Sources */,
         A10000000000000000003E3E /* AgentIOSOriginalPageArchiveRuntime.swift in Sources */,
+        A10000000000000000003E40 /* AgentIOSOriginalPageArchiveOwner.swift in Sources */,
         A10000000000000000001131 /* AgentIOSPublicArticleRequestPolicy.swift in Sources */,
         A1000000000000000000F551 /* AgentIOSPublicDownloadPolicy.swift in Sources */,
         A10000000000000000000A03 /* AgentIOSWebSearchCompletionPolicy.swift in Sources */,
@@ -9386,6 +9393,7 @@
         D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */,
         D12634000000000000000001 /* AgentIOSPhonePublicHTMLAttachmentTests.swift in Sources */,
         A10000000000000000003E3F /* AgentIOSOriginalPageArchiveStoreTests.swift in Sources */,
+        A10000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift in Sources */,
         D12636000000000000000001 /* AgentIOSPr2627To2633RegressionCorpus.swift in Sources */,
         D12636000000000000000002 /* AgentIOSPr2627To2633RegressionOracles.swift in Sources */,
         D12636000000000000000003 /* AgentIOSPr2627To2633RegressionCorpusTests.swift in Sources */,

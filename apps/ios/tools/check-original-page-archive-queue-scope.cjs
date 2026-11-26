@@ -1,10 +1,11 @@
 // Source contracts only: no native execution, encrypted IO, OS scheduling or device proof.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = '5e6167ab76ee808fa271504fb324c879916bb86b';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-original-page-archive-cold-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', app = 'apps/ios/GalaxySSI/';
 function retained(file, source) {
+  source = require('./check-original-page-archive-cold-scope.cjs').retained(file, source);
   if (file !== project) return source;
   return source.split('\n').filter(l => !/AgentIOSOriginalPageArchive(?:StoreTests|Store|Runtime)\.swift/.test(l)).join('\n')
     .replaceAll(' com.galaxyssi.chat.ios.original-page-archive', '');

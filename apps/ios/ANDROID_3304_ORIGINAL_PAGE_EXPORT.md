@@ -58,11 +58,11 @@ purposes in Application Support, not public Downloads. Re-enqueue is idempotent.
 The queue wakes independently of MQTT at coordinator startup/foreground recovery
 and on store changes. A registered BGProcessingTask network request permits one
 bounded background job; foreground slices process up to four. The OS may defer
-or decline grants. A cold grant before a runtime is bound reschedules rather
-than constructing a different account or publishing without an owner. Returning
+or decline grants. Background grants now use the selective read-only owner path
+below, including cold grants without a bound UI runtime. Returning
 to the App also scans the current profile's queue even without a pending flag.
 
-Require protected data, readable transcript, current profile, an active,
+Foreground work requires protected data, a readable transcript, current profile, an active,
 nonprivate/nonpaused/unmerged conversation, the original user turn and current
 execution/connector policy before work and again before publication. Privacy,
 lock, foreground-loss and runtime replacement cancel active work. Cancellation
@@ -72,6 +72,45 @@ build retains the original Android-style 120-second total/15-second resource
 budgets. Normal failures back off one/two minutes and stop after three failures;
 OS cancellation does not consume a normal failure. Corrupt jobs remain retained
 and are not overwritten or executed.
+
+### Selective Background Owner
+
+The first queue increment deferred cold grants and required the full Store's
+readable transcript for warm grants. But normal backgrounding clears that cache.
+BGProcessingTask now reads only existing encrypted account/safety state and the
+exact encrypted conversation/user-turn rows, for both cold and warm launches.
+It does not construct GalaxySSIStore, a coordinator, identity, model runtime,
+database schema or a missing key. It does not restore the foreground cache.
+Read-only SQLite handles use the existing exact turn blind index; missing rows,
+indices, keys, schemas or account/database identity fail closed without repair.
+Conversation/message encrypted rows are bounded at 4 MiB for this owner probe.
+
+Before a network build and again before publication, require protected data,
+an inactive App, matching existing profile/database ID, active nonprivate/
+nonpaused/unmerged conversation and the actual original user message. Re-read
+the encrypted account-state revision after the database queries. When a UI
+runtime exists, also check its live profile/safety/conversation state; a newly
+bound/replaced runtime cancels the old read-only slice. Protected-data loss,
+plaintext-boundary notification and foreground reentry cancel the slice.
+Foreground/background handoff cancels and awaits the previous worker before
+starting another. In-flight network and parser cancellation remains cooperative.
+The same extracted builder/staging implementation serves foreground and
+background; no alternate transport or reconstructed prompt is introduced.
+
+Queue writes now call the existing AEAD encryption API and atomically replace
+the fully protected encrypted file. This avoids the generic file writer's
+delete-before-move window for updates to an existing pending job. It still does
+not establish fsync/power-loss durability or cross-file transactional atomicity.
+
+Three more authored-only fixtures cover no identity/key/history creation on
+missing state, existing-profile/privacy/pause/turn revalidation without writes,
+and missing-index/database rejection without hydration or creation. The cold
+source guard pins `a16f12311fa4ed70f576c347680a173f8f356fea`, proves the builder was
+extracted unchanged, limits journal edits to the declared atomic replacement,
+and freezes the surrounding queue/Coordinator/transport/database implementations.
+The older queue guard retains all assertions through a checked normalization
+hook. No cold/warm OS launch, database IO, Files or privacy-race acceptance run
+has occurred. Full Android equivalence remains unproven.
 
 Prepared output is encrypted before publication and reused after interruption.
 Publish a deterministic fully protected HTML file under Files / GalaxySSI /
@@ -116,3 +155,8 @@ The durable queue increment additionally passed its dedicated retained-source
 guard and JavaScript syntax check, alongside the same project/localization/
 whitespace checks. These remain source evidence only, not encrypted IO, Files
 publication, background-grant, cold-launch, cancellation or device acceptance.
+
+The selective background increment passed the cold-owner retained-source guard,
+both older archive/export guards, all three guard syntax checks and the same
+project/localization/whitespace checks. The combined PR has twelve authored-only
+Swift fixture methods; none have been compiled or executed.
