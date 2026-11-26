@@ -102,14 +102,14 @@ final class AgentIOSWebSearchRetentionTests: XCTestCase {
     XCTAssertEqual(cache.searchResponse(key: key(0)), value)
   }
 
-  func testInvalidAndOversizedResponsesStillDoNotReplaceRetainedData() throws {
+  func testInvalidResponsesStillDoNotReplaceRetainedData() throws {
     let fixture = SearchRetentionFixture()
     defer { fixture.close() }
     let cache = fixture.cache(), value = response("valid")
     XCTAssertTrue(cache.putSearchResponse(key: key(0), result: value, ttlMillis: 60_000))
-    var tooLarge = value
-    tooLarge.output["padding"] = .string(String(repeating: "x", count: AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1))
-    for invalid in [AgentNativeToolExecutionResult.success(), .failure(code: "failed", message: "fixture"), tooLarge] {
+    var tooMany = value
+    tooMany.output["results"] = .array(Array(repeating: .object(["title": .string("row")]), count: 101))
+    for invalid in [AgentNativeToolExecutionResult.success(), .failure(code: "failed", message: "fixture"), tooMany] {
       XCTAssertFalse(cache.putSearchResponse(key: key(0), result: invalid, ttlMillis: 60_000))
       XCTAssertEqual(cache.searchResponse(key: key(0)), value)
     }

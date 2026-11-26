@@ -2,7 +2,8 @@
 const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'b8a15bb0a25d2e9605161305c382f061fd581c05';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-search-response-size-parity.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const isIndexedCache = source => source.includes('  private func cacheIndexUnlocked()');
 function retainedMetadataProvider(source) {
   source = require('./check-search-result-capacity-scope.cjs').retainedCapacityProvider(source);

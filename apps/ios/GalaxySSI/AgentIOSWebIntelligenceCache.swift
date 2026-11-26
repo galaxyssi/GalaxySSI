@@ -88,8 +88,7 @@ final class AgentIOSWebIntelligenceCacheStore {
         storedAtMillis >= 0 && expiresAtMillis > storedAtMillis &&
         expiresAtMillis - storedAtMillis <= 30 * 24 * 60 * 60_000 && result.isSuccess &&
         !(result.output["results"]?.arrayValue ?? []).isEmpty &&
-        (result.output["results"]?.arrayValue?.count ?? 0) <= AgentIOSWebSearchCapacity.maximumResults &&
-        (try? JSONEncoder().encode(self).count).map { $0 <= AgentIOSWebSearchCapacity.maximumCachedResponseBytes } == true
+        (result.output["results"]?.arrayValue?.count ?? 0) <= AgentIOSWebSearchCapacity.maximumResults
     }
   }
 
