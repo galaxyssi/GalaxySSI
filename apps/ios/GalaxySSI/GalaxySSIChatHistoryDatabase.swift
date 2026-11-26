@@ -930,6 +930,32 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     return last
   }
 
+  func verifiedHealthLegacyWindow(conversationId: String) throws -> [ChatMessage] {
+    try locked {
+      guard !conversationId.isBlank, let statement = prepare("""
+        SELECT message_id, encrypted_payload, created_at FROM chat_messages
+        WHERE contact_id = 'hermes' AND conversation_id = ?
+        ORDER BY created_at DESC, message_id DESC LIMIT 500
+        """) else { throw MqttChunkStorageError.databaseFailure }
+      defer { sqlite3_finalize(statement) }
+      bind(conversationId, at: 1, to: statement)
+      var messages: [ChatMessage] = []
+      while true {
+        let step = sqlite3_step(statement)
+        if step == SQLITE_DONE { return messages }
+        guard step == SQLITE_ROW, let rawID = sqlite3_column_text(statement, 0),
+              let message = decode(statement, id: String(cString: rawID), payloadColumn: 1),
+              message.contactId == "hermes", message.conversationId == conversationId,
+              message.createdAt.timeIntervalSinceReferenceDate.isFinite,
+              (-62_135_596_800...253_402_300_799).contains(message.createdAt.timeIntervalSince1970),
+              Self.millis(message.createdAt) == sqlite3_column_int64(statement, 2) else {
+          throw MqttChunkStorageError.databaseFailure
+        }
+        messages.append(message)
+      }
+    }
+  }
+
   func messages(conversationId: String) -> [ChatMessage] {
     locked {
       query(

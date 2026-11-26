@@ -5535,6 +5535,12 @@ final class MessageCoordinator: ObservableObject {
       guard contact.id == "hermes", voiceAppContexts.isForegroundOwner(voiceAppAnchor),
             store.activeAgentConversationId == voiceAppAnchor.conversationID else { return false }
     }
+    if contact.id == "hermes", let session = store.agentSession(id: store.activeAgentConversationId),
+       GalaxySSIHealthCareAgentScope.requiresScopedSubmission(session) {
+      lastError = GalaxySSILocalization.string("galaxyssi.health.discussion.preview",
+        fallback: "Review data before sending", language: store.languagePolicy.interfaceLanguage)
+      return false
+    }
     if let source = researchRetrySource,
        source.manualCloudBinding != nil ||
         store.persistedMessage(id: source.id, contactId: source.contactId)?.manualCloudBinding != nil {

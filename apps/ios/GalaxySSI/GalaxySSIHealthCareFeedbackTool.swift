@@ -14,7 +14,7 @@ enum GalaxySSIHealthCareFeedbackTool {
       "before_revision": ["type": "integer", "minimum": 1]]
   ]
 
-  struct Cursor: Equatable {
+  struct Cursor: Codable, Equatable {
     let turn: UUID
     let revision: Int
     var before: Int? = nil

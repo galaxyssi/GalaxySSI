@@ -11,13 +11,28 @@ extension AgentHomeView {
       guard coordinator.voiceAppContexts.isForegroundOwner(voiceAppAnchor),
             store.activeAgentConversationId == voiceAppAnchor.conversationID else { return }
     }
-    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
       goalOverride: voiceAttachmentSnapshot == nil ? nil : cleanDraft,
       composerAttachments: attachments,
       attachmentSnapshot: voiceAttachmentSnapshot
     )
+    if let session = store.agentSession(id: store.activeAgentConversationId),
+       GalaxySSIHealthCareAgentScope.requiresScopedSubmission(session) {
+      do {
+        guard homeVisible, scenePhase == .active, UIApplication.shared.isProtectedDataAvailable,
+              store.canReadAgentTranscript, outgoingAttachments.isEmpty,
+              healthCareSubmission == nil, screenAssistantRunID == nil else { throw GalaxySSIHealthRecords.Failure.permission }
+        healthCareSubmission = try .init(records: .init(owner: store.profile.identityFingerprint, secrets: store.secrets),
+          conversation: session, question: cleanDraft)
+        attachmentError = ""
+        actionTrayPresented = false
+      } catch {
+        attachmentError = t("galaxyssi.health.discussion.unavailable", "This discussion or request is no longer available.")
+      }
+      return
+    }
+    coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     if let configuration = AgentDoorAccessConfiguration.enabled(automatic: true),
        let command = configuration.command(cleanDraft) {
       guard outgoingAttachments.isEmpty, homeVisible, scenePhase == .active, UIApplication.shared.isProtectedDataAvailable,

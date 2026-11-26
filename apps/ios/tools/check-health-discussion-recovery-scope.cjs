@@ -26,6 +26,9 @@ exactChanges('GalaxySSIHealthCareHistoryTool.swift', [
   ['struct Output: Equatable', 'struct Output: Codable, Equatable'],
   ['struct Approval {', 'struct Approval: Codable, Equatable {']
 ]);
+exactChanges('GalaxySSIHealthCareFeedbackTool.swift', [
+  ['struct Cursor: Equatable', 'struct Cursor: Codable, Equatable']
+]);
 exactChanges('GalaxySSIHealthCareSeries.swift', [
   ['struct Cursor: Equatable', 'struct Cursor: Codable, Equatable'],
   ['struct Binding: Equatable', 'struct Binding: Codable, Equatable']
@@ -57,7 +60,11 @@ exactChanges('FileAgentWorkspaceStore.swift', [
 ]);
 for (const name of ['GalaxySSIHealthScopedReadTransport.swift', 'GalaxySSIHealthAnalysis.swift',
   'GalaxySSIHealthFollowUp.swift', 'GalaxySSIServices.swift', 'AgentTaskSupervisor.swift']) {
-  assert.equal(read(prefix + name), old(prefix + name), `${name}: no transport/planner/supervisor substitute`);
+  const current = name === 'GalaxySSIHealthScopedReadTransport.swift'
+    ? require('./check-health-discussion-rounds-scope.cjs').retainedScopedReadTransport(read(prefix + name))
+    : name === 'GalaxySSIServices.swift'
+      ? require('./check-health-composer-scope.cjs').retainedHealthComposerGuard(read(prefix + name)) : read(prefix + name);
+  assert.equal(current, old(prefix + name), `${name}: behavior retained outside declared hooks`);
 }
 
 const recovery = read(prefix + 'GalaxySSIHealthCareDiscussionRecovery.swift');
@@ -73,11 +80,11 @@ assert.match(recovery, /approval\.isCurrent\(at: received\)/);
 assert.doesNotMatch(recovery, /URLSession|URLRequest|responseBytes|await |Task\s*\{/);
 const view = read(prefix + 'GalaxySSIHealthCareDiscussionView.swift');
 assert.match(view, /beginLocalCareDiscussionTurn\(review, persistExecution: true\)/);
-assert.match(view, /dispatchLocalCareDiscussionTurn\(review\)[\s\S]*?responseBytes\(request/);
+assert.match(view, /GalaxySSIHealthCareModelToolLoop\.finish\(review/);
 assert.match(view, /retainLocalCareDiscussionResponse\(review, response: bytes\)[\s\S]*?applySavedLocalCareDiscussionReply\(review\)/);
 const runtime = read(prefix + 'GalaxySSIHealthCareTaskRuntime.swift');
 assert.match(view, /runtime\.submit\(review\)/);
-assert.match(view, /runtime\.restore\(review, mayApply: \{ active\?\.id == review\.id && currentRoute\(review\) != nil \}\)/);
+assert.match(view, /runtime\.restore\(review, mayApply: \{ active\?\.id == review\.id && currentRoute\(review\) != nil \}, resumeRound:/);
 assert.match(runtime, /current\.state == \.received, mayApply\(\)/);
 assert.match(runtime, /execution\.agentConversationID == thread\.agentConversationID/);
 assert.match(runtime, /execution\.approval == approval/);
@@ -89,8 +96,11 @@ assert.match(runtime, /execution\(approval\)\.state == \.applied/);
 assert.doesNotMatch(runtime, /URLSession|URLRequest|responseBytes|apiKey|memoryObserver:|\.question|\.payload|\.providerPayload/);
 assert.match(view, /taskHandle\?\.task\.cancel\(\)/);
 assert.match(view, /runtime\.cancel\(review\)/);
-assert.match(view, /if !admitted[\s\S]*?health_discussion_task_not_admitted/);
-assert.match(view, /await handle\.join\(\)[\s\S]*?AgentDataDisclosureLedger\.update/);
+assert.match(view, /if !admitted[\s\S]*?records\.interruptLocalCareDiscussionExecution\(review\)/);
+assert.doesNotMatch(view, /beginCloudRequest\(/);
+const model = read(prefix + 'GalaxySSIHealthCareModelToolLoop.swift');
+assert.match(model, /AgentDataDisclosureLedger\.beginCloudRequest[\s\S]*?dispatchLocalCareDiscussionTurn/);
+assert.match(model, /status: received \? \.sent : \.failed/);
 const taskStore = read(prefix + 'GalaxySSIHealthCareTaskStore.swift');
 assert.match(taskStore, /AES\.GCM\.open\([\s\S]*?key\(create: false\), authenticating: aad/);
 assert.match(taskStore, /AES\.GCM\.seal\(data,[\s\S]*?authenticating: aad/);

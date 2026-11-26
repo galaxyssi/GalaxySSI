@@ -152,6 +152,7 @@ struct AgentHomeView: View {
   @State var screenAssistantOwnedTurns: [ChatMessage] = []
   @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
   @State var composerSubmissionID: UUID?
+  @State var healthCareSubmission: GalaxySSIHealthCareComposerSubmission?
   @State var screenAssistantStopping = false
   @State var screenAssistantVoiceCancellationRequest = 0
   @State var agentVoiceCaptureDictationOnly = false
@@ -501,6 +502,7 @@ struct AgentHomeView: View {
       .sheet(item: $doorAccessLaunch) { launch in
         GalaxySSIDoorAccessView(launch: launch)
       }
+      .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
           guard !screenAssistantStopping else { return }

@@ -10,6 +10,8 @@ enum GalaxySSIHealthCareDiscussionRecovery {
     var state = State.prepared
     var response: Data?
     var receivedAt: Date?
+    var stoppedAt: Date?
+    var rounds: GalaxySSIHealthCareDiscussionRounds.State?
 
     init(approval: GalaxySSIHealthCareDiscussion.Approval, agentConversationID: String?, startedAt: Date) throws {
       guard approval.research == nil, approval.model != nil, approval.credentialDigest?.count == 32,
@@ -25,10 +27,23 @@ enum GalaxySSIHealthCareDiscussionRecovery {
 }
 
 extension GalaxySSIHealthRecords {
+  func careDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws -> GalaxySSIHealthCareDiscussionRecovery.Execution {
+    let archive = try load()
+    guard owner == approval.owner, let thread = archive.localCareDiscussions?[approval.concernID.uuidString],
+          thread.id == approval.threadID, let turn = thread.turns.last, turn.id == approval.id,
+          let execution = turn.execution, execution.approval == approval,
+          execution.agentConversationID == thread.agentConversationID else { throw Failure.stale }
+    return execution
+  }
+
   func dispatchLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
     try validateLocalCareDiscussionTurn(approval, now: now)
     try updateCareDiscussionExecution(approval) { execution in
       guard execution.state == .prepared else { throw Failure.stale }
+      if execution.rounds != nil {
+        guard execution.rounds?.phase == .prepared, execution.rounds?.index == 0 else { throw Failure.stale }
+        execution.rounds?.phase = .dispatched
+      }
       execution.state = .dispatched
     }
   }
@@ -43,6 +58,9 @@ extension GalaxySSIHealthRecords {
         return
       }
       guard execution.state == .dispatched, now >= execution.startedAt else { throw Failure.stale }
+      if let rounds = execution.rounds {
+        guard rounds.phase == .received, rounds.response == response else { throw Failure.stale }
+      }
       execution.response = response
       execution.receivedAt = now
       execution.state = .received
@@ -79,14 +97,16 @@ extension GalaxySSIHealthRecords {
   }
 
   // Cancellation is local and remains possible after consent expires or is revoked.
-  func interruptLocalCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval) throws {
+  func interruptLocalCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {
     try updateCareDiscussionExecution(approval) { execution in
       guard execution.state != .applied else { return }
+      guard now.timeIntervalSinceReferenceDate.isFinite, now >= execution.startedAt else { throw Failure.invalid }
+      if execution.stoppedAt == nil { execution.stoppedAt = now }
       execution.state = .interrupted
     }
   }
 
-  private func updateCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval,
+  func updateCareDiscussionExecution(_ approval: GalaxySSIHealthCareDiscussion.Approval,
       _ change: (inout GalaxySSIHealthCareDiscussionRecovery.Execution) throws -> Void) throws {
     var archive = try load()
     let key = approval.concernID.uuidString

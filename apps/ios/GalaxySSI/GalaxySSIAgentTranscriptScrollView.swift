@@ -16,6 +16,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
   @State private var positionedConversation: String?
   @State private var draggingTranscript = false
   @State private var pinnedToLatest = false
+  @State private var hasPrivateHealthRows = false
   private let transcriptTail = "agent-transcript-tail"
 
   var agentSwipeRequest: Int
@@ -137,7 +138,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
               .frame(height: max(0, viewport.size.height - max(0, bottom)))
               .frame(maxWidth: .infinity)
           }
-          if transcriptShowLatestButton, let last = messages.last {
+          if transcriptShowLatestButton && (!messages.isEmpty || hasPrivateHealthRows) {
             GalaxySSIAgentLatestButton(title: latestButtonTitle) {
               scrollEpoch.invalidate()
               olderTranscriptAnchor = nil
@@ -145,7 +146,8 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
               transcriptAutoFollow = true
               transcriptShowLatestButton = false
               withAnimation(reduceMotion ? nil : Animation.default) {
-                proxy.scrollTo(last.id, anchor: .bottom)
+                if hasPrivateHealthRows { proxy.scrollTo(transcriptTail, anchor: .bottom) }
+                else if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
               }
             }
             .padding(.trailing, 16)
@@ -191,6 +193,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       }
       .onChange(of: activeAgentConversationID) { _ in
         scrollEpoch.invalidate()
+        hasPrivateHealthRows = false
         pinnedToLatest = false
         positionedConversation = activeAgentConversationID
         visibleMessageLimit = pageSize
@@ -296,6 +299,24 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         }
       }
       .coordinateSpace(name: galaxySSIAgentTranscriptCoordinateSpace)
+      .onPreferenceChange(GalaxySSIHealthCareTranscriptRevisionKey.self) { value in
+        guard scene == .active, value.conversation == activeAgentConversationID else {
+          hasPrivateHealthRows = false
+          return
+        }
+        hasPrivateHealthRows = value.hasRows
+        guard value.hasRows else { return }
+        guard transcriptAutoFollow, !draggingTranscript else {
+          transcriptShowLatestButton = true
+          return
+        }
+        let ticket = scrollEpoch.revision
+        DispatchQueue.main.async {
+          guard scrollEpoch.accepts(ticket), scene == .active, hasPrivateHealthRows,
+                value.conversation == activeAgentConversationID, transcriptAutoFollow else { return }
+          proxy.scrollTo(transcriptTail, anchor: .bottom)
+        }
+      }
       .onPreferenceChange(AgentTranscriptScrollMetricsKey.self) { metrics in
         measuredContentBottom = metrics.contentMaxY
         transcriptContentMinY = metrics.contentMinY
@@ -361,7 +382,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           proxy.scrollTo(first.id, anchor: .top)
         }
       }
-      transcriptShowLatestButton = !messages.isEmpty
+      transcriptShowLatestButton = !messages.isEmpty || hasPrivateHealthRows
       return
     }
 
