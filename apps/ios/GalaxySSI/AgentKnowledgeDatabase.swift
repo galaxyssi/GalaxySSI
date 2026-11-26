@@ -1236,6 +1236,7 @@ final class AgentKnowledgeDatabase {
 
   func maintainPrimaryPayloads(pageSize: Int = 8) throws -> PrimaryMigrationPage {
     try locked {
+      try primaryPayloads.checkSharedAccess()
       guard (1...32).contains(pageSize), let database, execute("BEGIN IMMEDIATE TRANSACTION") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -1328,15 +1329,32 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  func reclaimPrimaryLegacyCopies(pageSize: Int = 8) throws -> AgentKnowledgePrimaryPartitions.LegacyReclaimPage {
+    try locked {
+      guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
+      return try primaryPayloads.reclaimLegacyCopies(catalog: database, pageSize: pageSize)
+    }
+  }
+
   private func schedulePrimaryPayloadMigration(delay: DispatchTimeInterval = .milliseconds(100)) {
     primaryMigrationQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
       guard let self else { return }
       do {
         let page = try self.maintainPrimaryPayloads(pageSize: 8)
         if !page.complete { self.schedulePrimaryPayloadMigration(); return }
+        let legacy = try self.reclaimPrimaryLegacyCopies(pageSize: 8)
+        if !legacy.complete {
+          self.schedulePrimaryPayloadMigration(delay: legacy.deferred ? .seconds(5) : .milliseconds(100))
+          return
+        }
         let reclaim = try self.reclaimPrimaryPartitions(pageSize: 8)
         if !reclaim.complete {
           self.schedulePrimaryPayloadMigration(delay: reclaim.deferred ? .seconds(5) : .milliseconds(100))
+          return
+        }
+        let files = try self.reclaimExternalPayloadFiles(pageSize: 16)
+        if !files.complete {
+          self.schedulePrimaryPayloadMigration(delay: files.deferred ? .seconds(5) : .milliseconds(100))
           return
         }
       } catch {
@@ -1351,6 +1369,7 @@ final class AgentKnowledgeDatabase {
   @discardableResult
   func maintainExternalPayloads(pageSize: Int = 4) throws -> Bool {
     try locked {
+      try primaryPayloads.checkSharedAccess()
       let limit = min(max(pageSize, 1), 32)
       guard let state = prepare("""
         SELECT after_item_hash, all_rows, complete
@@ -1441,6 +1460,7 @@ final class AgentKnowledgeDatabase {
     var removedFiles: Int
     var removedBytes: Int64
     var complete: Bool
+    var deferred: Bool = false
   }
 
   @discardableResult
@@ -1449,7 +1469,22 @@ final class AgentKnowledgeDatabase {
     minimumAge: TimeInterval = 3_600
   ) throws -> ExternalPayloadReclamation {
     try locked {
+      guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
+      return try primaryPayloads.withExclusiveAccess(catalog: database) {
+        try reclaimExternalPayloadFilesExclusively(pageSize: pageSize, minimumAge: minimumAge)
+      } ?? ExternalPayloadReclamation(removedFiles: 0, removedBytes: 0, complete: false, deferred: true)
+    }
+  }
+
+  private func reclaimExternalPayloadFilesExclusively(
+    pageSize: Int,
+    minimumAge: TimeInterval
+  ) throws -> ExternalPayloadReclamation {
+    do {
       let limit = min(max(pageSize, 1), 128)
+      guard try FileManager.default.attributesOfItem(atPath: payloadDirectory.path)[.type] as? FileAttributeType == .typeDirectory else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
       guard let state = prepare(
         "SELECT after_file_name FROM knowledge_external_payload_reclamation WHERE id = 1 LIMIT 1"
       ), sqlite3_step(state) == SQLITE_ROW, let cursorText = sqlite3_column_text(state, 0) else {
@@ -1472,7 +1507,8 @@ final class AgentKnowledgeDatabase {
       for url in page {
         let fileName = url.lastPathComponent
         guard fileName.range(of: #"^[a-f0-9]{64}-[a-f0-9]{16}\.saenc$"#, options: .regularExpression) != nil,
-              let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+              let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true, values.isSymbolicLink == false,
               (values.contentModificationDate ?? .distantFuture) <= cutoff,
               externalPayloadReferenceCount(fileName: fileName) == 0 else { continue }
         do {

@@ -69,6 +69,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       catalog = raw
       try sql("PRAGMA journal_mode=WAL")
       try sql("CREATE TABLE knowledge_items(item_hash TEXT PRIMARY KEY,encrypted_payload BLOB NOT NULL)")
+      try sql("CREATE TABLE knowledge_external_payloads(item_hash TEXT PRIMARY KEY,file_name TEXT NOT NULL UNIQUE,plaintext_bytes INTEGER NOT NULL,plaintext_sha256 TEXT NOT NULL)")
       store = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: secrets, partitionBytes: bytes, partitionRecords: records)
       try store.setup(catalog: catalog)
     }
@@ -110,6 +111,9 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       return String(cString: text)
     }
     func partitionURL(_ id: String) -> URL { store.root.appendingPathComponent(id + ".sqlite") }
+    func legacyReference(_ key: String) throws {
+      try sql("INSERT INTO knowledge_external_payloads VALUES('\(key)','\(key)-0000000000000000.saenc',1,'\(String(repeating: "0", count: 64))')")
+    }
   }
 
   func testFrameCodecRoundTripsCompressedRawAndBinaryBoundaries() throws {
@@ -288,6 +292,130 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     try f.sql("BEGIN")
     XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog))
     try f.sql("ROLLBACK")
+  }
+
+  func testLegacyReferenceReleaseIsPagedVerifiedAndSnapshotDeferred() throws {
+    let f = try Fixture()
+    let keys = (0..<3).map { String(format: "%064x", $0 + 10) }
+    for key in keys {
+      try f.write(Data(key.utf8), key: key)
+      try f.legacyReference(key)
+    }
+    let legacyOnly = String(repeating: "0", count: 64)
+    try f.legacyReference(legacyOnly)
+    do {
+      let lease = try f.store.snapshotLease()
+      defer { withExtendedLifetime(lease) {} }
+      let page = try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 1)
+      XCTAssertTrue(page.deferred)
+      XCTAssertEqual(page.released, 0)
+      XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_external_payloads"), 4)
+    }
+    let skipped = try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 1)
+    XCTAssertEqual(skipped.visited, 1)
+    XCTAssertEqual(skipped.released, 0)
+    XCTAssertFalse(skipped.complete)
+    f.store = nil
+    f.store = AgentKnowledgePrimaryPartitions(catalogURL: f.url, secrets: f.secrets)
+    try f.store.setup(catalog: f.catalog)
+    for index in 0..<3 {
+      let page = try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 1)
+      XCTAssertEqual(page.released, 1)
+      XCTAssertEqual(page.visited, 1)
+      XCTAssertEqual(page.complete, index == 2)
+      XCTAssertFalse(page.deferred)
+    }
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_external_payloads WHERE item_hash='\(legacyOnly)'"), 1)
+    for key in keys { XCTAssertEqual(try f.store.read(itemHash: key, catalog: f.catalog), Data(key.utf8)) }
+    let final = try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 1)
+    XCTAssertEqual(final.released, 0)
+    XCTAssertEqual(final.visited, 1)
+    XCTAssertTrue(final.complete)
+    XCTAssertThrowsError(try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 0))
+    XCTAssertThrowsError(try f.store.reclaimLegacyCopies(catalog: f.catalog, pageSize: 33))
+    try f.sql("UPDATE knowledge_primary_legacy_reclaim SET after_item_hash='../invalid' WHERE id=1")
+    XCTAssertThrowsError(try f.store.reclaimLegacyCopies(catalog: f.catalog))
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_external_payloads"), 1)
+  }
+
+  func testLegacyReferenceReleaseRollsBackIfAnyPrimaryIsCorrupt() throws {
+    let f = try Fixture()
+    let other = String(repeating: "b", count: 64)
+    for key in [f.key, other] {
+      try f.write(Data("authoritative".utf8), key: key)
+      try f.legacyReference(key)
+    }
+    try f.sql("UPDATE knowledge_primary_refs SET sealed_ref=x'00' WHERE item_hash='\(other)'")
+    XCTAssertThrowsError(try f.store.reclaimLegacyCopies(catalog: f.catalog))
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_external_payloads"), 2)
+    XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_items"), 2)
+    XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: f.catalog), Data("authoritative".utf8))
+    try f.sql("BEGIN")
+    XCTAssertThrowsError(try f.store.reclaimLegacyCopies(catalog: f.catalog))
+    try f.sql("ROLLBACK")
+  }
+
+  func testExportPinsLegacyFilesThroughMigrationAndLaterReclamation() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite"), secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+    let items = (0..<2).map { index in AgentKnowledgeItem(id: "legacy-export-\(index)", kind: .document,
+      title: "Export", content: "complete body \(index)", source: "legacy-export", updatedAtMillis: Int64(index + 1)) }
+    XCTAssertTrue(database.replaceAll(items))
+    try seedLegacyKnowledgePayloads(items, url: url, secrets: secrets, externalIDs: Set(items.map(\.id)))
+    let payloads = URL(fileURLWithPath: url.path + ".payloads", isDirectory: true)
+    let files = try FileManager.default.contentsOfDirectory(at: payloads, includingPropertiesForKeys: nil)
+    XCTAssertEqual(files.count, 2)
+    let source = try XCTUnwrap(database.sourcePage().groups.first)
+    let revision = try database.sourceBrowseRevision()
+    var exported: [AgentKnowledgeItem] = []
+    try database.enumerateSourceSnapshotItems(source) { item in
+      if exported.isEmpty {
+        XCTAssertTrue(try database.maintainPrimaryPayloads().complete)
+        XCTAssertTrue(try database.reclaimPrimaryLegacyCopies().deferred)
+        XCTAssertTrue(try database.reclaimExternalPayloadFiles(minimumAge: 0).deferred)
+        for file in files { XCTAssertTrue(FileManager.default.fileExists(atPath: file.path)) }
+      }
+      exported.append(item)
+    }
+    XCTAssertEqual(exported.sorted { $0.id < $1.id }, items)
+    XCTAssertEqual(try database.reclaimPrimaryLegacyCopies().released, 2)
+    for file in files { try FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file.path) }
+    XCTAssertEqual(try database.reclaimExternalPayloadFiles(minimumAge: 3_600).removedFiles, 0)
+    for file in files { try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: file.path) }
+    XCTAssertEqual(try database.reclaimExternalPayloadFiles(minimumAge: 60).removedFiles, 2)
+    XCTAssertEqual(try database.sourceBrowseRevision(), revision)
+    XCTAssertEqual(try database.sourcePage().groups.first?.sourceRevision, source.sourceRevision)
+    XCTAssertEqual(try database.all(), items)
+  }
+
+  func testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let url = directory.appendingPathComponent("knowledge.sqlite")
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let payloads = URL(fileURLWithPath: url.path + ".payloads", isDirectory: true)
+    func candidate(_ byte: String) -> URL { payloads.appendingPathComponent(String(repeating: byte, count: 64) + "-0000000000000000.saenc") }
+    let outside = directory.appendingPathComponent("outside.txt"), link = candidate("a"), folder = candidate("b")
+    let old = candidate("c"), young = candidate("d")
+    try Data("outside".utf8).write(to: outside)
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let child = folder.appendingPathComponent("child.txt")
+    try Data("child".utf8).write(to: child)
+    try Data("old orphan".utf8).write(to: old)
+    try Data("young orphan".utf8).write(to: young)
+    for file in [outside, folder, old] {
+      try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: file.path)
+    }
+    XCTAssertEqual(try database.reclaimExternalPayloadFiles(minimumAge: 3_600).removedFiles, 1)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: old.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: young.path))
+    XCTAssertEqual(try database.reclaimExternalPayloadFiles(minimumAge: 0).removedFiles, 1)
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: link.path)[.type] as? FileAttributeType, .typeSymbolicLink)
+    XCTAssertEqual(try Data(contentsOf: child), Data("child".utf8))
+    XCTAssertEqual(try Data(contentsOf: outside), Data("outside".utf8))
   }
 
   func testReferenceSwapOrMalformedSealedReferenceDoesNotFallBack() throws {

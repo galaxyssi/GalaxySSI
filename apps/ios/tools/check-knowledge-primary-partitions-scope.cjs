@@ -21,8 +21,10 @@ function retained(file, source) {
     const original = old(file);
     source = source.replace(properties, '')
       .split('    let primarySnapshotLease = try primaryPayloads.snapshotLease()\n    defer { withExtendedLifetime(primarySnapshotLease) {} }\n').join('')
+      .replace('    var deferred: Bool = false\n', '')
       .replace('    primaryPayloads = AgentKnowledgePrimaryPartitions(catalogURL: fileURL, secrets: secrets)\n', '')
       .replace(section(source, '  struct PrimaryMigrationPage:', '  @discardableResult\n  func maintainExternalPayloads('), '')
+      .split('      try primaryPayloads.checkSharedAccess()\n').join('')
       .replace('        WHERE item_hash > ? AND NOT EXISTS(SELECT 1 FROM knowledge_primary_refs p WHERE p.item_hash=knowledge_items.item_hash)\n        ORDER BY item_hash ASC LIMIT ?',
         '        WHERE item_hash > ? ORDER BY item_hash ASC LIMIT ?')
       .replace('    guard let database else { return }\n    do { try primaryPayloads.setup(catalog: database) }\n    catch { sqlite3_close_v2(database); self.database = nil; return }\n', '');
@@ -35,6 +37,20 @@ function retained(file, source) {
     const decodeStart = '    guard let catalog = sqlite3_db_handle(statement)', decodeEnd = '          keyedHash(item.id) == itemHash else';
     source = source.replace(section(source, decodeStart, decodeEnd),
       section(original, '    let external = readExternalPayload(itemHash: itemHash, database: sqlite3_db_handle(statement))', decodeEnd));
+    const reclaimStart = '  @discardableResult\n  func reclaimExternalPayloadFiles(', reclaimEnd = '  @discardableResult\n  func replaceAll(';
+    const actualReclaim = section(source, reclaimStart, reclaimEnd);
+    const helperPrefix = '  private func reclaimExternalPayloadFilesExclusively(\n    pageSize: Int,\n    minimumAge: TimeInterval\n  ) throws -> ExternalPayloadReclamation {\n    do {\n';
+    const helperOffset = actualReclaim.indexOf(helperPrefix);
+    assert(helperOffset > 0);
+    const wrapper = actualReclaim.slice(0, helperOffset);
+    assert.equal(wrapper, '  @discardableResult\n  func reclaimExternalPayloadFiles(\n    pageSize: Int = 32,\n    minimumAge: TimeInterval = 3_600\n  ) throws -> ExternalPayloadReclamation {\n    try locked {\n      guard let database else { throw AgentKnowledgeDatabaseError.unavailable }\n      return try primaryPayloads.withExclusiveAccess(catalog: database) {\n        try reclaimExternalPayloadFilesExclusively(pageSize: pageSize, minimumAge: minimumAge)\n      } ?? ExternalPayloadReclamation(removedFiles: 0, removedBytes: 0, complete: false, deferred: true)\n    }\n  }\n\n');
+    const restoredReclaim = actualReclaim.slice(helperOffset)
+      .replace(helperPrefix, '  @discardableResult\n  func reclaimExternalPayloadFiles(\n    pageSize: Int = 32,\n    minimumAge: TimeInterval = 3_600\n  ) throws -> ExternalPayloadReclamation {\n    try locked {\n')
+      .replace('      guard try FileManager.default.attributesOfItem(atPath: payloadDirectory.path)[.type] as? FileAttributeType == .typeDirectory else {\n        throw AgentKnowledgeDatabaseError.corruptRecord\n      }\n', '')
+      .replace('let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey]),\n              values.isRegularFile == true, values.isSymbolicLink == false,',
+        'let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),');
+    assert.equal(restoredReclaim, section(original, reclaimStart, reclaimEnd));
+    source = source.replace(actualReclaim, restoredReclaim);
     return source;
   }
   if (file.endsWith('AgentKnowledgeDatabaseTests.swift')) {
@@ -102,26 +118,38 @@ function validate() {
     'O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC', 'Darwin.openat(directoryDescriptor, ".access.lock"',
     'AT_SYMLINK_NOFOLLOW', 'Darwin.unlinkat(directoryDescriptor, name, 0)', 'Darwin.fsync(directoryDescriptor)',
     'guard state == SQLITE_DONE', 'try beforeRetiredUnlink()', 'try afterRetiredUnlink()']) assert(storage.includes(token), token);
-  const reclaim = section(storage, '  func reclaim(catalog:', '  private func reclaimPending(');
+  const reclaim = section(storage, '  private func reclaimExclusively(', '  private func reclaimPending(');
   assert(reclaim.indexOf('try execute(catalog, "COMMIT")') < reclaim.indexOf('try unlinkRetired(id)'));
   assert(reclaim.indexOf('try afterRetiredUnlink()') < reclaim.indexOf('DELETE FROM knowledge_primary_retired'));
-  assert(reclaim.includes('pageSize: Int = 8') && reclaim.includes('sqlite3_get_autocommit(catalog) != 0'));
+  const exclusive = section(storage, '  func withExclusiveAccess<T>(', '  func reclaimLegacyCopies(');
+  assert(exclusive.includes('sqlite3_get_autocommit(catalog) != 0'));
+  assert(exclusive.indexOf('Self.flock(accessDescriptor, LOCK_EX)') < exclusive.indexOf('return try operation()'));
+  const legacy = section(storage, '  func reclaimLegacyCopies(', '  private func reclaimExclusively(');
+  for (const token of ['withExclusiveAccess(catalog: catalog)', 'pageSize: Int = 8', 'WHERE item_hash>? ORDER BY item_hash LIMIT ?',
+    'sqlite3_bind_int(select, 2, Int32(pageSize + 1))', 'keys.prefix(pageSize)', 'try readPayload(itemHash: key, catalog: catalog)',
+    'DELETE FROM knowledge_external_payloads', 'UPDATE knowledge_primary_legacy_reclaim', 'try execute(catalog, "COMMIT")']) assert(legacy.includes(token), token);
+  assert(legacy.indexOf('try readPayload(') < legacy.indexOf('DELETE FROM knowledge_external_payloads'));
+  assert(!legacy.includes('DELETE FROM knowledge_items') && !legacy.includes('removeItem('));
+  for (const token of ['self.reclaimPrimaryLegacyCopies(pageSize: 8)', 'self.reclaimExternalPayloadFiles(pageSize: 16)',
+    'legacy.deferred ? .seconds(5)', 'files.deferred ? .seconds(5)']) assert(worker.includes(token), token);
   assert.equal(database.split('let primarySnapshotLease = try primaryPayloads.snapshotLease()').length, 3);
   for (const token of ['self.reclaimPrimaryPartitions(pageSize: 8)', 'reclaim.deferred ? .seconds(5) : .milliseconds(100)']) assert(worker.includes(token), token);
   const codec = read(app + names[0]);
   for (const token of ['maximumPlainBytes = 64 * 1_024', 'maximumEncodedBytes = 128 * 1_024', 'COMPRESSION_ZLIB',
     'frame.plainBytes + 1', 'guard count == frame.plainBytes', 'codec: compressed ? "zlib" : "raw"']) assert(codec.includes(token), token);
   const tests = read('apps/ios/GalaxySSITests/' + names[2]);
-  assert.equal((tests.match(/  func test/g) || []).length, 15);
+  assert.equal((tests.match(/  func test/g) || []).length, 19);
   for (const token of ['testCatalogPublicationFailureLeavesThePreviousRecordReadable', 'testOldCatalogSnapshotStillReadsTheOriginalImmutableFrames',
     'testMissingAndCorruptedFramesRejectAnOtherwiseValidReference', 'testPersistentNamespaceSurvivesAContainerPathChange',
     'testPrimaryMigrationResumesWithoutChangingSourcesVectorsOrLogicalRecords',
     'testReclaimDefersUntilTheOldCatalogSnapshotCloses', 'testAnotherStoreLeaseDefersReclaimWithoutBreakingReads',
     'testRetirementQueueResumesBeforeAndAfterPhysicalUnlink', 'testReclaimRejectsLiveReferencesTraversalAndSymlinkTargets',
-    'testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile']) assert(tests.includes(token), token);
+    'testReclaimIsPagedAndNeverDropsALivePartitionOrUnknownFile', 'testLegacyReferenceReleaseIsPagedVerifiedAndSnapshotDeferred',
+    'testLegacyReferenceReleaseRollsBackIfAnyPrimaryIsCorrupt', 'testExportPinsLegacyFilesThroughMigrationAndLaterReclamation',
+    'testLegacyFileCleanupSkipsDirectoriesAndSymlinksAndHonorsAge']) assert(tests.includes(token), token);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   for (const name of names) assert.equal(project.split('\n').filter(line => line.includes(name)).length, 4, name);
-  console.log('Pinned Android #3037 storage, primary writer/read/migration/reclamation hooks, retained logical/vector code and fifteen authored fixtures source contracts passed; no native acceptance.');
+  console.log('Pinned Android #3037 storage, primary writer/read/migration/reclamation hooks, verified legacy release, retained logical/vector code and nineteen authored fixtures source contracts passed; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();

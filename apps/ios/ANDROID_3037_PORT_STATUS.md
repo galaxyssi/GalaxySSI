@@ -62,15 +62,20 @@ or an iOS OS-background-execution guarantee.
 
 Only physical ownership changes: no source/header revision, FTS tokens, native
 index token or vector feed/provenance writes are added to migration. Legacy
-external references/files are deliberately retained so an already-open catalog
-snapshot is not invalidated. The old externalizer skips new primary records,
+external references/files are retained during migration so an already-open catalog
+snapshot is not invalidated. A later snapshot-exclusive pass verifies primary
+data before releasing old references; age-gated physical cleanup uses the same
+lease. The old externalizer skips new primary records,
 and its original old-format behavior remains covered by explicit legacy fixtures.
 
 ## Remaining implementation
 
-- Snapshot-safe cleanup of retained legacy external copies is NOT implemented
-  here. Their references/files are still retained. Unknown orphan discovery and
-  mixed-live compaction were not delivered by the pinned Android PR either.
+- Periodic idle maintenance from Android's fifteen-minute WorkManager job is not
+  ported. This worker currently runs on coordinator startup or an explicit start.
+  Young orphaned legacy files may remain until a later start after their age gate.
+  No iOS background execution or timing guarantee is claimed.
+- Unknown primary orphan discovery and mixed-live compaction were not delivered
+  by the pinned Android PR either.
 - Physical commits are currently per record, before catalog publication. Native
   bulk partition-transaction batching and its performance investigation remain
   open; no latency improvement or universal resource-bound claim is made.
@@ -81,7 +86,7 @@ and its original old-format behavior remains covered by explicit legacy fixtures
 
 ## Source evidence
 
-Fifteen XCTest methods are authored only, NOT executed: compressed/raw/binary frame
+Nineteen XCTest methods are authored only, NOT executed: compressed/raw/binary frame
 bounds, Unicode multi-frame/reopen, rotation across four buckets, failed catalog
 publication, old snapshot retention, swapped/corrupt references, missing/corrupt
 frames, container relocation, resumed old inline/file migration with unchanged
@@ -92,6 +97,10 @@ Five additional methods cover snapshot/second-store deferral, interrupted queue
 replay before/after unlink, live-reference/traversal/symlink rejection, bounded
 pages and preservation of unknown files. These are not executed crash or device
 acceptance results.
+Four more cover checkpointed legacy-reference pages and reopen after skipping a
+legacy-only record, rollback on primary corruption, actual export/migration/file
+cleanup interleaving, age gates and nonregular/symlink preservation. No native
+execution of these fixtures is claimed.
 
 `check-knowledge-primary-partitions-scope.cjs` verifies pinned production sources,
 complete retained coordinator/catalog code outside declared hooks, actual writer/
@@ -125,3 +134,30 @@ sidecars/database unlink and directory synchronization succeed. Native Darwin
 flock/filesystem/crash behavior remains unverified by execution.
 
 Lease API reference: [Apple flock manual](https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/flock.2.html).
+
+## Releasing retained legacy copies
+
+After primary migration, a separate durable cursor visits at most eight old
+external-reference rows per worker page, including rows not yet owned by primary
+storage. This avoids an unbounded join/filter scan in a nominally small page.
+Under the shared reclaimer's exclusive lease, complete primary records are read
+and authenticated before deleting their old reference rows. Legacy-only records
+are skipped, corrupt primary data aborts/rolls back the entire page, and cursor
+publication shares the delete transaction. A completed pass resets its cursor so
+future explicit passes can revisit records that subsequently become primary.
+Logical records, source revisions, FTS, vector feeds and provenance are untouched.
+
+The old file cleaner now also requires that exclusive lease: a zero current
+reference count alone is not sufficient while another catalog snapshot is open.
+Busy leases return an explicit deferred result without advancing the file cursor.
+The original filename, current-reference and minimum-age checks remain in force;
+the payload root must be a real directory, and symlink/directory candidates are
+skipped. Reference retirement does not immediately unlink any file. Failure after
+reference commit leaves an unreferenced file for a later file pass, not a dangling
+authoritative reference. The worker runs migration, legacy release, primary
+retirement and legacy file pages in that order. Legacy migration entry points
+also recheck shared access after a failed lease conversion.
+
+The legacy file page still enumerates/sorts the existing directory before taking
+its bounded candidate slice. That inherited directory-memory cost is not claimed
+to be a bounded whole-corpus scan or a performance improvement.
