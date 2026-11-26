@@ -102,10 +102,10 @@ final class AgentIOSWebSearchCapacityTests: XCTestCase {
     var tooMany = response
     tooMany.output["results"] = .array(rows + [rows[0]])
     XCTAssertFalse(fixture.cache.putSearchResponse(key: key, result: tooMany, ttlMillis: 60_000))
-    var tooLarge = response
-    tooLarge.output["padding"] = .string(String(repeating: "x", count: AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1))
-    XCTAssertFalse(fixture.cache.putSearchResponse(key: key, result: tooLarge, ttlMillis: 60_000))
-    XCTAssertEqual(fixture.cache.searchResponse(key: key)?.output, response.output)
+    var large = response
+    large.output["padding"] = .string(String(repeating: "x", count: 4_200_000))
+    XCTAssertTrue(fixture.cache.putSearchResponse(key: key, result: large, ttlMillis: 60_000))
+    XCTAssertEqual(fixture.cache.searchResponse(key: key)?.output, large.output)
   }
 
   func testResearchEvidenceSchemaRemainsTwentyFour() throws {

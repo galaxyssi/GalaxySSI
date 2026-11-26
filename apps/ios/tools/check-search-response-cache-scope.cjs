@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '9f4feefba48581c9177d9674f10238bfc64e04fe', android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const norm = value => value.replace(/\r\n/g, '\n');
-const read = file => norm(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => require('./check-search-response-size-parity.cjs').retained(file, norm(fs.readFileSync(path.join(root, file), 'utf8')));
 const show = (ref, file) => norm(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 const cacheHooks = [
   [

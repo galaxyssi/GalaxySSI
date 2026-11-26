@@ -205,7 +205,7 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     XCTAssertNil(cache.searchResponse(key: key))
   }
 
-  func testSearchResponseBoundsRejectEmptyFailedAndOversizedEntries() throws {
+  func testSearchResponseBoundsRejectEmptyFailedAndRetainLargeEntries() throws {
     var clock: Int64 = 1_000
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("bounds-response-\(UUID()).json")
     defer { removeWebCacheFixture(file) }
@@ -221,8 +221,39 @@ final class AgentIOSWebSearchFusionTests: XCTestCase {
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .failure(code: "failed", message: "fixture"), ttlMillis: 60_000))
     XCTAssertFalse(cache.putSearchResponse(key: key, result: .success(), ttlMillis: 60_000))
     var oversized = cachedFixture()
-    oversized.output["padding"] = .string(String(repeating: "x", count: AgentIOSWebSearchCapacity.maximumCachedResponseBytes + 1))
-    XCTAssertFalse(cache.putSearchResponse(key: key, result: oversized, ttlMillis: 60_000))
+    oversized.output["padding"] = .string(String(repeating: "x", count: 4_200_000))
+    XCTAssertTrue(cache.putSearchResponse(key: key, result: oversized, ttlMillis: 60_000))
+    XCTAssertEqual(cache.searchResponse(key: key)?.output, oversized.output)
+  }
+
+  func testSearchResponseMultibytePayloadIsNotCappedByOldEncodedByteLimit() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("unicode-response-\(UUID()).json")
+    defer { removeWebCacheFixture(file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { 1_000 })
+    let key = String(repeating: "c", count: 64)
+    var response = cachedFixture()
+    let text = String(repeating: "\u{1F680}", count: 600_000)
+    XCTAssertEqual(text.utf8.count, 2_400_000)
+    response.output["padding"] = .string(text)
+    XCTAssertTrue(cache.putSearchResponse(key: key, result: response, ttlMillis: 60_000))
+    XCTAssertEqual(cache.searchResponse(key: key)?.output, response.output)
+  }
+
+  func testLargeResponseFailedReplacementPreservesPriorDataAndGeneration() throws {
+    var reject = false
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("large-response-\(UUID()).json")
+    defer { removeWebCacheFixture(file) }
+    let cache = AgentIOSWebIntelligenceCacheStore(fileURL: file, secrets: InMemorySecretStore(), nowMillis: { 1_000 },
+      beforeCommit: { if reject { throw CocoaError(.fileWriteOutOfSpace) } })
+    let key = String(repeating: "d", count: 64)
+    var original = cachedFixture(); original.output["padding"] = .string(String(repeating: "x", count: 4_200_000))
+    XCTAssertTrue(cache.putSearchResponse(key: key, result: original, ttlMillis: 60_000))
+    let generation = cache.searchCacheGeneration()
+    var replacement = original; replacement.output["padding"] = .string(String(repeating: "y", count: 4_300_000))
+    reject = true
+    XCTAssertFalse(cache.putSearchResponse(key: key, result: replacement, ttlMillis: 60_000))
+    XCTAssertEqual(cache.searchCacheGeneration(), generation)
+    XCTAssertEqual(cache.searchResponse(key: key)?.output, original.output)
   }
 
   func testSearchResponseFailedWriteAndCorruptReadDoNotErasePriorData() throws {
