@@ -5,19 +5,40 @@ import XCTest
 final class GalaxySSIHealthOverviewCareTests: XCTestCase {
   typealias Care = GalaxySSIHealthOverviewCare
 
-  func testHealthAssessmentPanelReservesTranscriptSpaceAndSubtractsFixedHeader() {
-    typealias Layout = GalaxySSIHealthCareAgentPanelLayout
-    for height: CGFloat in [320, 600, 1_000] {
-      let limit = Layout.limit(available: height)
-      XCTAssertEqual(limit, min(300, height * 0.4))
-      XCTAssertEqual(Layout.bodyHeight(available: height, header: 80, content: 2_000), max(0, limit - 80))
-      XCTAssertEqual(Layout.bodyHeight(available: height, header: 80, content: 20), min(20, max(0, limit - 80)))
-      XCTAssertLessThanOrEqual(80 + Layout.bodyHeight(available: height, header: 80, content: 2_000), limit)
+  func testHealthMetricBannerUsesOnlyCurrentMeasurementAndSameAssessmentReference() {
+    let assessment = bannerAssessment(value: " 6.3 ", unit: " mmol/L ", reference: " 4-6 ")
+    XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.measurement(assessment), "6.3 mmol/L")
+    XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.reportReference(assessment), "4-6 mmol/L")
+    let changed = bannerAssessment(value: "6.4", unit: "mmol/L", reference: "")
+    XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.measurement(changed), "6.4 mmol/L")
+    XCTAssertNil(GalaxySSIHealthCareAgentPanelText.reportReference(changed))
+  }
+
+  func testHealthMetricBannerDoesNotInventUnitsOrReferenceForRemovedSource() {
+    for assessment in [GalaxySSIHealthCare.Assessment.removed,
+      bannerAssessment(value: "6.3", unit: "mmol/L", reference: "4-6", record: false),
+      bannerAssessment(value: " \n ", unit: "mmol/L", reference: "4-6")] {
+      XCTAssertNil(GalaxySSIHealthCareAgentPanelText.measurement(assessment))
+      XCTAssertNil(GalaxySSIHealthCareAgentPanelText.reportReference(assessment))
     }
-    XCTAssertEqual(Layout.limit(available: nil), 300)
-    XCTAssertEqual(Layout.limit(available: -1), 0)
-    XCTAssertEqual(Layout.limit(available: .nan), 0)
-    XCTAssertEqual(Layout.bodyHeight(available: 320, header: 200, content: 1_000), 0)
+    let qualitative = bannerAssessment(value: "Negative", unit: "", reference: "Negative")
+    XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.measurement(qualitative), "Negative")
+    XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.reportReference(qualitative), "Negative")
+  }
+
+  func testHealthMetricBannerAddsUnitOnlyToParsedNumericReference() {
+    for reference in ["4-6", "<=6", ">=4"] {
+      XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.reportReference(bannerAssessment(value: "6.3", unit: "mmol/L", reference: reference)), reference + " mmol/L")
+    }
+    for reference in ["Negative", "See report", "4-6 mmol/L"] {
+      XCTAssertEqual(GalaxySSIHealthCareAgentPanelText.reportReference(bannerAssessment(value: "6.3", unit: "mmol/L", reference: reference)), reference)
+    }
+  }
+
+  private func bannerAssessment(value: String, unit: String, reference: String, record: Bool = true) -> GalaxySSIHealthCare.Assessment {
+    let reading = GalaxySSIHealthReading(metric: .glucose, measuredAt: Date(timeIntervalSince1970: 100), value: 6.3)
+    return .init(record: record ? GalaxySSIHealthCare.Record(reading) : nil, measuredAt: reading.measuredAt, result: value, unit: unit,
+      reference: reference, signals: [], guidelineVersion: nil, baseline: nil)
   }
 
   func testIndependentAgentScopeRequiresExactPrivateActiveTopic() {
