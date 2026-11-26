@@ -1,7 +1,7 @@
 // Source-only foreground context contracts; not native privacy, model or concurrency acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '3fed6016e822f13c08b4ae1b6b2f0c791af1b24a';
+const base = '5f6297c3cf8348fa777e5c80cdee5f46cf7c10a1';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));

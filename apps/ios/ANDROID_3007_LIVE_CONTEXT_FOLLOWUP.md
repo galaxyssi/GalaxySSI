@@ -1,6 +1,6 @@
 # Android #3007 Retained Context Follow-up
 
-Base: main 3fed6016e822f13c08b4ae1b6b2f0c791af1b24a. Correct an iOS integration gap exposed while auditing the retained context/prewarm work merged in #4552. This is a remaining-context-path correction, not a claim Android #3007 introduced a new privacy protocol. Existing Android pinned reference remains 65655f0c79c6ab04121150229a65b089180f82f2.
+Base: main 5f6297c3cf8348fa777e5c80cdee5f46cf7c10a1, synchronized after #4564 merged; initial branch base was 3fed6016e. Correct an iOS integration gap exposed while auditing the retained context/prewarm work merged in #4552. This is a remaining-context-path correction, not a claim Android #3007 introduced a new privacy protocol. Existing Android pinned reference remains 65655f0c79c6ab04121150229a65b089180f82f2.
 
 ## Actual Gaps
 
