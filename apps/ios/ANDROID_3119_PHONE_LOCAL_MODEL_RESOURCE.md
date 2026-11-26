@@ -2,7 +2,9 @@
 
 Follow-up correction to the existing iOS routing/queued-producer adaptation,
 not a new native inference implementation or completion of Android #3119.
-Baseline: main `f1b21803638c354cd6056883cf2c8cb88ee76f08`.
+Baseline: main `104e4e156ed187a8e5980813efc901bb08d2bd34`, synchronized
+after scored-context PR #4590 merged. Its routing changes are retained, not part
+of this increment's diff against main.
 
 ## Actual Failure Path
 

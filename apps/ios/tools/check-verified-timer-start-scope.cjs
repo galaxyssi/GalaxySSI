@@ -1,7 +1,7 @@
 // Source evidence only, not Swift compilation, executed fixtures or device timer acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '9781cd99a1ad53c7408a664f1a3b4ebb27579f3e';
-const read = file => require('./check-phone-local-model-resource-scope.cjs').retained(file,
+const read = file => require('./check-scored-route-context-scope.cjs').retained(file,
   fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -13,7 +13,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  source = require('./check-phone-local-model-resource-scope.cjs').retained(file, source);
+  source = require('./check-scored-route-context-scope.cjs').retained(file, source);
   if (file.endsWith('check-resumed-planner-route-scope.cjs')) return source
     .replace("const read = file => require('./check-verified-timer-start-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")

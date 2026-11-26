@@ -1,6 +1,6 @@
 // Source evidence only, not native inference, offline/private execution or compiled fixture acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'f1b21803638c354cd6056883cf2c8cb88ee76f08';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '104e4e156ed187a8e5980813efc901bb08d2bd34';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -27,7 +27,7 @@ const localBlock = `    if let profile = activeLocalProfiles.first {
     }
 `;
 function retained(file, source) {
-  if (file.endsWith('check-verified-timer-start-scope.cjs')) return source
+  if (file.endsWith('check-scored-route-context-scope.cjs')) return source
     .replace("const read = file => require('./check-phone-local-model-resource-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")
     .replace("  source = require('./check-phone-local-model-resource-scope.cjs').retained(file, source);\n", '');
@@ -46,7 +46,7 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'AgentProviderProfileCatalog.swift', app + 'AgentNetworkRoutingModels.swift',
-    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-verified-timer-start-scope.cjs'])
+    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-scored-route-context-scope.cjs'])
     assert.equal(retained(file, read(file)), old(file), file);
   const profile = read(app + 'AgentProviderProfileCatalog.swift');
   const native = section(profile, '  static func isPhoneLocalModel(', '  static func fromTarget(');
