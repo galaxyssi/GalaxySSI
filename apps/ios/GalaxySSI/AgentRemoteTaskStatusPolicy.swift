@@ -70,9 +70,12 @@ struct AgentCodexReplaySeed: Codable, Equatable {
 enum AgentCodexSilenceRecoveryPolicy {
   static let silenceMillis: Int64 = 180_000
 
-  static func rankedAlternatives(targets: [AgentCallableTarget], eligibleIds: Set<String>, goal: String) -> [String] {
+  static func rankedAlternatives(targets: [AgentCallableTarget], eligibleIds: Set<String>, goal: String,
+                                 hasPairedDesktop: Bool = false,
+                                 routingHealth: AgentRoutingHealthSnapshot? = nil) -> [String] {
     let current = targets.filter { eligibleIds.contains($0.id) && $0.kind == .agent }
-    guard let selected = AgentConnectorRouteSelector.select(targets: current, decision: nil, goal: goal) else { return [] }
+    guard let selected = AgentConnectorRouteSelector.select(targets: current, decision: nil, goal: goal,
+      hasPairedDesktop: hasPairedDesktop, routingHealth: routingHealth) else { return [] }
     var seen = Set<String>()
     return (selected.decision?.orderedTargetIds ?? [selected.target.id])
       .filter { !$0.isBlank && seen.insert($0).inserted }

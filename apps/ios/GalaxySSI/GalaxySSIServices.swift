@@ -169,6 +169,7 @@ final class MessageCoordinator: ObservableObject {
   )
   private let diagnosticLedger: GalaxySSILinkDiagnosticLedger
   private let cloudStreamEngine: CloudConversationStreaming
+  private let routingHealthLedger: AgentProviderHealthLedger
   private let disclosureStore: AgentDataDisclosureStore
   var healthDisclosureStore: AgentDataDisclosureStore { disclosureStore }
   private let taskIdentityStore: AgentTaskIdentityStore
@@ -237,6 +238,7 @@ final class MessageCoordinator: ObservableObject {
     let controlPlaneExecutor = AgentControlPlaneActionExecutor(
       registrationSource: { [weak self] in self?.callableAgentRegistrations() ?? [] },
       delegate: connectorExecutor,
+      healthLedger: routingHealthLedger,
       managedResponseLedger: self.managedDesktopReplyLedger,
       globalRunSlots: UserDefaultsAgentGlobalRunSlotStore.shared
     )
@@ -491,9 +493,11 @@ final class MessageCoordinator: ObservableObject {
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
-    mqttClient: GalaxySSIMqttClient? = nil
+    mqttClient: GalaxySSIMqttClient? = nil,
+    routingHealthLedger: AgentProviderHealthLedger = UserDefaultsAgentProviderHealthLedger()
   ) {
     self.store = store
+    self.routingHealthLedger = routingHealthLedger
     self.desktopArtifactStore = desktopArtifactStore ?? AgentDesktopArtifactStore(
       applicationSupportDirectory: FileManager.default.urls(
         for: .applicationSupportDirectory,
@@ -5170,9 +5174,11 @@ final class MessageCoordinator: ObservableObject {
     let eligibleIds = Set(eligible.filter {
       !AgentCodexSilenceRecoveryPolicy.isCodex(adapter: $0.connectorAdapterName, agentId: $0.connectorAgentId)
     }.map(\.id))
+    let replayTargets = automaticRoutingTargets(goal: source.content)
     let alternatives = AgentCodexSilenceRecoveryPolicy.rankedAlternatives(
-      targets: automaticRoutingTargets(goal: source.content),
-      eligibleIds: eligibleIds, goal: source.content)
+      targets: replayTargets, eligibleIds: eligibleIds, goal: source.content,
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
+      routingHealth: automaticRoutingHealth(targets: replayTargets))
     let timeout = AgentCodexSilenceRecoveryPolicy.confirmedTimeout(status: status,
       failureCode: payload.string("failure_code"), error: payload.string("error"))
     guard let nextId = replay.budget.next(failed: binding.contactId, attemptId: binding.sourceIdentity,
@@ -6701,6 +6707,7 @@ final class MessageCoordinator: ObservableObject {
     let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts,
       apiKey: { store.apiKey(for: $0) })
     let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let routingHealth = automaticRoutingHealth(targets: targets)
     return AgentAutomaticRouteAdmission.targets(targets, registrations: callableAgentRegistrations(targets: targets),
       requirements: AgentTaskRequirementAnalyzer.analyze(
         AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(goal)),
@@ -6709,6 +6716,12 @@ final class MessageCoordinator: ObservableObject {
         networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
         networkValidated: probe.validated, networkMetered: probe.metered),
       connectorCallsAllowed: store.agentSafetySettings.connectorCallsAllowed)
+      .filter { routingHealth.allows(targetId: $0.id) }
+  }
+
+  private func automaticRoutingHealth(targets: [AgentCallableTarget]) -> AgentRoutingHealthSnapshot {
+    AgentRoutingHealthSnapshot.capture(registrations: callableAgentRegistrations(targets: targets),
+      ledger: routingHealthLedger, nowMillis: AgentControlPlaneClock.nowMillis())
   }
 
   private func automaticRouteSelection(
@@ -6724,7 +6737,8 @@ final class MessageCoordinator: ObservableObject {
       .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
     return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
       preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired })
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
+      routingHealth: automaticRoutingHealth(targets: targets))
   }
 
   private func selectedLocalModel(
@@ -14469,7 +14483,8 @@ final class MessageCoordinator: ObservableObject {
     let targets = automaticRoutingTargets(goal: goal)
     let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
       preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired })
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
+      routingHealth: automaticRoutingHealth(targets: targets))
     return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
   }
 
@@ -15530,7 +15545,8 @@ final class MessageCoordinator: ObservableObject {
       targets: targets,
       decision: nil,
       goal: goal,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired }
+      hasPairedDesktop: store.serverLinks.contains { $0.paired },
+      routingHealth: automaticRoutingHealth(targets: targets)
     )
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
       currentRoute.map { [$0.target.id] } ?? []
