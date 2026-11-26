@@ -1,5 +1,42 @@
 import Foundation
 
+enum GlobalResearchSourceScope {
+  static func sourceIds(from cognition: GlobalCognitionTask) -> Set<String>? {
+    guard cognition.sourceEvent.sensitivity != .sessionPrivate,
+          !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(cognition.lastError) else { return nil }
+    let metadata = cognition.sourceEvent.metadata
+    var ids = Set((metadata["source_conversation_ids"] ?? "").split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    let primary = cognition.sourceEvent.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let goalId = cognition.longHorizonGoalId
+    if !goalId.isEmpty {
+      guard metadata["long_horizon_goal_id"] == goalId,
+            metadata["source_conversation_ids"] != nil else { return nil }
+    }
+    let synthetic = !goalId.isEmpty && primary == "global-goal:\(goalId)" &&
+      metadata["origin"] == "global_long_horizon_scheduler"
+    if !primary.isEmpty && !synthetic { ids.insert(primary) }
+    return ids
+  }
+
+  static func allows(_ task: GlobalResearchTask, scope: GlobalRealtimePlanningScope) -> Bool {
+    guard scope.canRead else { return false }
+    if PublicAttentionResearchPolicy.isPublicTask(task.id) { return true }
+    guard let sources = task.sourceConversationIds,
+          !GlobalAgentEvidenceLifecyclePolicy.isInvalidatedState(task.lastError) else { return false }
+    guard task.sourceConversationId.isEmpty || sources.contains(task.sourceConversationId) else { return false }
+    return sources.isSubset(of: scope.allowedConversationIds)
+  }
+
+  static func matches(_ response: AgentConnectorResponse, request: GlobalResearchDispatchRequest) -> Bool {
+    response.sourceMessageId > 0 && response.sourceMessageId == request.sourceMessageId &&
+      response.contactId == request.resourceId &&
+      (response.conversationId.isEmpty || response.conversationId == request.conversationId) &&
+      (response.turnId.isEmpty || response.turnId == request.turnId) &&
+      (response.taskId.isEmpty || response.taskId == request.taskId)
+  }
+}
+
 struct GlobalResearchExecutionResult: Codable, Equatable {
   var taskId: String
   var status: GlobalResearchTaskStatus
@@ -429,7 +466,8 @@ enum GlobalResearchTaskPolicy {
       researchPlan: recoveredPlan,
       evidenceLedger: task.evidenceLedger,
       createdAtMillis: task.createdAtMillis,
-      updatedAtMillis: nowMillis
+      updatedAtMillis: nowMillis,
+      sourceConversationIds: task.sourceConversationIds
     )
   }
 

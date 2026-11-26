@@ -685,13 +685,15 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     guard store.globalAgentSettings.enabled, store.globalAgentSettings.autonomousResearchEnabled else {
       return GalaxySSIGlobalResearchCycleResult()
     }
+    let scope = GlobalRealtimePlanningScope(enabled: true, conversations: store.agentSessions(includeArchived: true))
     let persisted = stateStore.state()
     guard stateStore.lastErrorDescription.isEmpty else { return .init(persistenceFailed: true) }
     var state = persisted
-    seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, nowMillis: nowMillis)
+    seedResearchTasks(from: GlobalAgentDeliberationStore().cognitionTasks(), into: &state, scope: scope, nowMillis: nowMillis)
     PublicAttentionResearchPolicy.reconcile(&state, settings: store.globalAgentSettings, nowMillis: nowMillis)
     let existingDispatchIds = Set(state.dispatchRequests.map(\.id))
-    let task = GlobalResearchExecutorPolicy.claimTask(from: state.tasks, nowMillis: nowMillis)
+    let task = GlobalResearchExecutorPolicy.claimTask(from: state.tasks, nowMillis: nowMillis,
+      eligible: { GlobalResearchSourceScope.allows($0, scope: scope) })
     let context = researchContext(
       store: store,
       state: state,
@@ -713,7 +715,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       budgetLimits: GlobalResearchExecutorBudgetLimits(
         dailyLimit: settings.dailyBackgroundModelCallBudget, concurrencyLimit: settings.maxConcurrentBackgroundModelCalls,
         dailyTokenLimit: settings.dailyBackgroundTokenBudget, dailyReportedCostLimitMicros: settings.dailyBackgroundReportedCostBudgetMicros),
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      eligible: { GlobalResearchSourceScope.allows($0, scope: scope) }
     ) else {
       if state != persisted { stateStore.save(state) }
       guard stateStore.lastErrorDescription.isEmpty else { return .init(persistenceFailed: true) }
@@ -737,7 +740,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     capturedPublicEvidence: Bool = false,
     nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) -> Bool {
-    guard response.sourceMessageId > 0 else { return false }
+    guard response.sourceMessageId > 0, store.globalAgentSettings.enabled,
+          store.globalAgentSettings.autonomousResearchEnabled else { return false }
     let stateStore = GalaxySSIGlobalResearchRuntimeStore()
     let state = stateStore.state()
     guard let task = state.tasks.first(where: {
@@ -745,6 +749,11 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
         $0.researchPlan.synthesisSourceMessageId == response.sourceMessageId ||
         $0.researchPlan.units.contains { $0.sourceMessageId == response.sourceMessageId }
     }) else { return false }
+    let scope = GlobalRealtimePlanningScope(enabled: true, conversations: store.agentSessions(includeArchived: true))
+    guard stateStore.lastErrorDescription.isEmpty, GlobalResearchSourceScope.allows(task, scope: scope) else { return false }
+    let owned = state.dispatchRequests.filter { GlobalResearchSourceScope.matches(response, request: $0) }
+    guard owned.count == 1, let request = owned.first, request.taskId == task.id,
+          permitsResearchRequest(store: store, request: request) else { return false }
     if PublicAttentionResearchPolicy.isPublicTask(task.id) {
       guard let dispatch = state.dispatchRequests.first(where: { $0.sourceMessageId == response.sourceMessageId }),
             PublicAttentionResearchPolicy.matches(response, request: dispatch),
@@ -759,6 +768,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     )
     guard let step else { return false }
     stateStore.save(step.state)
+    guard stateStore.lastErrorDescription.isEmpty else { return false }
     store.appendGlobalProactiveMessages(step.state.proactiveMessages)
     return true
   }
@@ -767,12 +777,40 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     GalaxySSIGlobalResearchRuntimeStore().state()
   }
 
+  static func permitsResearchRequest(store: GalaxySSIStore, request: GlobalResearchDispatchRequest) -> Bool {
+    let settings = store.globalAgentSettings
+    guard settings.enabled, settings.autonomousResearchEnabled, request.sourceMessageId > 0 else { return false }
+    let stateStore = GalaxySSIGlobalResearchRuntimeStore()
+    let state = stateStore.state()
+    let scope = GlobalRealtimePlanningScope(enabled: true, conversations: store.agentSessions(includeArchived: true))
+    guard stateStore.lastErrorDescription.isEmpty, state.dispatchRequests.contains(request),
+          let task = state.task(id: request.taskId), GlobalResearchSourceScope.allows(task, scope: scope) else { return false }
+    if PublicAttentionResearchPolicy.isPublicTask(task.id) {
+      return PublicAttentionResearchPolicy.allows(request, settings: settings)
+    }
+    if request.transport == .onDeviceModel {
+      return request.resourceId == "phone-local-model" && request.contactId == request.resourceId
+    }
+    guard request.contactId == request.resourceId,
+          let contact = store.contact(id: request.contactId), !contact.deleted else { return false }
+    switch request.transport {
+    case .pairedAgent:
+      return settings.allowPairedAgentCognition && contact.trustState == .verified && contact.deliveryMode.isGalaxySSILinkFamily
+    case .cloudModel:
+      return settings.allowCloudCognition && contact.deliveryMode == .cloudAPI
+    case .onDeviceModel: return false
+    }
+  }
+
   private static func seedResearchTasks(
     from cognitionTasks: [GlobalCognitionTask],
     into state: inout GlobalResearchExecutorState,
+    scope: GlobalRealtimePlanningScope,
     nowMillis: Int64
   ) {
     for cognition in cognitionTasks where cognition.baselineUnderstanding.externalResearchUseful {
+      guard let sources = GlobalResearchSourceScope.sourceIds(from: cognition), scope.canRead,
+            sources.isSubset(of: scope.allowedConversationIds) else { continue }
       let sourceEventId = cognition.sourceEvent.id
       guard !sourceEventId.isBlank,
             !state.tasks.contains(where: { $0.sourceEventId == sourceEventId && $0.status != .failed }) else {
@@ -788,7 +826,7 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       state.upsert(GlobalResearchTask(
         id: "ios-research:\(GlobalAgentText.stableKey(sourceEventId))",
         sourceEventId: sourceEventId,
-        sourceConversationId: cognition.sourceEvent.conversationId,
+        sourceConversationId: sources.contains(cognition.sourceEvent.conversationId) ? cognition.sourceEvent.conversationId : "",
         topic: topic,
         question: String(question.prefix(2_000)),
         depth: depth,
@@ -797,7 +835,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
         status: .queued,
         monitorIntervalMillis: depth == .continuousMonitor ? GlobalResearchTaskPolicy.monitorIntervalMillis(0) : 0,
         createdAtMillis: cognition.createdAtMillis > 0 ? cognition.createdAtMillis : nowMillis,
-        updatedAtMillis: cognition.updatedAtMillis > 0 ? cognition.updatedAtMillis : nowMillis
+        updatedAtMillis: cognition.updatedAtMillis > 0 ? cognition.updatedAtMillis : nowMillis,
+        sourceConversationIds: sources
       ))
     }
   }
@@ -927,7 +966,11 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     nowMillis: Int64
   ) -> GlobalResearchExecutionContext {
     if let task, PublicAttentionResearchPolicy.isPublicTask(task.id) { return GlobalResearchExecutionContext() }
-    let conversationId = task?.sourceConversationId ?? ""
+    let scope = GlobalRealtimePlanningScope(
+      enabled: store.globalAgentSettings.enabled && store.globalAgentSettings.autonomousResearchEnabled,
+      conversations: store.agentSessions(includeArchived: true))
+    guard let task, GlobalResearchSourceScope.allows(task, scope: scope) else { return GlobalResearchExecutionContext() }
+    let conversationId = task.sourceConversationId
     let conversationContext = store.agentSessionMessages(conversationId)
       .filter { !$0.isSystem }
       .suffix(12)
@@ -937,13 +980,15 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       }
       .joined(separator: "\n")
     let realtime = GlobalRealtimeContextProvider(
-      researchTasksSource: { state.tasks }
+      researchTasksSource: { state.tasks.filter { GlobalResearchSourceScope.allows($0, scope: scope) } }
     ).build(
-      query: task?.question ?? "",
+      query: task.question,
       currentConversationId: conversationId,
+      excludedConversationIds: scope.excludedConversationIds,
       maximumItems: 12,
       maximumCharacters: GlobalResearchExecutorLimits.maxContextCharacters,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      allowedConversationIds: scope.allowedConversationIds
     )
     return GlobalResearchExecutionContext(
       conversationContext: String(conversationContext.prefix(GlobalResearchExecutorLimits.maxContextCharacters)),

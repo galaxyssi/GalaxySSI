@@ -6,6 +6,8 @@ Original implementation #4535 merged through `1497fc0171a0cbedde5e3d52de1cead10a
 The image-presentation follow-up starts from fetched main `7e91ac6862e59fdf5a168fee89c925db281d4919`; its PR diff contains only that follow-up. The inventory/checker's older baseline remains the historical cumulative Android comparison, not this new PR's diff base.
 This is a partial port, NOT completion of all #3007 behavior.
 
+Research source-membership follow-up: see ANDROID_3007_RESEARCH_SOURCE_FOLLOWUP.md for optional complete declared sources, dual queue selection, current dispatch/response gates and source-only verification. Missing legacy/autonomous/evalops source proof remains untrusted; selected-context provenance and full Android parity are NOT complete.
+
 ## Implemented
 
 - Replace the actual URLSession public-search regex link extraction with an inert SwiftSoup DOM parser. Raw HTTP search stays separate from WebKit article rendering. Fixed dependency 2.6.0 uses Swift tools 5.0; exact upstream tag commit is pinned in Package.resolved and the app target links the product.

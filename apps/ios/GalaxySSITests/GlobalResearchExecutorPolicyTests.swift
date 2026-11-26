@@ -2,6 +2,133 @@ import XCTest
 @testable import GalaxySSI
 
 final class GlobalResearchExecutorPolicyTests: XCTestCase {
+  func testResearchScopeRequiresCompleteKnownEligibleSources() {
+    var candidate = task(.quickFact)
+    let scope = researchScope()
+    XCTAssertFalse(GlobalResearchSourceScope.allows(candidate, scope: scope))
+    candidate.sourceConversationIds = ["conversation-main"]
+    XCTAssertTrue(GlobalResearchSourceScope.allows(candidate, scope: scope))
+    for excluded in ["private", "paused", "removed"] {
+      candidate.sourceConversationIds = ["conversation-main", excluded]
+      XCTAssertFalse(GlobalResearchSourceScope.allows(candidate, scope: scope))
+    }
+    candidate.sourceConversationIds = []
+    XCTAssertFalse(GlobalResearchSourceScope.allows(candidate, scope: scope))
+    candidate.sourceConversationId = ""
+    XCTAssertTrue(GlobalResearchSourceScope.allows(candidate, scope: scope))
+    XCTAssertFalse(GlobalResearchSourceScope.allows(candidate,
+      scope: GlobalRealtimePlanningScope(enabled: false, conversations: [])))
+  }
+
+  func testResearchSelectionAndExecutorUseTheSameEligibilityPredicate() throws {
+    var denied = task(.quickFact)
+    denied.id = "denied"
+    var allowed = denied
+    allowed.id = "allowed"
+    let state = GlobalResearchExecutorState(tasks: [denied, allowed])
+    let eligible: (GlobalResearchTask) -> Bool = { $0.id == "allowed" }
+    XCTAssertEqual(GlobalResearchExecutorPolicy.claimTask(from: state.tasks, nowMillis: now, eligible: eligible)?.id, "allowed")
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(state: state,
+      resources: [resource("cloud-models", .cloudModel)], nowMillis: now, eligible: eligible))
+    XCTAssertEqual(step.result.taskId, "allowed")
+    XCTAssertEqual(step.state.task(id: "denied"), denied)
+    XCTAssertTrue(step.state.dispatchRequests.allSatisfy { $0.taskId == "allowed" })
+    XCTAssertNil(GlobalResearchExecutorPolicy.executeNext(state: state,
+      resources: [resource("cloud-models", .cloudModel)], nowMillis: now, eligible: { _ in false }))
+    XCTAssertNotNil(GlobalResearchExecutorPolicy.claimTask(from: state.tasks, nowMillis: now))
+  }
+
+  func testResearchSeedSourcesKeepMetadataAndRejectPrivateSensitivity() {
+    var cognition = researchCognition()
+    cognition.sourceEvent.metadata["source_conversation_ids"] = " secondary, conversation-main, ,secondary "
+    XCTAssertEqual(GlobalResearchSourceScope.sourceIds(from: cognition), ["conversation-main", "secondary"])
+    cognition.sourceEvent.sensitivity = .sessionPrivate
+    XCTAssertNil(GlobalResearchSourceScope.sourceIds(from: cognition))
+  }
+
+  func testResearchSyntheticGoalNeedsCompleteHostMetadata() {
+    var cognition = researchCognition()
+    cognition.longHorizonGoalId = "goal"
+    cognition.sourceEvent.conversationId = "global-goal:goal"
+    XCTAssertNil(GlobalResearchSourceScope.sourceIds(from: cognition))
+    cognition.sourceEvent.metadata = ["long_horizon_goal_id": "goal", "origin": "global_long_horizon_scheduler",
+      "source_conversation_ids": "conversation-main,private"]
+    XCTAssertEqual(GlobalResearchSourceScope.sourceIds(from: cognition), ["conversation-main", "private"])
+    cognition.sourceEvent.metadata["long_horizon_goal_id"] = "other"
+    XCTAssertNil(GlobalResearchSourceScope.sourceIds(from: cognition))
+  }
+
+  func testResearchSourceProofRoundtripAndLegacyDecodeDoNotInventSources() throws {
+    var candidate = task(.quickFact)
+    candidate.sourceConversationIds = ["conversation-main", "secondary"]
+    let bytes = try JSONEncoder().encode(candidate)
+    XCTAssertEqual(try JSONDecoder().decode(GlobalResearchTask.self, from: bytes), candidate)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    object.removeValue(forKey: "sourceConversationIds")
+    let legacy = try JSONDecoder().decode(GlobalResearchTask.self,
+      from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertNil(legacy.sourceConversationIds)
+    XCTAssertFalse(GlobalResearchSourceScope.allows(legacy, scope: researchScope()))
+  }
+
+  func testResearchResponseBindingRejectsWrongOwnerAndAcceptsBlankLegacyScope() throws {
+    let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(
+      state: GlobalResearchExecutorState(tasks: [task(.quickFact)]),
+      resources: [resource("cloud-models", .cloudModel)], nowMillis: now))
+    let request = try XCTUnwrap(step.state.dispatchRequests.first)
+    let response = AgentConnectorResponse(sourceMessageId: request.sourceMessageId,
+      contactId: request.resourceId, content: "Evidence", receivedAtMillis: now)
+    XCTAssertTrue(GlobalResearchSourceScope.matches(response, request: request))
+    var wrong = response; wrong.sourceMessageId = 0
+    XCTAssertFalse(GlobalResearchSourceScope.matches(wrong, request: request))
+    wrong = response; wrong.contactId = "other"
+    XCTAssertFalse(GlobalResearchSourceScope.matches(wrong, request: request))
+    wrong = response; wrong.conversationId = "other"
+    XCTAssertFalse(GlobalResearchSourceScope.matches(wrong, request: request))
+    wrong = response; wrong.turnId = "other"
+    XCTAssertFalse(GlobalResearchSourceScope.matches(wrong, request: request))
+    wrong = response; wrong.taskId = "other"
+    XCTAssertFalse(GlobalResearchSourceScope.matches(wrong, request: request))
+  }
+
+  func testPublicResearchKeepsItsDedicatedPolicyWithoutPrivateSourceProof() {
+    var candidate = task(.quickFact)
+    candidate.id = PublicAttentionResearchPolicy.taskPrefix + "fixture"
+    XCTAssertTrue(GlobalResearchSourceScope.allows(candidate, scope: researchScope()))
+    XCTAssertFalse(GlobalResearchSourceScope.allows(candidate,
+      scope: GlobalRealtimePlanningScope(enabled: false, conversations: [])))
+  }
+
+  func testExpiredResearchLeasePreservesTheFullSourceProof() {
+    var candidate = task(.quickFact)
+    candidate.sourceConversationIds = ["conversation-main", "secondary"]
+    candidate.status = .running
+    candidate.leaseExpiresAtMillis = now - 1
+    let recovered = GlobalResearchTaskPolicy.recoverIfStale(candidate, nowMillis: now)
+    XCTAssertEqual(recovered.status, .waitingForResource)
+    XCTAssertEqual(recovered.sourceConversationIds, candidate.sourceConversationIds)
+    XCTAssertFalse(GlobalResearchSourceScope.allows(recovered, scope: researchScope()))
+    candidate.sourceConversationIds = ["conversation-main"]
+    candidate.lastError = GlobalAgentEvidenceLifecyclePolicy.invalidatedReason
+    XCTAssertNil(GlobalResearchExecutorPolicy.claimTask(from: [candidate], nowMillis: now,
+      eligible: { GlobalResearchSourceScope.allows($0, scope: self.researchScope()) }))
+  }
+
+  private func researchScope() -> GlobalRealtimePlanningScope {
+    GlobalRealtimePlanningScope(enabled: true, conversations: [
+      AgentConversation(id: "conversation-main", title: "Main", createdAt: 1, updatedAt: 1),
+      AgentConversation(id: "private", title: "Private", createdAt: 1, updatedAt: 1, privateMode: true),
+      AgentConversation(id: "paused", title: "Paused", createdAt: 1, updatedAt: 1, trackingPaused: true)
+    ])
+  }
+
+  private func researchCognition() -> GlobalCognitionTask {
+    GlobalCognitionTask(id: "cognition", sourceEvent: GlobalConversationEvent(id: "event",
+      type: .messageCreated, conversationId: "conversation-main", actor: .user,
+      timestampMillis: now, content: "Research", conversationTitle: "Research"),
+      baselineUnderstanding: GlobalUnderstanding(topic: "Research", project: ""), baselineIntent: "research")
+  }
+
   func testExecuteNextDispatchesEvidenceUnitsWithinParallelismAndBudget() throws {
     let researchTask = task(.deepResearch)
     let step = try XCTUnwrap(GlobalResearchExecutorPolicy.executeNext(

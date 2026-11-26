@@ -476,6 +476,7 @@ struct GlobalResearchTask: Codable, Equatable, Identifiable {
   var id: String
   var sourceEventId: String
   var sourceConversationId: String
+  var sourceConversationIds: Set<String>?
   var topic: String
   var question: String
   var depth: GlobalResearchDepth
@@ -526,11 +527,13 @@ struct GlobalResearchTask: Codable, Equatable, Identifiable {
     researchPlan: GlobalResearchPlan = GlobalResearchPlan(),
     evidenceLedger: GlobalEvidenceLedger = GlobalEvidenceLedger(),
     createdAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
-    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    sourceConversationIds: Set<String>? = nil
   ) {
     self.id = id
     self.sourceEventId = sourceEventId
     self.sourceConversationId = sourceConversationId
+    self.sourceConversationIds = sourceConversationIds
     self.topic = topic
     self.question = question
     self.depth = depth
