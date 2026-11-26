@@ -146,7 +146,7 @@ enum AgentQualityAwareRoutingPolicy {
     let historicalConfidence = min(max(Double(relevant.count) / 12, 0), 1)
     let observedQuality = passAt1 * 0.45 + latencyScore * 0.15 + costScore * 0.10 +
       privacy * 0.12 + min(max(capacity, 0), 1) * 0.08 + recoveryRate * 0.10
-    let baseline = min(max(Double(candidate.score + 1_000) / 2_000, 0), 1)
+    let baseline = min(max((Double(candidate.score) + 1_000) / 2_000, 0), 1)
     let finalScore = observedQuality * historicalConfidence + baseline * (1 - historicalConfidence)
     return AgentShadowRoutingScore(
       resourceId: resourceId,
