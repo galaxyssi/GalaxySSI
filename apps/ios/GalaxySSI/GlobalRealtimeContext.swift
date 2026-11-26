@@ -929,6 +929,7 @@ struct GlobalAutonomousRun: Codable, Equatable, Identifiable {
   var sourceCognitionTaskId: String
   var sourceEventId: String
   var sourceConversationId: String
+  var sourceConversationIds: Set<String>?
   var topic: String
   var goal: String
   var actions: [GlobalAutonomousAction]
@@ -964,12 +965,14 @@ struct GlobalAutonomousRun: Codable, Equatable, Identifiable {
     leaseExpiresAtMillis: Int64 = 0,
     lastError: String = "",
     createdAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
-    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    sourceConversationIds: Set<String>? = nil
   ) {
     self.id = id
     self.sourceCognitionTaskId = sourceCognitionTaskId
     self.sourceEventId = sourceEventId
     self.sourceConversationId = sourceConversationId
+    self.sourceConversationIds = sourceConversationIds
     self.topic = topic
     self.goal = goal
     self.actions = actions

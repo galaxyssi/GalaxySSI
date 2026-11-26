@@ -4,7 +4,8 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '17441c5c98b4a1d20eef6b9ac8c8aa3f20ae638f';
 const clean = s => s.replace(/\r\n/g, '\n');
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => require('./check-autonomous-source-scope.cjs').retained(f,
+  clean(fs.readFileSync(path.join(root, f), 'utf8')));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) {
   assert.equal(s.split(from).length, 2, from);
