@@ -20,8 +20,8 @@ function retained(file, s) {
     s = once(s, section(s, '    let conversationId = run.conversationId.trimmingCharacters', '    let gap = AgentKnowledgeGap('), '');
     return once(s, ',\n      sourceConversationIds: sources', '');
   }
-  if (file.endsWith('AgentCognitiveGovernanceRuntime.swift') && s.includes('  private func observeLocked(_ gap: AgentKnowledgeGap)')) {
-    const first = 'final class AgentKnowledgeGapResearchBridge {', last = 'struct AgentProtocolEndpointGrant:';
+  if (file.endsWith('AgentCognitiveGovernanceRuntime.swift') && s.includes('  private func observeLocked(_ gap: AgentKnowledgeGap,')) {
+    const first = 'final class AgentKnowledgeGapResearchBridge', last = 'struct AgentProtocolEndpointGrant:';
     return once(s, section(s, first, last), section(old(file), first, last));
   }
   return s;
@@ -38,8 +38,8 @@ function validate() {
   const detector = section(model, 'enum AgentKnowledgeGapDetector {', 'enum AgentStandardProtocol:');
   assert(detector.indexOf('guard sample.runId') < detector.indexOf('let topic'));
   const runtime = read(app + 'AgentCognitiveGovernanceRuntime.swift');
-  const bridge = section(runtime, 'final class AgentKnowledgeGapResearchBridge {', 'struct AgentProtocolEndpointGrant:');
-  for (const token of ['locked { observeLocked(gap) }', 'guard let sources = gap.sourceConversationIds, !sources.isEmpty',
+  const bridge = section(runtime, 'final class AgentKnowledgeGapResearchBridge', 'struct AgentProtocolEndpointGrant:');
+  for (const token of ['locked { observeLocked(gap, enabled: enabled) }', 'guard let sources = gap.sourceConversationIds, !sources.isEmpty',
     'sources.allSatisfy', 'sourceConversationId: sources.sorted().first ?? ""', 'sourceConversationIds: sources',
     'guard researchStore.lastErrorDescription.isEmpty else { return }']) assert(bridge.includes(token), token);
   assert(!bridge.includes('sourceConversationId: "agent-evalops"'));
@@ -48,8 +48,14 @@ function validate() {
   assert(save >= 0 && saveGuard > save && saveGuard < bridge.indexOf('governance.updateGapStatus'));
   assert(bridge.indexOf('guard let sources') < bridge.indexOf('var state = researchStore.state()'));
   assert(bridge.indexOf('guard researchStore.lastErrorDescription.isEmpty') < bridge.indexOf('let sourceEventId'));
+  for (const token of ['@MainActor @Sendable () -> Bool', 'Task.detached(priority: .utility)',
+    'await previous?.value', 'enabled = await policy()', 'pendingObservation?.id == id',
+    'func observe(_ gap: AgentKnowledgeGap) -> Task<Void, Never>']) assert(bridge.includes(token), token);
+  assert(bridge.indexOf('await previous?.value') < bridge.indexOf('enabled = await policy()'));
+  assert(bridge.indexOf('enabled = await policy()') < bridge.indexOf('locked { observeLocked(gap, enabled: enabled) }'));
+  assert(!bridge.includes('locked { autonomousResearchEnabled() }'));
   const tests = 'apps/ios/GalaxySSITests/AgentEvalOpsTests.swift';
-  assert.equal((read(tests).match(/  func test/g) || []).length - (old(tests).match(/  func test/g) || []).length, 10);
+  assert.equal((read(tests).match(/  func test/g) || []).length - (old(tests).match(/  func test/g) || []).length, 12);
   for (const file of ['GalaxySSIServices', 'AgentObservationModels', 'AgentRecordedRunStore', 'AgentEvalOpsStore',
     'AgentTrajectoryLearning', 'GlobalResearchExecutorModels', 'GlobalResearchExecutorPolicy', 'GalaxySSIGlobalAgentRuntime']) {
     assert.equal(read(app + file + '.swift'), old(app + file + '.swift'), file + ': unchanged dependency');
