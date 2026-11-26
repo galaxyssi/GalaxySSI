@@ -20414,7 +20414,9 @@ final class MessageCoordinator: ObservableObject {
     let turn = manifest.string("turn_id")
     guard mayRecoverSavedDesktopSource(conversation: conversation, turn: turn, sourceID: source) else { return false }
     do {
-      if UUID(uuidString: source) == nil {
+      if UUID(uuidString: source) == nil,
+         try AgentTeamExecutionHistoryStore.shared.recoveryContext(source: source, conversation: conversation,
+           turn: turn, contact: contact.id) == nil {
         guard contact.trustState == .verified,
               let generation = try? MqttRouteProtocol.integer(manifest, "execution_generation"),
               let numeric = Int64(source),

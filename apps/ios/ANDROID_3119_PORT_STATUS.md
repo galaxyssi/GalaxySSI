@@ -114,6 +114,15 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Owned native rich reply follow-up
+
+See `ANDROID_3119_NATIVE_RICH_REPLIES.md`: the native final-message producer now
+retains only exact committed connector rich output and reuses artifact completion
+hydration. Agent artifact updates select exact incoming scope rather than a newer
+unrelated turn match. Non-team numeric Blob admission checks the existing managed
+generation; peer UUID and team authorization paths are retained. Swift fixture
+source is authored only; broader parity and native/device acceptance remain open.
+
 ### Raw paired connector attachment follow-up
 
 See `ANDROID_3119_MANAGED_RAW_ATTACHMENTS.md`: native paired requests now save
