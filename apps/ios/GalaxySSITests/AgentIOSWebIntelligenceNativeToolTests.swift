@@ -1007,7 +1007,7 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(extract.output["operation"], .string("extract"))
     XCTAssertEqual(extract.output["title"], .string("Supplied"))
     XCTAssertEqual(extract.output["source_receipts"]?.arrayValue?.first?.objectValue?["network"], .bool(false))
-    XCTAssertTrue((extract.output["text"]?.stringValue ?? "").contains("Offline body"))
+    XCTAssertTrue((extract.output["evidence_pack"]?.objectValue?["items"]?.arrayValue?.first?.objectValue?["excerpt"]?.stringValue ?? "").contains("Offline body"))
 
     XCTAssertTrue(crawl.isSuccess)
     XCTAssertEqual(crawl.output["operation"], .string("crawl"))

@@ -11,6 +11,7 @@ function section(source, first, last) {
   return source.slice(start, end);
 }
 function retainedCrawlProvider(source) {
+  source = require('./check-web-extraction-scope.cjs').retainedExtractionProvider(source);
   if (!source.includes('var policy: AgentIOSWebCrawlPolicy')) return source;
   const prior = show(base, app + 'AgentIOSURLSessionWebIntelligenceProvider.swift');
   source = source.replace(section(source, '  private func crawl(', '  private func research('),
@@ -49,7 +50,7 @@ function validateWebCrawl() {
     'result.output = output; result.metadata = metadata(operation: .crawl)']) assert(crawl.includes(token), token);
   const policy = read(app + 'AgentIOSWebCrawlPolicy.swift');
   for (const token of ['maximumLinks = 100', 'intValue ?? 20, 1), 100)', 'intValue ?? 2, 0), 5)',
-    'intValue ?? 60_000, 1_000), 600_000)', 'NSRegularExpression(pattern: value)', 'throw Failure.invalidPattern',
+    'intValue ?? 60_000, 1_000), 600_000)', 'NSRegularExpression(pattern: value, options: [.caseInsensitive])', 'throw Failure.invalidPattern',
     'queue[head]', 'head += 1', 'discovered.insert(url).inserted', 'node.depth < maxDepth', 'node.depth + 1',
     'Self.origin(url) == Self.origin(root)', 'parts.port ?? 443', 'parts.user == nil, parts.password == nil',
     'AgentIOSPublicAddressPolicy.blocksHost(host)', 'discovered.count < 10_001', 'parts.fragment = nil',
@@ -61,7 +62,8 @@ function validateWebCrawl() {
   const reference = show('65655f0c79c6ab04121150229a65b089180f82f2', 'apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt');
   for (const token of ['arguments.integer("max_pages", 20, 1, 100)', 'arguments.integer("max_depth", 2, 0, 5)',
     'arguments.long("timeout_ms", 60_000L, 1_000L, 600_000L)', 'queue += root to 0', 'val queued = linkedSetOf(root)',
-    'depth < maxDepth', 'origin(normalized) == rootOrigin', '"remaining_queue" to queue.size']) assert(reference.includes(token), token);
+    'depth < maxDepth', 'origin(normalized) == rootOrigin', '"remaining_queue" to queue.size',
+    'Regex(it.take(512), RegexOption.IGNORE_CASE)']) assert(reference.includes(token), token);
   const tests = read('apps/ios/GalaxySSITests/AgentIOSWebCrawlTests.swift');
   for (const name of ['DefaultLimitsAndDepthBoundedBreadthFirstQueue', 'DepthZeroRegexValidationAndExactOriginPorts',
     'DOMLinksKeepUnquotedAttributesAndOneHundredDestinations', 'MonotonicDeadlineSupportsTenMinutesAndClampsFixedChildren',

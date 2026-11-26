@@ -34,7 +34,7 @@ final class AgentIOSWebCrawlTests: XCTestCase {
     zero.expand(root, finalURL: root.url, links: ["/child"])
     XCTAssertNil(zero.next())
     var filtered = try AgentIOSWebCrawlPolicy(input: ["url": .string("https://site.test/root"),
-      "include_pattern": .string("root|keep"), "exclude_pattern": .string("blocked")])
+      "include_pattern": .string("ROOT|KEEP"), "exclude_pattern": .string("BLOCKED")])
     let first = try XCTUnwrap(filtered.next())
     filtered.expand(first, finalURL: first.url, links: ["/drop", "/keep", "/keep-blocked",
       "https://site.test:8443/keep", "https://other.test/keep"])

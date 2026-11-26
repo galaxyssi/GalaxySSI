@@ -918,6 +918,8 @@
     C3007B700000000000000001 /* AgentWorkspaceIndexDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B700000000000000002 /* AgentWorkspaceIndexDatabase.swift */; };
     C3007B800000000000000001 /* AgentIOSWebSearchCapacity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B800000000000000002 /* AgentIOSWebSearchCapacity.swift */; };
     C3007B900000000000000001 /* AgentIOSWebCrawlPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B900000000000000002 /* AgentIOSWebCrawlPolicy.swift */; };
+    C3007BA00000000000000001 /* AgentIOSWebLocalExtraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BA00000000000000002 /* AgentIOSWebLocalExtraction.swift */; };
+    C3007BA00000000000000003 /* AgentIOSWebExtractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */; };
     C3007B900000000000000003 /* AgentIOSWebCrawlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */; };
     C3007B800000000000000003 /* AgentIOSWebSearchCapacityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B800000000000000004 /* AgentIOSWebSearchCapacityTests.swift */; };
     C3007B700000000000000003 /* IndexedAgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B700000000000000004 /* IndexedAgentWorkspaceStore.swift */; };
@@ -4234,6 +4236,8 @@
     C3007B700000000000000002 /* AgentWorkspaceIndexDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceIndexDatabase.swift; sourceTree = "<group>"; };
     C3007B800000000000000002 /* AgentIOSWebSearchCapacity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCapacity.swift; sourceTree = "<group>"; };
     C3007B900000000000000002 /* AgentIOSWebCrawlPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCrawlPolicy.swift; sourceTree = "<group>"; };
+    C3007BA00000000000000002 /* AgentIOSWebLocalExtraction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebLocalExtraction.swift; sourceTree = "<group>"; };
+    C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExtractionTests.swift; sourceTree = "<group>"; };
     C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCrawlTests.swift; sourceTree = "<group>"; };
     C3007B800000000000000004 /* AgentIOSWebSearchCapacityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCapacityTests.swift; sourceTree = "<group>"; };
     C3007B700000000000000004 /* IndexedAgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexedAgentWorkspaceStore.swift; sourceTree = "<group>"; };
@@ -5379,6 +5383,7 @@
         C3007B700000000000000002 /* AgentWorkspaceIndexDatabase.swift */,
         C3007B800000000000000002 /* AgentIOSWebSearchCapacity.swift */,
         C3007B900000000000000002 /* AgentIOSWebCrawlPolicy.swift */,
+        C3007BA00000000000000002 /* AgentIOSWebLocalExtraction.swift */,
         C3007B700000000000000004 /* IndexedAgentWorkspaceStore.swift */,
         C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */,
         C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
@@ -6578,6 +6583,7 @@
         C3007B700000000000000006 /* AgentWorkspaceIndexedStoreTests.swift */,
         C3007B800000000000000004 /* AgentIOSWebSearchCapacityTests.swift */,
         C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */,
+        C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */,
         A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */,
         A20000000000000000000793 /* CloudModelConversationContextTests.swift */,
         A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */,
@@ -8145,6 +8151,7 @@
         C3007B700000000000000001 /* AgentWorkspaceIndexDatabase.swift in Sources */,
         C3007B800000000000000001 /* AgentIOSWebSearchCapacity.swift in Sources */,
         C3007B900000000000000001 /* AgentIOSWebCrawlPolicy.swift in Sources */,
+        C3007BA00000000000000001 /* AgentIOSWebLocalExtraction.swift in Sources */,
         C3007B700000000000000003 /* IndexedAgentWorkspaceStore.swift in Sources */,
         C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */,
         C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
@@ -8926,6 +8933,7 @@
         C3007B700000000000000005 /* AgentWorkspaceIndexedStoreTests.swift in Sources */,
         C3007B800000000000000003 /* AgentIOSWebSearchCapacityTests.swift in Sources */,
         C3007B900000000000000003 /* AgentIOSWebCrawlTests.swift in Sources */,
+        C3007BA00000000000000003 /* AgentIOSWebExtractionTests.swift in Sources */,
         A10000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift in Sources */,
         A10000000000000000000793 /* CloudModelConversationContextTests.swift in Sources */,
         A10000000000000000000236 /* AgentModelPlannerContactResolverTests.swift in Sources */,

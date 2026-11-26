@@ -28,7 +28,7 @@ struct AgentIOSWebCrawlPolicy {
       let value = input[name]?.stringValue ?? ""
       guard value.count <= 512 else { throw Failure.invalidPattern }
       if value.isEmpty { return nil }
-      do { return try NSRegularExpression(pattern: value) }
+      do { return try NSRegularExpression(pattern: value, options: [.caseInsensitive]) }
       catch { throw Failure.invalidPattern }
     }
     include = try pattern("include_pattern")

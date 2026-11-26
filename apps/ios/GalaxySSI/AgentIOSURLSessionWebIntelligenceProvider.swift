@@ -787,36 +787,77 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
-    let content = string(input, "content", limit: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
-    guard !content.isEmpty else {
-      return failure("extract_content_required", "Offline iOS web intelligence extract requires supplied content")
-    }
-    let sourceURL = string(input, "source_url", limit: 4_096).ifBlank(string(input, "url", limit: 4_096))
-    let title = string(input, "title", limit: 2_048).ifBlank(titleFromHTML(content))
-    let text = boundedText(readableText(content), maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
-    guard !text.isEmpty else {
-      return failure("extract_empty", "Supplied content did not contain readable text")
-    }
-    var output = baseOutput(operation: .extract, invocation: invocation, status: "completed")
-    output["request_id"] = .string(requestId(invocation, operation: .extract))
-    output["source_url"] = .string(sourceURL)
-    output["title"] = .string(title)
-    output["text"] = .string(text)
-    output["text_length"] = .int(Int64(text.count))
-    output["content_sha256"] = .string(AgentMcpJSONCodec.sha256(["content": .string(content)]))
-    output["source_receipts"] = .array([
-      .object([
-        "source_url": .string(sourceURL),
-        "mode": .string("supplied_content"),
-        "network": .bool(false),
-        "retrieved_at_epoch_ms": .null
-      ])
-    ])
-    return AgentNativeToolExecutionResult.success(
-      output: output,
-      message: "Supplied content extracted locally",
-      metadata: metadata(operation: .extract)
-    )
+    do {
+      try invocation.checkpoint()
+      let url = string(input, "url", limit: 4_096)
+      let cacheScope = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
+      let networkScope = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission) &&
+        invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent)
+      var result: AgentNativeToolExecutionResult
+      if !url.isEmpty {
+        guard cacheScope else { return failure("cache_scope_required", "URL extraction requires encrypted cache permission and consent") }
+        if !(input["force"]?.boolValue ?? false), let document = fullCachedDocument(url: canonicalURL(url)) {
+          result = cachedFetchResult(document, requestedURL: url, invocation: invocation)
+        } else {
+          guard networkScope else { return failure("public_web_scope_required", "Uncached or forced URL extraction requires public web permission and consent") }
+          let timeout = int64(input, "timeout_ms", defaultValue: 15_000, minimum: 1_000, maximum: 60_000)
+          let budget = AgentIOSWebExecutionBudget(durationMillis: timeout, now: uptimeMillis)
+          let child = try budget.invocation(parent: invocation, input: input, timeoutMillis: timeout, nowMillis: nowMillis)
+          var fetchInput = input
+          fetchInput["timeout_ms"] = .int(timeout)
+          fetchInput["cache_ttl_ms"] = .int(6 * 60 * 60_000)
+          result = fetch(input: fetchInput, invocation: child, operation: .fetch)
+        }
+        guard result.isSuccess else { return result }
+        result.output["operation"] = .string(AgentIOSWebIntelligenceOperation.extract.rawValue)
+        result.output["request_id"] = .string(requestId(invocation, operation: .extract))
+        result.output["source_url"] = .string(url)
+        result.metadata["operation"] = .string(AgentIOSWebIntelligenceOperation.extract.rawValue)
+        result.metadata["network_attempted"] = .bool(result.output["cache"]?.objectValue?["hit"] != .bool(true))
+      } else {
+        let content = string(input, "content", limit: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
+        guard !content.isEmpty else { return failure("extract_content_required", "Extraction requires a URL or supplied content") }
+        let text = boundedText(readableText(content), maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
+        guard !text.isEmpty else { return failure("extract_empty", "Supplied content did not contain readable text") }
+        let sourceURL = string(input, "source_url", limit: 4_096).ifBlank("https://local.galaxyssi.invalid/content")
+        var output = baseOutput(operation: .extract, invocation: invocation, status: "completed")
+        output["request_id"] = .string(requestId(invocation, operation: .extract))
+        output["url"] = .string(sourceURL); output["source_url"] = .string(sourceURL)
+        output["title"] = .string(string(input, "title", limit: 2_048).ifBlank(titleFromHTML(content)))
+        output["text"] = .string(text); output["text_length"] = .int(Int64(text.count))
+        output["content_type"] = .string("text/plain")
+        output["content_sha256"] = .string(AgentMcpJSONCodec.sha256(["content": .string(content)]))
+        output["source_receipts"] = .array([.object(["source_url": .string(sourceURL), "mode": .string("supplied_content"),
+          "network": .bool(false), "retrieved_at_epoch_ms": .null])])
+        result = .success(output: output, message: "Supplied content extracted locally", metadata: metadata(operation: .extract))
+        result.metadata["network_attempted"] = .bool(false)
+      }
+      let text = result.output["text"]?.stringValue ?? ""
+      let fields = AgentIOSWebLocalExtraction.requestedFields(input["fields"])
+      let structured = try AgentIOSWebLocalExtraction.structured(title: result.output["title"]?.stringValue ?? "",
+        url: result.output["url"]?.stringValue ?? "", content: text,
+        links: Self.navigationLinks(result.output).compactMap(\.stringValue), fields: fields, checkpoint: { try invocation.checkpoint() })
+      var details = result.output["metadata"]?.objectValue ?? [:]
+      details["structured"] = .object(structured)
+      details["requested_fields"] = .array(fields.map(AgentMcpJSONValue.string))
+      details["extraction_mode"] = .string("local_readability_and_metadata")
+      details["source_kind"] = .string(url.isEmpty ? "supplied_content" : "url_document")
+      result.output["metadata"] = .object(details)
+      if url.isEmpty, cacheScope {
+        let now = max(0, nowMillis()), ttl: Int64 = 6 * 60 * 60_000
+        let committed = now <= Int64.max - ttl && cacheStore.putDocument(url: result.output["url"]?.stringValue ?? "",
+          title: result.output["title"]?.stringValue ?? "", content: text, contentType: "text/plain",
+          contentSHA256: result.output["content_sha256"]?.stringValue ?? "", retrievedAtMillis: now, expiresAtMillis: now + ttl,
+          metadata: ["fetch_tier": "local_content", "text_decoding_lossless": "true"])
+        result.output["cache"] = .object(cacheStore.cacheMetadata().merging(["hit": .bool(false), "write_committed": .bool(committed)]) { _, next in next })
+      }
+      return result
+    } catch AgentNativeToolInvocationError.cancelled {
+      return failure("cancelled", "Web extraction was cancelled", retryable: true)
+    } catch AgentNativeToolInvocationError.timedOut {
+      return failure("timeout", "Web extraction timed out", retryable: true)
+    } catch { return failure("extract_failed", "Local structured extraction could not complete", retryable: true) }
   }
 
   private func crawl(
