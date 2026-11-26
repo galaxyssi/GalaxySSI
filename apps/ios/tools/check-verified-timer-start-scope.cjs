@@ -1,6 +1,6 @@
 // Source evidence only, not Swift compilation, executed fixtures or device timer acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'ac32c1d74a6f22c0a8b450d0484ed4cb8f703cf2';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '9781cd99a1ad53c7408a664f1a3b4ebb27579f3e';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -12,7 +12,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  if (file.endsWith('check-supervised-answer-preview-scope.cjs')) return source
+  if (file.endsWith('check-resumed-planner-route-scope.cjs')) return source
     .replace("const read = file => require('./check-verified-timer-start-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-verified-timer-start-scope.cjs').retained(file, source);\n", '');
@@ -41,7 +41,7 @@ function validate() {
   for (const file of ['GalaxySSIServices', 'AgentIOSTimerCheckpointStore', 'AgentDirectNativeToolPlanner', 'AgentModelPlanParser', 'AgentModelPlanningPrompt'])
     assert.equal(retained(app + file + '.swift', read(app + file + '.swift')), old(app + file + '.swift'), file);
   for (const file of ['apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/GalaxySSITests/AgentModelPlanParserTests.swift',
-    'apps/ios/tools/check-supervised-answer-preview-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-resumed-planner-route-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const model = read(app + 'AgentVerifiedTimerStart.swift');
   for (const token of ['result.actionId == action.id', 'result.success', 'metadata.string("completion_verified") == "true"',
     'metadata.string("timer_state") == "running"', 'Int(metadata.string("duration_seconds")) == seconds',

@@ -2112,6 +2112,7 @@
     A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */; };
     A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */; };
     A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */; };
+    A10000000000000000003E27 /* AgentResumedPlannerRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E27 /* AgentResumedPlannerRouteTests.swift */; };
     A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */; };
     A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */; };
     A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */; };
@@ -4420,6 +4421,7 @@
     A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttManagedConnectorAttachmentTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorRichReplyTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttJournalCodexReplayTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E27 /* AgentResumedPlannerRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResumedPlannerRouteTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingHealthSnapshotTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingUsageStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityObservationsTests.swift; sourceTree = "<group>"; };
@@ -6606,6 +6608,7 @@
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
+        A20000000000000000003E27 /* AgentResumedPlannerRouteTests.swift */,
         A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */,
         A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */,
         A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */,
@@ -9041,6 +9044,7 @@
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,
+        A10000000000000000003E27 /* AgentResumedPlannerRouteTests.swift in Sources */,
         A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */,
         A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */,
         A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */,

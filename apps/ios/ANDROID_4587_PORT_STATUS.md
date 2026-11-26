@@ -2,7 +2,9 @@
 
 Pinned reference: `be25c59d487f35d3df1732cf1fd9a2e51e160642`, nine changed
 files with hashes/dispositions in ANDROID_4587_PORT_COVERAGE.json.
-iOS baseline: main `ac32c1d74a6f22c0a8b450d0484ed4cb8f703cf2`.
+iOS baseline: main `9781cd99a1ad53c7408a664f1a3b4ebb27579f3e`, after
+synchronizing merged #4588. That prior resumed-model change is not part of this
+increment's diff against main.
 
 ## Production Integration
 

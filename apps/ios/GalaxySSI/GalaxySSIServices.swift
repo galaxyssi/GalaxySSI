@@ -7121,25 +7121,25 @@ final class MessageCoordinator: ObservableObject {
     let modelOutcome: GuardedModelAgentPlanningResult?
     if let previousPlan, let continuationScope {
       let priorPhase = task.phase
-      let plannerSnapshot = task.plannerSnapshot
-        ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+      let plannerSnapshot: AgentPlannerModelSnapshot?
+      do {
+        plannerSnapshot = try resumedNativePlannerSnapshot(task: task, outgoing: outgoing)
+        if let plannerSnapshot {
+          _ = try planner(for: plannerSnapshot)
+        }
+      } catch {
+        task.phase = .paused
+        task.blocked = true
+        task.verification = error.localizedDescription
+        task.executionLog.append("Native action replanning stopped: \(error.localizedDescription)")
+        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+        store.upsertAgentTask(task)
+        return false
+      }
       let conversation = initialPlanningConversation(
         requestText: task.goal, outgoing: outgoing,
         selectedProviderOnly: plannerSnapshot?.selectedForPhoneTurn == true
       )
-      if let plannerSnapshot {
-        do {
-          _ = try planner(for: plannerSnapshot)
-        } catch {
-          task.phase = .paused
-          task.blocked = true
-          task.verification = error.localizedDescription
-          task.executionLog.append("Native action replanning stopped: \(error.localizedDescription)")
-          task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-          store.upsertAgentTask(task)
-          return false
-        }
-      }
       let input = AgentInitialPlanningInput(
         goal: task.goal,
         conversation: conversation,
@@ -7384,6 +7384,20 @@ final class MessageCoordinator: ObservableObject {
     task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
     store.upsertAgentTask(task)
     return true
+  }
+
+  func resumedNativePlannerSnapshot(task: AgentTaskRecord, outgoing: ChatMessage) throws -> AgentPlannerModelSnapshot {
+    guard outgoing.isMine, !outgoing.isSystem, outgoing.contactId == "hermes",
+          !outgoing.conversationId.isBlank, task.sessionId == outgoing.conversationId,
+          task.taskId == outgoing.turnId.ifBlank(outgoing.id.uuidString) || task.taskId == outgoing.id.uuidString else {
+      throw AgentModelLoopRecoveryError(code: "resumed_planner_scope_changed")
+    }
+    // A saved provider is part of the original planning input, not a fresh Auto selection.
+    if let snapshot = task.plannerSnapshot { return snapshot }
+    guard let snapshot = shortcutReviewPlanner(task: task, outgoing: outgoing) else {
+      throw AgentModelLoopRecoveryError(code: "resumed_planner_route_unavailable")
+    }
+    return snapshot
   }
 
   private func shortcutReviewPlanner(task: AgentTaskRecord, outgoing: ChatMessage) -> AgentPlannerModelSnapshot? {
@@ -15544,25 +15558,25 @@ final class MessageCoordinator: ObservableObject {
       (task.supervisedBrowserWait == nil ? "" :
         ";browser_control_event_only;inspect_fresh_external_state_before_any_mutation_or_completion")
     let plannerHistory = previousPlan.executionSnapshots(in: continuationScope)
-    let plannerSnapshot = task.plannerSnapshot
-      ?? capturePlannerSnapshot(conversationId: outgoing.conversationId)
+    let plannerSnapshot: AgentPlannerModelSnapshot?
+    do {
+      plannerSnapshot = try resumedNativePlannerSnapshot(task: task, outgoing: outgoing)
+      if let plannerSnapshot {
+        _ = try planner(for: plannerSnapshot)
+      }
+    } catch {
+      task.phase = .paused
+      task.blocked = true
+      task.verification = error.localizedDescription
+      task.executionLog.append("Rolling plan provider unavailable: \(error.localizedDescription)")
+      task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
+      store.upsertAgentTask(task)
+      return
+    }
     let conversation = initialPlanningConversation(
       requestText: task.goal, outgoing: outgoing,
       selectedProviderOnly: plannerSnapshot?.selectedForPhoneTurn == true
     )
-    if let plannerSnapshot {
-      do {
-        _ = try planner(for: plannerSnapshot)
-      } catch {
-        task.phase = .paused
-        task.blocked = true
-        task.verification = error.localizedDescription
-        task.executionLog.append("Rolling plan provider unavailable: \(error.localizedDescription)")
-        task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-        store.upsertAgentTask(task)
-        return
-      }
-    }
     let planningInput = AgentInitialPlanningInput(
       goal: task.goal,
       conversation: conversation,

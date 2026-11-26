@@ -1,7 +1,7 @@
 // Source contracts only: not native compilation, UI, privacy, lifecycle or authenticated network acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '3e950c5fb1d9e577d7f2f245dd5822a80271bcb2';
-const read = file => require('./check-verified-timer-start-scope.cjs').retained(file,
+const read = file => require('./check-resumed-planner-route-scope.cjs').retained(file,
   fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const cache = new Map();
 function old(file) { if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -11,7 +11,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  source = require('./check-verified-timer-start-scope.cjs').retained(file, source);
+  source = require('./check-resumed-planner-route-scope.cjs').retained(file, source);
   if (file.endsWith('check-interactive-request-hedge-scope.cjs')) return source
     .replace("const read = file => require('./check-supervised-answer-preview-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
