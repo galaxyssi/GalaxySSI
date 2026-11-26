@@ -8,6 +8,16 @@ import java.util.concurrent.Executors
 class MqttMultipathPolicyTest {
     private val brokers = MqttBrokerCatalog.brokers.keys
     private val hash = "a".repeat(64)
+    @Test fun interactiveAgentRequestHedgesOnlyOnVerifiedPathsWithinBudget() {
+        val policy = ready()
+        fun choose(size: Int, traffic: MqttMultipathPolicy.Traffic = MqttMultipathPolicy.Traffic.FINAL) =
+            policy.plan("peer", "request", traffic, size, setOf("inbox"), 1000,
+                authorizedPaths = mapOf("emqx" to 1L, "mosquitto" to 1L, "hivemq" to 2L), interactiveFinal = true)
+        assertEquals(listOf(0L, 250L), choose(87_500).map { it.delayMs })
+        assertFalse(choose(87_500).any { it.brokerId == "hivemq" })
+        assertEquals(1, choose(256 * 1024 + 1).size)
+        assertEquals(1, choose(87_500, MqttMultipathPolicy.Traffic.CHUNK).size)
+    }
     @Test fun peerChunkReceiptsBoundEachPathWithoutBlockingTextOrControls() {
         val policy = ready()
         val chunk = MqttChunkThroughput.Chunk("transfer", "request", 0, true)

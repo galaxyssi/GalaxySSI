@@ -14,7 +14,7 @@ internal class MqttDeliveryDispatch(
 ) : AutoCloseable {
     data class Delivery(val peer: String, val message: MqttDeliveryEnvelope.Message, val receiveTopics: Set<String>,
         val encodeAttempt: (MqttDeliveryEnvelope.Frame) -> ByteArray,
-        val authorized: (String, Long) -> Boolean, val sizeBound: Int)
+        val authorized: (String, Long) -> Boolean, val sizeBound: Int, val interactiveFinal: Boolean = false)
     private data class Scheduled(val due: Long, val plan: MqttMultipathPolicy.Dispatch)
     private class Job(val topic: String, val delivery: Delivery, val token: IMqttDeliveryToken,
         val started: Long, val scheduled: MutableList<Scheduled>) {
@@ -40,7 +40,8 @@ internal class MqttDeliveryDispatch(
             1, delivery.receiveTopics, at).filter { delivery.authorized(it.brokerId, it.generation) }
             .associate { it.brokerId to it.generation }
         return policy.plan(delivery.peer, delivery.message.messageId, traffic(delivery.message),
-            delivery.sizeBound, delivery.receiveTopics, at, authorizedPaths = authorized)
+            delivery.sizeBound, delivery.receiveTopics, at, authorizedPaths = authorized,
+            interactiveFinal = delivery.interactiveFinal)
     }
 
     fun submit(topic: String, delivery: Delivery, token: IMqttDeliveryToken): IMqttDeliveryToken {

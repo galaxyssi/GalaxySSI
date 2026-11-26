@@ -7,6 +7,56 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSupervisedProjectPromptTemplateTest {
+    @Test fun largeGeneralCatalogKeepsDirectSearchAndDefersUnrelatedOperations() {
+        val base = context()
+        val sample = base.nativeTools.first()
+        val filler = (1..99).map { sample.copy(id = "galaxyssi.hardware.synthetic.$it") }
+        val ids = AgentWebIntelligenceNativeTools.directSearchToolIds + AgentToolInspectionTools.toolIds
+        val web = AgentWebIntelligenceService(
+            fetcher = AgentWebIntelligenceFetcher { _, _, _, _, _ -> error("Metadata only") },
+            store = AgentInMemoryWebIntelligenceStore())
+        val tools = filler + (AgentWebIntelligenceNativeTools.definitions(web) +
+            AgentToolDiscoveryTools.definition() + AgentToolInspectionTools.definition())
+            .map { it.descriptor }.filter { it.id in ids }
+        val catalog = base.copy(nativeTools = tools,
+            capabilityMatrix = AgentRuntimeCapabilityMatrix.build(tools, emptyList(), emptyList()))
+        fun render(blocked: Set<String> = emptySet(), recent: Set<String> = emptySet(), phone: Boolean = false) =
+            AgentSupervisedProjectPromptTemplate.render(catalog, false, 240,
+                temporarilyBlockedToolIds = blocked, phoneControl = phone, developmentContext = false,
+                recentlyUsedToolIds = recent)
+        fun lines(s: String) = s.lineSequence().filter { it.startsWith("- ") }.toList()
+        val ordinary = render()
+        assertTrue(lines(ordinary).map { it.substringBefore(" |").removePrefix("- ") }.toSet() == ids)
+        val search = lines(ordinary).single { it.startsWith("- ${AgentWebIntelligenceNativeTools.SEARCH} ") }
+        assertTrue(search.contains("query!:string") && search.contains("limit:integer") &&
+            search.contains("profile:fast|balanced|deep") && search.contains("engine_fanout:integer"))
+        assertTrue(lines(ordinary).single { it.startsWith("- ${AgentToolInspectionTools.DESCRIBE} ") }
+            .contains("tool_id!:string"))
+        assertTrue(ordinary.contains("Available families: hardware, tools, web."))
+        assertTrue(ordinary.substringAfter("Available phone tools:").length < 2_000)
+        val promoted = filler.first().id
+        assertTrue(lines(render(recent = setOf(promoted))).size == 7)
+        assertFalse(render(blocked = setOf(promoted), recent = setOf(promoted)).contains(promoted + " |"))
+        assertTrue(render(blocked = setOf(AgentToolInspectionTools.DESCRIBE)).contains(promoted + " |"))
+        assertTrue(render(blocked = setOf(AgentToolDiscoveryTools.ID)).contains(promoted + " |"))
+        assertTrue(render(phone = true).contains(promoted + " |"))
+        assertSame(ordinary, render())
+    }
+
+    @Test fun carryForwardOnlyRecentlyUsedOrInspectedTools() {
+        fun action(id: String, target: String = "", status: AgentActionStatus = AgentActionStatus.COMPLETED) =
+            AgentAction(id = id, kind = AgentActionKind.CALL_NATIVE_TOOL, target = id, risk = AgentRisk.LOW,
+                status = status, description = id, requiresConfirmation = false,
+                parameters = mapOf("input_json" to org.json.JSONObject().put("tool_id", target).toString()))
+        val history = (1..8).map { action("galaxyssi.hardware.test.$it") } + listOf(
+            action(AgentToolInspectionTools.DESCRIBE, "galaxyssi.app.news"),
+            action(AgentToolInspectionTools.DESCRIBE, "not.completed", AgentActionStatus.FAILED),
+            action(AgentToolDiscoveryTools.ID))
+        val recent = AgentProgressiveToolCatalog.recent(history)
+        assertTrue(recent == setOf("galaxyssi.hardware.test.6", "galaxyssi.hardware.test.7",
+            "galaxyssi.hardware.test.8", "galaxyssi.app.news"))
+    }
+
     @Test fun unclassifiedRequestsSeeTheFullTimerSignatureAndPhoneExecutionBoundary() {
         val original = context()
         val timer = original.nativeTools.first().copy(

@@ -64,6 +64,25 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge._drop_queued_task_progress("slow")
             self.assertNotIn("slow", mqtt_bridge.pending_task_events)
 
+    def test_first_visible_body_does_not_wait_for_heartbeat_credit(self):
+        window = mqtt_bridge.task_progress_window
+        self.assertTrue(window.reserve("phone-a", "heartbeat-one"))
+        self.assertTrue(window.reserve("phone-a", "heartbeat-two"))
+        with (patch.object(mqtt_bridge, "_ensure_outbound_retry_thread"),
+              patch.object(mqtt_bridge, "desktop_id", return_value="desktop"),
+              patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+              patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish):
+            task = dict(task_id="body", status="running", client_route_id="phone-a",
+                        client_conversation_id="chat", client_turn_id="turn", status_seq=4,
+                        partial_result={"sequence": 1, "text": "First paragraph."})
+            wire = {"_client_route_id": "phone-a"}
+            self.assertTrue(mqtt_bridge._publish_or_queue_task_event(ConnectedMqtt(), wire, task, []))
+            payload = publish.call_args.args[2]
+            self.assertEqual("First paragraph.", payload["partial_result"]["text"])
+            self.assertEqual("turn", payload["turn_id"])
+            self.assertNotIn("latency", payload)
+            self.assertFalse(window.reserve("phone-a", "overflow", visible_body=True))
+
     def test_phone_turn_id_is_preserved_when_agent_has_internal_turn(self):
         task = {
             "task_id": "task-1",
