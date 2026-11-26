@@ -823,78 +823,107 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
     input: AgentMcpJSONObject,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
-    let rootURL = string(input, "url", limit: 4_096)
-    guard !rootURL.isEmpty else {
-      return failure("invalid_url", "Web intelligence crawl requires a root URL")
-    }
-    let maxPages = int(input, "max_pages", defaultValue: 3, minimum: 1, maximum: 10)
-    let sameOrigin = input["same_origin"]?.boolValue ?? true
-    let includePattern = string(input, "include_pattern", limit: 512)
-    let excludePattern = string(input, "exclude_pattern", limit: 512)
-    var queue = [rootURL]
-    var seen: Set<String> = []
+    let started = uptimeMillis()
+    var policy: AgentIOSWebCrawlPolicy
+    do { policy = try AgentIOSWebCrawlPolicy(input: input) }
+    catch AgentIOSWebCrawlPolicy.Failure.invalidPattern {
+      return failure("invalid_crawl_pattern", "Crawl include/exclude patterns must be valid regular expressions")
+    } catch { return failure("invalid_url", "Web intelligence crawl requires a public HTTPS root URL") }
+    let budget = AgentIOSWebCrawlDeadline(durationMillis: policy.timeoutMillis, startedAtMillis: started, now: uptimeMillis)
+    let cacheScope = invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.cachePermission) &&
+      invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.cacheConsent)
     var pages: [AgentMcpJSONObject] = []
     var receipts: [AgentMcpJSONObject] = []
     var failures: [AgentMcpJSONObject] = []
-
-    while !queue.isEmpty && pages.count < maxPages && !invocation.isCancellationRequested {
-      let url = queue.removeFirst()
-      let canonical = canonicalURL(url)
-      guard !seen.contains(canonical), urlAllowed(url, rootURL: rootURL, sameOrigin: sameOrigin, includePattern: includePattern, excludePattern: excludePattern) else {
-        continue
-      }
-      seen.insert(canonical)
-      let webResult = webMediaProvider.invoke(
-        operation: .webFetch,
-        input: webFetchInput(input, url: url, invocation: invocation),
-        invocation: invocation
-      )
+    var stopped = ""
+    while pages.count < policy.maxPages {
+      if invocation.isCancellationRequested { stopped = "cancelled"; break }
+      if budget.expired || invocation.isTimedOut { stopped = "deadline"; break }
+      do { try invocation.checkpoint() }
+      catch { stopped = invocation.isCancellationRequested ? "cancelled" : "deadline"; break }
+      guard let node = policy.next(shouldStop: { invocation.isCancellationRequested || budget.expired || invocation.isTimedOut }) else { break }
+      let pageInput: AgentMcpJSONObject = ["url": .string(node.url),
+        "timeout_ms": .int(min(15_000, budget.remainingMillis, invocation.remainingTimeMillis)),
+        "max_bytes": .int(AgentIOSWebIntelligenceNativeToolCatalog.maxFetchBytes),
+        "cache_ttl_ms": .int(6 * 60 * 60_000)]
+      let child: AgentNativeToolInvocation
+      do { child = try budget.invocation(parent: invocation, input: pageInput, nowMillis: nowMillis) }
+      catch { policy.restoreUnstarted(node); stopped = invocation.isCancellationRequested ? "cancelled" : "deadline"; break }
+      let webResult = cacheScope
+        ? fetch(input: pageInput, invocation: child, operation: .fetch)
+        : webMediaProvider.invoke(operation: .webFetch, input: pageInput, invocation: child)
       guard webResult.isSuccess else {
-        failures.append([
-          "url": .string(url),
+        let item: AgentMcpJSONObject = [
+          "url": .string(node.url), "depth": .int(Int64(node.depth)), "status": .string("failed"),
           "code": .string(webResult.error?.code ?? "fetch_failed"),
-          "message": .string(webResult.error?.message ?? webResult.message)
-        ])
+          "message": .string(String((webResult.error?.message ?? webResult.message).prefix(512)))
+        ]
+        failures.append(item); receipts.append(item)
         continue
       }
+      if webResult.output["text_decoding_lossless"] == .bool(false) {
+        let item: AgentMcpJSONObject = ["url": .string(node.url), "depth": .int(Int64(node.depth)),
+          "status": .string("failed"), "code": .string("web_text_decoding_failed")]
+        failures.append(item); receipts.append(item)
+        continue
+      }
+      let page = webResult.output
       let raw = webResult.output["text"]?.stringValue ?? ""
-      let finalURL = finalURL(from: webResult.output, fallback: url)
-      let text = boundedText(readableText(raw), maxCharacters: 12_000)
+      let finalURL = finalURL(from: page, fallback: node.url)
+      let html = !cacheScope && ["text/html", "application/xhtml+xml"].contains(
+        (page["content_type"]?.stringValue ?? "").split(separator: ";").first?.trimmingCharacters(in: .whitespaces).lowercased() ?? "")
+      let article = html ? URL(string: finalURL).flatMap { AgentIOSPublicArticleParser.parse(url: $0, source: raw) } : nil
+      let text = boundedText(article?.content ?? (html ? readableText(raw) : raw),
+        maxCharacters: Int(AgentIOSWebIntelligenceNativeToolCatalog.maxContentCharacters))
+      let links = AgentIOSWebCrawlPolicy.links(output: page, baseURL: finalURL, rawHTML: html)
       pages.append([
         "url": .string(finalURL),
-        "requested_url": .string(url),
-        "title": .string(titleFromHTML(raw)),
+        "requested_url": .string(node.url), "depth": .int(Int64(node.depth)),
+        "title": .string(article?.title ?? page["title"]?.stringValue ?? page["article"]?.objectValue?["title"]?.stringValue ?? titleFromHTML(raw)),
         "text": .string(text),
         "text_length": .int(Int64(text.count)),
-        "content_sha256": webResult.output["sha256"] ?? .string(AgentMcpJSONCodec.sha256(["text": .string(raw)]))
+        "content_type": page["content_type"] ?? .string(""),
+        "content_sha256": page["content_sha256"] ?? page["html_sha256"] ?? page["sha256"] ?? .string(AgentMcpJSONCodec.sha256(["text": .string(text)])),
+        "cache_hit": .bool(page["cache"]?.objectValue?["hit"]?.boolValue ?? false),
+        "links": .array(links.map(AgentMcpJSONValue.string))
       ])
-      receipts.append(sourceReceipt(from: webResult.output, fallbackURL: url))
-      links(fromHTML: raw, baseURL: finalURL).forEach { link in
-        if queue.count + pages.count < maxPages * 4 {
-          queue.append(link)
-        }
-      }
+      var receipt = page["source_receipts"]?.arrayValue?.first?.objectValue ?? sourceReceipt(from: page, fallbackURL: node.url)
+      receipt["depth"] = .int(Int64(node.depth)); receipt["status"] = .string("completed")
+      receipts.append(receipt)
+      policy.expand(node, finalURL: finalURL, links: links)
     }
-
-    guard !pages.isEmpty else {
-      return failure("crawl_no_pages", "No readable public pages were fetched during crawl", retryable: true)
+    if stopped.isEmpty {
+      if invocation.isCancellationRequested { stopped = "cancelled" }
+      else if budget.expired || invocation.isTimedOut { stopped = "deadline" }
+      else if policy.remainingCount > 0 { stopped = "page_limit" }
+      else { stopped = failures.isEmpty ? "queue_exhausted" : "page_failures" }
     }
-    var output = baseOutput(operation: .crawl, invocation: invocation, status: failures.isEmpty ? "completed" : "partial")
+    let partial = stopped != "queue_exhausted"
+    var output = baseOutput(operation: .crawl, invocation: invocation,
+      status: pages.isEmpty ? "failed" : (partial ? "partial" : "completed"))
     output["request_id"] = .string(requestId(invocation, operation: .crawl))
-    output["root_url"] = .string(rootURL)
+    output["root_url"] = .string(policy.root)
     output["page_count"] = .int(Int64(pages.count))
     output["pages"] = .array(pages.map { .object($0) })
     output["source_receipts"] = .array(receipts.map { .object($0) })
     output["failures"] = .array(failures.map { .object($0) })
     output["crawl_policy"] = .object([
-      "same_origin": .bool(sameOrigin),
-      "max_pages": .int(Int64(maxPages))
+      "same_origin": .bool(policy.sameOrigin), "max_pages": .int(Int64(policy.maxPages)),
+      "max_depth": .int(Int64(policy.maxDepth)), "timeout_ms": .int(policy.timeoutMillis)
     ])
-    return AgentNativeToolExecutionResult.success(
-      output: output,
-      message: "Bounded public crawl completed",
-      metadata: metadata(operation: .crawl)
-    )
+    output["metadata"] = .object(["pages_fetched": .int(Int64(pages.count)),
+      "urls_discovered": .int(Int64(policy.discoveredCount)), "remaining_queue": .int(Int64(policy.remainingCount)),
+      "deadline_reached": .bool(stopped == "deadline"), "cancelled": .bool(stopped == "cancelled"),
+      "stop_reason": .string(stopped), "cache_scope": .bool(cacheScope)])
+    if cacheScope { output["cache"] = .object(cacheStore.cacheMetadata()) }
+    if pages.isEmpty {
+      var result = AgentNativeToolExecutionResult.failure(code: stopped == "cancelled" ? "cancelled" : (stopped == "deadline" ? "timeout" : "crawl_no_pages"),
+        message: "No readable public pages were fetched during crawl", retryable: true, details: output)
+      result.output = output; result.metadata = metadata(operation: .crawl)
+      return result
+    }
+    return .success(output: output, message: partial ? "Bounded public crawl partially completed" : "Bounded public crawl completed",
+      metadata: metadata(operation: .crawl))
   }
 
   private func research(
@@ -1301,7 +1330,7 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
 
   private static func navigationLinks(_ output: AgentMcpJSONObject) -> [AgentMcpJSONValue] {
     let links = output["links"]?.arrayValue ?? output["article"]?.objectValue?["links"]?.arrayValue ?? []
-    return links.prefix(64).filter { ($0.stringValue?.utf8.count ?? 513) <= 512 }
+    return links.prefix(AgentIOSWebCrawlPolicy.maximumLinks).filter { ($0.stringValue?.utf8.count ?? 4_097) <= 4_096 }
   }
 
   private func fetchMetadata(_ output: AgentMcpJSONObject, content: String) -> [String: String] {
@@ -1540,58 +1569,6 @@ struct AgentIOSURLSessionWebIntelligenceProvider: AgentIOSWebIntelligenceToolPro
       return String(cleaned.prefix(96))
     }
     return "watch-\(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(20))"
-  }
-
-  private func urlAllowed(
-    _ value: String,
-    rootURL: String,
-    sameOrigin: Bool,
-    includePattern: String,
-    excludePattern: String
-  ) -> Bool {
-    guard let url = URL(string: value),
-          url.scheme?.lowercased() == "https" else {
-      return false
-    }
-    if sameOrigin,
-       let rootHost = URL(string: rootURL)?.host?.lowercased(),
-       url.host?.lowercased() != rootHost {
-      return false
-    }
-    if !includePattern.isEmpty, value.range(of: includePattern, options: .regularExpression) == nil {
-      return false
-    }
-    if !excludePattern.isEmpty, value.range(of: excludePattern, options: .regularExpression) != nil {
-      return false
-    }
-    return true
-  }
-
-  private func links(fromHTML html: String, baseURL: String) -> [String] {
-    guard let regex = try? NSRegularExpression(
-      pattern: #"<a[^>]+href=["']([^"']+)["'][^>]*>"#,
-      options: [.caseInsensitive]
-    ) else {
-      return []
-    }
-    let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-    var seen: Set<String> = []
-    var links: [String] = []
-    regex.matches(in: html, options: [], range: nsRange).forEach { match in
-      guard match.numberOfRanges >= 2,
-            let range = Range(match.range(at: 1), in: html),
-            let url = URL(string: decodeHTMLEntities(String(html[range])), relativeTo: URL(string: baseURL))?.absoluteURL,
-            url.scheme?.lowercased() == "https" else {
-        return
-      }
-      let value = String(url.absoluteString.prefix(4_096))
-      let canonical = canonicalURL(value)
-      if !seen.contains(canonical) {
-        seen.insert(canonical)
-        links.append(value)
-      }
-    }
-    return links
   }
 
   private func titleFromHTML(_ html: String) -> String {

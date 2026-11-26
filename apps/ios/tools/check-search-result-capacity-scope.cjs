@@ -13,6 +13,7 @@ function undo(source, changes) {
   return source;
 }
 function retainedCapacityMedia(source) {
+  source = require('./check-web-crawl-scope.cjs').retainedCrawlMedia(source);
   if (!source.includes('  var searchScope: AgentIOSWebSearchCapacity.Scope')) return source;
   return undo(source, [
     ['  var searchScope: AgentIOSWebSearchCapacity.Scope = .webMedia\n', ''],
@@ -29,6 +30,7 @@ function retainedCapacityMedia(source) {
   ]);
 }
 function retainedCapacityProvider(source) {
+  source = require('./check-web-crawl-scope.cjs').retainedCrawlProvider(source);
   if (!source.includes('"result_policy": .string("ios_intelligence_capacity_v1")')) return source;
   return undo(source, [
     ['"limit": .int(Int64(limit)), "engine_fanout": .int(12)', '"limit": .int(Int64(min(limit, 24))), "engine_fanout": .int(12)'],

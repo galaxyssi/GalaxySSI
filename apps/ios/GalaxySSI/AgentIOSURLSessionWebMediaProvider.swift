@@ -1007,8 +1007,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         output["text_decoding_lossless"] = .bool(decoded.lossless)
         let article = AgentIOSPublicArticleParser.parse(url: URL(string: resource.finalURL) ?? url, source: html)
         if operation == .webOpen, decoded.lossless, mediaType == "text/html" || mediaType == "application/xhtml+xml" {
-          let links = AgentIOSGenericArticleParser.links(in: html, baseURL: URL(string: resource.finalURL) ?? url, limit: 64)
-          if !links.isEmpty { output["links"] = .array(links.map(AgentMcpJSONValue.string)) }
+          let links = AgentIOSWebCrawlPolicy.links(output: ["text": .string(html)], baseURL: resource.finalURL, rawHTML: true)
+          output["links"] = .array(links.map(AgentMcpJSONValue.string))
         }
         output["text"] = .string(article?.content ?? boundedText(
           readableText(html),
