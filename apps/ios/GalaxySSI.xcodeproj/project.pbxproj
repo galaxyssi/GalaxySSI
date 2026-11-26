@@ -1195,6 +1195,7 @@
     A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002702 /* AgentEvalOpsStore.swift */; };
     A10000000000000000002703 /* AgentQualityRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002703 /* AgentQualityRouting.swift */; };
     A10000000000000000003E11 /* AgentProviderResourceRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E11 /* AgentProviderResourceRanking.swift */; };
+    A10000000000000000003E12 /* AgentRoutingHealthSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E12 /* AgentRoutingHealthSnapshot.swift */; };
     A10000000000000000003E14 /* AgentRoutingUsageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E14 /* AgentRoutingUsageStore.swift */; };
     A10000000000000000002704 /* AgentTrajectoryLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002704 /* AgentTrajectoryLearning.swift */; };
     A10000000000000000002705 /* AgentCognitiveGovernance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002705 /* AgentCognitiveGovernance.swift */; };
@@ -2105,6 +2106,7 @@
     A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
+    A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */; };
     A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */; };
     A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */; };
     A10000000000000000000533 /* GlobalAgentObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000533 /* GlobalAgentObservationsTests.swift */; };
@@ -3453,6 +3455,7 @@
     A20000000000000000002702 /* AgentEvalOpsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsStore.swift; sourceTree = "<group>"; };
     A20000000000000000002703 /* AgentQualityRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentQualityRouting.swift; sourceTree = "<group>"; };
     A20000000000000000003E11 /* AgentProviderResourceRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderResourceRanking.swift; sourceTree = "<group>"; };
+    A20000000000000000003E12 /* AgentRoutingHealthSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingHealthSnapshot.swift; sourceTree = "<group>"; };
     A20000000000000000003E14 /* AgentRoutingUsageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingUsageStore.swift; sourceTree = "<group>"; };
     A20000000000000000002704 /* AgentTrajectoryLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTrajectoryLearning.swift; sourceTree = "<group>"; };
     A20000000000000000002705 /* AgentCognitiveGovernance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCognitiveGovernance.swift; sourceTree = "<group>"; };
@@ -4398,6 +4401,7 @@
     A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingHealthSnapshotTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingUsageStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityObservationsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000533 /* GlobalAgentObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentObservationsTests.swift; sourceTree = "<group>"; };
@@ -6372,6 +6376,7 @@
         A20000000000000000002702 /* AgentEvalOpsStore.swift */,
         A20000000000000000002703 /* AgentQualityRouting.swift */,
         A20000000000000000003E11 /* AgentProviderResourceRanking.swift */,
+        A20000000000000000003E12 /* AgentRoutingHealthSnapshot.swift */,
         A20000000000000000003E14 /* AgentRoutingUsageStore.swift */,
         A20000000000000000002704 /* AgentTrajectoryLearning.swift */,
         A20000000000000000002705 /* AgentCognitiveGovernance.swift */,
@@ -6562,6 +6567,7 @@
         A20000000000000000000892 /* LanguagePolicySettingsTests.swift */,
         A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */,
         A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */,
+        A20000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift */,
         A20000000000000000003E15 /* AgentRoutingUsageStoreTests.swift */,
         A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */,
         A20000000000000000000533 /* GlobalAgentObservationsTests.swift */,
@@ -8793,6 +8799,7 @@
         A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */,
         A10000000000000000002703 /* AgentQualityRouting.swift in Sources */,
         A10000000000000000003E11 /* AgentProviderResourceRanking.swift in Sources */,
+        A10000000000000000003E12 /* AgentRoutingHealthSnapshot.swift in Sources */,
         A10000000000000000003E14 /* AgentRoutingUsageStore.swift in Sources */,
         A10000000000000000002704 /* AgentTrajectoryLearning.swift in Sources */,
         A10000000000000000002705 /* AgentCognitiveGovernance.swift in Sources */,
@@ -8982,6 +8989,7 @@
         A10000000000000000000892 /* LanguagePolicySettingsTests.swift in Sources */,
         A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */,
         A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */,
+        A10000000000000000003E13 /* AgentRoutingHealthSnapshotTests.swift in Sources */,
         A10000000000000000003E15 /* AgentRoutingUsageStoreTests.swift in Sources */,
         A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */,
         A10000000000000000000533 /* GlobalAgentObservationsTests.swift in Sources */,

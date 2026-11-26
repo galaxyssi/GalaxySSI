@@ -385,15 +385,11 @@ class PersistentAgentProviderHealthLedger: AgentProviderHealthLedger {
     defer { lock.unlock() }
     var values = persistence.load()
     let scope = registration.runtimeHealthScope()
-    guard var current = values[scope], current.circuitState(nowMillis: nowMillis) == .open,
-          current.probeLeaseUntilMillis <= nowMillis,
-          registration.lastHeartbeatMillis > current.lastFailureAtMillis,
-          registration.lastHeartbeatMillis <= nowMillis || registration.lastHeartbeatMillis - nowMillis <= 60_000,
-          current.lastFailureKind == .transportCrash || current.lastFailureKind == .unavailable ||
-            (current.lastFailureKind == .execution && current.lastOperation == "start_run") else { return }
+    guard let current = values[scope],
+          let observed = AgentProviderAvailabilityPolicy.observingReadiness(current,
+            registration: registration, nowMillis: nowMillis) else { return }
     // Readiness permits one half-open request; it is not an execution success or a replay.
-    current.circuitOpenUntilMillis = nowMillis
-    values[scope] = current
+    values[scope] = observed
     persistence.save(Array(values.values))
   }
 
