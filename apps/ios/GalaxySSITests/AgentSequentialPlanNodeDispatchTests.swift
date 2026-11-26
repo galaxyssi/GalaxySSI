@@ -139,6 +139,91 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testSequentialReplayRejectsPriorRevisionAndForgedPreparedRevision() throws {
+    try sequentialFixture { journal, _, _ in
+      var prepared = try sequentialPrepared()
+      _ = AgentSequentialPlanNodeDispatch.execute(prepared, journal: journal) {
+        AgentActionResult(actionId: prepared.action.id, success: true, message: "Old revision receipt")
+      }
+      prepared.plan.revision += 1
+      XCTAssertThrowsError(try AgentSequentialPlanNodeDispatch.replay(plan: prepared.plan, actionId: prepared.action.id,
+        sessionId: "session", conversationId: "conversation", turnId: "turn", journal: journal)) { error in
+        XCTAssertEqual(error as? AgentPlanNodeJournalError, .identityMismatch)
+      }
+      let result = AgentSequentialPlanNodeDispatch.execute(prepared, journal: journal) {
+        XCTFail("A stale revision cannot dispatch or reuse its old receipt")
+        return AgentActionResult(actionId: prepared.action.id, success: true, message: "Invalid")
+      }
+      XCTAssertFalse(result.success)
+      XCTAssertEqual(result.metadata["plan_node_journal_error"], "identity_mismatch")
+      XCTAssertEqual(try journal.read(prepared.key)?.result.message, "Old revision receipt")
+    }
+  }
+
+  func testSequentialReplayRejectsMismatchedStoredCheckpointBeforeUsingResult() throws {
+    try sequentialFixture { journal, _, _ in
+      let prepared = try sequentialPrepared()
+      var wrong = prepared.checkpoint
+      wrong.planRevision += 1
+      XCTAssertEqual(try journal.claim(prepared.key, action: prepared.action, checkpoint: wrong), .acquired)
+      try journal.record(prepared.key, observation: .init(result: AgentActionResult(actionId: prepared.action.id,
+        success: true, message: "Mismatched checkpoint receipt"), verified: true))
+      XCTAssertThrowsError(try AgentSequentialPlanNodeDispatch.replay(plan: prepared.plan, actionId: prepared.action.id,
+        sessionId: "session", conversationId: "conversation", turnId: "turn", journal: journal)) { error in
+        XCTAssertEqual(error as? AgentPlanNodeJournalError, .identityMismatch)
+      }
+      let result = AgentSequentialPlanNodeDispatch.execute(prepared, journal: journal) {
+        XCTFail("A mismatched stored checkpoint cannot authorize execution or result reuse")
+        return AgentActionResult(actionId: prepared.action.id, success: true, message: "Invalid")
+      }
+      XCTAssertFalse(result.success)
+      XCTAssertEqual(result.metadata["execution_started"], "false")
+    }
+  }
+
+  func testSequentialReplayDoesNotLeakReceiptAcrossSessionConversationOrTurn() throws {
+    try sequentialFixture { journal, _, _ in
+      let prepared = try sequentialPrepared()
+      _ = AgentSequentialPlanNodeDispatch.execute(prepared, journal: journal) {
+        AgentActionResult(actionId: prepared.action.id, success: true, message: "Scoped receipt")
+      }
+      for scope in [("other-session", "conversation", "turn"), ("session", "other-conversation", "turn"),
+        ("session", "conversation", "other-turn")] {
+        XCTAssertNil(try AgentSequentialPlanNodeDispatch.replay(plan: prepared.plan, actionId: prepared.action.id,
+          sessionId: scope.0, conversationId: scope.1, turnId: scope.2, journal: journal))
+      }
+      XCTAssertNotNil(try AgentSequentialPlanNodeDispatch.replay(plan: prepared.plan, actionId: prepared.action.id,
+        sessionId: "session", conversationId: "conversation", turnId: "turn", journal: journal))
+    }
+  }
+
+  func testSequentialPreparationAndReplayRejectAmbiguousActiveCheckpointAndInvalidRevision() throws {
+    try sequentialFixture { journal, _, _ in
+      let prepared = try sequentialPrepared()
+      let screen = AgentScreenContext(foregroundApp: "GalaxySSI", pageTitle: "Agent")
+      for variation in 0..<3 {
+        var invalid = prepared
+        if variation == 0 { invalid.plan.revision = 0 }
+        if variation == 1 { invalid.plan.actions.append(prepared.action) }
+        if variation == 2 {
+          var duplicate = prepared.checkpoint
+          duplicate.id = "another-active-checkpoint"
+          invalid.plan.checkpoints.append(duplicate)
+        }
+        XCTAssertNil(AgentSequentialPlanNodeDispatch.prepare(plan: invalid.plan, action: prepared.action, screen: screen,
+          sessionId: "session", conversationId: "conversation", turnId: "turn"))
+        XCTAssertThrowsError(try AgentSequentialPlanNodeDispatch.replay(plan: invalid.plan, actionId: prepared.action.id,
+          sessionId: "session", conversationId: "conversation", turnId: "turn", journal: journal))
+        let result = AgentSequentialPlanNodeDispatch.execute(invalid, journal: journal) {
+          XCTFail("An ambiguous identity cannot execute")
+          return AgentActionResult(actionId: prepared.action.id, success: true, message: "Invalid")
+        }
+        XCTAssertEqual(result.metadata["execution_started"], "false")
+        XCTAssertNil(try journal.observe(prepared.key))
+      }
+    }
+  }
+
   private func sequentialPrepared() throws -> AgentSequentialPlanNodeDispatch.Prepared {
     let proposed = AgentAction(id: "sequential-node", kind: .callNativeTool, target: "proposed-target", risk: .low,
       status: .proposed, description: "Read", parameters: ["input_json": #"{"path":"proposed.txt"}"#])

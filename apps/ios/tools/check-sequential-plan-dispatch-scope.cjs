@@ -39,12 +39,19 @@ function validateSequentialPlanDispatch() {
   const helper = read(app + 'AgentSequentialPlanNodeDispatch.swift');
   for (const token of ['plan.actions.filter({ $0.id == action.id }).count == 1', 'running.status = .running',
     'AgentExecutionContinuity.checkpointBefore', 'checkpoint.planRevision == plan.revision',
-    'AgentPlanNodeKey.make', 'journal.observe(key)', 'journal.readDispatch(key)?.action ?? action',
+    'AgentPlanNodeKey.make', 'journal.observe(key)', 'let dispatch = try journal.readDispatch(key)',
+    'checkpoint.planRevision == plan.revision', 'actions.count <= 1, checkpoints.count <= 1',
+    'dispatch.action.id == actionId, dispatch.checkpoint == checkpoint',
+    'prepared.checkpoint.planRevision == prepared.plan.revision',
+    'dispatch.checkpoint == prepared.checkpoint',
+    'else if claim == .acquired { throw AgentPlanNodeJournalError.missingDispatch }',
     'observation.verified && observation.result.actionId == actionId', 'prepared.plan.actions.filter',
     'journal.claim(prepared.key, action: prepared.action, checkpoint: prepared.checkpoint)',
     'let result = operation()', 'try journal.record(prepared.key', '"observation_commit_failed"',
     '"plan_node_outcome_unknown": "true"', '"execution_started": "false"', '"non_retriable": "true"']) assert(helper.includes(token), token);
   assert(helper.indexOf('journal.claim(prepared.key') < helper.indexOf('let result = operation()'));
+  assert(helper.indexOf('checkpoint.planRevision == plan.revision', helper.indexOf('  static func replay(')) < helper.indexOf('journal.observe(key)'));
+  assert(helper.indexOf('let dispatch = try journal.readDispatch(prepared.key)') < helper.indexOf('let result = operation()'));
   assert(helper.indexOf('let result = operation()') < helper.indexOf('try journal.record(prepared.key'));
   assert(!/URLSession|grantedPermissions|grantedConsents|Task\.detached|\.clear\(/.test(helper));
   for (const name of ['AgentPlanNodeJournal', 'AgentPlanLifecyclePolicy', 'AgentExecutionContinuity', 'AgentActionEffectExecutor',
@@ -56,7 +63,10 @@ function validateSequentialPlanDispatch() {
   for (const name of ['SequentialDispatchStagesFinalInputAndCheckpointBeforeOperation', 'SequentialDispatchReplaysObservedResultWithoutExecutingAgain',
     'SequentialPendingAndLegacyClaimsCannotGainNewExecutionAuthority', 'SequentialUnreadableClaimPreventsExternalOperation',
     'SequentialObservationCommitFailureDoesNotBecomeVerifiedSuccess', 'SequentialFallbackInputHasDistinctDurableSpecificationAndReplaysOnce',
-    'SequentialPreparationRejectsMissingDuplicateAndStaleRevision', 'SequentialPreparedIdentityCannotBeChangedBeforeClaim']) assert(tests.includes('func test' + name + '('), name);
+    'SequentialPreparationRejectsMissingDuplicateAndStaleRevision', 'SequentialPreparedIdentityCannotBeChangedBeforeClaim',
+    'SequentialReplayRejectsPriorRevisionAndForgedPreparedRevision', 'SequentialReplayRejectsMismatchedStoredCheckpointBeforeUsingResult',
+    'SequentialReplayDoesNotLeakReceiptAcrossSessionConversationOrTurn',
+    'SequentialPreparationAndReplayRejectAmbiguousActiveCheckpointAndInvalidRevision']) assert(tests.includes('func test' + name + '('), name);
   const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
   for (const name of ['AgentSequentialPlanNodeDispatch', 'AgentSequentialPlanNodeDispatchTests']) assert.equal(project.split(name + '.swift in Sources */').length, 3, name);
 }
