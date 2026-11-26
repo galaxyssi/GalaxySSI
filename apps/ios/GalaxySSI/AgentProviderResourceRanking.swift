@@ -1,10 +1,73 @@
 import Foundation
 
 enum AgentProviderResourceRanking {
+  static func preferenceBonus(targetId: String, requirements: AgentTaskRequirements, hasPairedDesktop: Bool) -> Int {
+    let remainder: [String]
+    if requirements.capabilities.contains(.code) || requirements.capabilities.contains(.knowledgeSearch) {
+      remainder = ["cloud-models", "local-llm"]
+    } else if requirements.liveDataRequired || requirements.mode == .quality {
+      remainder = ["cloud-models"]
+    } else if requirements.mode == .fast || requirements.mode == .private {
+      remainder = ["local-llm"]
+    } else if requirements.mode == .economy {
+      remainder = ["local-llm", "cloud-models"]
+    } else {
+      remainder = ["cloud-models", "local-llm"]
+    }
+    let desktop = hasPairedDesktop ? ["codex"] + (requirements.capabilities.contains(.code) ? ["claude-code"] : []) : []
+    let order = desktop + remainder + (hasPairedDesktop ? ["hermes"] : [])
+    guard let index = order.firstIndex(of: canonicalPreferenceId(targetId)) else { return 0 }
+    switch index {
+    case 0: return 180
+    case 1: return 130
+    case 2: return 90
+    case 3: return 50
+    default: return 20
+    }
+  }
+
+  // Family names affect preference only; exact target/registration identity is never rewritten.
+  private static func canonicalPreferenceId(_ value: String) -> String {
+    let id = value.lowercased()
+    if id == "claude" || id == "claude-code" { return "claude-code" }
+    if id == "cloud-models" || id.hasPrefix("cloud-model:") { return "cloud-models" }
+    if id == "codex" || id.contains(":codex") { return "codex" }
+    if id == "hermes" || id.contains(":hermes") { return "hermes" }
+    if id == "local-llm" || id.contains(":local-llm") { return "local-llm" }
+    return id
+  }
+
+  static func fallbackCandidates(primary: AgentResourceDescriptor,
+                                 candidates: [AgentResourceCandidate]) -> [AgentResourceCandidate] {
+    let primaryResource = failoverResource(primary)
+    var seen = Set<String>()
+    let eligible = candidates.filter {
+      !$0.resource.targetId.isBlank && $0.resource.targetId != primary.targetId &&
+        seen.insert($0.resource.targetId).inserted
+    }
+    return Array(eligible.enumerated().sorted { left, right in
+      let leftTier = AgentFailoverPolicy.fallbackTier(primary: primaryResource, candidate: failoverResource(left.element.resource))
+      let rightTier = AgentFailoverPolicy.fallbackTier(primary: primaryResource, candidate: failoverResource(right.element.resource))
+      return leftTier == rightTier ? left.offset < right.offset : leftTier < rightTier
+    }.prefix(6).map(\.element))
+  }
+
+  private static func failoverResource(_ resource: AgentResourceDescriptor) -> AgentFailoverResource {
+    let location: AgentFailoverResourceLocation
+    switch resource.location {
+    case .phone: location = .phone
+    case .trustedDesktop: location = .trustedDesktop
+    case .privateNetwork: location = .privateNetwork
+    case .cloud: location = .cloud
+    }
+    return AgentFailoverResource(location: location, failureDomain: resource.failureDomain)
+  }
+
   static func candidate(
     resource: AgentResourceDescriptor,
     requirements: AgentTaskRequirements,
-    environment: AgentRuntimeEnvironment
+    environment: AgentRuntimeEnvironment,
+    hasPairedDesktop: Bool = false
   ) -> AgentResourceCandidate {
     var score = AgentCapabilityRoutingPolicy.fitScore(requirements, available: resource.capabilities)
     var reasons = ["available_reasoning_resource"] +
@@ -52,6 +115,9 @@ enum AgentProviderResourceRanking {
     if requirements.mode == .fast, resource.latency <= .fast { score += 120 }
     if requirements.mode == .economy, resource.cost <= .low { score += 120 }
     if requirements.mode == .quality, resource.quality == .frontier { score += 160 }
+    let preference = preferenceBonus(targetId: resource.targetId, requirements: requirements, hasPairedDesktop: hasPairedDesktop)
+    score += preference
+    reasons.append("preference_bonus:\(preference)")
     reasons += ["quality:\(resource.quality.rawValue.lowercased())", "latency:\(resource.latency.rawValue.lowercased())",
       "cost:\(resource.cost.rawValue.lowercased())", "trust:\(resource.trust.rawValue.lowercased())",
       "sensitivity:\(requirements.dataSensitivity.rawValue.lowercased())", "ranking:provider_resource_attributes"]
