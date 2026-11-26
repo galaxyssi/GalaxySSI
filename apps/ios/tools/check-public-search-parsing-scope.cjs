@@ -340,9 +340,9 @@ for (const name of ['testConfiguredResearchBudgetCapsActiveRoundsButRetainsFinal
   'testCloudRetrievalUsesSharedHardDeadlineAndDoesNotInvokeExpiredProvider']) assert(roundTests.includes('func ' + name + '('));
 const renderer = read(swift('AgentIOSDynamicWebRenderer'));
 const oldRenderer = git('show', base + ':' + swift('AgentIOSDynamicWebRenderer'));
-assert.equal(section(renderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
+assert.equal(section(require('./check-public-address-policy-scope.cjs').retainedAddressRenderer(renderer), 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
   section(oldRenderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
-  'Static shell detection, HTTPS/private-address resolution, same-origin and subresource policy unchanged');
+  'Static shell detection, HTTPS/DNS/same-origin/subresource policy unchanged outside checked shared address-classifier hooks');
 assert.equal(section(renderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
   section(oldRenderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
   'Authentication, popup, media-capture and dialog policy unchanged');

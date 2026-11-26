@@ -200,7 +200,7 @@ enum AgentIOSWebRenderURLPolicy {
 
   static func resolvesToPublicAddress(_ value: String) -> Bool {
     guard allows(value), let host = URLComponents(string: value)?.host else { return false }
-    if host.contains(":" ) || isIPv4(host) { return !isLocalOrPrivateHost(host) }
+    if AgentIOSPublicAddressPolicy.isNumericHost(host) { return !isLocalOrPrivateHost(host) }
 #if canImport(Darwin)
     var hints = addrinfo()
     hints.ai_flags = AI_ADDRCONFIG
@@ -231,7 +231,7 @@ enum AgentIOSWebRenderURLPolicy {
     }
     return !addresses.isEmpty && addresses.allSatisfy { !isLocalOrPrivateHost($0) }
 #else
-    return true
+    return false
 #endif
   }
 
@@ -257,35 +257,7 @@ enum AgentIOSWebRenderURLPolicy {
   }
 
   private static func isLocalOrPrivateHost(_ value: String) -> Bool {
-    let host = value.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-    if host == "localhost" || host.hasSuffix(".localhost") || host.hasSuffix(".local") { return true }
-    if isPrivateIPv4(host) { return true }
-    if host == "::" || host == "::1" || host.hasPrefix("fe80:") ||
-        host.hasPrefix("fc") || host.hasPrefix("fd") {
-      return true
-    }
-    if host.hasPrefix("::ffff:") { return isPrivateIPv4(String(host.dropFirst(7))) }
-    return false
-  }
-
-  private static func isIPv4(_ value: String) -> Bool {
-    let parts = value.split(separator: ".")
-    return parts.count == 4 && parts.allSatisfy { part in
-      guard let number = Int(part) else { return false }
-      return (0...255).contains(number)
-    }
-  }
-
-  private static func isPrivateIPv4(_ value: String) -> Bool {
-    let parts = value.split(separator: ".").compactMap { Int($0) }
-    guard parts.count == 4, parts.allSatisfy({ (0...255).contains($0) }) else { return false }
-    if parts[0] == 0 || parts[0] == 10 || parts[0] == 127 { return true }
-    if parts[0] == 100 && (64...127).contains(parts[1]) { return true }
-    if parts[0] == 169 && parts[1] == 254 { return true }
-    if parts[0] == 172 && (16...31).contains(parts[1]) { return true }
-    if parts[0] == 192 && parts[1] == 168 { return true }
-    if parts[0] == 198 && (18...19).contains(parts[1]) { return true }
-    return parts[0] >= 224
+    AgentIOSPublicAddressPolicy.blocksHost(value)
   }
 }
 

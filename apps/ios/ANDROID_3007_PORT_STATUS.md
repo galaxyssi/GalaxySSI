@@ -134,6 +134,37 @@ This is a partial port, NOT completion of all #3007 behavior.
 - Measure webOpen/browserRender resolution using an injectable monotonic nanosecond clock around both static and dynamic attempts. Expose total duration_millis in output and metadata, including a caught render error returning static evidence. Keep successful dynamic_render_duration_millis separate. Do not alter the old static retrieved_at_epoch_ms to suggest late retrieval, HTTP guards, fallback selection, cancellation, timeouts or result evidence. This is resolution duration, not model time, parsing time, end-to-end UI time or performance acceptance.
 - Five native fixture sources cover image/evidence-level changes versus reordered/metadata duplicates, retained reading windows/non-retrieval exclusions, failed dynamic total duration/static timestamp, separate successful renderer timing and unavailable renderer timing. NOT executed. Dedicated source comparisons restrict application edits to identity/timing only; project/grammar checks do not establish Swift type checking, runtime behavior or measured latency. No native build, XCTest, live network, UI/device run or IPA.
 
+## Shared Public Address Classification
+
+Follow-up to the address-range gap documented above, on the existing #4552 branch.
+Compare the pinned Android AgentMarkdownImageStore InetAddress predicates and
+checked OkHttp DNS lookup, not only their names. Static web fetch validation,
+WebKit URL/DNS preflight and Markdown public image URL/preflight now share one
+inet_pton-based classifier. The inherited IPv4 restrictions remain. IPv6 masks
+cover the full link-local and deprecated site-local ranges, unique-local and
+multicast; expanded loopback and hexadecimal IPv4-mapped private forms no longer
+bypass textual matching. Reject zone identifiers, control characters, malformed
+colon addresses and legacy short/octal/hex numeric hosts. Normalize one trailing
+DNS root dot before local-name checks. Ordinary fc/fd-prefixed domains are no
+longer confused with IPv6 unique-local addresses.
+
+Well-known NAT64 /96 addresses retain public embedded IPv4 destinations while
+rejecting private embedded destinations, using the
+[RFC 6052 prefix and format](https://www.rfc-editor.org/rfc/rfc6052.html#section-2).
+IPv6 scope masks follow the
+[IANA address-space registry](https://www.iana.org/assignments/ipv6-address-space/).
+This is a targeted classifier correction, not a complete special-purpose address
+registry, network-specific translation-prefix classifier or routing guarantee.
+Unsupported-platform DNS preflight now fails closed. No connection-IP pinning,
+WK subresource DNS inspection or DNS-rebinding protection is newly claimed.
+
+Five additional fixture methods cover byte-equivalent/scoped addresses, public
+IPv6/DNS64 literals, fc/fd domain prefixes, legacy numerics, existing IPv4 ranges
+and actual static web-fetch rejection before an injected transport. Source only,
+not executed. check-public-address-policy-scope.cjs checks the narrow delegations;
+earlier scope guards normalize only these explicit hooks before retaining their
+original comparisons. No HTTP/TLS/header/credential/redirect policy is relaxed.
+
 ## Remaining Work
 
 ### Complete Indexed Catalog Follow-up

@@ -160,6 +160,7 @@ const hooks = {
   ]
 };
 function retainedMixedSource(source) {
+  source = require('./check-public-address-policy-scope.cjs').retainedAddressProvider(source);
   let kind;
   if (source.includes('let merged = AgentIOSWebSearchFusion.fuse')) kind = 'raw';
   else if (source.includes('braveImageKeyAvailable: Bool = false')) kind = 'catalog';

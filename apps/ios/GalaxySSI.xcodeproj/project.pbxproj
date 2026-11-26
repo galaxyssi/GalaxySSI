@@ -908,6 +908,7 @@
     E50000000000000000002402 /* USearch in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000002402 /* USearch */; };
     E50000000000000000003007 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = E40000000000000000003007 /* SwiftSoup */; };
     C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */; };
+    C3007B200000000000000001 /* AgentIOSPublicAddressPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */; };
     C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */; };
     C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */; };
     C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */; };
@@ -4209,6 +4210,7 @@
     A20000000000000000000473 /* AgentIOSDeviceHealthStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDeviceHealthStatus.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicSearchParser.swift; sourceTree = "<group>"; };
+    C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicAddressPolicy.swift; sourceTree = "<group>"; };
     C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExecutionBudget.swift; sourceTree = "<group>"; };
     C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceLearning.swift; sourceTree = "<group>"; };
     C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSourceHealth.swift; sourceTree = "<group>"; };
@@ -5341,6 +5343,7 @@
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         C30070000000000000000002 /* AgentIOSPublicSearchParser.swift */,
+        C3007B200000000000000002 /* AgentIOSPublicAddressPolicy.swift */,
         C30070000000000000000004 /* AgentIOSWebExecutionBudget.swift */,
         C30070000000000000000006 /* AgentIOSWebSourceLearning.swift */,
         C30070000000000000000008 /* AgentIOSWebSourceHealth.swift */,
@@ -8092,6 +8095,7 @@
         A10000000000000000000473 /* AgentIOSDeviceHealthStatus.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         C30070000000000000000001 /* AgentIOSPublicSearchParser.swift in Sources */,
+        C3007B200000000000000001 /* AgentIOSPublicAddressPolicy.swift in Sources */,
         C30070000000000000000003 /* AgentIOSWebExecutionBudget.swift in Sources */,
         C30070000000000000000005 /* AgentIOSWebSourceLearning.swift in Sources */,
         C30070000000000000000007 /* AgentIOSWebSourceHealth.swift in Sources */,

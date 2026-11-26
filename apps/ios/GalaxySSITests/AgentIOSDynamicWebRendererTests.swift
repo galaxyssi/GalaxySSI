@@ -2,6 +2,50 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentIOSDynamicWebRendererTests: XCTestCase {
+  func testPublicAddressClassificationRejectsEquivalentAndScopedIPv6Forms() throws {
+    for host in ["::", "::1", "0:0:0:0:0:0:0:1", "fe80::1", "fe90::1", "febf::1", "fec0::1", "feff::1",
+      "fc00::1", "fdab::1", "ff02::1", "::ffff:127.0.0.1", "::ffff:7f00:1", "0:0:0:0:0:ffff:a00:1",
+      "::127.0.0.1", "64:ff9b::7f00:1", "fe80::1%en0"] {
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+      let url = "https://[\(host)]/image.png"
+      XCTAssertFalse(AgentIOSWebRenderURLPolicy.allows(url), url)
+      if let parsed = URL(string: url) { XCTAssertThrowsError(try AgentMarkdownImageStore.publicURL(parsed), url) }
+    }
+  }
+
+  func testPublicAddressClassificationPreservesPublicIPv6AndDNS64() throws {
+    for host in ["2606:4700:4700::1111", "2001:4860:4860::8888", "::ffff:8.8.8.8", "64:ff9b::808:808"] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.isNumericHost(host))
+      let url = "https://[\(host)]/image.png"
+      XCTAssertTrue(AgentIOSWebRenderURLPolicy.allows(url), url)
+      // Numeric literals use no DNS or transport; this is not a live fetch.
+      XCTAssertTrue(AgentIOSWebRenderURLPolicy.resolvesToPublicAddress(url), url)
+      XCTAssertNoThrow(try AgentMarkdownImageStore.publicURL(XCTUnwrap(URL(string: url))))
+    }
+  }
+
+  func testPublicAddressClassificationDoesNotConfuseDomainPrefixesWithIPv6() {
+    for host in ["fc.example.com", "fd.example.com", "fc2.com", "fdic.gov", "example.com."] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+      XCTAssertTrue(AgentIOSWebRenderURLPolicy.allows("https://\(host)/article"), host)
+    }
+    for host in ["localhost.", "x.localhost.", "printer.local.", "127.1", "2130706433", "0177.0.0.1", "0x7f000001",
+      "0x7f.0.0.1", "256.1.1.1", "::not-an-address", "[::1", "example.com\u{0}.invalid"] {
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+  }
+
+  func testPublicAddressClassificationPreservesExistingIPv4Restrictions() {
+    for host in ["0.0.0.0", "10.1.1.1", "127.0.0.1", "100.64.0.1", "100.127.255.255", "169.254.1.1",
+      "172.16.0.1", "172.31.255.255", "192.168.1.1", "198.18.0.1", "198.19.255.255", "224.0.0.1", "255.255.255.255"] {
+      XCTAssertTrue(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+    for host in ["8.8.8.8", "1.1.1.1", "100.63.255.255", "100.128.0.1", "172.15.255.255", "172.32.0.1"] {
+      XCTAssertFalse(AgentIOSPublicAddressPolicy.blocksHost(host), host)
+    }
+  }
+
   func testRendererHealthUsesSharedCooldownWithoutExtendingRejectedChecks() throws {
     var now: UInt64 = 100
     let health = AgentIOSWebRendererHealth(cooldownNanoseconds: 30, now: { now })

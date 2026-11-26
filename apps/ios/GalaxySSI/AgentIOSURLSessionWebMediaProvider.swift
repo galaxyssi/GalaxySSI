@@ -1625,59 +1625,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   }
 
   private func isLocalOrPrivateHost(_ host: String) -> Bool {
-    let clean = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
-    if clean == "localhost" || clean.hasSuffix(".localhost") || clean.hasSuffix(".local") {
-      return true
-    }
-    if isPrivateIPv4(clean) || isPrivateIPv6(clean) {
-      return true
-    }
-    return false
-  }
-
-  private func isPrivateIPv4(_ host: String) -> Bool {
-    let parts = host.split(separator: ".")
-    guard parts.count == 4,
-          let first = Int(parts[0]),
-          let second = Int(parts[1]),
-          parts.dropFirst(2).allSatisfy({ Int($0) != nil }) else {
-      return false
-    }
-    if first == 0 || first == 10 || first == 127 {
-      return true
-    }
-    if first == 100 && (64...127).contains(second) {
-      return true
-    }
-    if first == 169 && second == 254 {
-      return true
-    }
-    if first == 172 && (16...31).contains(second) {
-      return true
-    }
-    if first == 192 && second == 168 {
-      return true
-    }
-    if first == 198 && (18...19).contains(second) {
-      return true
-    }
-    if first >= 224 {
-      return true
-    }
-    return false
-  }
-
-  private func isPrivateIPv6(_ host: String) -> Bool {
-    guard host.contains(":") else {
-      return false
-    }
-    if host == "::" || host == "::1" || host.hasPrefix("fe80:") || host.hasPrefix("fc") || host.hasPrefix("fd") {
-      return true
-    }
-    if host.hasPrefix("::ffff:") {
-      return isPrivateIPv4(String(host.dropFirst("::ffff:".count)))
-    }
-    return false
+    AgentIOSPublicAddressPolicy.blocksHost(host)
   }
 
   private func commonOutput(_ resource: AgentIOSURLSessionWebResource) -> AgentMcpJSONObject {
