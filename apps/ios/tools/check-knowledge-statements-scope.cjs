@@ -4,9 +4,10 @@ const root = path.resolve(__dirname, '../../..'), base = 'bfcd499370441adfa07ff6
 const app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
 const production = ['AgentKnowledgeDatabase', 'AgentKnowledgePrimaryPartitions', 'AgentKnowledgePrimaryAllocations', 'AgentKnowledgePrimaryDurability'];
 const fixtures = ['AgentKnowledgePrimaryPartitionsTests', 'AgentKnowledgePrimaryDurabilityTests'];
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-read-connections-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function retained(f, source) {
+  source = require('./check-knowledge-read-connections-scope.cjs').retained(f, source);
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgeSQLiteStatements(?:Tests)?\.swift/.test(l)).join('\n');
   if (production.some(n => f === app + n + '.swift')) {
     source = source.replaceAll('AgentKnowledgeSQLiteStatements.shared.prepare(', 'sqlite3_prepare_v2(')
