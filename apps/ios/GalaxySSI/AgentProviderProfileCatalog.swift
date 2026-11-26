@@ -239,10 +239,33 @@ enum ProviderProfileCatalog {
     )
   }
 
+  static func isPhoneLocalModel(_ target: AgentCallableTarget) -> Bool {
+    guard target.id == "local-llm", target.kind == .model, target.adapterType == "ios-local-model",
+          target.capabilities.contains(.localInference) else { return false }
+    guard let profile = target.providerProfile else { return true }
+    return profile.resourceId == target.id && profile.kind == .localModel && profile.location == .phone &&
+      profile.adapterType == target.adapterType
+  }
+
+  static func phoneLocalModelProfile(for target: AgentCallableTarget, modelId: String = "",
+    contextWindowTokens: Int = 0) -> ProviderProfile? {
+    guard isPhoneLocalModel(target) else { return nil }
+    return ProviderProfile(profileId: "ios-native:local-llm", resourceId: target.id,
+      providerId: "galaxyssi-connectors", productId: "local-llm", displayName: target.title,
+      kind: .localModel, location: .phone, status: target.status, protocolFamily: "native",
+      adapterType: target.adapterType, modelId: modelId, capabilities: Set(target.capabilities),
+      contextWindowTokens: contextWindowTokens, maxOutputTokens: 0, maxParallelRuns: 2,
+      supportsTools: target.capabilities.contains(.toolUse), supportsStreaming: false, supportsBackground: false,
+      latency: .normal, quality: .standard, trust: .phoneSystem, failureDomain: target.failureDomain,
+      endpointConfigured: target.status == .available, credentialConfigured: true,
+      pricing: ProviderPricingProfile(tier: .free), metadata: ["native_product_identity": "local-llm"])
+  }
+
   static func fromTarget(_ target: AgentCallableTarget) -> ProviderProfile {
     if let providerProfile = target.providerProfile {
       return providerProfile
     }
+    if let phone = phoneLocalModelProfile(for: target) { return phone }
     if target.kind == .model {
       let providerId = providerIdForTarget(target)
       let definition = definition(providerId)

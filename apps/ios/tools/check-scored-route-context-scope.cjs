@@ -1,7 +1,8 @@
 // Source contracts only, not native routing, provider calls or privacy acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = 'f1b21803638c354cd6056883cf2c8cb88ee76f08';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'), cache = new Map();
+const read = file => require('./check-phone-local-model-resource-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')), cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
     {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n'));
@@ -36,6 +37,7 @@ const fallbackNew = `    let current = scoredAutomaticConnectorRoute(goal: goal)
     let targets = current.targets
     let currentRoute = current.selection`;
 function retained(file, source) {
+  source = require('./check-phone-local-model-resource-scope.cjs').retained(file, source);
   if (file.endsWith('check-verified-timer-start-scope.cjs')) return source
     .replace("const read = file => require('./check-scored-route-context-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")

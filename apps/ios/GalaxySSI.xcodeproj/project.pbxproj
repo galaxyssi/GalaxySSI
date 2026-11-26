@@ -2272,6 +2272,7 @@
     A10000000000000000003E30 /* AgentAutomaticRoutingContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E30 /* AgentAutomaticRoutingContext.swift */; };
     A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */; };
     A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */; };
+    A10000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4600,6 +4601,7 @@
     A20000000000000000003E30 /* AgentAutomaticRoutingContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomaticRoutingContext.swift; sourceTree = "<group>"; };
     A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedAnswerPreviewTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVerifiedTimerStartTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneLocalModelResourceTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -6610,6 +6612,7 @@
         A20000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift */,
         A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */,
         A20000000000000000003E29 /* AgentVerifiedTimerStartTests.swift */,
+        A20000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift */,
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
@@ -9048,6 +9051,7 @@
         A10000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift in Sources */,
         A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */,
         A10000000000000000003E29 /* AgentVerifiedTimerStartTests.swift in Sources */,
+        A10000000000000000003E32 /* AgentPhoneLocalModelResourceTests.swift in Sources */,
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,
