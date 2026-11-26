@@ -75,6 +75,27 @@ enum GalaxySSIPeerAttachmentTransferProgress {
     return progress
   }
 
+  static func matchesArtifactUpdate(_ update: GalaxySSIPeerAttachmentTransferUpdate, richOutput: String) -> Bool {
+    guard !update.peerChat else { return false }
+    return AgentRichContentCodec.decode(richOutput).contains { block in
+      if scopedMetadata(block.metadata, uri: block.metadata["artifact_source_uri"] ?? block.uri, matches: update) { return true }
+      guard block.type == .gallery else { return false }
+      return block.metadata.contains { key, value in
+        guard key.hasPrefix("blob_item_"), let data = value.data(using: .utf8),
+              let metadata = try? JSONDecoder().decode([String: String].self, from: data) else { return false }
+        return scopedMetadata(metadata, uri: metadata["artifact_source_uri"] ?? "", matches: update)
+      }
+    }
+  }
+
+  static func agentArtifactMessage(_ update: GalaxySSIPeerAttachmentTransferUpdate, messages: [ChatMessage]) -> ChatMessage? {
+    guard !update.peerChat, !update.conversationId.isBlank, !update.turnId.isBlank, update.executionGeneration > 0 else { return nil }
+    return messages.reversed().first {
+      !$0.isMine && $0.conversationId == update.conversationId && $0.turnId == update.turnId &&
+        matchesArtifactUpdate(update, richOutput: $0.richOutputJson)
+    }
+  }
+
   static func applying(
     _ update: GalaxySSIPeerAttachmentTransferUpdate,
     to richOutputJson: String

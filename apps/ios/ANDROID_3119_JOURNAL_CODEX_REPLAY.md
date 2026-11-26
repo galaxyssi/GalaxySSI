@@ -1,6 +1,6 @@
 # Android #3119: Journal-backed Codex Recovery Dispatch
 
-Baseline: main `26e82a54754c11aab4e32c09fc1c389ff1b13628`.
+Baseline: main `8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b` (merged #4583).
 This is an independent iOS follow-up, not completion of #3119 or the backlog.
 
 ## Missing Production Path
@@ -69,7 +69,7 @@ handling; no exactly-once external-effect or cross-store atomicity claim is made
 Cross-Desktop/cloud recovery, generic active timeout scheduling and full Android
 parity remain separate work.
 
-Source verification: nine guards passed (journal replay, raw attachments,
+Source verification after merging #4583: ten guards passed (journal replay, native rich replies, raw attachments,
 document input, owned status, pre-shadow, usage, health, provider ranking and
 observation timing), plus `npm run check:ios`, changed iOS Han placement,
 inventory JSON and diff whitespace checks. Historical manual-recovery and

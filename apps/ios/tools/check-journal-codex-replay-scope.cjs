@@ -1,6 +1,6 @@
 // Source contracts only, not native MQTT delivery, restart, replay or authorization acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '26e82a54754c11aab4e32c09fc1c389ff1b13628';
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const cache = new Map();
 function old(file) {
@@ -13,7 +13,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
-  if (file.endsWith('check-managed-raw-attachments-scope.cjs')) return source
+  if (file.endsWith('check-native-rich-reply-scope.cjs')) return source
     .replace("const read = file => require('./check-journal-codex-replay-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-journal-codex-replay-scope.cjs').retained(file, source);\n", '');
@@ -42,7 +42,7 @@ function retained(file, source) {
 function validate() {
   for (const file of [app + 'AgentRemoteTaskStatusPolicy.swift', app + 'MqttDesktopConnectorProjection.swift',
     app + 'GalaxySSIServices.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj',
-    'apps/ios/tools/check-managed-raw-attachments-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-native-rich-reply-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const service = read(app + 'GalaxySSIServices.swift');
   assert(service.includes('if published < 8, (usesLegacyMqtt ? mqttClient.relationshipSubscriptionsReady : journalMqttRuntime != nil) {'));
   const owner = section(service, '  private func journalCodexReplayOwner(', '  private func dispatchScheduledCodexReplay(');
