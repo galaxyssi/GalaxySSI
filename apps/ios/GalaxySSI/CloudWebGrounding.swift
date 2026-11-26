@@ -515,7 +515,7 @@ enum CloudWebGrounding {
           ? attachSearchPageReads(
               to: result.output,
               limit: Int(arguments["read_limit"]?.intValue ?? 3).clamped(to: 1...4),
-              registry: registry,
+              provider: provider,
               context: context
             )
           : result.output
@@ -531,43 +531,12 @@ enum CloudWebGrounding {
   private static func attachSearchPageReads(
     to output: AgentMcpJSONObject,
     limit: Int,
-    registry: AgentNativeToolRegistry,
+    provider: AgentIOSWebIntelligenceToolProviding,
     context: AgentNativeToolInvocationContext
   ) -> AgentMcpJSONObject {
-    let urls = (output["evidence_pack"]?.objectValue?["items"]?.arrayValue ?? [])
-      .compactMap { $0.objectValue?["url"]?.stringValue }
-      .filter { URL(string: $0)?.scheme?.lowercased() == "https" }
-      .prefix(limit)
-    var bodiesByURL: [String: AgentMcpJSONValue] = [:]
-    var documents = output["documents"]?.arrayValue ?? []
-    for url in urls {
-      let fetched = registry.invoke(
-        AgentIOSWebIntelligenceNativeToolCatalog.toolId(.fetch),
-        input: ["url": .string(url), "timeout_ms": .int(8_000)],
-        context: context
-      )
-      guard fetched.isSuccess else { continue }
-      documents.append(contentsOf: (fetched.output["documents"]?.arrayValue ?? []).prefix(4))
-      for value in fetched.output["evidence_pack"]?.objectValue?["items"]?.arrayValue ?? [] {
-        guard let item = value.objectValue,
-              item["evidence_level"] == .string("retrieved_body") else { continue }
-        let canonical = AgentIOSWebEvidencePack.canonicalURL(item["url"]?.stringValue ?? "")
-        if !canonical.isEmpty { bodiesByURL[canonical] = value }
-      }
-    }
-    var enriched = output
-    if !documents.isEmpty { enriched["documents"] = .array(documents) }
-    guard !bodiesByURL.isEmpty, var pack = output["evidence_pack"]?.objectValue else { return enriched }
-    var items = pack["items"]?.arrayValue ?? []
-    for index in items.indices {
-      let canonical = AgentIOSWebEvidencePack.canonicalURL(items[index].objectValue?["url"]?.stringValue ?? "")
-      if let body = bodiesByURL.removeValue(forKey: canonical) { items[index] = body }
-    }
-    items.append(contentsOf: bodiesByURL.values)
-    pack["items"] = .array(Array(items.prefix(12)))
-    pack["verification"] = AgentIOSWebEvidenceVerification.attach(pack)["verification"]
-    enriched["evidence_pack"] = .object(pack)
-    return enriched
+    let urls = CloudSearchPageReads.urls(in: output, limit: limit)
+    let attempts = CloudSearchPageReads.read(urls, provider: provider, context: context)
+    return CloudSearchPageReads.attach(to: output, attempts: attempts)
   }
 
   private static func executeWeather(
@@ -1098,6 +1067,10 @@ enum CloudWebGrounding {
     ]
     if let researchContext = pack["research_context"] {
       compactPackInput["research_context"] = boundValue(researchContext, depth: 2)
+    }
+    if let pageReads = CloudSearchPageReads.compactReceipts(in: pack) {
+      compactPackInput["page_reads"] = pageReads
+      compactPackInput["page_read_status"] = pack["page_read_status"]
     }
     let compactPack = AgentIOSWebEvidenceVerification.attach(compactPackInput)
     return [

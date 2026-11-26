@@ -933,6 +933,7 @@
     C3007C100000000000000001 /* CloudWebToolFailurePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */; };
     C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */; };
     C3007C200000000000000001 /* CloudWebFastSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C200000000000000002 /* CloudWebFastSearchTests.swift */; };
+    A16B3E5D0000000000000001 /* CloudSearchPageReadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B3E5D0000000000000002 /* CloudSearchPageReadsTests.swift */; };
     C3007C300000000000000001 /* AgentPlanningContextTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C300000000000000002 /* AgentPlanningContextTiming.swift */; };
     C3007C300000000000000003 /* AgentPlanningContextTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */; };
     C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */; };
@@ -1605,6 +1606,7 @@
     A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */; };
     A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000501 /* GlobalRealtimeContextTests.swift */; };
     A10000000000000000000502 /* CloudWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000502 /* CloudWebGrounding.swift */; };
+    A16B3E5C0000000000000001 /* CloudSearchPageReads.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B3E5C0000000000000002 /* CloudSearchPageReads.swift */; };
     A1000000000000000000F359 /* CloudWeatherForecastRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F359 /* CloudWeatherForecastRange.swift */; };
     A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000503 /* CloudWebGroundingTests.swift */; };
     A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000504 /* GlobalProactiveDiscovery.swift */; };
@@ -3884,6 +3886,7 @@
     A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000501 /* GlobalRealtimeContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000502 /* CloudWebGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGrounding.swift; sourceTree = "<group>"; };
+    A16B3E5C0000000000000002 /* CloudSearchPageReads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSearchPageReads.swift; sourceTree = "<group>"; };
     A2000000000000000000F359 /* CloudWeatherForecastRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWeatherForecastRange.swift; sourceTree = "<group>"; };
     A20000000000000000000503 /* CloudWebGroundingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGroundingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000504 /* GlobalProactiveDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDiscovery.swift; sourceTree = "<group>"; };
@@ -4340,6 +4343,7 @@
     C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicy.swift; sourceTree = "<group>"; };
     C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicyTests.swift; sourceTree = "<group>"; };
     C3007C200000000000000002 /* CloudWebFastSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebFastSearchTests.swift; sourceTree = "<group>"; };
+    A16B3E5D0000000000000002 /* CloudSearchPageReadsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSearchPageReadsTests.swift; sourceTree = "<group>"; };
     C3007C300000000000000002 /* AgentPlanningContextTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningContextTiming.swift; sourceTree = "<group>"; };
     C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningContextTimingTests.swift; sourceTree = "<group>"; };
     C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimePrewarmTests.swift; sourceTree = "<group>"; };
@@ -5726,6 +5730,7 @@
         A20000000000000000000856 /* GalaxySSIGlobalAutonomousBudgetRuntime.swift */,
         A20000000000000000000857 /* GlobalAutonomousSpecialistRuntime.swift */,
         A20000000000000000000502 /* CloudWebGrounding.swift */,
+        A16B3E5C0000000000000002 /* CloudSearchPageReads.swift */,
         A2000000000000000000F359 /* CloudWeatherForecastRange.swift */,
         A20000000000000000000504 /* GlobalProactiveDiscovery.swift */,
         A20000000000000000000506 /* GlobalProactiveDelivery.swift */,
@@ -6786,6 +6791,7 @@
         C3007C000000000000000002 /* CloudWebFallbackTests.swift */,
         C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */,
         C3007C200000000000000002 /* CloudWebFastSearchTests.swift */,
+        A16B3E5D0000000000000002 /* CloudSearchPageReadsTests.swift */,
         C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */,
         C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */,
         C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */,
@@ -8038,6 +8044,7 @@
         A10000000000000000000856 /* GalaxySSIGlobalAutonomousBudgetRuntime.swift in Sources */,
         A10000000000000000000857 /* GlobalAutonomousSpecialistRuntime.swift in Sources */,
         A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
+        A16B3E5C0000000000000001 /* CloudSearchPageReads.swift in Sources */,
         A1000000000000000000F359 /* CloudWeatherForecastRange.swift in Sources */,
         A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */,
         A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */,
@@ -9216,6 +9223,7 @@
         C3007C000000000000000001 /* CloudWebFallbackTests.swift in Sources */,
         C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */,
         C3007C200000000000000001 /* CloudWebFastSearchTests.swift in Sources */,
+        A16B3E5D0000000000000001 /* CloudSearchPageReadsTests.swift in Sources */,
         C3007C300000000000000003 /* AgentPlanningContextTimingTests.swift in Sources */,
         C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */,
         C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */,
