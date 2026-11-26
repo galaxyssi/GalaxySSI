@@ -20,7 +20,7 @@ const hooks = [
   ['            let citationStarted = timingClock()\n', ''],
   ['            roundTiming.citationValidation(startedAtMillis: citationStarted, requiresRepair: repairPrompt != nil)\n', '']
 ];
-let engine = read(app + 'CloudConversationStreamEngine.swift');
+let engine = require('./check-web-fallback-scope.cjs').retainedFallbackFile(app + 'CloudConversationStreamEngine.swift', read(app + 'CloudConversationStreamEngine.swift'));
 for (const [before, after] of hooks) {
   assert.equal(engine.split(before).length, 2, 'One declared timing hook: ' + before);
   engine = engine.replace(before, after);

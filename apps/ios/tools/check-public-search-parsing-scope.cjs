@@ -5,7 +5,8 @@ const root = path.resolve(__dirname, '../../..');
 const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const base = '492bebe922013c2f707b38e4ddc849a655deba68';
 const git = (...args) => cp.execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16_000_000 });
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-web-fallback-scope.cjs').retainedFallbackFile(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const swift = name => 'apps/ios/GalaxySSI/' + name + '.swift';
 const parser = read(swift('AgentIOSPublicSearchParser'));
 for (const token of ['import SwiftSoup', 'SwiftSoup.parse(source, baseURL)',
@@ -393,6 +394,8 @@ for (const name of ['testPublicSearchParserKeepsCardsAndSnippetsButNotNavigation
   'testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens']) assert(tests.includes('func ' + name + '('));
 const files = git('diff', '--name-only', android + '^1', android).trim().split('\n');
 const disposition = file => {
+  if (file.endsWith('/CloudWebGrounding.kt')) return 'Partial production port: image tool alias/normalization and bounded image-aware evidence delivery were integrated earlier. Inline tool evidence now requests on-topic, brief image replies without duplicate galleries or visual-verification claims. Fallback source lists preserve whole HTTPS URLs up to 4096 UTF-16 units, reject longer URLs rather than truncate, and skip image/images objects. Truthful incomplete-synthesis/empty messages use explicit request-snapshotted interface language in both streaming and compatibility paths, English fallback and Chinese resources. Six fixture methods authored only; full native model/transport, failure-category diagnostics and timing acceptance remain incomplete';
+  if (file.endsWith('/res/values/strings.xml') || file.endsWith('/res/values-zh-rCN/strings.xml')) return 'Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance';
   if (file.endsWith('/AgentWebMediaNativeTools.kt')) return 'Ported the actual changed encoded-address behavior: validate HTTPS/public host/credentials/port without decoding or rebuilding encoded paths and queries, normalize authority/empty path and strip fragments before dispatch, and preserve case-sensitive path/query redirect identities. Existing manual per-hop revalidation, HTTP/header/credential/body/deadline policies retained. Seven native fixture methods authored only, including the exact Android encoded/signed redirect sample. Not native Foundation/URLSession/DNS or full WebMedia parity';
   if (file.endsWith('/AgentWebMediaNativeToolsTest.kt')) return 'Exact Android encoded path/query/signed redirect sample copied into an actual iOS registry/injected transport fixture, plus relative redirects, case-sensitive identities, fragment loops, empty path and private/credentialed/insecure redirect rejection. Seven fixture methods SOURCE ONLY, NOT executed; not full Android test coverage';
   if (file.endsWith('/AgentDynamicWebArticleFetcher.kt')) return 'Adapted the changed failure-path duration behavior: native webOpen/browserRender output and metadata measure total monotonic static-plus-fallback resolution, including caught renderer failure. Preserve static retrieval timestamp, separate successful render duration and existing fallback/cancellation gates. Native fixture sources added, NOT executed; not full fetcher/runtime parity';

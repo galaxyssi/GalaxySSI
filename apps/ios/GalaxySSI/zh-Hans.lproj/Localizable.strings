@@ -1,4 +1,6 @@
 "galaxyssi.tab.agent" = "Agent";
+"cloud_web_fallback_sources" = "已获取以下来源，但尚未完成可靠汇总：";
+"cloud_web_fallback_empty" = "暂时没有取得可可靠汇总的联网证据。你可以稍后重试，或缩小查询范围。";
 
 /* Android #4324 bounded, synthetic physiology teaching models. */
 "health_atlas_model_axis" = "%1$@（%2$@）· 其他参数保持不变";

@@ -23,6 +23,7 @@ struct CloudConversationNonStreamingToolEngine {
   ) async throws -> String {
     defer { CloudImageAnnotationSession.discard(requestId: requestId) }
     let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let fallbackLanguage = await MainActor.run { store.languagePolicy.interfaceLanguage }
     let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     let request = try await modelClient.prepareConversationStreamRequest(
       contact: contact,
@@ -77,7 +78,7 @@ struct CloudConversationNonStreamingToolEngine {
           conversation.appendResearchGuidance(research.guidance(stopped: "model_round_interrupted"))
           continue
         }
-        if hasEvidence { return CloudWebGrounding.evidenceFallback(results: evidence) }
+        if hasEvidence { return CloudWebGrounding.evidenceFallback(results: evidence, language: fallbackLanguage) }
         throw error
       }
       let inline = response.calls.isEmpty
@@ -135,7 +136,7 @@ struct CloudConversationNonStreamingToolEngine {
             progress.requestFinalization()
             continue
           }
-          return CloudWebGrounding.evidenceFallback(results: evidence) +
+          return CloudWebGrounding.evidenceFallback(results: evidence, language: fallbackLanguage) +
             CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
         }
         if !candidate.isBlank,
@@ -147,12 +148,12 @@ struct CloudConversationNonStreamingToolEngine {
           }
           return visibleAnswer + artifacts
         }
-        return CloudWebGrounding.evidenceFallback(results: evidence) +
+        return CloudWebGrounding.evidenceFallback(results: evidence, language: fallbackLanguage) +
           CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
       }
 
       if finalRound {
-        if !evidence.isEmpty { return CloudWebGrounding.evidenceFallback(results: evidence) }
+        if !evidence.isEmpty { return CloudWebGrounding.evidenceFallback(results: evidence, language: fallbackLanguage) }
         throw GalaxySSIError.unsupportedResponse
       }
 

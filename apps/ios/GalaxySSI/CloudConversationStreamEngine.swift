@@ -272,6 +272,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
     let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let fallbackLanguage = await MainActor.run { store.languagePolicy.interfaceLanguage }
     let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     var previewPresentation = CloudCitationPreviewPresentation()
 
@@ -527,7 +528,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             continue
           }
           finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
-            ticket: ticket, continuation: continuation)
+            ticket: ticket, language: fallbackLanguage, continuation: continuation)
           return
         }
 
@@ -659,7 +660,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 continue
               }
               finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
-                ticket: ticket, continuation: continuation)
+                ticket: ticket, language: fallbackLanguage, continuation: continuation)
               return
             }
           }
@@ -692,7 +693,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             }
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
               ? AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidenceResults).text
-              : CloudWebGrounding.evidenceFallback(results: evidenceResults)
+              : CloudWebGrounding.evidenceFallback(results: evidenceResults, language: fallbackLanguage)
             if !candidate.isBlank, repairPrompt == nil, roundCompleted,
                !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
                CloudImageAnnotationSession.artifactSuffix(requestId: requestId).isEmpty {
@@ -739,7 +740,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         if finalRound {
-          let visibleAnswer = CloudWebGrounding.evidenceFallback(results: evidenceResults)
+          let visibleAnswer = CloudWebGrounding.evidenceFallback(results: evidenceResults, language: fallbackLanguage)
           if !visibleAnswer.isBlank {
             emittedText = true
             emittedSequence += 1
@@ -1090,9 +1091,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   private func finishEvidenceOnly(_ evidence: [(String, String)], requestId: String, sequence: Int64,
-    ticket: AgentDisclosureTicket, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
+    ticket: AgentDisclosureTicket, language: String, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
     let now = elapsedMillis()
-    let fallback = CloudWebGrounding.evidenceFallback(results: evidence) +
+    let fallback = CloudWebGrounding.evidenceFallback(results: evidence, language: language) +
       CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
     continuation.yield(.textDelta(.init(requestId: requestId, sequence: sequence, text: fallback, receivedAtElapsedMs: now)))
     AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)

@@ -157,7 +157,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebGrounding.kt",
       "sha256": "6f6037256b06a703250ccab7b6af4dc7f01eae3b60a219b5b1a004cd5983f610",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial production port: image tool alias/normalization and bounded image-aware evidence delivery were integrated earlier. Inline tool evidence now requests on-topic, brief image replies without duplicate galleries or visual-verification claims. Fallback source lists preserve whole HTTPS URLs up to 4096 UTF-16 units, reject longer URLs rather than truncate, and skip image/images objects. Truthful incomplete-synthesis/empty messages use explicit request-snapshotted interface language in both streaming and compatibility paths, English fallback and Chinese resources. Six fixture methods authored only; full native model/transport, failure-category diagnostics and timing acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebToolLoopProgress.kt",
@@ -207,12 +207,12 @@
     {
       "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
       "sha256": "02c646444ea8ad700a61020530d34d9cc7861a468dd8957be44b3bc0b5384573",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance"
     },
     {
       "path": "apps/android/app/src/main/res/values/strings.xml",
       "sha256": "62a7ada853bacc0a02c6061b3d6e397d1fe1c658741dfe045826021e789e4201",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentDynamicWebArticleFetcherTest.kt",
