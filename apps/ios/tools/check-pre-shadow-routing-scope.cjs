@@ -1,7 +1,8 @@
 // Source contracts only, not native execution or quality acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = 'f2b671fa9a9728bfc6e1c94697bec0bdf89c943e';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-native-status-observation-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const git = (...args) => cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024});
 const old = file => git('show', `${base}:${file}`).replace(/\r\n/g, '\n');
 function section(source, first, last, offset = 0) {
@@ -14,6 +15,7 @@ function select(source) {
     source.indexOf('enum AgentConnectorRouteSelector {'));
 }
 function retained(file, source) {
+  source = require('./check-native-status-observation-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentPreShadowRoutingTests.swift')).join('\n');
   if (file.endsWith('AgentNetworkRoutingModels.swift') && source.includes('AgentProviderResourceRanking.prepareForQuality(')) {
