@@ -529,3 +529,7 @@ Current remaining scope: unplanned/capture/browser/cloud-loop execution persiste
 `check-public-search-parsing-scope.cjs` pins all Android changed files and checks actual parser/evidence/project wiring, renderer lifecycle and configured cloud round/tool deadline wiring, while retaining raw HTTP policy, URL/auth restrictions, configurable limit definitions, coordination/admission/recall, annotation, finalization schemas and main service code against the predecessor. These are source contracts, not Swift type checking or runtime acceptance. Windows has no Xcode: no dependency resolution/build/XCTest, live search, WebKit failure/recovery, UI, network latency or device claims. Android measurements do not transfer to iOS.
 
 #3017 was also inspected as a candidate: its changed-file list contains Desktop backend/version and evidence files only. No separate Android source implementation was added by that PR; it is not counted as an iOS port here.
+
+## Knowledge-gap Source Follow-up
+
+See ANDROID_3007_KNOWLEDGE_GAP_SOURCE_FOLLOWUP.md for new request-origin source recording, complete merged membership and research production without synthetic-source authorization. Missing legacy or broader context provenance remains untrusted; no full privacy/runtime acceptance or #3007 completion is claimed.

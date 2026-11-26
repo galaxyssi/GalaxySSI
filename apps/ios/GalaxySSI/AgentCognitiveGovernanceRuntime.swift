@@ -157,10 +157,14 @@ final class AgentKnowledgeGapResearchBridge {
 
   private let lock = NSRecursiveLock()
   private var autonomousResearchEnabled: () -> Bool = { false }
-  private let researchStore = GalaxySSIGlobalResearchRuntimeStore()
-  private let governance = AgentCognitiveGovernanceStore()
+  private let researchStore: GalaxySSIGlobalResearchRuntimeStore
+  private let governance: AgentCognitiveGovernanceStore
 
-  private init() {}
+  init(researchStore: GalaxySSIGlobalResearchRuntimeStore = GalaxySSIGlobalResearchRuntimeStore(),
+    governance: AgentCognitiveGovernanceStore = AgentCognitiveGovernanceStore()) {
+    self.researchStore = researchStore
+    self.governance = governance
+  }
 
   func install(autonomousResearchEnabled: @escaping () -> Bool) {
     lock.lock()
@@ -169,6 +173,10 @@ final class AgentKnowledgeGapResearchBridge {
   }
 
   func observe(_ gap: AgentKnowledgeGap) {
+    locked { observeLocked(gap) }
+  }
+
+  private func observeLocked(_ gap: AgentKnowledgeGap) {
     if gap.status == .resolved {
       governance.decisions().filter { $0.evidenceRefs.contains("knowledge-gap:\(gap.id)") && $0.outcome == "pending" }
         .forEach {
@@ -180,7 +188,10 @@ final class AgentKnowledgeGapResearchBridge {
         }
       return
     }
+    guard let sources = gap.sourceConversationIds, !sources.isEmpty,
+          sources.allSatisfy({ !$0.isEmpty && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) }) else { return }
     var state = researchStore.state()
+    guard researchStore.lastErrorDescription.isEmpty else { return }
     let sourceEventId = "knowledge-gap:\(gap.id)"
     let enabled = locked { autonomousResearchEnabled() }
     guard AgentKnowledgeGapResearchPolicy.shouldQueue(
@@ -191,7 +202,7 @@ final class AgentKnowledgeGapResearchBridge {
     let now = AgentEvalClock.nowMillis()
     state.upsert(GlobalResearchTask(
       sourceEventId: sourceEventId,
-      sourceConversationId: "agent-evalops",
+      sourceConversationId: sources.sorted().first ?? "",
       topic: gap.topic,
       question: String(gap.unknownQuestions.joined(separator: "\n").prefix(4_000)),
       depth: gap.priority >= 0.90 ? .deepResearch : .quickFact,
@@ -199,9 +210,11 @@ final class AgentKnowledgeGapResearchBridge {
       causalEventIds: Set(gap.sourceRunIds.map { "run:\($0)" }),
       status: .queued,
       createdAtMillis: now,
-      updatedAtMillis: now
+      updatedAtMillis: now,
+      sourceConversationIds: sources
     ))
     researchStore.save(state)
+    guard researchStore.lastErrorDescription.isEmpty else { return }
     _ = governance.updateGapStatus(id: gap.id, status: .researching)
     _ = governance.appendDecision(AgentDecisionLogEntry(
       question: "How should GalaxySSI close the evidence gap for \(gap.topic)?",
