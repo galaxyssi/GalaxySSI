@@ -1,7 +1,7 @@
 // Source contracts, not native identity, workspace migration or cancellation acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '93e3ef38e6f4c14357d89ae19ca0a4040196574a';
+const base = 'ac9cebd8dc7b912668acd80903d6ae3b4668fb5b';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
