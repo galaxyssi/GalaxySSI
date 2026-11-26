@@ -187,7 +187,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt",
       "sha256": "9096493e5524ea047482562a47b2116e089cd6a5dfdab4ff8c09eead71fc6bed",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Platform adaptation: settings and global Agent dashboards now read cognition/runs/goals/research snapshots on a separate serial utility content queue, not in SwiftUI body or routing workers. MainActor generation ownership coalesces bursts into one trailing refresh, rejects departed/old-identity completions and preserves the last complete snapshot on source failure. Active pages refresh on entry/manual action and poll every 15 seconds; offscreen polls do not reactivate. Inbox/count projection remains in-memory on MainActor. Files are read separately, not atomically; backing store per-profile provenance, all other synchronous view reads and native concurrency/UI/performance acceptance remain unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityTaskEvents.kt",
