@@ -878,11 +878,12 @@ enum AgentConnectorRouteSelector {
     }
     let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
     let baselineTarget = preferredTarget ?? defaultTarget(eligible)
-    if preserveHealthyPrimary, decision == nil,
-       let preferredTarget, preferredTarget.status == .available {
-      let primaryDecision = routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
+    if preserveHealthyPrimary, let preferredTarget, preferredTarget.status == .available,
+       decision == nil || (decision?.primary?.resource.targetId == preferredTarget.id &&
+         decision?.primary?.reasons.contains("stable_auto_primary") == true && decision?.fallbacks.isEmpty == true) {
+      let primaryDecision = decision ?? (routingGoal.isBlank ? nil : AgentQualityRoutingService.baselineDecision(
         goal: routingGoal, targets: [preferredTarget], primaryTargetId: preferredTarget.id,
-        requirements: requirements, hasPairedDesktop: hasPairedDesktop, routingHealth: routingHealth, routingUsage: routingUsage)
+        requirements: requirements, hasPairedDesktop: hasPairedDesktop, routingHealth: routingHealth, routingUsage: routingUsage))
       return AgentConnectorRouteSelection(target: preferredTarget, decision: primaryDecision)
     }
     var routingDecision = decision

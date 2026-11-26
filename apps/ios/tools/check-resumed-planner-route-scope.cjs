@@ -2,7 +2,8 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '64e33aa934a5a4a6b89516533834070a6242e576', cache = new Map();
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-scored-route-context-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
     {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n'));
@@ -28,6 +29,7 @@ function replacement(original, indent) {
     catchBody + `${i}}\n` + conversation;
 }
 function retained(file, source) {
+  source = require('./check-scored-route-context-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n')
     .filter(line => !line.includes('AgentResumedPlannerRouteTests.swift')).join('\n');
   if (file.endsWith('check-supervised-answer-preview-scope.cjs')) return source

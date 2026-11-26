@@ -6783,6 +6783,27 @@ final class MessageCoordinator: ObservableObject {
       .snapshot(eligibleConversationIds: eligible, nowMillis: AgentControlPlaneClock.nowMillis())
   }
 
+  private func scoredAutomaticConnectorRoute(goal: String, preferredTargetId: String = "",
+    preserveHealthyPrimary: Bool = false) -> (targets: [AgentCallableTarget], selection: AgentConnectorRouteSelection?) {
+    let targets = AgentCallableTargetCatalog.build(contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })
+    let registrations = callableAgentRegistrations(targets: targets)
+    let health = automaticRoutingHealth(targets: targets)
+    let usage = automaticRoutingUsage()
+    let paired = store.serverLinks.contains { $0.paired }
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let context = AgentAutomaticRoutingContext.capture(goal: goal, targets: targets, registrations: registrations,
+      budget: store.agentTaskBudget,
+      environment: AgentRuntimeEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated, networkMetered: probe.metered),
+      connectorCallsAllowed: store.agentSafetySettings.connectorCallsAllowed,
+      preferredTargetId: preferredTargetId, preserveHealthyPrimary: preserveHealthyPrimary,
+      hasPairedDesktop: paired, health: health, usage: usage)
+    let selection = AgentConnectorRouteSelector.select(targets: context.targets, decision: context.decision,
+      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: preserveHealthyPrimary,
+      hasPairedDesktop: paired, routingHealth: health, routingUsage: usage)
+    return (context.targets, selection)
+  }
+
   private func automaticRouteSelection(
     for contact: GalaxySSIContact,
     conversationId: String,
@@ -6791,13 +6812,10 @@ final class MessageCoordinator: ObservableObject {
     let selection = AgentModelSelectionSettings.selection(for: conversationId)
     guard contact.id == "hermes", selection.mode == .automatic else { return nil }
 
-    let targets = automaticRoutingTargets(goal: goal)
     let preferredTargetId = (store.agentSession(id: conversationId)?.stableAutoRoute?.targetId ?? "")
       .ifBlank(displayedAutoRouteTarget(conversationId: conversationId)?.id ?? "")
-    return AgentConnectorRouteSelector.select(targets: targets, decision: nil,
-      preferredTargetId: preferredTargetId, goal: goal, preserveHealthyPrimary: true,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired },
-      routingHealth: automaticRoutingHealth(targets: targets), routingUsage: automaticRoutingUsage())
+    return scoredAutomaticConnectorRoute(goal: goal, preferredTargetId: preferredTargetId,
+      preserveHealthyPrimary: true).selection
   }
 
   private func selectedLocalModel(
@@ -14612,11 +14630,8 @@ final class MessageCoordinator: ObservableObject {
           (action.parameters[agentTeamSpecParameter] ?? "").isBlank,
           !AgentConnectorFallbackAction.hasActiveTrail(action),
           AgentModelSelectionSettings.selection(for: outgoing.conversationId).mode == .automatic else { return action }
-    let targets = automaticRoutingTargets(goal: goal)
-    let selection = AgentConnectorRouteSelector.select(targets: targets, decision: nil,
-      preferredTargetId: action.parameters["connector_id"] ?? "", goal: goal, preserveHealthyPrimary: true,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired },
-      routingHealth: automaticRoutingHealth(targets: targets), routingUsage: automaticRoutingUsage())
+    let selection = scoredAutomaticConnectorRoute(goal: goal, preferredTargetId: action.parameters["connector_id"] ?? "",
+      preserveHealthyPrimary: true).selection
     return AgentAutomaticConnectorRoutePolicy.refresh(action, selection: selection)
   }
 
@@ -15889,14 +15904,9 @@ final class MessageCoordinator: ObservableObject {
   ) -> AgentAction? {
     guard !AgentConnectorFallbackAction.isTargetLocked(action: action, metadata: failedResult.metadata) else { return nil }
 
-    let targets = automaticRoutingTargets(goal: goal)
-    let currentRoute = AgentConnectorRouteSelector.select(
-      targets: targets,
-      decision: nil,
-      goal: goal,
-      hasPairedDesktop: store.serverLinks.contains { $0.paired },
-      routingHealth: automaticRoutingHealth(targets: targets), routingUsage: automaticRoutingUsage()
-    )
+    let current = scoredAutomaticConnectorRoute(goal: goal)
+    let targets = current.targets
+    let currentRoute = current.selection
     let currentResourceIds = currentRoute?.decision?.orderedTargetIds ??
       currentRoute.map { [$0.target.id] } ?? []
     return AgentConnectorFallbackAction.freshFallback(action: action, failure: failedResult,
