@@ -981,16 +981,11 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       maximumCharacters: 5_000,
       nowMillis: nowMillis
     )
-    let excluded = Set(sessions.filter { $0.privateMode || $0.trackingPaused }.map(\.id))
-    let realtime = realtimeProvider?.buildNonBlocking(
-      query: query,
-      currentConversationId: conversationId,
-      excludedConversationIds: excluded,
-      maximumItems: 10,
-      maximumCharacters: 2_000,
-      nowMillis: nowMillis,
-      allowedConversationIds: Set(sessions.filter { !$0.privateMode && !$0.trackingPaused }.map(\.id))
-    ) ?? ""
+    let scope = GlobalRealtimePlanningScope(enabled: true, conversations: sessions)
+    let realtime = realtimeProvider.map {
+      scope.context(provider: $0, query: query, currentConversationId: conversationId,
+        maximumItems: 10, maximumCharacters: 2_000, nowMillis: nowMillis)
+    } ?? ""
     return String([core, durable, realtime]
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
       .joined(separator: "\n\n")

@@ -13174,8 +13174,14 @@ final class MessageCoordinator: ObservableObject {
       requestText: requestText,
       outgoing: outgoing
     )
-    if selectedForPhoneTurn {
+    let suppressGlobalContext = GlobalRealtimePlanningScope.suppressesGlobalContext(
+      selectedProviderOnly: selectedForPhoneTurn, overrideGlobalContext: conversationOverride?.globalContext)
+    if suppressGlobalContext {
       conversation.globalContext = ""
+    } else if conversationOverride != nil {
+      conversation.globalContext = GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
+        store: store, query: requestText, conversationId: outgoing.conversationId,
+        turnId: outgoing.turnId, realtimeProvider: scopedGlobalRealtimeContextProvider())
     }
     let hasAttachments = hasAttachmentsOverride ?? !attachments.isEmpty
     let observationScope = AgentPlanContinuationScope(conversationId: outgoing.conversationId, turnId: turnId)
@@ -13198,16 +13204,11 @@ final class MessageCoordinator: ObservableObject {
           turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
         ).owns($0)
       },
-      globalRealtimeContext: selectedForPhoneTurn ? "" : conversationOverride?.globalContext ??
-        scopedGlobalRealtimeContextProvider().buildNonBlocking(
-          query: requestText,
-          currentConversationId: outgoing.conversationId,
-          excludedConversationIds: Set(
-            store.agentSessions(includeArchived: true)
-              .filter { $0.privateMode || $0.trackingPaused }
-              .map(\.id)
-          )
-        ),
+      globalRealtimeContext: GlobalRealtimePlanningScope(enabled: store.globalAgentSettings.enabled,
+        suppressed: suppressGlobalContext,
+        conversations: store.agentSessions(includeArchived: true)).context(
+          provider: scopedGlobalRealtimeContextProvider(), query: requestText,
+          currentConversationId: outgoing.conversationId),
       hasAttachments: hasAttachments,
       allowsDirectResponse: allowsDirectResponse &&
         attachments.allSatisfy { $0.historicalSourceTurnId != nil } && executionMode != .planOnly,
