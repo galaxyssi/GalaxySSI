@@ -1,6 +1,6 @@
 # Desktop recovery probe ownership
 
-Follow-up to Android #3119 on main 104e4e156ed187a8e5980813efc901bb08d2bd34.
+Follow-up to Android #3119 on main 1d68be9b738d8cbc48745b51554dbb24b4aa3129.
 
 ## Production defect
 

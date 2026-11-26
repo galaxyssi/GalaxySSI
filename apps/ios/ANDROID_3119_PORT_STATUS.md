@@ -122,6 +122,15 @@ Existing journal readiness/identity checks, legacy offline accounting, result
 projection and Codex replay remain unchanged. This is not generic active timeout
 observation or native/network acceptance.
 
+### Phone local-model resource identity follow-up
+
+See `ANDROID_3119_PHONE_LOCAL_MODEL_RESOURCE.md`: the actual reserved iOS local
+adapter is now a phone/on-device resource with a bound model/context profile,
+instead of a remote-local resource that could demand network access at dispatch.
+Ready-state, remote model boundaries, run-slot identity and inference code are
+retained. Eight fixture methods are authored only; offline generation is not
+claimed executed or accepted.
+
 ### Scored main-service route context follow-up
 
 See `ANDROID_3119_SCORED_ROUTE_CONTEXT.md`: main Auto choice, dispatch refresh

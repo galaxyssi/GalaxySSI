@@ -1,7 +1,7 @@
 // Source contracts only; does not execute Swift, MQTT, timers or native fixtures.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '104e4e156ed187a8e5980813efc901bb08d2bd34';
+const base = '1d68be9b738d8cbc48745b51554dbb24b4aa3129';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -9,7 +9,7 @@ const hook = '      // Offline legacy probes also advance the clock owned by the
   '      guard usesLegacyMqtt else { continue }\n';
 function retained(file, source) {
   if (file.endsWith('GalaxySSIServices.swift')) return source.replace(hook, '');
-  if (file.endsWith('check-scored-route-context-scope.cjs')) return source
+  if (file.endsWith('check-phone-local-model-resource-scope.cjs')) return source
     .replace("const read = file => require('./check-desktop-probe-owner-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'), cache = new Map();")
     .replace("  source = require('./check-desktop-probe-owner-scope.cjs').retained(file, source);\n", '');
@@ -44,7 +44,7 @@ function validate() {
   for (const file of ['AgentDesktopReplyRecovery', 'AgentDesktopResultRecovery', 'MqttBusinessTransportRuntime',
     'MqttDesktopConnectorProjection', 'AgentConnectorTimeoutResolver', 'AgentAutomationModels'])
     assert.equal(read(app + file + '.swift'), old(app + file + '.swift'), file);
-  const parent = 'apps/ios/tools/check-scored-route-context-scope.cjs';
+  const parent = 'apps/ios/tools/check-phone-local-model-resource-scope.cjs';
   assert.equal(retained(parent, read(parent)), old(parent), 'Parent scope assertions retained');
   console.log('Exclusive legacy probe ownership, retained journal readiness/authentication and unchanged recovery kernels source contracts passed; no native acceptance.');
 }
