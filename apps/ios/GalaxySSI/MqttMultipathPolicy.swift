@@ -147,7 +147,8 @@ final class MqttMultipathPolicy {
   }
 
   func plan(peer: String, messageID: String, traffic: Traffic, wireBytes: Int, receiveTopics: Set<String>, now: Int64,
-            ingress: String? = nil, attempted: Set<String> = [], eligible: [String: Int64]? = nil) -> [Dispatch] {
+            ingress: String? = nil, attempted: Set<String> = [], eligible: [String: Int64]? = nil,
+            interactiveFinal: Bool = false) -> [Dispatch] {
     locked {
       chunks.expire(now: now)
       guard now >= 0, !messageID.isEmpty, (1...MqttRouteProtocol.packetBytes).contains(wireBytes), let route = routes[peer],
@@ -176,6 +177,12 @@ final class MqttMultipathPolicy {
         return candidates.map { Dispatch(brokerID: $0, generation: paths[$0]!.generation, delayMillis: 0) }
       }
       var result = [Dispatch(brokerID: first, generation: paths[first]!.generation, delayMillis: 0)]
+      if interactiveFinal, [Traffic.message, .final].contains(traffic), wireBytes <= 256 * 1024 {
+        for (index, broker) in candidates.dropFirst().enumerated() {
+          result.append(Dispatch(brokerID: broker, generation: paths[broker]!.generation, delayMillis: 250 * Int64(index + 1)))
+        }
+        return result
+      }
       if wireBytes <= 65_536, [Traffic.message, .final].contains(traffic), candidates.count > 1 {
         let primary = samples(peer: peer, broker: first, now: now)
         let values = (primary.count >= 20 ? primary : candidates.flatMap { samples(peer: peer, broker: $0, now: now) }).sorted()

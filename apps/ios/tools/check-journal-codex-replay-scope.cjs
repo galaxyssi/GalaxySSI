@@ -1,7 +1,8 @@
 // Source contracts only, not native MQTT delivery, restart, replay or authorization acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '8f03f6cbde5650c2e3db9ba32f44f65ccacf2d3b';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-progressive-tool-catalog-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const cache = new Map();
 function old(file) {
   if (!cache.has(file)) cache.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -13,6 +14,7 @@ function section(source, start, end) {
   assert(a >= 0 && b > a, start); return source.slice(a, b);
 }
 function retained(file, source) {
+  source = require('./check-progressive-tool-catalog-scope.cjs').retained(file, source);
   if (file.endsWith('check-native-rich-reply-scope.cjs')) return source
     .replace("const read = file => require('./check-journal-codex-replay-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")

@@ -36,6 +36,7 @@ actor MqttBusinessSendDrain {
   func close() { closed = true }
 
   func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16,
+             interactiveFinal: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in false },
              authorize: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in true }) async throws -> Result {
     guard (1...64).contains(limit), identities.count <= 10_000,
           Set(identities.map(\.scope)).count == identities.count else { throw MqttRouteError.invalidPayload }
@@ -75,8 +76,10 @@ actor MqttBusinessSendDrain {
         if closed { result.stopped = true; return result }
         result.inspected += 1
         do {
+          var interactive = false
           if item.message.blockedByAttachmentTransferIds.isEmpty {
             guard try await authorize(item) else { continue }
+            interactive = try await interactiveFinal(item)
           }
           try Task.checkCancellation()
           if closed { result.stopped = true; return result }
@@ -108,8 +111,9 @@ actor MqttBusinessSendDrain {
               prepared = .fragments(message, try chunks.prepare(authenticatedScope: identity.binding,
                 wirePayload: current.message.wirePayload))
             } else {
-              guard let direct = try routes.prepareDelivery(topic: topic, wire: wire, messageID: message.messageID,
+              guard var direct = try routes.prepareDelivery(topic: topic, wire: wire, messageID: message.messageID,
                 traffic: traffic) else { return nil }
+              direct.interactiveFinal = interactive
               prepared = .direct(direct)
             }
             if case .direct = prepared {

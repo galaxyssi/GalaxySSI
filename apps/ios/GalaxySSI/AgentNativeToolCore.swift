@@ -1605,6 +1605,7 @@ struct AgentNativeToolInvocation {
   var input: AgentMcpJSONObject
   var context: AgentNativeToolInvocationContext
   var startedAtEpochMillis: Int64
+  var toolCatalog: (() -> AgentMcpJSONObject)? = nil
   private let deadlineState: DeadlineState
 
   var deadlineEpochMillis: Int64 { deadlineState.deadline }

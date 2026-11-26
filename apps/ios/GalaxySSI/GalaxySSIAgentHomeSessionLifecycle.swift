@@ -82,6 +82,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    coordinator.clearSupervisedAnswerPreviews()
     composerSubmissionID = nil
     invalidateVoiceAppAnchor()
     clearAgentTranscriptWindow()

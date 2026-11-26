@@ -35,7 +35,6 @@ extension AgentHomeView {
       pendingAgentSwipeDirection: transcriptBinding($pendingAgentSwipeDirection, owner: owner),
       activeAgentConversationID: store.activeAgentConversationId,
               messages: messages,
-              turnStartMillis: transcriptWindow.snapshot.turnStartMillis,
       transcriptMessages: transcriptMessages,
       hasOlderTranscriptMessages: hasOlderTranscriptMessages,
       latestWaitingIndicatorID: latestWaitingIndicatorID,
@@ -130,6 +129,8 @@ extension AgentHomeView {
               !recoverableAgentTasksFromOtherSessions.isEmpty {
             GalaxySSIAgentTranscriptMessagesView(
               messages: transcriptMessages,
+              answerPreviews: coordinator.visibleSupervisedAnswerPreviews(conversationId: store.activeAgentConversationId),
+              turnStartMillis: transcriptWindow.snapshot.turnStartMillis,
               waitingMessageIDs: waitingMessageIDs,
               retryingMessageIDs: retryingAgentMessageIDs,
               replySpeech: agentReplySpeechRuntime,

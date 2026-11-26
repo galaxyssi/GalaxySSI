@@ -2,6 +2,44 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttMultipathPolicyTests: XCTestCase {
+  func testInteractiveDesktopRequestsHedgeOnlyAcrossAuthorizedGenerations() {
+    let policy = ready()
+    for traffic in [MqttMultipathPolicy.Traffic.final, .message] {
+      let result = policy.plan(peer: "peer", messageID: "interactive", traffic: traffic, wireBytes: 87_500,
+        receiveTopics: ["inbox"], now: 1_000, eligible: ["emqx": 1, "mosquitto": 1, "hivemq": 2], interactiveFinal: true)
+      XCTAssertEqual(result.map(\.delayMillis), [0, 250])
+      XCTAssertFalse(result.contains { $0.brokerID == "hivemq" })
+    }
+    XCTAssertTrue(policy.plan(peer: "peer", messageID: "interactive", traffic: .final, wireBytes: 87_500,
+      receiveTopics: ["inbox"], now: 1_000, eligible: [:], interactiveFinal: true).isEmpty)
+  }
+
+  func testInteractiveBudgetDoesNotChangeDefaultHedgesChunksOrLargePackets() {
+    let policy = ready()
+    func choose(_ bytes: Int, _ traffic: MqttMultipathPolicy.Traffic = .final, interactive: Bool = true) -> [MqttMultipathPolicy.Dispatch] {
+      policy.plan(peer: "peer", messageID: "interactive", traffic: traffic, wireBytes: bytes,
+        receiveTopics: ["inbox"], now: 1_000, interactiveFinal: interactive)
+    }
+    XCTAssertEqual(choose(256 * 1024).map(\.delayMillis), [0, 250, 500])
+    XCTAssertEqual(choose(256 * 1024 + 1).count, 1)
+    XCTAssertEqual(choose(87_500, .chunk).count, 1)
+    XCTAssertEqual(choose(87_500, .progress).count, 1)
+    XCTAssertEqual(choose(87_500, interactive: false).count, 1)
+    XCTAssertEqual(choose(100, interactive: false).map(\.delayMillis), [0, 2_000, 4_000])
+  }
+
+  func testInteractiveFlagCannotBypassSubscriptionResumeOrPacketAdmission() {
+    let policy = ready()
+    policy.synchronize(["emqx": path("emqx", topics: [])])
+    XCTAssertTrue(policy.plan(peer: "peer", messageID: "interactive", traffic: .final, wireBytes: 87_500,
+      receiveTopics: ["inbox"], now: 1_000, interactiveFinal: true).isEmpty)
+    policy.synchronize(snapshots())
+    XCTAssertTrue(policy.plan(peer: "unknown", messageID: "interactive", traffic: .final, wireBytes: 87_500,
+      receiveTopics: ["inbox"], now: 1_000, interactiveFinal: true).isEmpty)
+    XCTAssertTrue(policy.plan(peer: "peer", messageID: "interactive", traffic: .final, wireBytes: 87_500,
+      receiveTopics: ["inbox"], now: 300_000, interactiveFinal: true).isEmpty)
+  }
+
   private let brokers = MqttRouteProtocol.brokerIDs
   private let hash = String(repeating: "a", count: 64)
 
