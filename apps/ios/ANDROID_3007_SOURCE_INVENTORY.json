@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image cache/streamed-body/cancellation lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Image DNS preflight is not connection pinning. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed workspace/cache, scoped health/learning, pinned adapters, mixed default-10/max-100 search, bounded BFS crawl, URL/local extraction, ordered-line page diff, invoked watch failure receipts/completion timing/conditional progress commits, typed media versus topic pages, explicit-cleanup search-key retention with bounded individual responses/inclusive expiry, encoded request/redirect identity preservation, feature-hash similarity and diagnostics. Health tasks remain sealed. DNS preflight is not connection pinning. Per-response byte bounds/OS watch scheduling/other media/context parity, UI/end-to-end timing and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -102,12 +102,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligence.kt",
       "sha256": "79850c00031c66c4eacd42e53920509884e0996ba1a5760a96c702d3c19e2215",
-      "disposition": "Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete Native image-only fusion now uses reference logistic weights, image title overlap/specificity and source-page diversity before final truncation over Sogou/Brave/DuckDuckGo candidate pools, reusing stored credentials with fixed-origin per-hop Brave headers and a shared-deadline two-step DuckDuckGo JSON path. Other image adapters, complete catalog/text ranker and native numeric/semantic/UI acceptance remain incomplete"
+      "disposition": "Partial: all 41 base IDs/247 sites, query-aware completion and unified weight/language/authority/health scoring with category/vertical coverage; explicit IDs preserve order. Direct image-only and mixed text/media requests share fusion, global consensus, reference image scoring and all-image page diversity. Qualified learned-image site indexes are ordinary page references, never fake image URLs. Pinned ranker and ordered UTF-16 SHA-256 Float32 feature-hash semantics are wired. Scoped Brave/GitHub headers and DDG shared deadline retained. Other media, storage limits and native numeric/relevance/UI/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete"
+      "disposition": "Partial: protected indexed scoped health/learning/cache, batch/point operations, shared clear/generation, fenced import, 2,000 documents; similarity is not ANN. Search default 10/max 100 reaches mixed native text/image/evidence/exact cache. Independent search keys persist until explicit cleanup; inclusive expiry matches Android, while each response remains bounded to 2MB and historical JSON import to 32 records. Crawl has reference depth/page/time bounds, canonical BFS dedup, exact origins, DOM links, ignore-case filters, partial/error receipts and scoped cache. Extract has local/URL preference, offline full records, separately authorized fetch/force, bounded literal fields/headings/language hints and local provenance. Diff refetches with fixed deadlines, compares readable full snapshots, emits ordered line-set changes bounded 40/side and 300/line, rejects lossy overwrite, preserves prior data on write failure and gates network/cache scope. Diff/extract timeout schemas match 60s runtime; fetch remains 120s. Invoked watch checks select default20/max100 due records, forward timeout, record completion time, preserve partial failures/receipts, require cache plus network grants and conditionally commit unchanged watch versions after document persistence. Documents/watch are separate transactions; OS scheduling and native fault/concurrency acceptance remain unverified. No semantic/native SQL/crypto/transport/performance acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",
@@ -117,7 +117,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMediaNativeTools.kt",
       "sha256": "dd486aba148ae275a65fee1d002c51bae3b596fca7f0286340e733a597894d0e",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Ported the actual changed encoded-address behavior: validate HTTPS/public host/credentials/port without decoding or rebuilding encoded paths and queries, normalize authority/empty path and strip fragments before dispatch, and preserve case-sensitive path/query redirect identities. Existing manual per-hop revalidation, HTTP/header/credential/body/deadline policies retained. Seven native fixture methods authored only, including the exact Android encoded/signed redirect sample. Not native Foundation/URLSession/DNS or full WebMedia parity"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebRendererHealth.kt",
@@ -127,12 +127,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",
       "sha256": "f3f178578b0f7a3f5497de82de0067e6502d77f06366ac9d531f5422a7313173",
-      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration"
+      "disposition": "Generic workspace production/runtime/startup recovery now use encrypted per-record SQLite with HMAC lookup, small authenticated retention metadata and recovery indexes. One BEGIN IMMEDIATE covers revision comparison, target reducer, record/eviction/recovery writes; notify and typed private creation timing only after commit. Strict bounded legacy migration has encrypted marker plus pending/committed Keychain fencing, no missing-key replacement or committed-index-loss reimport; retire plaintext after commit and retry cleanup. Existing 64-record/serialized-size/terminal-first/shrink policies retained. Eight fixture methods authored only. Health owner-bound sealed task store remains unchanged. Native SQL/crypto/concurrency/migration/backup/logging and measured performance parity not verified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",
       "sha256": "106ba129ed70b93ed47005298dc863ff5caa91b32f1df3a408844c2a64bd64af",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Reviewed the changed localDeviceRouteId fast profile-read concern. Existing iOS profile is a MainActor Published stored value, not a reconstructing JSON/disk getter; do not duplicate the Android helper or change Signal/MQTT identities. This is source-path evidence only, not full device-route equivalence: local workspace device attribution/initialization-repair behavior still needs separate comparison. No native performance/identity acceptance"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudImageSearchEvidence.kt",
@@ -147,7 +147,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudModelStreaming.kt",
       "sha256": "48336b28d74adeea19ccfae927048043d1f39cdb9c9bea10fb45a6fb671b094b",
-      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain"
+      "disposition": "Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Local OSLog diagnostics now record preparation/input length, once-only first activity, provider completion state and separate citation-repair validation with an independent monotonic clock and private hashed correlation, never prose/arguments/credentials. Existing evidence/recovery/permissions retained. Native timing, UI/end-to-end and broader acceptance remain unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudToolBatchExecutor.kt",
@@ -157,7 +157,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebGrounding.kt",
       "sha256": "6f6037256b06a703250ccab7b6af4dc7f01eae3b60a219b5b1a004cd5983f610",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial production port: ordinary model web_search defaults to fast when profile is omitted; fast fanout defaults to three only when neither engine_fanout nor engines is present. Native search ID, image alias and research defaults remain distinct. Image alias/normalization and bounded image-aware delivery; request-focused untrusted guidance; whole HTTPS fallback sources through 4096 UTF-16 units, image exclusion, truthful localized synthesis with both actual engine language snapshots. Failed native results retain original diagnostics plus root timeout/stopped/renderer/invalid-engine non-retry hints, connecting native web_media_timeout to existing cross-read reuse. Typed URLSession timedOut stays typed; successful static fallback stays successful. Six fast-default, seven failure and six fallback fixture methods authored only. Complete native cancellation/model/transport/failure/timing/latency acceptance remains unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/CloudWebToolLoopProgress.kt",
@@ -172,7 +172,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivity.kt",
       "sha256": "dc69378de7b9737df1e75200409c265c0d5878c91329df281106e7a9a4533473",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial platform adaptation: actual iOS planning/voice bridge now reuses a coordinator-retained realtime provider instead of discarding a temporary nonblocking provider on every call. Enabled startup prewarm queues source I/O on the existing separate utility queue, coalesces loads, skips obsolete queued work and fences late publication with refresh tokens. Fingerprint changes invalidate cached snapshots; compiled output rechecks current eligible/non-private/non-paused conversation IDs. Existing mandatory MainActor native catalog/recovery initialization remains; moving native catalog construction off that path and full startup/runtime acceptance are not completed"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentExecution.kt",
@@ -182,12 +182,12 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentPage.kt",
       "sha256": "247dedf770e7160055d62f066200186e58d2ba669b5b01757e527c5bd97ed7f3",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Partial: actual iOS initialPlanningConversation now records separate monotonic metadata/history/global/assembly and total read spans via typed private-hash OSLog. Keep one scoped metadata lookup, exact existing history/global expressions/order, privacy defaults and selected-provider global-context suppression. Four fixture methods authored only. Android worker queue/hydration timing, native routing latency/UI acceptance and broader context indexing remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityGlobalAgent.kt",
       "sha256": "9096493e5524ea047482562a47b2116e089cd6a5dfdab4ff8c09eead71fc6bed",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Platform adaptation: settings and global Agent dashboards now read cognition/runs/goals/research snapshots on a separate serial utility content queue, not in SwiftUI body or routing workers. MainActor generation ownership coalesces bursts into one trailing refresh, rejects departed/old-identity completions and preserves the last complete snapshot on source failure. Active pages refresh on entry/manual action and poll every 15 seconds; offscreen polls do not reactivate. Inbox/count projection remains in-memory on MainActor. Files are read separately, not atomically; backing store per-profile provenance, all other synchronous view reads and native concurrency/UI/performance acceptance remain unverified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityTaskEvents.kt",
@@ -197,7 +197,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentExecution.kt",
       "sha256": "49b4baed8be50562edc825d5c27bb76a772d2b06c56f2deab2435bb9acca5b5d",
-      "disposition": "Partial: native parallel plan-node claims now persist final routed/prepared action, active checkpoint and dispatch-intent audit entries together in the existing encrypted claim before executing. Pending/observed claims never rerun or acquire replacement inputs. This is not an atomic task/session transaction or completion evidence; sequential/model-loop and full audit batching/latency parity need further comparison. Native crash/fault acceptance not run"
+      "disposition": "Partial: parallel plus ordinary sequential planned native/connector actions persist final routed/prepared input, active checkpoint and dispatch-intent audits in the encrypted node claim before effects. Sequential task ownership/checkpoint state is saved first; prior observed/pending claims are read before rerouting. Sequential replay/preparation rejects stale revisions, ambiguous actions/active checkpoints and mismatched stored dispatch checkpoints before receipt reuse or effects. Unknown outcomes stop non-retriably; fallback has its own specification and claim. Task/session state and node journal remain separate commits, not Android single-session persistence equivalence. Unplanned direct actions, visible capture/browser handoffs, cloud model loops, full audit batching and measured latency/native crash/fault acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MobileNativeAgentRuntime.kt",
@@ -207,12 +207,12 @@
     {
       "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
       "sha256": "02c646444ea8ad700a61020530d34d9cc7861a468dd8957be44b3bc0b5384573",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance"
     },
     {
       "path": "apps/android/app/src/main/res/values/strings.xml",
       "sha256": "62a7ada853bacc0a02c6061b3d6e397d1fe1c658741dfe045826021e789e4201",
-      "disposition": "Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete"
+      "disposition": "Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentDynamicWebArticleFetcherTest.kt",
@@ -242,7 +242,7 @@
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebMediaNativeToolsTest.kt",
       "sha256": "17027cfc63722eda79c2e562c8d01c9f3475a65713fee2ad5f442a843fbb29de",
-      "disposition": "Reference evidence inventoried, not reproduced or claimed as iOS acceptance"
+      "disposition": "Exact Android encoded path/query/signed redirect sample copied into an actual iOS registry/injected transport fixture, plus relative redirects, case-sensitive identities, fragment loops, empty path and private/credentialed/insecure redirect rejection. Seven fixture methods SOURCE ONLY, NOT executed; not full Android test coverage"
     },
     {
       "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentWebRendererHealthTest.kt",

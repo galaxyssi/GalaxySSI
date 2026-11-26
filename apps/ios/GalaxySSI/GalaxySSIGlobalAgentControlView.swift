@@ -8,10 +8,8 @@ struct GalaxySSIGlobalAgentControlView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @EnvironmentObject private var store: GalaxySSIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
-  @State private var cognitionTasks: [GlobalCognitionTask] = []
-  @State private var autonomousRuns: [GlobalAutonomousRun] = []
-  @State private var longHorizonGoals: [GlobalLongHorizonGoal] = []
-  @State private var researchState = GlobalResearchExecutorState()
+  @StateObject private var globalRuntime = GlobalAgentDashboardLoader()
+  private let globalRefreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
   @State private var statusMessage = ""
   @State private var obsidianSettings = AgentIOSObsidianSettings()
   @State private var obsidianCandidateCount = 0
@@ -21,9 +19,6 @@ struct GalaxySSIGlobalAgentControlView: View {
   @SceneStorage("ios.proactive-settings.boundaries") private var boundariesExpanded = false
   @SceneStorage("ios.proactive-settings.more") private var moreExpanded = false
   @SceneStorage("ios.proactive-settings.controls") private var controlsExpanded = false
-
-  private let deliberationStore = GlobalAgentDeliberationStore()
-  private let longHorizonStore = GlobalLongHorizonGoalStore()
 
   private var snapshot: GalaxySSIGlobalAgentDashboardSnapshot {
     GalaxySSIGlobalAgentDashboardSnapshot.make(
@@ -37,10 +32,10 @@ struct GalaxySSIGlobalAgentControlView: View {
       automationRuns: store.recentAutomationRuns(limit: 80),
       proactiveMessages: store.globalProactiveMessages,
       proactiveFeedback: store.globalAgentFeedback,
-      cognitionTasks: cognitionTasks,
-      autonomousRuns: autonomousRuns,
-      longHorizonGoals: longHorizonGoals,
-      researchState: researchState
+      cognitionTasks: globalRuntime.snapshot.cognitionTasks,
+      autonomousRuns: globalRuntime.snapshot.autonomousRuns,
+      longHorizonGoals: globalRuntime.snapshot.longHorizonGoals,
+      researchState: globalRuntime.snapshot.researchState
     )
   }
 
@@ -116,6 +111,13 @@ struct GalaxySSIGlobalAgentControlView: View {
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
     .onAppear(perform: refreshRuntime)
+    .onChange(of: store.profile.identityFingerprint) { identity in
+      globalRuntime.refreshIfActive(identity: identity)
+    }
+    .onReceive(globalRefreshTimer) { _ in
+      globalRuntime.refreshIfActive(identity: store.profile.identityFingerprint)
+    }
+    .onDisappear { globalRuntime.invalidate() }
     .fileImporter(
       isPresented: $showingObsidianVaultPicker,
       allowedContentTypes: [.folder],
@@ -244,7 +246,7 @@ struct GalaxySSIGlobalAgentControlView: View {
 
   private var cognitionLoopSection: some View {
     let current = snapshot
-    let verifiedResearch = researchState.tasks.filter {
+    let verifiedResearch = globalRuntime.snapshot.researchState.tasks.filter {
       $0.status == .completed && $0.evidenceLedger.verified
     }.count
     return section(t("cc_global_section_loop", "Cognition loop")) {
@@ -770,10 +772,7 @@ struct GalaxySSIGlobalAgentControlView: View {
   }
 
   private func refreshRuntime() {
-    cognitionTasks = deliberationStore.cognitionTasks()
-    autonomousRuns = deliberationStore.autonomousRuns()
-    longHorizonGoals = longHorizonStore.goals()
-    researchState = GalaxySSIGlobalAgentRuntimeBridge.researchState()
+    globalRuntime.refresh(identity: store.profile.identityFingerprint)
     obsidianSettings = AgentIOSObsidianBridge.settings()
     obsidianCandidateCount = AgentIOSObsidianBridge.pendingCandidates().count
   }

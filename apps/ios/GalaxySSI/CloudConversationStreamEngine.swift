@@ -75,6 +75,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private let toolExecutor: CloudConversationToolExecuting
   private let disclosureStore: AgentDataDisclosureStore
   private let elapsedMillis: () -> Int64
+  private let timingClock: () -> Int64
+  private let timingSink: CloudModelRoundTiming.Sink
   private let lock = NSLock()
   private var activeRoundIds: [String: String] = [:]
 
@@ -86,7 +88,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
-    elapsedMillis: @escaping () -> Int64 = CloudConversationStreamEngine.defaultElapsedMillis
+    elapsedMillis: @escaping () -> Int64 = CloudConversationStreamEngine.defaultElapsedMillis,
+    timingClock: @escaping () -> Int64 = CloudModelRoundTiming.monotonicMillis,
+    timingSink: @escaping CloudModelRoundTiming.Sink = CloudModelRoundTiming.log
   ) {
     self.modelClient = modelClient
     self.streamClient = streamClient
@@ -94,6 +98,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     self.toolExecutor = toolExecutor
     self.disclosureStore = disclosureStore
     self.elapsedMillis = elapsedMillis
+    self.timingClock = timingClock
+    self.timingSink = timingSink
   }
 
   func streamConversation(
@@ -266,6 +272,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
     let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let fallbackLanguage = await MainActor.run { store.languagePolicy.interfaceLanguage }
     let researchDisclosure = turns.last?.isMine == true ? AgentLocalResearchCollector() : nil
     var previewPresentation = CloudCitationPreviewPresentation()
 
@@ -354,6 +361,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         research.beginRound()
         let roundId = "\(requestId):r\(currentRound)"
         let finalRound = progress.finalizationRequested
+        let roundTiming = CloudModelRoundTiming(requestId: requestId, round: currentRound,
+          route: useCompleteJSON ? .compatibility : .streaming, finalRound: finalRound,
+          clock: timingClock, sink: timingSink)
         let continuationConversation = goalAssessmentOnly && finalRound ? prepared : nil
         let bufferForCitationVerification = !evidenceResults.isEmpty
         let citationPreview = bufferForCitationVerification && !progress.performedDeepResearch
@@ -368,6 +378,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           roundRequest.singleHTTPAdmissionSHA256 = try CloudTrialHTTPTransport.WireRequest(
             URLSessionCloudModelStreamClient.urlRequest(for: roundRequest)).sha256
         }
+        roundTiming.request(inputCharacters: roundRequest.bodyJson.utf16.count)
         let assembler = ToolCallDeltaAssembler()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
@@ -375,6 +386,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         var observedUsage: ModelUsage?
         var reportedModel: String?
         func receiveProviderRound() async throws {
+          var providerCancelled = false
+          defer { roundTiming.finish(completed: roundCompleted, failed: roundFailure != nil,
+            cancelled: providerCancelled || Task.isCancelled) }
           let roundMillis = research.modelRoundMillis(finalizing: finalRound)
           guard roundMillis > 0 else {
             roundFailure = ModelStreamFailed(requestId: requestId,
@@ -418,6 +432,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 )
 
               case .textDelta(let value):
+                roundTiming.activity(.text)
                 let visibleText = inlineProtocolGuard.append(value.text)
                 if !goalAssessmentOnly, let preview = citationPreview?.append(visibleText),
                    publishPreview(preview, at: value.receivedAtElapsedMs) {
@@ -442,6 +457,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 continue
 
               case .toolCallDelta(let value):
+                roundTiming.activity(.tool)
                 assembler.accept(value.payload)
                 emittedSequence += 1
                 continuation.yield(
@@ -471,6 +487,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               }
             }
           } catch is CancellationError {
+            providerCancelled = true
             throw CancellationError()
           } catch {
             try Task.checkCancellation()
@@ -511,7 +528,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             continue
           }
           finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
-            ticket: ticket, continuation: continuation)
+            ticket: ticket, language: fallbackLanguage, continuation: continuation)
           return
         }
 
@@ -643,7 +660,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 continue
               }
               finishEvidenceOnly(evidenceResults, requestId: requestId, sequence: emittedSequence + 1,
-                ticket: ticket, continuation: continuation)
+                ticket: ticket, language: fallbackLanguage, continuation: continuation)
               return
             }
           }
@@ -655,7 +672,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
               prepared.appendBodyReadingReview(draft: candidate, prompt: review)
               continue
             }
+            let citationStarted = timingClock()
             let repairPrompt = CloudWebGrounding.citationRepairPrompt(candidate, results: evidenceResults)
+            roundTiming.citationValidation(startedAtMillis: citationStarted, requiresRepair: repairPrompt != nil)
             if !candidate.isBlank,
                let repairPrompt,
                !finalRound,
@@ -674,7 +693,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             }
             let visibleAnswer = !candidate.isBlank && repairPrompt == nil
               ? AgentIOSWebEvidenceVerification.resolveCitations(candidate, encodedToolResults: evidenceResults).text
-              : CloudWebGrounding.evidenceFallback(results: evidenceResults)
+              : CloudWebGrounding.evidenceFallback(results: evidenceResults, language: fallbackLanguage)
             if !candidate.isBlank, repairPrompt == nil, roundCompleted,
                !CloudWebGrounding.containsInternalToolProtocol(rawRoundText),
                CloudImageAnnotationSession.artifactSuffix(requestId: requestId).isEmpty {
@@ -721,7 +740,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         if finalRound {
-          let visibleAnswer = CloudWebGrounding.evidenceFallback(results: evidenceResults)
+          let visibleAnswer = CloudWebGrounding.evidenceFallback(results: evidenceResults, language: fallbackLanguage)
           if !visibleAnswer.isBlank {
             emittedText = true
             emittedSequence += 1
@@ -1072,9 +1091,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   }
 
   private func finishEvidenceOnly(_ evidence: [(String, String)], requestId: String, sequence: Int64,
-    ticket: AgentDisclosureTicket, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
+    ticket: AgentDisclosureTicket, language: String, continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation) {
     let now = elapsedMillis()
-    let fallback = CloudWebGrounding.evidenceFallback(results: evidence) +
+    let fallback = CloudWebGrounding.evidenceFallback(results: evidence, language: language) +
       CloudImageAnnotationSession.artifactSuffix(requestId: requestId)
     continuation.yield(.textDelta(.init(requestId: requestId, sequence: sequence, text: fallback, receivedAtElapsedMs: now)))
     AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)

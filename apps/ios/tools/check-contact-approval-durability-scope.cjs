@@ -7,7 +7,7 @@ const prior=name=>git(['show',base+':apps/ios/GalaxySSI/'+name+'.swift']).toStri
 const check=(text,tokens)=>{for(const token of tokens)assert(text.includes(token),token);};
 const changed=git(['diff','--name-status','--no-renames',sha+'^1',sha]).toString().trim().split(/\r?\n/).map(line=>line.split('\t'));assert.equal(changed.length,4);
 const inventory={schema:1,source:{androidPR:3262,mergeCommit:sha,priorIOSPR:3326,note:'Existing approval readiness was already ported. This is a narrow native durability follow-up, not a duplicate full transport port.'},files:changed.map(([status,file])=>({path:file,status,sha256:crypto.createHash('sha256').update(git(['show',sha+':'+file])).digest('hex')}))};
-const store=source('GalaxySSIStore'),routes=source('MqttPeerRoutes'),services=source('GalaxySSIServices');
+const store=require('./check-workspace-index-scope.cjs').retainedWorkspaceDefault(source('GalaxySSIStore')),routes=source('MqttPeerRoutes'),services=source('GalaxySSIServices');
 const snapshot='    let previousRequests = friendRequests, previousContacts = contacts\n';
 const rollback='    guard save() else {\n      friendRequests = previousRequests\n      contacts = previousContacts\n      return false\n    }';
 const approval=store.split('  func approveFriendRequest(id:')[1].split('  func approveFriendRequest(galaxySSIId:')[0];

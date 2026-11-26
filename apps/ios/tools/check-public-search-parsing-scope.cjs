@@ -5,7 +5,8 @@ const root = path.resolve(__dirname, '../../..');
 const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const base = '492bebe922013c2f707b38e4ddc849a655deba68';
 const git = (...args) => cp.execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16_000_000 });
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-web-fallback-scope.cjs').retainedFallbackFile(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const swift = name => 'apps/ios/GalaxySSI/' + name + '.swift';
 const parser = read(swift('AgentIOSPublicSearchParser'));
 for (const token of ['import SwiftSoup', 'SwiftSoup.parse(source, baseURL)',
@@ -14,7 +15,8 @@ for (const token of ['import SwiftSoup', 'SwiftSoup.parse(source, baseURL)',
   'components.user == nil, components.password == nil', 'final.fragment = nil',
   'query.first(where: { $0.name == key })', 'seenSnippets.insert(text)']) assert(parser.includes(token), token);
 assert(!parser.includes('WKWebView'));
-const provider = require('./check-image-source-adapters-scope.cjs').retainedProvider(read(swift('AgentIOSURLSessionWebMediaProvider')));
+const provider = require('./check-image-source-adapters-scope.cjs').retainedProvider(
+  require('./check-json-search-adapters-scope.cjs').retainedJSONProvider(read(swift('AgentIOSURLSessionWebMediaProvider'))));
 assert(provider.includes('results = try parseSearchResults('));
 assert(provider.includes('baseURL: resource.finalURL'));
 assert(provider.includes('AgentIOSPublicSearchParser.parse(html, baseURL: baseURL, limit: 100).filter'));
@@ -29,9 +31,13 @@ for (const token of ['if endpoint.imageSearch {', 'results = try AgentIOSPublicS
 for (const token of ['JSONSerialization.jsonObject', 'rows.prefix(100)', 'seen.insert(image)',
   'imageSearchURL(row["oriPicUrl"]) ?? imageSearchURL(row["picUrl"])',
   '"retrieval_status": .string("search_result_not_downloaded")', 'media["original_url"] = .string(original)']) assert(parser.includes(token));
-const intelligence = read(swift('AgentIOSURLSessionWebIntelligenceProvider'));
-const cacheStore = read(swift('AgentIOSWebIntelligenceCache'));
+const intelligence = require('./check-search-response-cache-scope.cjs').retainedResponseSearch(read(swift('AgentIOSURLSessionWebIntelligenceProvider')));
+const cacheStore = require('./check-search-response-cache-scope.cjs').retainedResponseCache(read(swift('AgentIOSWebIntelligenceCache')));
 const oldCacheStore = git('show', base + ':' + swift('AgentIOSWebIntelligenceCache'));
+const indexedCache = require('./check-web-cache-index-scope.cjs');
+const usesIndexedCache = indexedCache.isIndexedCache(cacheStore);
+if (usesIndexedCache) indexedCache.validateIndexedCache();
+else {
 assert.equal(cacheStore.slice(0, cacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   oldCacheStore.slice(0, oldCacheStore.indexOf('final class AgentIOSWebIntelligenceCacheStore')),
   'Persisted document/watch schemas unchanged');
@@ -49,6 +55,7 @@ for (const token of ['let sharedState = Self.state(for: fileURL)', 'lock = share
   'try writeFile(encoded, fileURL)', '.completeFileProtectionUntilFirstUserAuthentication',
   '"committed": .bool(committed)', 'return committed ? removed : nil']) assert(cacheStore.includes(token), token);
 assert(!cacheStore.includes('try? encoded.write'));
+}
 for (const token of ['cacheMetadata["available"] != .bool(false)', 'cleared["committed"] == .bool(true)',
   'guard cacheStore.putWatch(watch)', 'guard cacheStore.putWatch(updated)', 'cacheStore.watchSnapshot()',
   'guard let removed = cacheStore.removeWatch(', 'return cacheStore.putDocuments(documents)',
@@ -59,14 +66,14 @@ for (const name of ['testCorruptWebCacheCannotBeOverwrittenOrReportedAsCleared',
   'testWebCacheBatchCommitsOnceAndFailedReplacementPreservesSnapshot',
   'testWebCacheInstancesSerializeOneSnapshotReadModifyWrite',
   'testWebWatchAndClearToolsDoNotClaimFailedPersistenceSucceeded']) assert(cacheTests.includes('func ' + name + '('));
-const learning = read(swift('AgentIOSWebSourceLearning'));
+const learning = require('./check-mixed-media-search-scope.cjs').retainedMixedSource(read(swift('AgentIOSWebSourceLearning')));
 for (const token of ['results.prefix(20)', 'static let maximumSources = 512', 'queries.count >= (broad ? 3 : 2)',
   'count >= (broad ? 4 : 3)', 'previous?.status == "disabled"', 'sorted(by: >).prefix(16)',
   'queue.maxConcurrentOperationCount = 1', 'queue.operationCount < 17', 'queue.addOperation(task)',
-  'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains(where:',
+  'repeated_discovery_not_content_or_permission_verification', 'builtInHosts.contains { host == $0 || host.hasSuffix("." + $0) }',
   'compactMap(AgentIOSWebResearchPlanCodec.normalizedCategory)',
   'AgentIOSWebResearchPlanCodec.normalizedCategory(tag) == tag']) assert(learning.includes(token), token);
-for (const token of ['let generation = state.generation', 'state.generation = UUID()',
+if (!usesIndexedCache) for (const token of ['let generation = state.generation', 'state.generation = UUID()',
   'guard state.generation == generation, !isCancelled()', 'self.applyLearning(observations, generation: generation',
   'state.lastLearningStatus = committed ? "saved" : "failed_write"',
   '(snapshot.learnedSources ?? []).allSatisfy(\\.isValid)', '"learned_sources_removed"',
@@ -83,7 +90,7 @@ const learningView = read(swift('GalaxySSIWebIntelligenceSourcesView'));
 assert(learningView.includes('summary(learningStats: learningStats)'));
 assert(learningView.includes('publisher(for: .galaxySSIWebLearningDidChange).receive(on: DispatchQueue.main)'));
 assert(learningView.includes('summary.learningStats.available ? String('));
-const nativeCatalog = read(swift('AgentIOSWebIntelligenceNativeTools'));
+const nativeCatalog = require('./check-web-page-diff-scope.cjs').retainedDiffCatalog(read(swift('AgentIOSWebIntelligenceNativeTools')));
 const oldNativeCatalog = git('show', base + ':' + swift('AgentIOSWebIntelligenceNativeTools'));
 assert.equal(nativeCatalog.replace(', "learned_sources"]),', ']),')
   .replace('        "status": stringSchema(enumValues: ["candidate", "verified", "disabled"]),\n', ''), oldNativeCatalog,
@@ -100,7 +107,7 @@ for (const token of ['consecutiveFailures >= 3', 'if receipt.status == "cancelle
   'Int64(1_800_000)', 'Int64(60_000) * (Int64(1) << exponent)',
   'end.overflow ? Int64.max', 'Double(attempts) + 1', 'if explicit { return Selection(',
   'filter { !blocked.contains($0.element) }']) assert(sourceHealth.includes(token), token);
-for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSourceReceipts(',
+if (!usesIndexedCache) for (const token of ['func sourceHealth(ids: Set<String> = [])', 'func recordSourceReceipts(',
   'receipts.allSatisfy(\\.isValid)', 'health[receipt.sourceID]', '.evolved(receipt, now: nowMillis())',
   'func resetSourceHealth()', 'snapshot.sourceHealth = []', '"source_health_removed"',
   '(snapshot.sourceHealth ?? []).allSatisfy(\\.isValid)']) assert(cacheStore.includes(token), token);
@@ -121,17 +128,17 @@ for (const name of ['testSourceHealthBackoffEmptyCancellationAndOverflowRules',
   'testActualNativeSearchUsesScopedHealthAndCacheHealthTools',
   'testSearchWithoutCacheScopeOrWithFailedHealthWriteRetainsNetworkEvidence',
   'testAllOpenSearchCircuitsSkipTransportWithoutInventingAttempts']) assert(cacheTests.includes('func ' + name + '('));
-for (const token of ['var isSearchEligible: Bool', 'isValid && status == "verified" && vertical != "image"',
+for (const token of ['var isSearchEligible: Bool', 'isValid && !AgentIOSWebSourceLearningPolicy.isBuiltInHost(host) && status == "verified" && vertical != "image"',
   'observations >= (broad ? 4 : 3) && queryFingerprints.count >= (broad ? 3 : 2)',
   'authority: min(max(confidence, 0.55), 0.85)', 'index % 2 == 0 ? "duckduckgo" : "bing"',
   '"search_available": .bool(isSearchEligible)']) assert(learning.includes(token), token);
 for (const token of ['learnedSources.filter(\\.isSearchEligible)', 'requestedCategories.compactMap(',
-  '!categories.isDisjoint(with: $0.categoryTags)', 'let catalog = AgentIOSWebIntelligenceSourceCatalog.officialDocumentationSources + learned']) assert(learningCatalog.includes(token), token);
+  '!categories.isDisjoint(with: $0.categoryTags)', 'let catalog = orderedSources + learned']) assert(learningCatalog.includes(token), token);
 for (const token of ['sourceHealthStore: AgentIOSWebIntelligenceCacheStore? = .shared',
   'AgentIOSWebSearchEnginePolicy.canResolve(requestedEngines)',
   'AgentIOSWebSearchEnginePolicy.accepts(requestedEngines, learnedSources: learned)',
   'learnedSources: imageSearch ? [] : learned', 'source.indexEngine == "duckduckgo" ? "html.duckduckgo.com" : "www.bing.com"',
-  'URLQueryItem(name: "q", value: "site:\\(host) \\(query)")',
+  'URLQueryItem(name: "q", value: "site:\\(source.scope ?? host) \\(query)")',
   'return requestedEngineIds.compactMap { seen.insert($0).inserted ? byID[$0] : nil }',
   'output["learning"] = .object(healthStore.learnSourceCandidates(', '"selected_learned_sources"']) assert(provider.includes(token), token);
 assert(!provider.includes('return Array(endpoints.prefix('), 'Candidate pool is not truncated before health filtering/fanout');
@@ -199,7 +206,7 @@ assert.equal(planning, oldPlanning
   .replace('    var functions = CloudWebGrounding.openAITools()', '    let functions = CloudWebGrounding.openAITools()')
   .replace('try executor.executeTool(call: dispatch, context: context)', 'try executor.executeTool(call: call, context: context)'),
   'Supervision unchanged except reuse of the real image alias instead of cloning/translating it');
-const workspace = read(swift('AgentWorkspaceStore'));
+const workspace = require('./check-workspace-index-scope.cjs').retainedWorkspaceCore(read(swift('AgentWorkspaceStore')));
 const oldWorkspace = git('show', base + ':' + swift('AgentWorkspaceStore'));
 const persistedReader = section(workspace, '  // Persistence cannot interpret', '  fileprivate static func encodedListLength(');
 assert(persistedReader.includes('static func decodePersistedList('));
@@ -208,7 +215,8 @@ assert.equal(workspace.replace(persistedReader, ''), oldWorkspace,
 for (const token of ['(1...version).contains(storedVersion)', 'JSONDecoder().decode(Header.self',
   'JSONDecoder().decode(LegacyHeader.self', 'values.count <= AgentWorkspaceBoundsPolicy.maxWorkspaces',
   'workspaces.count == values.count', 'Set(workspaces.map(\\.workspaceId)).count == values.count']) assert(persistedReader.includes(token), token);
-const workspaceFile = read(swift('FileAgentWorkspaceStore'));
+const workspaceFile = require('./check-workspace-creation-timing-scope.cjs')
+  .retainedWorkspaceCreationTiming(read(swift('FileAgentWorkspaceStore')));
 const oldWorkspaceFile = git('show', base + ':' + swift('FileAgentWorkspaceStore'));
 assert.equal(section(workspaceFile, '  static func defaultFileURL(', '  func list()'),
   section(oldWorkspaceFile, '  static func defaultFileURL(', '  func list()'), 'Workspace storage paths unchanged');
@@ -222,8 +230,9 @@ for (const token of ['lock = Self.gate(for: fileURL)', 'url.standardizedFileURL.
   '.completeFileProtectionUntilFirstUserAuthentication']) assert(workspaceFile.includes(token), token);
 const workspacePersist = section(workspaceFile, '  private func persist(', '  private func locked<T>');
 assert(workspacePersist.indexOf('try writeFile(') < workspacePersist.indexOf('NotificationCenter.default.post('));
-assert(read(swift('AgentTaskRuntime')).includes('workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()'));
-assert(read(swift('GalaxySSIStore')).includes('workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()'));
+assert(read(swift('AgentTaskRuntime')).includes('workspaceStore: AgentWorkspaceStore = IndexedAgentWorkspaceStore()'));
+assert(read(swift('GalaxySSIStore')).includes('workspaceStore: AgentWorkspaceStore = IndexedAgentWorkspaceStore()'));
+require('./check-workspace-index-scope.cjs').validateIndexedWorkspace();
 const workspaceTests = read('apps/ios/GalaxySSITests/AgentWorkspacePersistentStoreTests.swift');
 for (const name of ['testFailedWorkspaceCommitPreservesRecordsRecoveryAndNotifications',
   'testInvalidWorkspaceSnapshotsCannotBeOverwrittenByMutation',
@@ -339,9 +348,9 @@ for (const name of ['testConfiguredResearchBudgetCapsActiveRoundsButRetainsFinal
   'testCloudRetrievalUsesSharedHardDeadlineAndDoesNotInvokeExpiredProvider']) assert(roundTests.includes('func ' + name + '('));
 const renderer = read(swift('AgentIOSDynamicWebRenderer'));
 const oldRenderer = git('show', base + ':' + swift('AgentIOSDynamicWebRenderer'));
-assert.equal(section(renderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
+assert.equal(section(require('./check-public-address-policy-scope.cjs').retainedAddressRenderer(renderer), 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
   section(oldRenderer, 'enum AgentIOSDynamicWebFallbackPolicy {', '#if canImport(WebKit) && canImport(UIKit)\nfinal class'),
-  'Static shell detection, HTTPS/private-address resolution, same-origin and subresource policy unchanged');
+  'Static shell detection, HTTPS/DNS/same-origin/subresource policy unchanged outside checked shared address-classifier hooks');
 assert.equal(section(renderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
   section(oldRenderer, '  func webView(\n    _ webView: WKWebView,\n    didReceive challenge:', '  private func finish('),
   'Authentication, popup, media-capture and dialog policy unchanged');
@@ -385,6 +394,14 @@ for (const name of ['testPublicSearchParserKeepsCardsAndSnippetsButNotNavigation
   'testSearchCompletionUsesCompatibilityNormalizedAndCJKQueryTokens']) assert(tests.includes('func ' + name + '('));
 const files = git('diff', '--name-only', android + '^1', android).trim().split('\n');
 const disposition = file => {
+  if (file.endsWith('/MainActivity.kt')) return 'Partial platform adaptation: actual iOS planning/voice bridge now reuses a coordinator-retained realtime provider instead of discarding a temporary nonblocking provider on every call. Enabled startup prewarm queues source I/O on the existing separate utility queue, coalesces loads, skips obsolete queued work and fences late publication with refresh tokens. Fingerprint changes invalidate cached snapshots; compiled output rechecks current eligible/non-private/non-paused conversation IDs. Existing mandatory MainActor native catalog/recovery initialization remains; moving native catalog construction off that path and full startup/runtime acceptance are not completed';
+  if (file.endsWith('/MainActivityGlobalAgent.kt')) return 'Platform adaptation: settings and global Agent dashboards now read cognition/runs/goals/research snapshots on a separate serial utility content queue, not in SwiftUI body or routing workers. MainActor generation ownership coalesces bursts into one trailing refresh, rejects departed/old-identity completions and preserves the last complete snapshot on source failure. Active pages refresh on entry/manual action and poll every 15 seconds; offscreen polls do not reactivate. Inbox/count projection remains in-memory on MainActor. Files are read separately, not atomically; backing store per-profile provenance, all other synchronous view reads and native concurrency/UI/performance acceptance remain unverified';
+  if (file.endsWith('/AppStore.kt')) return 'Reviewed the changed localDeviceRouteId fast profile-read concern. Existing iOS profile is a MainActor Published stored value, not a reconstructing JSON/disk getter; do not duplicate the Android helper or change Signal/MQTT identities. This is source-path evidence only, not full device-route equivalence: local workspace device attribution/initialization-repair behavior still needs separate comparison. No native performance/identity acceptance';
+  if (file.endsWith('/MainActivityAgentPage.kt')) return 'Partial: actual iOS initialPlanningConversation now records separate monotonic metadata/history/global/assembly and total read spans via typed private-hash OSLog. Keep one scoped metadata lookup, exact existing history/global expressions/order, privacy defaults and selected-provider global-context suppression. Four fixture methods authored only. Android worker queue/hydration timing, native routing latency/UI acceptance and broader context indexing remain incomplete';
+  if (file.endsWith('/CloudWebGrounding.kt')) return 'Partial production port: ordinary model web_search defaults to fast when profile is omitted; fast fanout defaults to three only when neither engine_fanout nor engines is present. Native search ID, image alias and research defaults remain distinct. Image alias/normalization and bounded image-aware delivery; request-focused untrusted guidance; whole HTTPS fallback sources through 4096 UTF-16 units, image exclusion, truthful localized synthesis with both actual engine language snapshots. Failed native results retain original diagnostics plus root timeout/stopped/renderer/invalid-engine non-retry hints, connecting native web_media_timeout to existing cross-read reuse. Typed URLSession timedOut stays typed; successful static fallback stays successful. Six fast-default, seven failure and six fallback fixture methods authored only. Complete native cancellation/model/transport/failure/timing/latency acceptance remains unverified';
+  if (file.endsWith('/res/values/strings.xml') || file.endsWith('/res/values-zh-rCN/strings.xml')) return 'Changed fallback source/empty copy now matches the pinned Android English and Chinese strings, with both production cloud engines passing interface-language snapshots. Existing iOS image-search progress localization remains. Resource/source checks only, not native multilingual display or model compliance acceptance';
+  if (file.endsWith('/AgentWebMediaNativeTools.kt')) return 'Ported the actual changed encoded-address behavior: validate HTTPS/public host/credentials/port without decoding or rebuilding encoded paths and queries, normalize authority/empty path and strip fragments before dispatch, and preserve case-sensitive path/query redirect identities. Existing manual per-hop revalidation, HTTP/header/credential/body/deadline policies retained. Seven native fixture methods authored only, including the exact Android encoded/signed redirect sample. Not native Foundation/URLSession/DNS or full WebMedia parity';
+  if (file.endsWith('/AgentWebMediaNativeToolsTest.kt')) return 'Exact Android encoded path/query/signed redirect sample copied into an actual iOS registry/injected transport fixture, plus relative redirects, case-sensitive identities, fragment loops, empty path and private/credentialed/insecure redirect rejection. Seven fixture methods SOURCE ONLY, NOT executed; not full Android test coverage';
   if (file.endsWith('/AgentDynamicWebArticleFetcher.kt')) return 'Adapted the changed failure-path duration behavior: native webOpen/browserRender output and metadata measure total monotonic static-plus-fallback resolution, including caught renderer failure. Preserve static retrieval timestamp, separate successful render duration and existing fallback/cancellation gates. Native fixture sources added, NOT executed; not full fetcher/runtime parity';
   if (file.endsWith('/CloudWebToolLoopProgress.kt')) return 'Existing native cross-read timeout/renderer-unavailable result reuse and three-stalled-retrieval-batch finalization retained. Evidence identity now includes canonical source URL, content hash, evidence level and canonically hashed image array, plus existing reading-window identity. Actual common model loop consumes it without changing collaboration progress/recall or configured limits. Native fixtures NOT executed; not full runtime acceptance';
   if (file.endsWith('/AgentMarkdownImageStore.kt')) return 'Partial iOS adaptation: encrypted 64-MiB/128-entry URL cache, 12-MiB streamed-body bound, eight shared producers with cancellation leases, manual bounded HTTPS redirects and isolated cookie/credential-free URLSession. DNS preflight is NOT connection pinning; complete address policy, native transport/decoder/cache fault and performance acceptance remain incomplete. Existing Files export retained, not Android MediaStore';
@@ -392,29 +409,29 @@ const disposition = file => {
   if (file.endsWith('/AgentPublicWebSearchParserTest.kt')) return 'Three native fixture sources added, NOT executed; not complete Android test coverage';
   if (file.endsWith('/AgentPublicImageSearchParser.kt')) return 'Sogou inert script JSON parser connected to actual image-only endpoint and model evidence. Preserve source, original/thumbnail, dimensions and image identity; other image adapters/relevance/native acceptance incomplete';
   if (file.endsWith('/AgentPublicImageSearchTest.kt')) return 'Native parser and registry-to-evidence fixture sources added, NOT executed; not full image-search acceptance';
-  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: actual raw/intelligence scoped learning, eligible learned-domain index routing, batched source health and cache listing/UI counts. Research validates all native/authoritative learned IDs before any search; topic-scoped requests bypass unscoped text cache. Full clear invalidates queued learning and subsequent calls resolve current catalog. Full catalog/ranker and indexed-storage performance incomplete';
+  if (file.endsWith('/AgentWebIntelligenceService.kt')) return 'Partial: protected indexed scoped health/learning/cache, batch/point operations, shared clear/generation, fenced import, 2,000 documents; similarity is not ANN. Search default 10/max 100 reaches mixed native text/image/evidence/exact cache. Independent search keys persist until explicit cleanup; inclusive expiry matches Android, while each response remains bounded to 2MB and historical JSON import to 32 records. Crawl has reference depth/page/time bounds, canonical BFS dedup, exact origins, DOM links, ignore-case filters, partial/error receipts and scoped cache. Extract has local/URL preference, offline full records, separately authorized fetch/force, bounded literal fields/headings/language hints and local provenance. Diff refetches with fixed deadlines, compares readable full snapshots, emits ordered line-set changes bounded 40/side and 300/line, rejects lossy overwrite, preserves prior data on write failure and gates network/cache scope. Diff/extract timeout schemas match 60s runtime; fetch remains 120s. Invoked watch checks select default20/max100 due records, forward timeout, record completion time, preserve partial failures/receipts, require cache plus network grants and conditionally commit unchanged watch versions after document persistence. Documents/watch are separate transactions; OS scheduling and native fault/concurrency acceptance remain unverified. No semantic/native SQL/crypto/transport/performance acceptance';
   if (file.endsWith('/AgentWebMaintenanceQueue.kt')) return 'Native one-worker utility queue, at most 17 outstanding optional learning tasks and no caller-thread fallback. Per-cache standardized-path generation/lock invalidates queued pre-clear work; no durable page/tool evidence is queued. Fault/concurrency/device acceptance not run';
   if (file.endsWith('/CloudImageSearchEvidence.kt')) return 'Native image-only packs prefer safe HTTPS previews, retain originals without claiming download/visual verification, remove original dimensions and use exact-subject Markdown guidance. Image-aware bounded model formatting admits whole URLs and re-verifies remaining source identities, with explicit omissions/failure. Native/network/UI acceptance not run';
   if (file.endsWith('/CloudModelClient.kt')) return 'Adapted the two added image-search reply instructions into the existing shared visual-output prompt consumed by default text and vision conversation preparation. Preserve language/vision/tool trust, HTML/video guards, actual evidence/citations and structured custom prompts. Native provider/compatibility fixture sources added, NOT executed; model compliance/UI acceptance not claimed';
   if (file.endsWith('/MainActivityTaskEvents.kt')) return 'Existing iOS AgentConnectorPublicProgress already maps web_image_search to its operation label and Chinese localization key. Retain later routine-search-noise suppression, failed-search visibility and private-detail filtering instead of regressing to the historical Android display policy. Native regression fixture source added, NOT executed';
-  if (file.endsWith('/AgentWorkspaceStore.kt')) return 'iOS retains one whole-file snapshot for records and derived recovery membership, now serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Post-commit notification only; failed commit leaves prior bytes and derived recovery unchanged. Native fault/concurrency acceptance and indexed-storage/performance parity not verified; no encryption migration';
+  if (file.endsWith('/AgentWorkspaceStore.kt')) return 'Generic workspace production/runtime/startup recovery now use encrypted per-record SQLite with HMAC lookup, small authenticated retention metadata and recovery indexes. One BEGIN IMMEDIATE covers revision comparison, target reducer, record/eviction/recovery writes; notify and typed private creation timing only after commit. Strict bounded legacy migration has encrypted marker plus pending/committed Keychain fencing, no missing-key replacement or committed-index-loss reimport; retire plaintext after commit and retry cleanup. Existing 64-record/serialized-size/terminal-first/shrink policies retained. Eight fixture methods authored only. Health owner-bound sealed task store remains unchanged. Native SQL/crypto/concurrency/migration/backup/logging and measured performance parity not verified';
   if (file.endsWith('/AgentTranscriptStore.kt')) return 'Adapted changed metadata access: session metrics reuse one conversation lookup, and the indexed primary/draft lookup no longer falls back through full conversation enumeration for a legacy or unknown ID. Only the matching legacy contact history is synthesized using unchanged list rules. Existing initial planning already uses that scoped metadata/history path. No transcript storage migration; native/latency acceptance and broader context indexing remain incomplete';
   if (file.endsWith('/AgentWebEvidencePack.kt')) return 'Native pack retains up to four validated media URLs per canonical source across retrieved bodies/discovery results, dimensions and thumbnail/original references; discovered URL metadata is explicitly not visual verification';
   if (file.endsWith('/AgentWebEvidenceVerification.kt')) return 'Only structurally valid source items authorize image destinations, only for typed Markdown images including wrapped images. Ordinary citation URLs remain restricted; original manifest/ID/hash gates and Markdown text/rendering retained. No runtime acceptance';
-  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: query-aware completion, supported profiles and native circuit health. Qualified verified non-image learned records produce bounded-authority host-scoped Bing/DuckDuckGo index adapters; explicit IDs or model-selected topics/categories activate them, with no free-text topic guessing. Candidate/disabled/underqualified/unsupported-image records cannot authorize routing. Full catalog/ranker and native acceptance incomplete Native image-only fusion now uses reference logistic weights, image title overlap/specificity and source-page diversity before final truncation over Sogou/Brave/DuckDuckGo candidate pools, reusing stored credentials with fixed-origin per-hop Brave headers and a shared-deadline two-step DuckDuckGo JSON path. Other image adapters, complete catalog/text ranker and native numeric/semantic/UI acceptance remain incomplete';
+  if (file.endsWith('/AgentWebIntelligence.kt')) return 'Partial: all 41 base IDs/247 sites, query-aware completion and unified weight/language/authority/health scoring with category/vertical coverage; explicit IDs preserve order. Direct image-only and mixed text/media requests share fusion, global consensus, reference image scoring and all-image page diversity. Qualified learned-image site indexes are ordinary page references, never fake image URLs. Pinned ranker and ordered UTF-16 SHA-256 Float32 feature-hash semantics are wired. Scoped Brave/GitHub headers and DDG shared deadline retained. Other media, storage limits and native numeric/relevance/UI/performance acceptance remain incomplete';
   if (file.endsWith('/AgentWebExecutionBudget.kt')) return 'Monotonic research query/page budget plus existing configured cloud active budget now clamp actual provider rounds and queued retrieval invocations. Current limits preserved; no immediate synchronous-transport interruption or native acceptance claim';
-  if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Existing evidence/recovery/permissions retained. Missing timing spans and broader parity remain';
+  if (file.endsWith('/CloudModelStreaming.kt')) return 'Partial: actual streaming/compatibility model rounds and queued web tools consume remaining configured active time; terminal budget failures enter bounded finalization only before emitted answer text. Local OSLog diagnostics now record preparation/input length, once-only first activity, provider completion state and separate citation-repair validation with an independent monotonic clock and private hashed correlation, never prose/arguments/credentials. Existing evidence/recovery/permissions retained. Native timing, UI/end-to-end and broader acceptance remain unverified';
   if (file.endsWith('/CloudToolBatchExecutor.kt')) return 'Native ordered parallel dispatcher rechecks remaining active time at task start, emits non-retryable skipped output, caps per-tool hard deadline and propagates parent cancellation after batch. Live parallel transport cancellation/progress acceptance not verified';
   if (file.endsWith('/AgentWebRendererHealth.kt')) return 'Native shared monotonic 30-second process/startup-failure cooldown; caller/page failures excluded. Pure native fixture sources added, NOT executed';
   if (file.endsWith('/AgentIsolatedWebViewRenderer.kt')) return 'iOS adaptation: process cooldown, 5-second bounded main-queue startup and one deadline across DNS/capacity/render; unconditional cancellation/one-shot completion and no late cancelled start. Not Android Binder implementation or WK fault acceptance';
   if (file.endsWith('/AgentIsolatedWebRenderService.kt')) return 'Native serialized off-main DNS preflight bounds caller wait and cancels queued work. Existing nonpersistent WK store/process-pool/same-origin and auth policies retained. OS getaddrinfo already running is not forcibly interrupted; no device recovery guarantee';
   if (file.endsWith('/build.gradle.kts') || file.endsWith('/AndroidManifest.xml') || file.endsWith('/GalaxySSIApplication.kt')) return 'Android platform/build change, not copied into iOS; no iOS version change';
   if (file.includes('/androidTest/') || file.includes('/src/test/') || file.startsWith('docs/')) return 'Reference evidence inventoried, not reproduced or claimed as iOS acceptance';
-  if (file.endsWith('/MobileNativeAgentExecution.kt')) return 'Partial: native parallel plan-node claims now persist final routed/prepared action, active checkpoint and dispatch-intent audit entries together in the existing encrypted claim before executing. Pending/observed claims never rerun or acquire replacement inputs. This is not an atomic task/session transaction or completion evidence; sequential/model-loop and full audit batching/latency parity need further comparison. Native crash/fault acceptance not run';
+  if (file.endsWith('/MobileNativeAgentExecution.kt')) return 'Partial: parallel plus ordinary sequential planned native/connector actions persist final routed/prepared input, active checkpoint and dispatch-intent audits in the encrypted node claim before effects. Sequential task ownership/checkpoint state is saved first; prior observed/pending claims are read before rerouting. Sequential replay/preparation rejects stale revisions, ambiguous actions/active checkpoints and mismatched stored dispatch checkpoints before receipt reuse or effects. Unknown outcomes stop non-retriably; fallback has its own specification and claim. Task/session state and node journal remain separate commits, not Android single-session persistence equivalence. Unplanned direct actions, visible capture/browser handoffs, cloud model loops, full audit batching and measured latency/native crash/fault acceptance remain incomplete';
   return 'Inventoried only; requires separate code comparison and implementation or explicit existing-equivalence evidence. Not complete';
 };
 const inventory = { androidPR: 3007, androidCommit: android, incrementalBase: base,
-  scope: 'Public web/image evidence and bounded model delivery; partial encrypted Markdown image cache/streamed-body/cancellation lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/index routing and source health. Image DNS preflight is not connection pinning. Full catalog/ranker/exclusion, learned image adapters, indexed-storage/media cache performance, other media/relevance, timing spans and native acceptance incomplete.',
+  scope: 'Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed workspace/cache, scoped health/learning, pinned adapters, mixed default-10/max-100 search, bounded BFS crawl, URL/local extraction, ordered-line page diff, invoked watch failure receipts/completion timing/conditional progress commits, typed media versus topic pages, explicit-cleanup search-key retention with bounded individual responses/inclusive expiry, encoded request/redirect identity preservation, feature-hash similarity and diagnostics. Health tasks remain sealed. DNS preflight is not connection pinning. Per-response byte bounds/OS watch scheduling/other media/context parity, UI/end-to-end timing and native acceptance remain incomplete.',
   files: files.map(file => ({ path: file, sha256: crypto.createHash('sha256').update(git('show', android + ':' + file)).digest('hex'), disposition: disposition(file) })) };
 const output = path.join(root, 'apps/ios/ANDROID_3007_SOURCE_INVENTORY.json');
 if (process.argv.includes('--write')) fs.writeFileSync(output, JSON.stringify(inventory, null, 2) + '\n');

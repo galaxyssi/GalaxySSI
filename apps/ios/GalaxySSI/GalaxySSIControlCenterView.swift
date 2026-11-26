@@ -6,14 +6,14 @@ struct GalaxySSIControlCenterView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var runtimeBrokerHealth = AgentIOSRuntimeBrokerHealth.unchecked
   @State private var showingQRCode = false
+  @StateObject private var globalRuntime = GlobalAgentDashboardLoader()
+  private let globalRefreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
   private let runtimeProvider = AgentIOSDefaultOnDeviceRuntimeProvider()
   private let inAppRuntimeBroker = AgentIOSInAppQemuRuntimeBroker(
     runtimeRootURL: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
   )
   private let learningProposalStore = UserDefaultsAgentLearningProposalStore()
-  private let globalAgentDeliberationStore = GlobalAgentDeliberationStore()
-  private let globalAgentLongHorizonStore = GlobalLongHorizonGoalStore()
   var onBackToAgent: (() -> Void)? = nil
 
   var body: some View {
@@ -53,7 +53,15 @@ struct GalaxySSIControlCenterView: View {
     .navigationBarHidden(true)
     .onAppear {
       refreshRuntimeBrokerHealth()
+      globalRuntime.refresh(identity: store.profile.identityFingerprint)
     }
+    .onChange(of: store.profile.identityFingerprint) { identity in
+      globalRuntime.refreshIfActive(identity: identity)
+    }
+    .onReceive(globalRefreshTimer) { _ in
+      globalRuntime.refreshIfActive(identity: store.profile.identityFingerprint)
+    }
+    .onDisappear { globalRuntime.invalidate() }
     .sheet(isPresented: $showingQRCode) {
       MyContactQRCodeView()
     }
@@ -507,10 +515,10 @@ struct GalaxySSIControlCenterView: View {
       automationRuns: store.recentAutomationRuns(limit: 80),
       proactiveMessages: store.globalProactiveMessages,
       proactiveFeedback: store.globalAgentFeedback,
-      cognitionTasks: globalAgentDeliberationStore.cognitionTasks(),
-      autonomousRuns: globalAgentDeliberationStore.autonomousRuns(),
-      longHorizonGoals: globalAgentLongHorizonStore.goals(),
-      researchState: GalaxySSIGlobalAgentRuntimeBridge.researchState()
+      cognitionTasks: globalRuntime.snapshot.cognitionTasks,
+      autonomousRuns: globalRuntime.snapshot.autonomousRuns,
+      longHorizonGoals: globalRuntime.snapshot.longHorizonGoals,
+      researchState: globalRuntime.snapshot.researchState
     )
   }
 

@@ -7,6 +7,8 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
   private let lock: NSRecursiveLock
   private let writeFile: (Data, URL) throws -> Void
   private let readFile: (URL) throws -> Data
+  private let timingClock: () -> Int64
+  private let timingSink: AgentWorkspaceCreationTiming.Sink
   private static let gatesLock = NSLock()
   private static var fileGates: [String: NSRecursiveLock] = [:]
 
@@ -29,13 +31,17 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
     readFile: @escaping (URL) throws -> Data = { try Data(contentsOf: $0) },
     writeFile: @escaping (Data, URL) throws -> Void = {
       try $0.write(to: $1, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-    }
+    },
+    timingClock: @escaping () -> Int64 = AgentWorkspaceCreationTiming.monotonicMillis,
+    timingSink: @escaping AgentWorkspaceCreationTiming.Sink = AgentWorkspaceCreationTiming.log
   ) {
     self.fileURL = fileURL
     self.fileManager = fileManager
     self.clock = clock
     self.writeFile = writeFile
     self.readFile = readFile
+    self.timingClock = timingClock
+    self.timingSink = timingSink
     lock = Self.gate(for: fileURL)
   }
 
@@ -68,9 +74,11 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
 
   func upsert(_ workspace: AgentWorkspace, expectedRevision: Int64) throws -> AgentWorkspace {
     try locked {
+      let preparationStarted = timingClock()
       let store = try loadStore()
+      let isNew = store.find(workspace.workspaceId) == nil
       let updated = try store.upsert(workspace, expectedRevision: expectedRevision)
-      try persist(store)
+      try persist(store, creation: isNew ? (updated.taskId, preparationStarted) : nil)
       return updated
     }
   }
@@ -174,13 +182,20 @@ final class FileAgentWorkspaceStore: AgentWorkspaceStore {
     )
   }
 
-  private func persist(_ store: InMemoryAgentWorkspaceStore) throws {
+  private func persist(_ store: InMemoryAgentWorkspaceStore,
+    creation: (taskId: String, started: Int64)? = nil) throws {
     try fileManager.createDirectory(
       at: fileURL.deletingLastPathComponent(),
       withIntermediateDirectories: true
     )
     // Publish only after the complete record/recovery snapshot has committed.
-    try writeFile(Data(store.serializedSnapshot().utf8), fileURL)
+    let data = Data(store.serializedSnapshot().utf8)
+    let commitStarted = creation == nil ? nil : timingClock()
+    try writeFile(data, fileURL)
+    if let creation, let commitStarted {
+      timingSink(AgentWorkspaceCreationTiming.sample(taskId: creation.taskId,
+        started: creation.started, commitStarted: commitStarted, committed: timingClock()))
+    }
     NotificationCenter.default.post(name: .galaxySSIWorkspaceDidPersist, object: self)
   }
 

@@ -958,7 +958,8 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
     turnId: String = "",
     runId: String = "",
     maximumCharacters: Int = 8_000,
-    nowMillis: Int64 = GlobalRealtimeClock.nowMillis()
+    nowMillis: Int64 = GlobalRealtimeClock.nowMillis(),
+    realtimeProvider: GlobalRealtimeContextProvider? = nil
   ) -> String {
     let core = store.agentCoreMemoryContext(
       maximumCharacters: 1_800,
@@ -981,14 +982,15 @@ enum GalaxySSIGlobalAgentRuntimeBridge {
       nowMillis: nowMillis
     )
     let excluded = Set(sessions.filter { $0.privateMode || $0.trackingPaused }.map(\.id))
-    let realtime = GlobalRealtimeContextProvider().buildNonBlocking(
+    let realtime = realtimeProvider?.buildNonBlocking(
       query: query,
       currentConversationId: conversationId,
       excludedConversationIds: excluded,
       maximumItems: 10,
       maximumCharacters: 2_000,
-      nowMillis: nowMillis
-    )
+      nowMillis: nowMillis,
+      allowedConversationIds: Set(sessions.filter { !$0.privateMode && !$0.trackingPaused }.map(\.id))
+    ) ?? ""
     return String([core, durable, realtime]
       .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
       .joined(separator: "\n\n")

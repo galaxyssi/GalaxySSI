@@ -386,7 +386,7 @@ final class GalaxySSIStore: ObservableObject {
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-       workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore()) {
+       workspaceStore: AgentWorkspaceStore = IndexedAgentWorkspaceStore()) {
     defaults.removeObject(forKey: "galaxyssi.phone_contact_cards")
     defaults.removeObject(forKey: "galaxyssi.phone_contact_inbox_route")
     self.defaults = defaults

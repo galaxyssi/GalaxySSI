@@ -84,7 +84,7 @@ struct GalaxySSIWebIntelligenceSourcesView: View {
         title: t("web_sources_domain_coverage", "Domain coverage"),
         subtitle: t(
           "web_sources_domain_coverage_subtitle",
-          "Each domain has five to ten independently routed sources"
+          "Registered indexed web sources grouped by topic"
         ),
         systemImage: "square.grid.3x3",
         tint: .galaxySSIAccent,
@@ -108,20 +108,20 @@ struct GalaxySSIWebIntelligenceSourcesView: View {
         ) : t("galaxyssi.status.unavailable", "Unavailable")
       )
       GalaxySSISecurityStatusRow(
-        title: t("web_sources_compatibility", "Wigolo source coverage"),
+        title: t("web_sources_compatibility", "Native search adapters"),
         subtitle: t(
           "web_sources_compatibility_subtitle",
-          "All 18 public Wigolo adapters are available, plus GalaxySSI sources"
+          "Registered native text and image search adapters"
         ),
         systemImage: "checkmark.seal",
         tint: .galaxySSIAccent,
-        badge: t("web_sources_compatibility_value", "18 / 18")
+        badge: "\(summary.baseSearchEngineCount)"
       )
       GalaxySSISecurityStatusRow(
         title: t("web_sources_catalog_breakdown", "Source catalog"),
         subtitle: t(
           "web_sources_catalog_breakdown_subtitle",
-          "Android parity catalog with public engines and independently scoped indexed sources"
+          "Registered adapters and independently scoped indexed web sources"
         ),
         systemImage: "tray.2",
         tint: .purple,

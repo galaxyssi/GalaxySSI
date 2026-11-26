@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../..');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8').replace(/\r\n/g, '\n');
 function retainedServices(source) {
+  source = require('./check-sequential-plan-dispatch-scope.cjs').retainedSequentialServices(source);
   const replacements = [
     ['    let dispatchCheckpoints = journaledPlan.checkpoints\n', ''],
     ['          guard let key = nodeKeys[index],\n                let checkpoint = dispatchCheckpoints.last(where: { $0.id == key.checkpointId }) else {',

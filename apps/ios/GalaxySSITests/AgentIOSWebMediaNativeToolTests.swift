@@ -2,6 +2,31 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testStaticWebFetchRejectsNonPublicIPv6BeforeTransport() throws {
+    final class NoNetwork: AgentIOSURLSessionWebTransporting {
+      var calls = 0
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        calls += 1
+        throw URLError(.badURL)
+      }
+    }
+    let transport = NoNetwork()
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, sourceHealthStore: nil, nowMillis: { 1_000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider))
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
+      grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent])
+    for host in ["fe90::1", "fec0::1", "ff02::1", "0:0:0:0:0:0:0:1", "::ffff:7f00:1", "64:ff9b::a00:1"] {
+      let result = registry.invoke(AgentIOSWebMediaNativeToolCatalog.webFetch,
+        input: ["url": .string("https://[\(host)]/private")], context: context,
+        hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 }))
+      XCTAssertFalse(result.isSuccess, host)
+      XCTAssertEqual(result.error?.code, "local_host_blocked", host)
+      XCTAssertEqual(transport.calls, 0, host)
+    }
+  }
+
   func testImageFusionUsesReferenceLogisticWeightsAndTitleSpecificity() {
     XCTAssertEqual(AgentIOSImageSearchFusion.rankerScore(Array(repeating: 0, count: 9)), 0.24048908305088898, accuracy: 1e-12)
     XCTAssertEqual(AgentIOSImageSearchFusion.rankerScore(Array(repeating: 1, count: 9)), 0.9986414800495711, accuracy: 1e-12)

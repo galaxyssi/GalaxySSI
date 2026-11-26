@@ -1,4 +1,6 @@
 "galaxyssi.tab.agent" = "Agent";
+"cloud_web_fallback_sources" = "已获取以下来源，但尚未完成可靠汇总：";
+"cloud_web_fallback_empty" = "暂时没有取得可可靠汇总的联网证据。你可以稍后重试，或缩小查询范围。";
 
 /* Android #4324 bounded, synthetic physiology teaching models. */
 "health_atlas_model_axis" = "%1$@（%2$@）· 其他参数保持不变";
@@ -4663,16 +4665,16 @@
 "web_sources_hero_subtitle" = "独立来源适配器、加密凭据与按来源健康度路由";
 "web_sources_count" = "%d 个来源";
 "web_sources_domain_coverage" = "领域覆盖";
-"web_sources_domain_coverage_subtitle" = "每个领域包含 5 至 10 个独立路由来源";
+"web_sources_domain_coverage_subtitle" = "按主题分类的已注册网页索引来源";
 "web_sources_category_count" = "%d 个类别";
 "web_sources_learning" = "来源学习";
 "web_sources_learning_subtitle" = "新域名经过多次独立证据验证后才会启用";
 "web_sources_learning_value" = "%d 个已验证 / %d 个候选";
-"web_sources_compatibility" = "Wigolo 来源覆盖";
-"web_sources_compatibility_subtitle" = "已支持 Wigolo 的全部 18 个公开适配器，并保留 GalaxySSI 扩展来源";
+"web_sources_compatibility" = "原生搜索适配器";
+"web_sources_compatibility_subtitle" = "已注册的原生网页与图片搜索适配器";
 "web_sources_compatibility_value" = "18 / 18";
 "web_sources_catalog_breakdown" = "来源目录";
-"web_sources_catalog_breakdown_subtitle" = "与 Android 对齐的公开引擎和独立作用域索引来源";
+"web_sources_catalog_breakdown_subtitle" = "已注册适配器与独立作用域网页索引来源";
 "web_sources_catalog_breakdown_value" = "%d + %d";
 "web_sources_evidence_boundary" = "证据边界";
 "web_sources_evidence_boundary_subtitle" = "公共网页结果在被所选模型带引用综合前始终视为不可信证据";

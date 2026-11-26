@@ -570,7 +570,7 @@ enum AgentWorkspaceJsonCodec {
   }
 }
 
-private enum AgentWorkspaceStoreBounds {
+enum AgentWorkspaceStoreBounds {
   static func fitSerializedLimit(_ workspaces: [AgentWorkspace]) throws -> [AgentWorkspace] {
     var bounded = AgentWorkspaceBoundsPolicy.boundWorkspaces(workspaces)
     while bounded.count > 1 && AgentWorkspaceJsonCodec.encodedListLength(bounded) > AgentWorkspaceJsonCodec.maxSerializedCharacters {
