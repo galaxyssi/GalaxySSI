@@ -1,7 +1,123 @@
 import XCTest
+import SwiftSoup
 @testable import GalaxySSI
 
 final class AgentIOSPhonePublicHTMLAttachmentTests: XCTestCase {
+  func testOriginalPageAssetLoaderKeepsPermissionDeadlineAndByteBounds() throws {
+    final class Transport: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        return .init(statusCode: 200, finalURL: request.url, headers: ["content-type": "image/png"],
+          body: Data([1]), retrievedAtEpochMillis: 1_000)
+      }
+    }
+    let transport = Transport()
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1_000 })
+    let definition = try XCTUnwrap(AgentIOSWebIntelligenceNativeToolCatalog.definitions().first {
+      $0.id == AgentIOSWebIntelligenceNativeToolCatalog.fetch
+    })
+    func invocation(allowed: Bool, deadline: Int64 = 1_500, cancelled: Bool = false) -> AgentNativeToolInvocation {
+      .init(descriptor: definition.descriptor, input: [:], context: .init(
+        grantedPermissions: allowed ? [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission] : [],
+        grantedConsents: allowed ? [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent] : []),
+        startedAtEpochMillis: 0, deadlineEpochMillis: deadline, nowMillis: { 1_000 },
+        cancellationRequested: { cancelled }, progressReporter: { _, _ in })
+    }
+    for context in [invocation(allowed: false), invocation(allowed: true, deadline: 1_000),
+      invocation(allowed: true, cancelled: true)] {
+      XCTAssertThrowsError(try provider.originalPageAsset("https://example.com/image", maxBytes: 10, invocation: context))
+    }
+    XCTAssertTrue(transport.requests.isEmpty)
+    XCTAssertThrowsError(try provider.originalPageAsset("https://127.0.0.1/image", maxBytes: 10, invocation: invocation(allowed: true)))
+    XCTAssertTrue(transport.requests.isEmpty)
+    let asset = try provider.originalPageAsset("https://example.com/image", maxBytes: 10, invocation: invocation(allowed: true))
+    XCTAssertEqual(asset.data, Data([1]))
+    XCTAssertEqual(transport.requests.count, 1)
+    XCTAssertEqual(transport.requests.first?.maxBodyBytes, 10)
+    XCTAssertEqual(transport.requests.first?.timeoutMillis, 500)
+  }
+
+  func testOriginalPageRetainsOrderAndEmbedsLazyImages() throws {
+    var requests: [String] = []
+    let source = Data("<p>Before</p><img data-src='/image.png'><p>After</p>".utf8)
+    let built = try AgentIOSOriginalPageDocument.build(source: source, url: "https://example.com/article", language: "en") { url, limit in
+      requests.append(url)
+      XCTAssertGreaterThan(limit, 0)
+      return .init(contentType: "image/png", data: Data([1, 2, 3]), finalURL: url)
+    }
+    let doc = try SwiftSoup.parse(String(decoding: built.data, as: UTF8.self))
+    XCTAssertEqual(try doc.select("body > p,body > img").array().prefix(3).map { $0.tagName() }, ["p", "img", "p"])
+    XCTAssertEqual(try doc.select("img").first()?.attr("src"), "data:image/png;base64,AQID")
+    XCTAssertEqual(requests, ["https://example.com/image.png"])
+    XCTAssertEqual(built.embeddedImages, 1)
+    XCTAssertEqual(built.missingAssets, 0)
+  }
+
+  func testOriginalPageRemovesActiveContentAndNetworkSideChannels() throws {
+    let source = Data("""
+      <meta http-equiv='refresh' content='0;url=https://bad.invalid'><base href='https://bad.invalid'>
+      <script>throw 1</script><iframe src='https://bad.invalid'></iframe><svg onload='bad()'></svg>
+      <form action='https://bad.invalid'><p onclick='bad()'>Keep</p><input></form>
+      <a href='javascript:bad()' ping='https://bad.invalid'>No</a><a href='/ok'>Yes</a>
+      <video src='https://bad.invalid/video'></video><img src='data:image/svg+xml;base64,PHN2Zz4='>
+      """.utf8)
+    let built = try AgentIOSOriginalPageDocument.build(source: source, url: "https://example.com/article", language: "en") { _, _ in nil }
+    let doc = try SwiftSoup.parse(String(decoding: built.data, as: UTF8.self))
+    XCTAssertTrue(try doc.select("script,iframe,svg,form,input,video,base,[onclick],[ping]").isEmpty())
+    XCTAssertFalse(try doc.select("a").first()?.hasAttr("href") ?? true)
+    XCTAssertEqual(try doc.select("a").array().last?.attr("href"), "https://example.com/ok")
+    XCTAssertTrue(try doc.select("meta[http-equiv]").first()?.attr("content").contains("default-src 'none'") == true)
+    XCTAssertFalse(try doc.select("img").first()?.hasAttr("src") ?? true)
+    XCTAssertGreaterThan(built.missingAssets, 0)
+  }
+
+  func testOriginalPageStylesUseRedirectedBaseAndKeepCascadeOrder() throws {
+    var requested: [String] = []
+    let built = try AgentIOSOriginalPageDocument.build(source: Data("""
+      <head><style>p{color:red}</style><link rel='stylesheet' href='/main.css'><style>p{color:green}</style></head>
+      <body><p>Article</p></body>
+      """.utf8), url: "https://example.com/article", language: "en") { address, _ in
+      requested.append(address)
+      if address.hasSuffix(".css") {
+        return .init(contentType: "text/css", data: Data("p{color:blue;background:url(image.png)}".utf8), finalURL: "https://cdn.example.com/styles/main.css")
+      }
+      return .init(contentType: "image/png", data: Data([1]), finalURL: address)
+    }
+    let doc = try SwiftSoup.parse(String(decoding: built.data, as: UTF8.self))
+    let styles = try doc.select("style").array().map { $0.data() }
+    XCTAssertEqual(styles.count, 3)
+    XCTAssertTrue(styles[0].contains("red"))
+    XCTAssertTrue(styles[1].contains("blue"))
+    XCTAssertTrue(styles[1].contains("data:image/png;base64,AQ=="))
+    XCTAssertTrue(styles[2].contains("green"))
+    XCTAssertEqual(requested, ["https://example.com/main.css", "https://cdn.example.com/styles/image.png"])
+  }
+
+  func testOriginalPageAssetFailuresAreDeduplicatedAndBounded() throws {
+    var calls = 0
+    let images = String(repeating: "<img src='/same.png'>", count: 10)
+      + (0..<140).map { "<img src='/\($0).png'>" }.joined()
+    let built = try AgentIOSOriginalPageDocument.build(source: Data(images.utf8), url: "https://example.com/article", language: "en") { _, limit in
+      calls += 1
+      XCTAssertLessThanOrEqual(limit, 8 * 1_024 * 1_024)
+      return nil
+    }
+    XCTAssertEqual(calls, 128)
+    XCTAssertEqual(built.embeddedImages, 0)
+    XCTAssertEqual(built.missingAssets, 141)
+  }
+
+  func testOriginalPageRejectsInvalidSourceAndURLWithoutLoading() throws {
+    var loaded = false
+    for (data, url) in [(Data(), "https://example.com"), (Data([0xff]), "https://example.com"),
+      (Data("<p>Test</p>".utf8), "file:///private/source"),
+      (Data("<p>Test</p>".utf8), "https://user@example.com")] {
+      XCTAssertThrowsError(try AgentIOSOriginalPageDocument.build(source: data, url: url, language: "en") { _, _ in loaded = true; return nil })
+    }
+    XCTAssertFalse(loaded)
+  }
+
   @MainActor
   func testWeChatBrowserKeepsArticleNavigationSeparateFromCDNFrames() {
     XCTAssertNotNil(GalaxySSIWeChatBrowserSession.articleURL("https://mp.weixin.qq.com/s/article"))
