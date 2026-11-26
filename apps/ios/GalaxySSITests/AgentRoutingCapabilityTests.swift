@@ -2,6 +2,139 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testProviderRankingAppliesAndroidQualityLatencyAndEconomyWeights() {
+    var resource = routingResource(targetId: "cloud-model:test", type: .cloudModel, location: .cloud)
+    let environment = AgentRuntimeEnvironment()
+    var requirements = AgentTaskRequirements()
+    func score() -> Int {
+      AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements, environment: environment).score
+    }
+    XCTAssertEqual(score(), 519)
+    requirements.mode = .quality
+    resource.quality = .frontier
+    XCTAssertEqual(score(), 800)
+    resource.quality = .basic
+    XCTAssertEqual(score(), 475)
+    requirements.mode = .fast
+    resource.quality = .strong
+    resource.latency = .fast
+    XCTAssertEqual(score(), 589)
+    resource.latency = .slow
+    XCTAssertEqual(score(), 319)
+    requirements.mode = .economy
+    resource.latency = .fast
+    XCTAssertEqual(score(), 639)
+    resource.cost = .high
+    XCTAssertEqual(score(), 279)
+  }
+
+  func testProviderRankingConfidentialTrustAndBackgroundArePreferencesNotGrants() {
+    var resource = routingResource(targetId: "cloud-model:test", type: .cloudModel, location: .cloud)
+    var requirements = AgentTaskRequirements(dataSensitivity: .confidential)
+    resource.trust = .phoneSystem
+    let trusted = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment())
+    resource.trust = .cloudConfigured
+    let cloud = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment())
+    XCTAssertEqual(trusted.score - cloud.score, 380)
+    requirements.executionHorizon = .background
+    resource.supportsBackground = false
+    let foreground = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment())
+    resource.supportsBackground = true
+    let background = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment())
+    XCTAssertEqual(background.score - foreground.score, 260)
+    XCTAssertEqual(background.resource.targetId, resource.targetId)
+    XCTAssertEqual(background.resource.trust, .cloudConfigured)
+    XCTAssertFalse(background.reasons.contains { $0.contains("authorized") })
+  }
+
+  func testProviderRankingPenalizesContextAndMeteredCloudWithoutHardUsageCutoff() {
+    var resource = routingResource(targetId: "cloud-model:test", type: .cloudModel, location: .cloud)
+    let requirements = AgentTaskRequirements(estimatedInputTokens: 20_000)
+    let normal = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment(networkAvailable: true, networkValidated: true))
+    let metered = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment(networkAvailable: true, networkValidated: true, networkMetered: true))
+    let unvalidated = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment(networkAvailable: true))
+    XCTAssertEqual(normal.score - metered.score, 70)
+    XCTAssertEqual(normal.score - unvalidated.score, 180)
+    XCTAssertTrue(normal.reasons.contains("context_window_shortfall"))
+    resource.contextWindowTokens = 32_768
+    let enoughContext = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: normalEnvironment())
+    XCTAssertEqual(enoughContext.score - normal.score, 300)
+    XCTAssertEqual(normal.resource.targetId, resource.targetId)
+    resource.location = .phone
+    let phoneNormal = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: normalEnvironment())
+    let phoneMetered = AgentProviderResourceRanking.candidate(resource: resource, requirements: requirements,
+      environment: AgentRuntimeEnvironment(networkAvailable: true, networkMetered: true))
+    XCTAssertEqual(phoneNormal.score, phoneMetered.score)
+  }
+
+  func testProviderRankingUsesBoundedFinitePerformanceTelemetry() {
+    var resource = routingResource(targetId: "cloud-model:test", type: .cloudModel, location: .cloud)
+    var profile = ProviderProfileCatalog.fromTarget(routeTarget("cloud-model:test", kind: .model))
+    profile.performance = ProviderPerformanceProfile(attempts: 1, failureRate: 0.5, ewmaLatencyMs: 12_000)
+    resource.providerProfile = profile
+    let candidate = AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
+      environment: AgentRuntimeEnvironment())
+    XCTAssertEqual(candidate.score, 309)
+    XCTAssertTrue(candidate.reasons.contains("provider_failure_penalty:110"))
+    XCTAssertTrue(candidate.reasons.contains("provider_latency_penalty:100"))
+    profile.performance.failureRate = .nan
+    profile.performance.ewmaLatencyMs = .infinity
+    resource.providerProfile = profile
+    XCTAssertEqual(AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
+      environment: AgentRuntimeEnvironment()).score, 339)
+    profile.performance.attempts = 0
+    resource.providerProfile = profile
+    XCTAssertEqual(AgentProviderResourceRanking.candidate(resource: resource, requirements: AgentTaskRequirements(),
+      environment: AgentRuntimeEnvironment()).score, 519)
+  }
+
+  func testProviderRankingKeepsInferredCapabilitiesSoftAndDeclaredRequirementsHard() throws {
+    let target = routeTarget("codex", kind: .agent)
+    XCTAssertNotNil(AgentQualityRoutingService.baselineDecision(goal: "", targets: [target], primaryTargetId: target.id,
+      requirements: AgentTaskRequirements(capabilities: [.knowledgeSearch], capabilitySource: .inferred),
+      environment: AgentRuntimeEnvironment()))
+    XCTAssertNil(AgentQualityRoutingService.baselineDecision(goal: "", targets: [target], primaryTargetId: target.id,
+      requirements: AgentTaskRequirements(capabilities: [.knowledgeSearch], capabilitySource: .declared),
+      environment: AgentRuntimeEnvironment()))
+  }
+
+  func testProviderRankingFeedsActualSelectorButPreservesHealthyStablePrimary() throws {
+    var codex = routeTarget("codex", kind: .agent)
+    var cloud = routeTarget("cloud-model:ranking-fixture", kind: .model)
+    var codexProfile = ProviderProfileCatalog.fromTarget(codex)
+    codexProfile.quality = .basic
+    codexProfile.latency = .slow
+    codexProfile.pricing.tier = .high
+    codex.providerProfile = codexProfile
+    var cloudProfile = ProviderProfileCatalog.fromTarget(cloud)
+    cloudProfile.quality = .frontier
+    cloudProfile.latency = .instant
+    cloudProfile.pricing.tier = .free
+    cloud.providerProfile = cloudProfile
+    let decision = try XCTUnwrap(AgentQualityRoutingService.baselineDecision(goal: "",
+      targets: [codex, cloud], primaryTargetId: codex.id,
+      requirements: AgentTaskRequirements(mode: .quality), environment: normalEnvironment()))
+    XCTAssertEqual(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision)?.target.id, cloud.id)
+    let stable = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: nil,
+      preferredTargetId: codex.id, goal: "best high quality", preserveHealthyPrimary: true))
+    XCTAssertEqual(stable.target.id, codex.id)
+    XCTAssertEqual(stable.decision?.catalog.map(\.targetId), [codex.id])
+    XCTAssertTrue(stable.decision?.fallbacks.isEmpty == true)
+  }
+
+  private func normalEnvironment() -> AgentRuntimeEnvironment {
+    AgentRuntimeEnvironment(networkAvailable: true, networkValidated: true)
+  }
+
   func testGlobalCapabilityObservationExtractorAuthorizationAndSafetyUseLocalOnlyProjection() {
     let authorizationEvents = GlobalCapabilityObservationExtractor.authorizationMutations(
       before: ["location"],

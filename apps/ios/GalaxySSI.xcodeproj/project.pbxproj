@@ -1194,6 +1194,7 @@
     A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002701 /* AgentEvalOpsModels.swift */; };
     A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002702 /* AgentEvalOpsStore.swift */; };
     A10000000000000000002703 /* AgentQualityRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002703 /* AgentQualityRouting.swift */; };
+    A10000000000000000003E11 /* AgentProviderResourceRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E11 /* AgentProviderResourceRanking.swift */; };
     A10000000000000000002704 /* AgentTrajectoryLearning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002704 /* AgentTrajectoryLearning.swift */; };
     A10000000000000000002705 /* AgentCognitiveGovernance.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002705 /* AgentCognitiveGovernance.swift */; };
     A10000000000000000002706 /* AgentEvolutionLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002706 /* AgentEvolutionLab.swift */; };
@@ -3449,6 +3450,7 @@
     A20000000000000000002701 /* AgentEvalOpsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsModels.swift; sourceTree = "<group>"; };
     A20000000000000000002702 /* AgentEvalOpsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvalOpsStore.swift; sourceTree = "<group>"; };
     A20000000000000000002703 /* AgentQualityRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentQualityRouting.swift; sourceTree = "<group>"; };
+    A20000000000000000003E11 /* AgentProviderResourceRanking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderResourceRanking.swift; sourceTree = "<group>"; };
     A20000000000000000002704 /* AgentTrajectoryLearning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTrajectoryLearning.swift; sourceTree = "<group>"; };
     A20000000000000000002705 /* AgentCognitiveGovernance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCognitiveGovernance.swift; sourceTree = "<group>"; };
     A20000000000000000002706 /* AgentEvolutionLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvolutionLab.swift; sourceTree = "<group>"; };
@@ -6365,6 +6367,7 @@
         A20000000000000000002701 /* AgentEvalOpsModels.swift */,
         A20000000000000000002702 /* AgentEvalOpsStore.swift */,
         A20000000000000000002703 /* AgentQualityRouting.swift */,
+        A20000000000000000003E11 /* AgentProviderResourceRanking.swift */,
         A20000000000000000002704 /* AgentTrajectoryLearning.swift */,
         A20000000000000000002705 /* AgentCognitiveGovernance.swift */,
         A20000000000000000002706 /* AgentEvolutionLab.swift */,
@@ -8783,6 +8786,7 @@
         A10000000000000000002701 /* AgentEvalOpsModels.swift in Sources */,
         A10000000000000000002702 /* AgentEvalOpsStore.swift in Sources */,
         A10000000000000000002703 /* AgentQualityRouting.swift in Sources */,
+        A10000000000000000003E11 /* AgentProviderResourceRanking.swift in Sources */,
         A10000000000000000002704 /* AgentTrajectoryLearning.swift in Sources */,
         A10000000000000000002705 /* AgentCognitiveGovernance.swift in Sources */,
         A10000000000000000002706 /* AgentEvolutionLab.swift in Sources */,
