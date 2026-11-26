@@ -27,11 +27,11 @@ enum AgentKnowledgePrimaryDurability {
 
   private static func scalar(_ handle: OpaquePointer, _ sql: String) throws -> String {
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else {
-      if let statement { sqlite3_finalize(statement) }
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(handle, sql, -1, &statement, nil) == SQLITE_OK else {
+      if let statement { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       throw Failure.sqlite
     }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW, let bytes = sqlite3_column_text(statement, 0) else { throw Failure.configuration }
     let value = String(cString: bytes)
     guard sqlite3_step(statement) == SQLITE_DONE else { throw Failure.sqlite }

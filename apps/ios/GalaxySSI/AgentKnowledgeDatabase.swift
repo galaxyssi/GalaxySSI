@@ -103,7 +103,7 @@ final class AgentKnowledgeDatabase {
 
   deinit {
     nativeFiles.invalidate()
-    if let database { sqlite3_close_v2(database) }
+    if let database { AgentKnowledgeSQLiteStatements.shared.close(database) }
   }
 
   func all() throws -> [AgentKnowledgeItem] {
@@ -112,7 +112,7 @@ final class AgentKnowledgeDatabase {
         SELECT item_hash, encrypted_payload FROM knowledge_items
         ORDER BY updated_at ASC, item_hash ASC
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       var items: [AgentKnowledgeItem] = []
       while sqlite3_step(statement) == SQLITE_ROW {
         items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
@@ -127,7 +127,7 @@ final class AgentKnowledgeDatabase {
       guard let statement = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       var seen = Set<String>(), items: [AgentKnowledgeItem] = []
       for id in ids where seen.insert(id).inserted {
         sqlite3_reset(statement)
@@ -156,10 +156,10 @@ final class AgentKnowledgeDatabase {
       SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
       nil
     ) == SQLITE_OK, let snapshot else {
-      if let snapshot { sqlite3_close_v2(snapshot) }
+      if let snapshot { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
       throw AgentKnowledgeDatabaseError.unavailable
     }
-    defer { sqlite3_close_v2(snapshot) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
     sqlite3_busy_timeout(snapshot, 5_000)
     guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
           sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
@@ -169,7 +169,7 @@ final class AgentKnowledgeDatabase {
     }
     defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil) }
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(
       snapshot,
       """
         SELECT k.item_hash, k.encrypted_payload
@@ -183,7 +183,7 @@ final class AgentKnowledgeDatabase {
       &statement,
       nil
     ) == SQLITE_OK, let statement else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(tokens.joined(separator: " OR "), at: 1, to: statement)
     sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
     var snapshotItems: [AgentKnowledgeItem] = []
@@ -196,7 +196,7 @@ final class AgentKnowledgeDatabase {
         guard let current = prepare(
           "SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1"
         ) else { throw AgentKnowledgeDatabaseError.unavailable }
-        defer { sqlite3_finalize(current) }
+        defer { AgentKnowledgeSQLiteStatements.shared.release(current) }
         bind(itemHash, at: 1, to: current)
         guard sqlite3_step(current) == SQLITE_ROW else { return false }
         return try decode(current, hashColumn: 0, payloadColumn: 1) == candidate
@@ -232,7 +232,7 @@ final class AgentKnowledgeDatabase {
       if checkpoint.sourceStartUTF16 != nil {
         guard let current = try? items(ids: [checkpoint.itemId]).first,
           checkpoint.validatedSourceRange(in: current) != nil else {
-          sqlite3_finalize(statement)
+          AgentKnowledgeSQLiteStatements.shared.release(statement)
           _ = execute("ROLLBACK")
           return false
         }
@@ -246,7 +246,7 @@ final class AgentKnowledgeDatabase {
         sqlite3_bind_blob(statement, 6, bytes.baseAddress, Int32(encrypted.count), Self.transient)
       }
       let stored = sqlite3_step(statement) == SQLITE_DONE
-      sqlite3_finalize(statement)
+      AgentKnowledgeSQLiteStatements.shared.release(statement)
       guard stored, storeVectorReplayOrdinal(checkpoint, vectorKey: vectorKey) else {
         _ = execute("ROLLBACK")
         return false
@@ -291,7 +291,7 @@ final class AgentKnowledgeDatabase {
         WHERE item_hash = ? AND model_hash = ?
         ORDER BY vector_key ASC
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(keyedHash(itemId), at: 1, to: statement)
       bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
       var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
@@ -325,7 +325,7 @@ final class AgentKnowledgeDatabase {
       bind(keyedHash(itemId), at: 1, to: statement)
       bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
       let deleted = sqlite3_step(statement) == SQLITE_DONE
-      sqlite3_finalize(statement)
+      AgentKnowledgeSQLiteStatements.shared.release(statement)
       guard deleted else {
         _ = execute("ROLLBACK")
         return false
@@ -376,7 +376,7 @@ final class AgentKnowledgeDatabase {
               WHERE model_hash = ? AND sequence > ?
               ORDER BY sequence ASC LIMIT ?
               """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(modelHash, at: 1, to: statement)
       sqlite3_bind_int64(statement, 2, afterSequence)
       sqlite3_bind_int(statement, 3, Int32(min(max(limit, 1), 512)))
@@ -425,7 +425,7 @@ final class AgentKnowledgeDatabase {
             WHERE latest.model_hash = p.model_hash AND latest.item_hash = p.item_hash ORDER BY latest.sequence DESC LIMIT 1)
         ORDER BY p.item_hash ASC LIMIT ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       bind(afterItemHash ?? "", at: 2, to: statement)
       sqlite3_bind_int(statement, 3, Int32(size))
@@ -466,17 +466,17 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int64(update, 4, stamp.head)
       sqlite3_bind_int64(update, 5, stamp.sourceRevision)
       let updated = sqlite3_step(update) == SQLITE_DONE
-      sqlite3_finalize(update)
+      AgentKnowledgeSQLiteStatements.shared.release(update)
       guard updated, let cursor = prepare("SELECT after_item_hash FROM knowledge_vector_native_root_seek WHERE model_hash = ?") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       bind(modelHash, at: 1, to: cursor)
       guard sqlite3_step(cursor) == SQLITE_ROW, let text = sqlite3_column_text(cursor, 0) else {
-        sqlite3_finalize(cursor)
+        AgentKnowledgeSQLiteStatements.shared.release(cursor)
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       let after = String(cString: text)
-      sqlite3_finalize(cursor)
+      AgentKnowledgeSQLiteStatements.shared.release(cursor)
       let page = try nativePublicationPage(modelSHA256: provenance.modelSHA256, afterItemHash: after.isEmpty ? nil : after)
       for event in page.events {
         if let vector = try vectorReplayPage(event: event, provenance: provenance, limit: 1)?.checkpoints.first?.vector {
@@ -489,7 +489,7 @@ final class AgentKnowledgeDatabase {
           UPDATE knowledge_vector_native_root_seek SET after_item_hash = ?
           WHERE model_hash = ? AND contract_hash = ? AND epoch = ? AND head = ? AND source_revision = ?
           """) else { throw AgentKnowledgeDatabaseError.staleCursor }
-      defer { sqlite3_finalize(advance) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(advance) }
       bind(page.nextItemHash ?? "", at: 1, to: advance)
       bind(modelHash, at: 2, to: advance)
       bind(contractHash, at: 3, to: advance)
@@ -540,7 +540,7 @@ final class AgentKnowledgeDatabase {
           AND p.sequence = (SELECT latest.sequence FROM knowledge_vector_changes latest
             WHERE latest.model_hash = p.model_hash AND latest.item_hash = p.item_hash ORDER BY latest.sequence DESC LIMIT 1) LIMIT 1
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(row) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(row) }
       var output: [AgentKnowledgeHit] = [], seen = Set<String>()
       for match in matches {
         guard isOpaqueHash(match.key), isOpaqueHash(match.revision), match.sequence > 0, match.ordinal >= 0,
@@ -608,7 +608,7 @@ final class AgentKnowledgeDatabase {
       bind(event.itemHash, at: 2, to: latest)
       let latestStatus = sqlite3_step(latest)
       let latestSequence = sqlite3_column_int64(latest, 0)
-      sqlite3_finalize(latest)
+      AgentKnowledgeSQLiteStatements.shared.release(latest)
       guard latestStatus == SQLITE_ROW || latestStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard latestStatus == SQLITE_ROW, latestSequence == event.sequence else { return nil }
       guard try hasNativePublication(modelHash: modelHash, itemHash: event.itemHash,
@@ -620,8 +620,8 @@ final class AgentKnowledgeDatabase {
       let sourceStatus = sqlite3_step(source)
       let item: AgentKnowledgeItem?
       do { item = sourceStatus == SQLITE_ROW ? try decode(source, hashColumn: 0, payloadColumn: 1) : nil }
-      catch { sqlite3_finalize(source); throw error }
-      sqlite3_finalize(source)
+      catch { AgentKnowledgeSQLiteStatements.shared.release(source); throw error }
+      AgentKnowledgeSQLiteStatements.shared.release(source)
       guard sourceStatus == SQLITE_ROW || sourceStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard let item, keyedHash(item.id) == event.itemHash,
         keyedHash(AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)) == event.sourceRevisionHash else { return nil }
@@ -634,7 +634,7 @@ final class AgentKnowledgeDatabase {
       bind(event.sourceRevisionHash, at: 3, to: count)
       let countStatus = sqlite3_step(count)
       let available = sqlite3_column_int64(count, 0)
-      sqlite3_finalize(count)
+      AgentKnowledgeSQLiteStatements.shared.release(count)
       guard countStatus == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
       guard available == Int64(event.chunkCount) else { return nil }
       guard let statement = prepare("""
@@ -643,7 +643,7 @@ final class AgentKnowledgeDatabase {
         WHERE r.model_hash = ? AND r.item_hash = ? AND r.source_revision_hash = ? AND r.chunk_index >= ?
         ORDER BY r.chunk_index ASC LIMIT ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(modelHash, at: 1, to: statement)
       bind(event.itemHash, at: 2, to: statement)
       bind(event.sourceRevisionHash, at: 3, to: statement)
@@ -687,12 +687,12 @@ final class AgentKnowledgeDatabase {
       let nativeContract: String?
       if migrationStatus == SQLITE_ROW {
         guard let text = sqlite3_column_text(migration, 0) else {
-          sqlite3_finalize(migration)
+          AgentKnowledgeSQLiteStatements.shared.release(migration)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         nativeContract = String(cString: text)
       } else { nativeContract = nil }
-      sqlite3_finalize(migration)
+      AgentKnowledgeSQLiteStatements.shared.release(migration)
       guard migrationStatus == SQLITE_ROW || migrationStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard ensureVectorEnrollment(modelHash: modelHash) else {
         throw AgentKnowledgeDatabaseError.unavailable
@@ -708,7 +708,7 @@ final class AgentKnowledgeDatabase {
         JOIN knowledge_items i ON i.item_hash = q.item_hash
         WHERE q.model_hash = ? ORDER BY q.item_hash ASC LIMIT ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(modelHash, at: 1, to: statement)
       sqlite3_bind_int(statement, 2, 64)
       var pending: [AgentKnowledgeItem] = []
@@ -773,17 +773,17 @@ final class AgentKnowledgeDatabase {
       bind(modelHash, at: 1, to: insert)
       bind(contractHash, at: 2, to: insert)
       let inserted = sqlite3_step(insert) == SQLITE_DONE
-      sqlite3_finalize(insert)
+      AgentKnowledgeSQLiteStatements.shared.release(insert)
       guard inserted, let state = prepare("SELECT after_item_hash, complete FROM knowledge_vector_native_enrollment WHERE model_hash = ?") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       bind(modelHash, at: 1, to: state)
       guard sqlite3_step(state) == SQLITE_ROW, let text = sqlite3_column_text(state, 0) else {
-        sqlite3_finalize(state)
+        AgentKnowledgeSQLiteStatements.shared.release(state)
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       let cursor = String(cString: text), alreadyComplete = sqlite3_column_int(state, 1) != 0
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       if alreadyComplete {
         guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
         committed = true
@@ -798,13 +798,13 @@ final class AgentKnowledgeDatabase {
       var status = sqlite3_step(source)
       while status == SQLITE_ROW {
         guard let hash = sqlite3_column_text(source, 0) else {
-          sqlite3_finalize(source)
+          AgentKnowledgeSQLiteStatements.shared.release(source)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         hashes.append(String(cString: hash))
         status = sqlite3_step(source)
       }
-      sqlite3_finalize(source)
+      AgentKnowledgeSQLiteStatements.shared.release(source)
       guard status == SQLITE_DONE, let queue = prepare("INSERT OR IGNORE INTO knowledge_vector_queue(model_hash, item_hash) VALUES (?, ?)") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -814,11 +814,11 @@ final class AgentKnowledgeDatabase {
         bind(modelHash, at: 1, to: queue)
         bind(hash, at: 2, to: queue)
         guard sqlite3_step(queue) == SQLITE_DONE else {
-          sqlite3_finalize(queue)
+          AgentKnowledgeSQLiteStatements.shared.release(queue)
           throw AgentKnowledgeDatabaseError.unavailable
         }
       }
-      sqlite3_finalize(queue)
+      AgentKnowledgeSQLiteStatements.shared.release(queue)
       guard let update = prepare("UPDATE knowledge_vector_native_enrollment SET after_item_hash = ?, complete = ? WHERE model_hash = ?") else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
@@ -827,7 +827,7 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int(update, 2, complete ? 1 : 0)
       bind(modelHash, at: 3, to: update)
       let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-      sqlite3_finalize(update)
+      AgentKnowledgeSQLiteStatements.shared.release(update)
       guard updated, execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
       committed = true
       return complete
@@ -848,7 +848,7 @@ final class AgentKnowledgeDatabase {
             let statement = prepare(
               "SELECT complete FROM knowledge_vector_enrollment WHERE model_hash = ? LIMIT 1"
             ) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(modelHash, at: 1, to: statement)
       guard sqlite3_step(statement) == SQLITE_ROW else {
         throw AgentKnowledgeDatabaseError.corruptRecord
@@ -864,7 +864,7 @@ final class AgentKnowledgeDatabase {
             let statement = prepare(
               "SELECT chunks, pending, legacy FROM knowledge_vector_counts WHERE model_hash = ? LIMIT 1"
             ) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(modelHash, at: 1, to: statement)
       guard sqlite3_step(statement) == SQLITE_ROW else {
         throw AgentKnowledgeDatabaseError.corruptRecord
@@ -917,7 +917,7 @@ final class AgentKnowledgeDatabase {
         ORDER BY vector_key ASC
         LIMIT ? OFFSET ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 512)))
       sqlite3_bind_int(statement, 3, Int32(max(offset, 0)))
@@ -947,7 +947,7 @@ final class AgentKnowledgeDatabase {
         WHERE model_hash = ? AND vector_key > ?
         ORDER BY vector_key ASC LIMIT ?
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       bind(afterVectorKey ?? "", at: 2, to: statement)
       sqlite3_bind_int(statement, 3, Int32(pageSize))
@@ -1004,7 +1004,7 @@ final class AgentKnowledgeDatabase {
       while sqlite3_step(statement) == SQLITE_ROW {
         guard let hashText = sqlite3_column_text(statement, 0),
               let encrypted = blob(statement, column: 2) else {
-          sqlite3_finalize(statement)
+          AgentKnowledgeSQLiteStatements.shared.release(statement)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         stored.append((
@@ -1015,7 +1015,7 @@ final class AgentKnowledgeDatabase {
           blob(statement, column: 4)
         ))
       }
-      sqlite3_finalize(statement)
+      AgentKnowledgeSQLiteStatements.shared.release(statement)
       let rows = try stored.map { row in
         (row.0, try decodeSourcePreview(
           sourceHash: row.0,
@@ -1055,7 +1055,7 @@ final class AgentKnowledgeDatabase {
               SELECT item_hash, encrypted_payload FROM knowledge_items
               WHERE source_hash = ? ORDER BY item_hash ASC
               """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       bind(keyedHash(sourceIdentity), at: 1, to: statement)
       var ids: [String] = []
       while sqlite3_step(statement) == SQLITE_ROW {
@@ -1092,10 +1092,10 @@ final class AgentKnowledgeDatabase {
       SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
       nil
     ) == SQLITE_OK, let snapshot else {
-      if let snapshot { sqlite3_close_v2(snapshot) }
+      if let snapshot { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
       throw AgentKnowledgeDatabaseError.unavailable
     }
-    defer { sqlite3_close_v2(snapshot) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
     sqlite3_busy_timeout(snapshot, 5_000)
     guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
           sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
@@ -1107,7 +1107,7 @@ final class AgentKnowledgeDatabase {
 
     let sourceHash = keyedHash(group.source)
     var header: OpaquePointer?
-    guard sqlite3_prepare_v2(
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(
       snapshot,
       "SELECT updated_at, encrypted_header FROM knowledge_source_headers WHERE source_hash = ? LIMIT 1",
       -1,
@@ -1122,10 +1122,10 @@ final class AgentKnowledgeDatabase {
             expectedPurpose: sourceHeaderPurpose(sourceHash)
           ),
           let current = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext) else {
-      sqlite3_finalize(header)
+      AgentKnowledgeSQLiteStatements.shared.release(header)
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
-    sqlite3_finalize(header)
+    AgentKnowledgeSQLiteStatements.shared.release(header)
     guard current.source == group.source,
           current.sourceRevision == group.sourceRevision,
           current.chunkCount == group.chunkCount else {
@@ -1139,7 +1139,7 @@ final class AgentKnowledgeDatabase {
     while true {
       let predicate = firstPage ? "" : "AND (updated_at < ? OR (updated_at = ? AND item_hash > ?))"
       var page: OpaquePointer?
-      guard sqlite3_prepare_v2(
+      guard AgentKnowledgeSQLiteStatements.shared.prepare(
         snapshot,
         """
         SELECT item_hash, updated_at, encrypted_payload FROM knowledge_items
@@ -1159,27 +1159,27 @@ final class AgentKnowledgeDatabase {
       var pageCount = 0
       while sqlite3_step(page) == SQLITE_ROW {
         guard let hashText = sqlite3_column_text(page, 0) else {
-          sqlite3_finalize(page)
+          AgentKnowledgeSQLiteStatements.shared.release(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         let itemHash = String(cString: hashText)
         let updatedAt = sqlite3_column_int64(page, 1)
         let item = try decode(page, hashColumn: 0, payloadColumn: 2)
         guard sourceIdentity(item) == group.source, item.updatedAtMillis == updatedAt else {
-          sqlite3_finalize(page)
+          AgentKnowledgeSQLiteStatements.shared.release(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         try consume(item)
         emitted += 1
         guard emitted <= group.chunkCount else {
-          sqlite3_finalize(page)
+          AgentKnowledgeSQLiteStatements.shared.release(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         afterUpdatedAt = updatedAt
         afterItemHash = itemHash
         pageCount += 1
       }
-      sqlite3_finalize(page)
+      AgentKnowledgeSQLiteStatements.shared.release(page)
       if pageCount < 64 { break }
       firstPage = false
     }
@@ -1206,7 +1206,7 @@ final class AgentKnowledgeDatabase {
         JOIN knowledge_source_directory_state d ON d.id = i.id
         WHERE i.id = 1 LIMIT 1
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
       let items = sqlite3_column_int64(statement, 0)
       let sources = sqlite3_column_int64(statement, 1)
@@ -1246,11 +1246,11 @@ final class AgentKnowledgeDatabase {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       guard sqlite3_step(state) == SQLITE_ROW, let cursorText = sqlite3_column_text(state, 0) else {
-        sqlite3_finalize(state)
+        AgentKnowledgeSQLiteStatements.shared.release(state)
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       let cursor = String(cString: cursorText), complete = sqlite3_column_int(state, 1)
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       guard (cursor.isEmpty || cursor.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil),
             (0...1).contains(complete) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       if complete == 1 {
@@ -1269,12 +1269,12 @@ final class AgentKnowledgeDatabase {
         let step = sqlite3_step(page)
         if step == SQLITE_DONE { break }
         guard step == SQLITE_ROW, let hash = sqlite3_column_text(page, 0), let encrypted = blob(page, column: 1) else {
-          sqlite3_finalize(page)
+          AgentKnowledgeSQLiteStatements.shared.release(page)
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         rows.append((String(cString: hash), encrypted))
       }
-      sqlite3_finalize(page)
+      AgentKnowledgeSQLiteStatements.shared.release(page)
       var moved = 0
       for (hash, encrypted) in rows.prefix(pageSize) {
         try Task.checkCancellation()
@@ -1284,7 +1284,7 @@ final class AgentKnowledgeDatabase {
         }
         bind(hash, at: 1, to: present)
         let found = sqlite3_step(present)
-        sqlite3_finalize(present)
+        AgentKnowledgeSQLiteStatements.shared.release(present)
         if found == SQLITE_ROW { continue }
         guard found == SQLITE_DONE,
               let plain = readExternalPayload(itemHash: hash, database: database) ?? (try? cipher.decrypt(encrypted, expectedPurpose: purpose(hash))),
@@ -1298,7 +1298,7 @@ final class AgentKnowledgeDatabase {
         }
         bind(hash, at: 1, to: update)
         let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-        sqlite3_finalize(update)
+        AgentKnowledgeSQLiteStatements.shared.release(update)
         guard updated else { throw AgentKnowledgeDatabaseError.unavailable }
         moved += 1
       }
@@ -1309,7 +1309,7 @@ final class AgentKnowledgeDatabase {
       bind(visited > 0 ? rows[visited - 1].0 : cursor, at: 1, to: stateUpdate)
       sqlite3_bind_int(stateUpdate, 2, finished ? 1 : 0)
       let saved = sqlite3_step(stateUpdate) == SQLITE_DONE && sqlite3_changes(database) == 1
-      sqlite3_finalize(stateUpdate)
+      AgentKnowledgeSQLiteStatements.shared.release(stateUpdate)
       guard saved else { throw AgentKnowledgeDatabaseError.unavailable }
       try checkActive()
       try Task.checkCancellation()
@@ -1368,13 +1368,13 @@ final class AgentKnowledgeDatabase {
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
       guard sqlite3_step(state) == SQLITE_ROW,
             let cursorText = sqlite3_column_text(state, 0) else {
-        sqlite3_finalize(state)
+        AgentKnowledgeSQLiteStatements.shared.release(state)
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       var cursor = String(cString: cursorText)
       var allRows = sqlite3_column_int(state, 1) == 1
       let complete = sqlite3_column_int(state, 2) == 1
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       let shouldExternalizeAll = (scalar("SELECT items FROM knowledge_item_count_state WHERE id = 1") ?? 0) >= 16_384
       if shouldExternalizeAll, !allRows {
         cursor = ""
@@ -1396,13 +1396,13 @@ final class AgentKnowledgeDatabase {
       var rows: [(String, Data)] = []
       while sqlite3_step(page) == SQLITE_ROW {
         guard let hashText = sqlite3_column_text(page, 0), let payload = blob(page, column: 1) else {
-          sqlite3_finalize(page)
+          AgentKnowledgeSQLiteStatements.shared.release(page)
           _ = execute("ROLLBACK")
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         rows.append((String(cString: hashText), payload))
       }
-      sqlite3_finalize(page)
+      AgentKnowledgeSQLiteStatements.shared.release(page)
       for (itemHash, encrypted) in rows.prefix(limit) {
         if readExternalPayload(itemHash: itemHash, database: database) != nil { continue }
         guard let plaintext = try? cipher.decrypt(encrypted, expectedPurpose: purpose(itemHash)) else {
@@ -1417,7 +1417,7 @@ final class AgentKnowledgeDatabase {
           }
           bind(itemHash, at: 1, to: update)
           let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-          sqlite3_finalize(update)
+          AgentKnowledgeSQLiteStatements.shared.release(update)
           guard updated else {
             _ = execute("ROLLBACK")
             throw AgentKnowledgeDatabaseError.unavailable
@@ -1438,7 +1438,7 @@ final class AgentKnowledgeDatabase {
       sqlite3_bind_int(updateState, 2, allRows ? 1 : 0)
       sqlite3_bind_int(updateState, 3, finished ? 1 : 0)
       let stateUpdated = sqlite3_step(updateState) == SQLITE_DONE && sqlite3_changes(database) == 1
-      sqlite3_finalize(updateState)
+      AgentKnowledgeSQLiteStatements.shared.release(updateState)
       guard stateUpdated, execute("COMMIT") else {
         _ = execute("ROLLBACK")
         throw AgentKnowledgeDatabaseError.unavailable
@@ -1486,7 +1486,7 @@ final class AgentKnowledgeDatabase {
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       let cursor = String(cString: cursorText)
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       let names = try FileManager.default.contentsOfDirectory(
         at: payloadDirectory,
         includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
@@ -1529,7 +1529,7 @@ final class AgentKnowledgeDatabase {
       ) else { throw AgentKnowledgeDatabaseError.unavailable }
       bind(next, at: 1, to: update)
       let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-      sqlite3_finalize(update)
+      AgentKnowledgeSQLiteStatements.shared.release(update)
       guard updated else { throw AgentKnowledgeDatabaseError.unavailable }
       return ExternalPayloadReclamation(
         removedFiles: removedFiles,
@@ -1612,7 +1612,7 @@ final class AgentKnowledgeDatabase {
             INSERT INTO knowledge_items(item_hash, source_hash, updated_at, encrypted_payload)
             VALUES (?, ?, ?, ?)
             """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(itemHash, at: 1, to: statement)
     bind(keyedHash(sourceIdentity(item)), at: 2, to: statement)
     sqlite3_bind_int64(statement, 3, item.updatedAtMillis)
@@ -1626,7 +1626,7 @@ final class AgentKnowledgeDatabase {
     guard let indexStatement = prepare(
       "INSERT INTO knowledge_fts(item_hash, tokens) VALUES (?, ?)"
     ) else { return false }
-    defer { sqlite3_finalize(indexStatement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(indexStatement) }
     bind(itemHash, at: 1, to: indexStatement)
     let searchable = [item.title, item.summary, item.content, item.source, item.tags.joined(separator: " ")]
       .joined(separator: " ")
@@ -1675,7 +1675,7 @@ final class AgentKnowledgeDatabase {
             INSERT INTO knowledge_source_headers(source_hash, updated_at, encrypted_header)
             VALUES (?, ?, ?)
             """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(sourceHash, at: 1, to: statement)
     sqlite3_bind_int64(statement, 2, group.updatedAtMillis)
     encrypted.withUnsafeBytes { bytes in
@@ -1757,7 +1757,7 @@ final class AgentKnowledgeDatabase {
               header_fingerprint = excluded.header_fingerprint,
               encrypted_preview = excluded.encrypted_preview
             """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(sourceHash, at: 1, to: statement)
     fingerprint.withUnsafeBytes { bytes in
       sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(fingerprint.count), Self.transient)
@@ -1782,7 +1782,7 @@ final class AgentKnowledgeDatabase {
     ) == SQLITE_OK else { database = nil; return }
     sqlite3_busy_timeout(database, 5_000)
     do { try AgentKnowledgePrimaryDurability.configure(database, role: .catalog) }
-    catch { sqlite3_close_v2(database); self.database = nil; return }
+    catch { AgentKnowledgeSQLiteStatements.shared.close(database); self.database = nil; return }
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_items (
         item_hash TEXT PRIMARY KEY NOT NULL,
@@ -1796,7 +1796,7 @@ final class AgentKnowledgeDatabase {
     setupExternalPayloads()
     guard let database else { return }
     do { try primaryPayloads.setup(catalog: database) }
-    catch { sqlite3_close_v2(database); self.database = nil; return }
+    catch { AgentKnowledgeSQLiteStatements.shared.close(database); self.database = nil; return }
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_source_headers (
         source_hash TEXT PRIMARY KEY NOT NULL,
@@ -1975,7 +1975,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare(
       "SELECT complete, groups FROM knowledge_source_directory_state WHERE id = 1 LIMIT 1"
     ) else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
@@ -2174,7 +2174,7 @@ final class AgentKnowledgeDatabase {
 
   private func columnExists(_ column: String, in table: String) -> Bool {
     guard let statement = prepare("PRAGMA table_info(\(table))") else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     while sqlite3_step(statement) == SQLITE_ROW {
       if let name = sqlite3_column_text(statement, 1), String(cString: name) == column { return true }
     }
@@ -2185,7 +2185,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare("SELECT 1 FROM knowledge_count_scan WHERE complete = 0 LIMIT 1") else {
       return true
     }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     return sqlite3_step(statement) == SQLITE_ROW
   }
 
@@ -2199,13 +2199,13 @@ final class AgentKnowledgeDatabase {
     guard sqlite3_step(state) == SQLITE_ROW,
           let primaryText = sqlite3_column_text(state, 0),
           let secondaryText = sqlite3_column_text(state, 1) else {
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     let primary = String(cString: primaryText)
     let secondary = String(cString: secondaryText)
     let complete = sqlite3_column_int(state, 2)
-    sqlite3_finalize(state)
+    AgentKnowledgeSQLiteStatements.shared.release(state)
     guard (0...1).contains(complete),
           (primary.isEmpty || isOpaqueHash(primary)),
           (secondary.isEmpty || isOpaqueHash(secondary)) else {
@@ -2238,12 +2238,12 @@ final class AgentKnowledgeDatabase {
       let second = String(cString: secondText)
       let tracked = sqlite3_column_int(page, 2)
       guard isOpaqueHash(first), isOpaqueHash(second), (0...1).contains(tracked) else {
-        sqlite3_finalize(page)
+        AgentKnowledgeSQLiteStatements.shared.release(page)
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       rows.append((first, second, tracked == 1))
     }
-    sqlite3_finalize(page)
+    AgentKnowledgeSQLiteStatements.shared.release(page)
 
     for row in rows.prefix(pageSize) where !row.2 {
       let updateSQL = kind == "vectors"
@@ -2253,7 +2253,7 @@ final class AgentKnowledgeDatabase {
       bind(row.0, at: 1, to: update)
       if kind == "queue" { bind(row.1, at: 2, to: update) }
       let changed = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-      sqlite3_finalize(update)
+      AgentKnowledgeSQLiteStatements.shared.release(update)
       guard changed else { throw AgentKnowledgeDatabaseError.corruptRecord }
     }
 
@@ -2269,7 +2269,7 @@ final class AgentKnowledgeDatabase {
     sqlite3_bind_int(checkpoint, 3, rows.count <= pageSize ? 1 : 0)
     bind(kind, at: 4, to: checkpoint)
     let saved = sqlite3_step(checkpoint) == SQLITE_DONE && sqlite3_changes(database) == 1
-    sqlite3_finalize(checkpoint)
+    AgentKnowledgeSQLiteStatements.shared.release(checkpoint)
     guard saved else { throw AgentKnowledgeDatabaseError.corruptRecord }
     return rows.count <= pageSize
   }
@@ -2288,7 +2288,7 @@ final class AgentKnowledgeDatabase {
               SELECT 1 FROM knowledge_vectors WHERE model_hash = ? LIMIT 1
             ) THEN 1 ELSE 0 END)
             """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(modelHash, at: 2, to: statement)
     guard sqlite3_step(statement) == SQLITE_DONE else { return false }
@@ -2300,7 +2300,7 @@ final class AgentKnowledgeDatabase {
         SELECT 1 FROM knowledge_vector_queue WHERE model_hash = ? LIMIT 1
       ) THEN 1 ELSE 0 END)
       """) else { return false }
-    defer { sqlite3_finalize(counts) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(counts) }
     bind(modelHash, at: 1, to: counts)
     bind(modelHash, at: 2, to: counts)
     bind(modelHash, at: 3, to: counts)
@@ -2318,13 +2318,13 @@ final class AgentKnowledgeDatabase {
     bind(modelHash, at: 1, to: state)
     guard sqlite3_step(state) == SQLITE_ROW,
           let cursorText = sqlite3_column_text(state, 0) else {
-      sqlite3_finalize(state)
+      AgentKnowledgeSQLiteStatements.shared.release(state)
       _ = execute("ROLLBACK")
       return false
     }
     let cursor = String(cString: cursorText)
     let complete = sqlite3_column_int(state, 1) == 1
-    sqlite3_finalize(state)
+    AgentKnowledgeSQLiteStatements.shared.release(state)
     guard cursor.isEmpty || (cursor.count == 64 && cursor.allSatisfy(\.isHexDigit)) else {
       _ = execute("ROLLBACK")
       return false
@@ -2349,13 +2349,13 @@ final class AgentKnowledgeDatabase {
     while sqlite3_step(page) == SQLITE_ROW, let text = sqlite3_column_text(page, 0) {
       let key = String(cString: text)
       guard key.count == 64, key.allSatisfy(\.isHexDigit) else {
-        sqlite3_finalize(page)
+        AgentKnowledgeSQLiteStatements.shared.release(page)
         _ = execute("ROLLBACK")
         return false
       }
       keys.append(key)
     }
-    sqlite3_finalize(page)
+    AgentKnowledgeSQLiteStatements.shared.release(page)
     for itemHash in keys.prefix(pageSize) {
       guard let insert = prepare(
         "INSERT OR IGNORE INTO knowledge_vector_queue(model_hash, item_hash) VALUES (?, ?)"
@@ -2366,7 +2366,7 @@ final class AgentKnowledgeDatabase {
       bind(modelHash, at: 1, to: insert)
       bind(itemHash, at: 2, to: insert)
       let inserted = sqlite3_step(insert) == SQLITE_DONE
-      sqlite3_finalize(insert)
+      AgentKnowledgeSQLiteStatements.shared.release(insert)
       if !inserted {
         _ = execute("ROLLBACK")
         return false
@@ -2384,7 +2384,7 @@ final class AgentKnowledgeDatabase {
     sqlite3_bind_int(update, 2, keys.count <= pageSize ? 1 : 0)
     bind(modelHash, at: 3, to: update)
     let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-    sqlite3_finalize(update)
+    AgentKnowledgeSQLiteStatements.shared.release(update)
     guard updated, execute("COMMIT") else {
       _ = execute("ROLLBACK")
       return false
@@ -2396,7 +2396,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare(
       "DELETE FROM knowledge_vector_queue WHERE model_hash = ? AND item_hash = ?"
     ) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(itemHash, at: 2, to: statement)
     return sqlite3_step(statement) == SQLITE_DONE
@@ -2406,7 +2406,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare(
       "SELECT 1 FROM knowledge_vector_queue WHERE model_hash = ? LIMIT 1"
     ) else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     return sqlite3_step(statement) != SQLITE_ROW
   }
@@ -2418,7 +2418,7 @@ final class AgentKnowledgeDatabase {
         SELECT 1 FROM knowledge_vector_enrollment WHERE model_hash = ?
       )
       """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(itemHash, at: 2, to: statement)
     bind(modelHash, at: 3, to: statement)
@@ -2586,7 +2586,7 @@ final class AgentKnowledgeDatabase {
       CROSS JOIN knowledge_browse_revision r WHERE m.model_hash = ? AND r.id = 1
         AND (SELECT value FROM knowledge_metadata WHERE key = 'native_publications_schema') = 1 LIMIT 1
       """) else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW, let epoch = sqlite3_column_text(statement, 0) else {
       throw AgentKnowledgeDatabaseError.unavailable
@@ -2606,7 +2606,7 @@ final class AgentKnowledgeDatabase {
         AND p.sequence = (SELECT c.sequence FROM knowledge_vector_changes c
           WHERE c.model_hash = p.model_hash AND c.item_hash = p.item_hash ORDER BY c.sequence DESC LIMIT 1)
       """) else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(itemHash, at: 2, to: statement)
     bind(revisionHash, at: 3, to: statement)
@@ -2624,10 +2624,10 @@ final class AgentKnowledgeDatabase {
       if sqlite3_step(statement) == SQLITE_ROW,
          let epochText = sqlite3_column_text(statement, 0) {
         let state = (String(cString: epochText), sqlite3_column_int64(statement, 1))
-        sqlite3_finalize(statement)
+        AgentKnowledgeSQLiteStatements.shared.release(statement)
         return state
       }
-      sqlite3_finalize(statement)
+      AgentKnowledgeSQLiteStatements.shared.release(statement)
     }
     let epoch = UUID().uuidString.lowercased()
     guard let insert = prepare(
@@ -2636,11 +2636,11 @@ final class AgentKnowledgeDatabase {
     bind(modelHash, at: 1, to: insert)
     bind(epoch, at: 2, to: insert)
     let inserted = sqlite3_step(insert) == SQLITE_DONE
-    sqlite3_finalize(insert)
+    AgentKnowledgeSQLiteStatements.shared.release(insert)
     guard inserted, let state = prepare("SELECT epoch, head_sequence FROM knowledge_vector_feed_models WHERE model_hash = ? LIMIT 1") else {
       throw AgentKnowledgeDatabaseError.unavailable
     }
-    defer { sqlite3_finalize(state) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(state) }
     bind(modelHash, at: 1, to: state)
     guard sqlite3_step(state) == SQLITE_ROW, let text = sqlite3_column_text(state, 0) else {
       throw AgentKnowledgeDatabaseError.unavailable
@@ -2673,10 +2673,10 @@ final class AgentKnowledgeDatabase {
          String(cString: itemText) == itemHash,
          String(cString: revisionText) == revisionHash,
          sqlite3_column_int64(latest, 3) == Int64(max(chunkCount, 0)) {
-        sqlite3_finalize(latest)
+        AgentKnowledgeSQLiteStatements.shared.release(latest)
         return true
       }
-      sqlite3_finalize(latest)
+      AgentKnowledgeSQLiteStatements.shared.release(latest)
     }
     guard let insert = prepare("""
       INSERT INTO knowledge_vector_changes(
@@ -2693,7 +2693,7 @@ final class AgentKnowledgeDatabase {
     sqlite3_bind_int64(insert, 7, Int64(max(chunkCount, 0)))
     sqlite3_bind_int64(insert, 8, max(updatedAtMillis, 0))
     let inserted = sqlite3_step(insert) == SQLITE_DONE
-    sqlite3_finalize(insert)
+    AgentKnowledgeSQLiteStatements.shared.release(insert)
     guard inserted else { return false }
     let sequence = sqlite3_last_insert_rowid(database)
     guard let update = prepare(
@@ -2704,7 +2704,7 @@ final class AgentKnowledgeDatabase {
     bind(state.epoch, at: 3, to: update)
     sqlite3_bind_int64(update, 4, state.head)
     let updated = sqlite3_step(update) == SQLITE_DONE && sqlite3_changes(database) == 1
-    sqlite3_finalize(update)
+    AgentKnowledgeSQLiteStatements.shared.release(update)
     return updated
   }
 
@@ -2716,7 +2716,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare("SELECT COUNT(*) FROM knowledge_vector_replay_rows WHERE model_hash = ? AND item_hash = ? AND source_revision_hash = ?") else {
       throw AgentKnowledgeDatabaseError.unavailable
     }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(itemHash, at: 2, to: statement)
     bind(revisionHash, at: 3, to: statement)
@@ -2728,14 +2728,14 @@ final class AgentKnowledgeDatabase {
     guard let delete = prepare("DELETE FROM knowledge_vector_replay_rows WHERE vector_key = ?") else { return false }
     bind(vectorKey, at: 1, to: delete)
     let deleted = sqlite3_step(delete) == SQLITE_DONE
-    sqlite3_finalize(delete)
+    AgentKnowledgeSQLiteStatements.shared.release(delete)
     guard deleted else { return false }
     guard checkpoint.sourceStartUTF16 != nil else { return true }
     guard let insert = prepare("""
       INSERT INTO knowledge_vector_replay_rows(vector_key, model_hash, item_hash, source_revision_hash, chunk_index)
       VALUES (?, ?, ?, ?, ?)
       """) else { return false }
-    defer { sqlite3_finalize(insert) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
     bind(vectorKey, at: 1, to: insert)
     bind(keyedHash(checkpoint.provenance.modelSHA256), at: 2, to: insert)
     bind(keyedHash(checkpoint.itemId), at: 3, to: insert)
@@ -2748,7 +2748,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare(
       "SELECT encrypted_payload FROM knowledge_vectors WHERE vector_key = ?"
     ) else { return nil }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(vectorKey, at: 1, to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
           let encrypted = blob(statement, column: 0),
@@ -2764,7 +2764,7 @@ final class AgentKnowledgeDatabase {
       LEFT JOIN knowledge_items k ON k.item_hash = v.item_hash
       WHERE k.item_hash IS NULL ORDER BY v.vector_key ASC
       """) else { return [] }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     var seen = Set<String>()
     var documents: [AgentKnowledgeVectorCheckpoint] = []
     while sqlite3_step(statement) == SQLITE_ROW {
@@ -2818,7 +2818,7 @@ final class AgentKnowledgeDatabase {
       INSERT INTO knowledge_external_payloads(item_hash, file_name, plaintext_bytes, plaintext_sha256)
       VALUES (?, ?, ?, ?)
       """) else { return false }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(itemHash, at: 1, to: statement)
     bind(fileName, at: 2, to: statement)
     sqlite3_bind_int64(statement, 3, Int64(plaintext.count))
@@ -2829,14 +2829,14 @@ final class AgentKnowledgeDatabase {
   private func readExternalPayload(itemHash: String, database: OpaquePointer?) -> Data? {
     guard let database else { return nil }
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(
       database,
       "SELECT file_name, plaintext_bytes, plaintext_sha256 FROM knowledge_external_payloads WHERE item_hash = ? LIMIT 1",
       -1,
       &statement,
       nil
     ) == SQLITE_OK, let statement else { return nil }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(itemHash, at: 1, to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
           let fileText = sqlite3_column_text(statement, 0),
@@ -2862,7 +2862,7 @@ final class AgentKnowledgeDatabase {
     guard let statement = prepare(
       "SELECT COUNT(*) FROM knowledge_external_payloads WHERE file_name = ?"
     ) else { return -1 }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     bind(fileName, at: 1, to: statement)
     return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : -1
   }
@@ -2870,7 +2870,7 @@ final class AgentKnowledgeDatabase {
   private func prepare(_ sql: String) -> OpaquePointer? {
     guard let database else { return nil }
     var statement: OpaquePointer?
-    return sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK ? statement : nil
+    return AgentKnowledgeSQLiteStatements.shared.prepare(database, sql, -1, &statement, nil) == SQLITE_OK ? statement : nil
   }
 
   private func execute(_ sql: String) -> Bool {
@@ -2880,12 +2880,14 @@ final class AgentKnowledgeDatabase {
 
   private func scalar(_ sql: String) -> Int64? {
     guard let statement = prepare(sql) else { return nil }
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : nil
   }
 
   private func bind(_ value: String, at index: Int32, to statement: OpaquePointer?) {
-    value.withCString { sqlite3_bind_text(statement, index, $0, -1, Self.transient) }
+    if value.withCString({ sqlite3_bind_text(statement, index, $0, -1, Self.transient) }) != SQLITE_OK {
+      AgentKnowledgeSQLiteStatements.shared.markFailed(statement)
+    }
   }
 
   private func blob(_ statement: OpaquePointer?, column: Int32) -> Data? {

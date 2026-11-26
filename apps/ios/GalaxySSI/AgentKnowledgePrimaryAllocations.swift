@@ -16,9 +16,9 @@ final class AgentKnowledgePrimaryAllocations {
     try validate(id)
     do {
       let db = try open(writable: true)
-      defer { sqlite3_close_v2(db) }
+      defer { AgentKnowledgeSQLiteStatements.shared.close(db) }
       let insert = try prepare(db, "INSERT INTO pending(partition_id) VALUES(?)")
-      defer { sqlite3_finalize(insert) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
       try bind(id, insert)
       guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       try AgentKnowledgePrimaryDurability.verify(db, role: .primary)
@@ -29,7 +29,7 @@ final class AgentKnowledgePrimaryAllocations {
   func hasPending() throws -> Bool {
     guard try regularOrMissing(file) else { return false }
     let db = try open(writable: false)
-    defer { sqlite3_close_v2(db) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(db) }
     if try version(db) == 0 { return false }
     return try pending(db)
   }
@@ -41,12 +41,12 @@ final class AgentKnowledgePrimaryAllocations {
     try checkActive()
     guard try regularOrMissing(file) else { return Page(visited: 0, orphaned: 0, complete: true) }
     let db = try open(writable: true)
-    defer { sqlite3_close_v2(db) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(db) }
     try execute(db, "BEGIN IMMEDIATE TRANSACTION")
     var committed = false
     defer { if !committed { try? execute(db, "ROLLBACK") } }
     let select = try prepare(db, "SELECT partition_id FROM pending ORDER BY partition_id LIMIT ?")
-    defer { sqlite3_finalize(select) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(select) }
     sqlite3_bind_int(select, 1, Int32(limit))
     var ids: [String] = []
     while true {
@@ -64,7 +64,7 @@ final class AgentKnowledgePrimaryAllocations {
       if try referenced(id) { try verify(id) }
       else { try remove(id); orphaned += 1 }
       let delete = try prepare(db, "DELETE FROM pending WHERE partition_id=?")
-      defer { sqlite3_finalize(delete) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(delete) }
       try bind(id, delete)
       guard sqlite3_step(delete) == SQLITE_DONE, sqlite3_changes(db) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
     }
@@ -82,10 +82,10 @@ final class AgentKnowledgePrimaryAllocations {
     var handle: OpaquePointer?
     let flags = SQLITE_OPEN_FULLMUTEX | (writable ? SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE : SQLITE_OPEN_READONLY)
     guard sqlite3_open_v2(file.path, &handle, flags, nil) == SQLITE_OK, let db = handle else {
-      if let handle { sqlite3_close_v2(handle) }; throw AgentKnowledgeDatabaseError.unavailable
+      if let handle { AgentKnowledgeSQLiteStatements.shared.close(handle) }; throw AgentKnowledgeDatabaseError.unavailable
     }
     var ready = false
-    defer { if !ready { sqlite3_close_v2(db) } }
+    defer { if !ready { AgentKnowledgeSQLiteStatements.shared.close(db) } }
     sqlite3_busy_timeout(db, 5_000)
     try execute(db, "PRAGMA cache_size=-256")
     try execute(db, "PRAGMA mmap_size=0")
@@ -112,7 +112,7 @@ final class AgentKnowledgePrimaryAllocations {
 
   private func version(_ db: OpaquePointer) throws -> Int32 {
     let statement = try prepare(db, "PRAGMA user_version")
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let value = sqlite3_column_int(statement, 0)
     guard (0...1).contains(value) else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -120,7 +120,7 @@ final class AgentKnowledgePrimaryAllocations {
   }
   private func pending(_ db: OpaquePointer) throws -> Bool {
     let statement = try prepare(db, "SELECT 1 FROM pending LIMIT 1")
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     let state = sqlite3_step(statement)
     guard state == SQLITE_ROW || state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     return state == SQLITE_ROW
@@ -139,8 +139,8 @@ final class AgentKnowledgePrimaryAllocations {
   }
   private func prepare(_ db: OpaquePointer, _ sql: String) throws -> OpaquePointer {
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
-      if let statement { sqlite3_finalize(statement) }; throw AgentKnowledgeDatabaseError.unavailable
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+      if let statement { AgentKnowledgeSQLiteStatements.shared.release(statement) }; throw AgentKnowledgeDatabaseError.unavailable
     }
     return statement
   }

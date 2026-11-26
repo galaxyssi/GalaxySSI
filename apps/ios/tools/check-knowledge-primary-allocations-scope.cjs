@@ -2,12 +2,13 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = 'cace7bdadba48e0bd82d063ee8538e3ae5529042', app = 'apps/ios/GalaxySSI/';
 const file = app + 'AgentKnowledgePrimaryPartitions.swift';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-statements-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) { const a = source.indexOf(start), b = source.indexOf(end, a + start.length); assert(a >= 0 && b > a, start); return source.slice(a, b); }
 const fields = '  private let afterAllocationIntent: (String) throws -> Void\n  private let afterAllocationFile: (String) throws -> Void\n  private var allocations: AgentKnowledgePrimaryAllocations { AgentKnowledgePrimaryAllocations(root: root) }\n';
 const initializers = '       readerSlots: AgentKnowledgePrimaryReaderSlots = .shared,\n       afterAllocationIntent: @escaping (String) throws -> Void = { _ in },\n       afterAllocationFile: @escaping (String) throws -> Void = { _ in }) {';
 function retained(f, source) {
+  source = require('./check-knowledge-statements-scope.cjs').retained(f, source);
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryAllocations(?:Tests)?\.swift/.test(l)).join('\n');
   if (f !== file || !source.includes(fields)) return source;
   source = source.replace(fields, '').replace(initializers, '       readerSlots: AgentKnowledgePrimaryReaderSlots = .shared) {')
