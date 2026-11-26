@@ -122,10 +122,55 @@ enum AgentConnectorTimingPolicy {
     hasAttachments ? attachment : interactive
   }
 
+  static func deadlineStartMillis(stage: AgentConnectorTimeoutStage, metadata: [String: String]) -> Int64 {
+    switch stage {
+    case .notAccepted: return Int64(metadata["resource_started_at"] ?? "") ?? 0
+    case .notRunning: return Int64(metadata["transport_accepted_at"] ?? "") ?? 0
+    case .readOnlyStale:
+      return Int64(metadata["remote_task_status_updated_at"] ?? "") ??
+        Int64(metadata["transport_accepted_at"] ?? "") ?? 0
+    }
+  }
+
+  static func overdueObservationMetadata(metadata: [String: String], nowMillis: Int64) -> [String: String] {
+    guard metadata["awaiting_response"] == "true", nowMillis > 0 else { return [:] }
+    let status = AgentRemoteTaskStatusPolicy.normalize(metadata["remote_task_status"] ?? "")
+    let stage: AgentConnectorTimeoutStage
+    if deadlineStartMillis(stage: .notRunning, metadata: metadata) <= 0 {
+      guard status.isEmpty else { return [:] }
+      stage = .notAccepted
+    } else if status == "running" {
+      guard metadata["routing_requires_live_data"] == "true" else { return [:] }
+      stage = .readOnlyStale
+    } else {
+      guard ["", "accepted", "queued", "starting"].contains(status) else { return [:] }
+      stage = .notRunning
+    }
+    let started = deadlineStartMillis(stage: stage, metadata: metadata)
+    guard started > 0, nowMillis >= started else { return [:] }
+    let schedule = deadlines(hasAttachments: metadata["has_attachments"] == "true")
+    let deadline: Int64
+    switch stage {
+    case .notAccepted: deadline = schedule.acceptedMs
+    case .notRunning: deadline = schedule.runningMs
+    case .readOnlyStale: deadline = schedule.liveStaleMs
+    }
+    guard AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(deadlineMillis: deadline,
+      startedAtMillis: started, nowMillis: nowMillis) == 0 else { return [:] }
+    let elapsed = nowMillis.subtractingReportingOverflow(started)
+    guard !elapsed.overflow else { return [:] }
+    return [
+      "native_connector_observation_timeout_stage": stage.rawValue,
+      "native_connector_observation_started_at": String(started),
+      "native_connector_observation_elapsed_ms": String(elapsed.partialValue),
+      "native_connector_observation_deadline_ms": String(deadline)
+    ]
+  }
+
   private static let interactive = AgentConnectorTimeoutSchedule(
-    acceptedMs: 5_000,
-    runningMs: 8_000,
-    liveStaleMs: 15_000
+    acceptedMs: 15_000,
+    runningMs: 45_000,
+    liveStaleMs: 60_000
   )
 
   private static let attachment = AgentConnectorTimeoutSchedule(

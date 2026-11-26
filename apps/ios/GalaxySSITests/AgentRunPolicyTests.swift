@@ -3488,9 +3488,9 @@ extension GalaxySSIStoreTests {
     let regular = AgentConnectorTimingPolicy.deadlines(hasAttachments: false)
     let attachment = AgentConnectorTimingPolicy.deadlines(hasAttachments: true)
 
-    XCTAssertEqual(regular.acceptedMs, 5_000)
-    XCTAssertEqual(regular.runningMs, 8_000)
-    XCTAssertEqual(regular.liveStaleMs, 15_000)
+    XCTAssertEqual(regular.acceptedMs, 15_000)
+    XCTAssertEqual(regular.runningMs, 45_000)
+    XCTAssertEqual(regular.liveStaleMs, 60_000)
     XCTAssertEqual(attachment.acceptedMs, 60_000)
     XCTAssertEqual(attachment.runningMs, 90_000)
     XCTAssertGreaterThan(attachment.liveStaleMs, regular.liveStaleMs)

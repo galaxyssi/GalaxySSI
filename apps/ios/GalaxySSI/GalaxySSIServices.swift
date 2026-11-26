@@ -14547,6 +14547,8 @@ final class MessageCoordinator: ObservableObject {
           var plan = task.activePlan, let index = plan.actions.firstIndex(where: { $0.id == waiting.id }) else { return true }
     var observed = pending
     observed.metadata["native_connector_observation_overdue"] = "true"
+    observed.metadata.merge(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,
+      nowMillis: AgentControlPlaneClock.nowMillis())) { _, latest in latest }
     guard let retained = AgentNativeConnectorContinuation.waitingAction(waiting, result: observed,
       task: task, outgoing: outgoing) else { return true }
     var updated = task
