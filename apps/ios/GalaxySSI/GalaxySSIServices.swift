@@ -4632,6 +4632,8 @@ final class MessageCoordinator: ObservableObject {
         _ = desktopReplyRecovery.retire(binding)
         continue
       }
+      // Offline legacy probes also advance the clock owned by the journal query pump.
+      guard usesLegacyMqtt else { continue }
       let online = mqttClient.relationshipSubscriptionsReady
       if online && published >= 8 { continue }
       let observationRequest = desktopReplyRecovery.request(binding, online: online, now: now)
