@@ -10,7 +10,7 @@ struct AgentTaskRuntimeOptions {
   var memoryObserver: (AgentWorkspace) -> Void
 
   init(
-    workspaceStore: AgentWorkspaceStore = FileAgentWorkspaceStore(),
+    workspaceStore: AgentWorkspaceStore = IndexedAgentWorkspaceStore(),
     maxConcurrentReadReasoningTasks: Int = AgentAdaptiveConcurrencyPolicy.maximumConcurrency,
     clock: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())

@@ -70,7 +70,8 @@ for (const file of [
   'VoiceWhisperModelDownloadService.swift', 'GalaxySSILocalModelArtifactView.swift',
   'GalaxySSIControlCenterView.swift',
 ]) {
-  assert.equal(read(file), old(file), file);
+  assert.equal(file === 'GalaxySSIStore.swift'
+    ? require('./check-workspace-index-scope.cjs').retainedWorkspaceDefault(read(file)) : read(file), old(file), file);
 }
 const files = git('diff', '--name-only', `${android}^1`, android).trim().split('\n');
 assert.equal(files.length, 19);

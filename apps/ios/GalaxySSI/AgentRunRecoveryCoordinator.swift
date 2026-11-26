@@ -920,7 +920,7 @@ final class AgentStartupRecoveryCoordinator: ObservableObject {
             recoverRuns: {
               try await Task.detached(priority: .utility) {
                 let runStore = UserDefaultsAgentRunEventStore()
-                let workspaceStore = FileAgentWorkspaceStore()
+                let workspaceStore = IndexedAgentWorkspaceStore()
                 let recordedStore = UserDefaultsAgentRecordedRunStore()
                 let connectorLedger = UserDefaultsAgentManagedResponseLedger()
                 let recovery = AgentRunRecoveryCoordinator(

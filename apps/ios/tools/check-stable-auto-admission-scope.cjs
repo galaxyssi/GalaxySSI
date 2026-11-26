@@ -213,7 +213,8 @@ for (const file of ['AgentActionEffectExecutor.swift', 'AgentConnectorTimeoutRes
     '    guard let claim = store.observe(key), claim.result != nil else { return nil }') : read(target);
   assert.equal(current, git('show', `${base}:${target}`), file + ' only read-only pending-claim observation changes; execution/timeout kernels unchanged');
 }
-const taskStore = read('apps/ios/GalaxySSI/GalaxySSIStore.swift');
+const taskStore = require('./check-workspace-index-scope.cjs')
+  .retainedWorkspaceDefault(read('apps/ios/GalaxySSI/GalaxySSIStore.swift'));
 assert.equal(taskStore.replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n', ''),
   git('show', `${base}:apps/ios/GalaxySSI/GalaxySSIStore.swift`), 'Existing guarded task snapshot save/rollback body and other Store code unchanged');
 const resolverFile = 'apps/ios/GalaxySSI/AgentConnectorResponseResolver.swift';

@@ -2,7 +2,7 @@
   "androidPR": 3007,
   "androidCommit": "65655f0c79c6ab04121150229a65b089180f82f2",
   "incrementalBase": "492bebe922013c2f707b38e4ddc849a655deba68",
-  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, atomic cache/workspace commits, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache, feature-hash similarity and four monotonic provider-round diagnostic spans. Image DNS preflight is not connection pinning. Indexed storage/workspace/large-corpus limits, other media/relevance, UI/end-to-end timing and native acceptance remain incomplete.",
+  "scope": "Public web/image evidence and bounded model delivery; partial encrypted Markdown image lifecycle; renderer/research/cloud caps, indexed atomic generic workspace and cache stores, scoped learning/health, pinned catalogs/adapters, unified mixed text/media fusion and routing, typed direct images versus learned-topic pages, exact response cache, feature-hash similarity and monotonic provider/workspace diagnostics. Health task store remains separately sealed. Image DNS preflight is not connection pinning. Remaining public-result/media limits, broader context paths, other media/relevance, UI/end-to-end timing and native acceptance remain incomplete.",
   "files": [
     {
       "path": "apps/android/app/build.gradle.kts",
@@ -107,7 +107,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebIntelligenceService.kt",
       "sha256": "10d4c9051f85abb1bfab341ed7101dcbd24bd59b8fa82f9c4236d2660ce69347",
-      "disposition": "Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains now use protected purpose-bound encrypted SQLite indexes: point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Document/search/learned clear and persisted cache-generation rotation share one transaction; watches and health remain. Import is fenced and the old file is retired after committed migration, with cleanup failure reported. Similarity scans one body at a time with bounded retained hits, not ANN. Public result/media limits, workspace transactions and native SQL/crypto/backup/recovery/performance acceptance remain incomplete"
+      "disposition": "Partial: scoped learning/health, pinned adapters/fusion/routing, exact response cache and feature-hash similarity. All cache domains now use protected purpose-bound encrypted SQLite indexes: point/HMAC reads, batched writes, indexed metadata/retention and 2,000 documents. Document/search/learned clear and persisted cache-generation rotation share one transaction; watches and health remain. Import is fenced and the old file is retired after committed migration, with cleanup failure reported. Similarity scans one body at a time with bounded retained hits, not ANN. Public result/media limits and native SQL/crypto/backup/recovery/performance acceptance remain incomplete"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWebMaintenanceQueue.kt",
@@ -127,7 +127,7 @@
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentWorkspaceStore.kt",
       "sha256": "f3f178578b0f7a3f5497de82de0067e6502d77f06366ac9d531f5422a7313173",
-      "disposition": "iOS retains one whole-file snapshot for records and derived recovery membership, serializing same-path instances across revision check/atomic commit and rejecting unreadable/partial/unsupported snapshots before writes. Successful creation now measures monotonic preparation and actual atomic write separately, excluding post-commit notification. Failed writes, conflicts, updates and other mutations do not emit creation success. Typed private hashed correlation only. Five added fixture methods are source only. Native fault/concurrency/logging acceptance and indexed-storage/performance parity not verified; no encryption migration"
+      "disposition": "Generic workspace production/runtime/startup recovery now use encrypted per-record SQLite with HMAC lookup, small authenticated retention metadata and recovery indexes. One BEGIN IMMEDIATE covers revision comparison, target reducer, record/eviction/recovery writes; notify and typed private creation timing only after commit. Strict bounded legacy migration has encrypted marker plus pending/committed Keychain fencing, no missing-key replacement or committed-index-loss reimport; retire plaintext after commit and retry cleanup. Existing 64-record/serialized-size/terminal-first/shrink policies retained. Eight fixture methods authored only. Health owner-bound sealed task store remains unchanged. Native SQL/crypto/concurrency/migration/backup/logging and measured performance parity not verified"
     },
     {
       "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AppStore.kt",

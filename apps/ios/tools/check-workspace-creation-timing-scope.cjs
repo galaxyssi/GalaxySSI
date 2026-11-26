@@ -30,7 +30,9 @@ function validateWorkspaceCreationTiming() {
   assert.equal(retainedWorkspaceCreationTiming(store), git('show', baseline + ':' + app + 'FileAgentWorkspaceStore.swift'),
     'Retain locking, strict legacy read, revision/identity/bounds, persistence failure and post-commit notification outside declared timing hooks');
   for (const name of ['AgentWorkspaceStore', 'AgentWorkspaceBoundsPolicy', 'AgentWorkspaceModels'])
-    assert.equal(read(app + name + '.swift'), git('show', baseline + ':' + app + name + '.swift'), name);
+    assert.equal(name === 'AgentWorkspaceStore' ? require('./check-workspace-index-scope.cjs')
+      .retainedWorkspaceCore(read(app + name + '.swift')) : read(app + name + '.swift'),
+      git('show', baseline + ':' + app + name + '.swift'), name);
   const persist = store.slice(store.indexOf('  private func persist('), store.indexOf('  private func locked<T>'));
   assert(persist.indexOf('Data(store.serializedSnapshot().utf8)') < persist.indexOf('let commitStarted'));
   assert(persist.indexOf('try writeFile(') < persist.indexOf('timingSink('));

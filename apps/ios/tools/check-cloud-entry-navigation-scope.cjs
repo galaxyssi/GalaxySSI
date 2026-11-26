@@ -60,6 +60,7 @@ for (const file of [
   if (fs.existsSync(path.join(root, target))) {
     let source = fs.readFileSync(path.join(root, target), 'utf8');
     if (file === 'GalaxySSIStore.swift') {
+      source = require('./check-workspace-index-scope.cjs').retainedWorkspaceDefault(source);
       source = source.replace('    commitOwnedAgentTaskState(expected: expected, updated: updated)\n  }\n\n  func commitOwnedAgentTaskState(expected: AgentTaskRecord?, updated: AgentTaskRecord) -> Bool {\n', '');
     }
     if (file === 'AgentNetworkRoutingModels.swift' && source.includes('    let admittedTargetIds = decision.map { Set($0.orderedTargetIds) }\n')) {
