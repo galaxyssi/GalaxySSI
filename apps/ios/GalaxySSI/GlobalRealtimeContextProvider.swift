@@ -116,11 +116,14 @@ final class GlobalRealtimeContextProvider {
     nowMillis: Int64,
     allowedConversationIds: Set<String>? = nil
   ) -> String {
+    let allowedGoals = allowedConversationIds.map { allowed in
+      snapshot.longHorizonGoals.filter { $0.sourceConversationIds.isSubset(of: allowed) }
+    } ?? snapshot.longHorizonGoals
     let items = GlobalRealtimeContextPolicy.project(
       cognitionTasks: snapshot.cognitionTasks,
       researchTasks: snapshot.researchTasks,
       autonomousRuns: snapshot.autonomousRuns,
-      longHorizonGoals: snapshot.longHorizonGoals,
+      longHorizonGoals: allowedGoals,
       excludedConversationIds: excludedConversationIds,
       nowMillis: nowMillis,
       continuitySnapshot: snapshot.continuitySnapshot

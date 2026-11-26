@@ -939,6 +939,8 @@
     C3007C500000000000000001 /* GlobalAgentDashboardLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */; };
     C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */; };
     C3007C600000000000000001 /* AgentLocalWorkspaceDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */; };
+    C3007C700000000000000001 /* GlobalRealtimePlanningScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C700000000000000002 /* GlobalRealtimePlanningScope.swift */; };
+    C3007C700000000000000003 /* GlobalRealtimePlanningScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C700000000000000004 /* GlobalRealtimePlanningScopeTests.swift */; };
     C3007BA00000000000000003 /* AgentIOSWebExtractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */; };
     C3007B900000000000000003 /* AgentIOSWebCrawlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */; };
     C3007B800000000000000003 /* AgentIOSWebSearchCapacityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B800000000000000004 /* AgentIOSWebSearchCapacityTests.swift */; };
@@ -4314,6 +4316,8 @@
     C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDashboardLoader.swift; sourceTree = "<group>"; };
     C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDashboardLoaderTests.swift; sourceTree = "<group>"; };
     C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalWorkspaceDeviceTests.swift; sourceTree = "<group>"; };
+    C3007C700000000000000002 /* GlobalRealtimePlanningScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimePlanningScope.swift; sourceTree = "<group>"; };
+    C3007C700000000000000004 /* GlobalRealtimePlanningScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimePlanningScopeTests.swift; sourceTree = "<group>"; };
     C3007BA00000000000000004 /* AgentIOSWebExtractionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebExtractionTests.swift; sourceTree = "<group>"; };
     C3007B900000000000000004 /* AgentIOSWebCrawlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebCrawlTests.swift; sourceTree = "<group>"; };
     C3007B800000000000000004 /* AgentIOSWebSearchCapacityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchCapacityTests.swift; sourceTree = "<group>"; };
@@ -5640,6 +5644,7 @@
         A20000000000000000000528 /* GlobalConversationMergeRebinding.swift */,
         A20000000000000000000500 /* GlobalRealtimeContext.swift */,
         A20000000000000000000351 /* GlobalRealtimeContextProvider.swift */,
+        C3007C700000000000000002 /* GlobalRealtimePlanningScope.swift */,
         C3007C500000000000000002 /* GlobalAgentDashboardLoader.swift */,
         A20000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift */,
         A20000000000000000000560 /* GlobalLongHorizonGoalGraph.swift */,
@@ -6706,6 +6711,7 @@
         C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */,
         C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */,
         C3007C600000000000000002 /* AgentLocalWorkspaceDeviceTests.swift */,
+        C3007C700000000000000004 /* GlobalRealtimePlanningScopeTests.swift */,
         A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */,
         A20000000000000000000793 /* CloudModelConversationContextTests.swift */,
         A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */,
@@ -7928,6 +7934,7 @@
         A10000000000000000000528 /* GlobalConversationMergeRebinding.swift in Sources */,
         A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */,
         A10000000000000000000351 /* GlobalRealtimeContextProvider.swift in Sources */,
+        C3007C700000000000000001 /* GlobalRealtimePlanningScope.swift in Sources */,
         C3007C500000000000000001 /* GlobalAgentDashboardLoader.swift in Sources */,
         A10000000000000000000539 /* GlobalAgentEvidenceLifecycle.swift in Sources */,
         A10000000000000000000560 /* GlobalLongHorizonGoalGraph.swift in Sources */,
@@ -9107,6 +9114,7 @@
         C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */,
         C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */,
         C3007C600000000000000001 /* AgentLocalWorkspaceDeviceTests.swift in Sources */,
+        C3007C700000000000000003 /* GlobalRealtimePlanningScopeTests.swift in Sources */,
         A10000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift in Sources */,
         A10000000000000000000793 /* CloudModelConversationContextTests.swift in Sources */,
         A10000000000000000000236 /* AgentModelPlannerContactResolverTests.swift in Sources */,
