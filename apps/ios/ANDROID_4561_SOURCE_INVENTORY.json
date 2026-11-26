@@ -1,0 +1,79 @@
+{
+  "androidPR": 4561,
+  "androidCommit": "27339973ae8f598b6ad4d64794a1c73dcf525d9f",
+  "androidBase": "9229e18652978c14e3bb4fe3454b32d77ff3f0a7",
+  "iosBase": "8b4049723a707c692b8fefdc56fa617fcd45163c",
+  "scope": "Unified native model picker; existing catalog/default/routing semantics retained. No native build, XCTest, CI, UI/runtime acceptance or IPA",
+  "files": [
+    {
+      "path": "apps/android/app/build.gradle.kts",
+      "sha256": "3541381d374902377055a44835db8f07df12e39d9008eae5937d33c00b6993d9",
+      "disposition": "Android version excluded; no iOS version bump"
+    },
+    {
+      "path": "apps/android/app/src/androidTest/java/com/galaxyssi/chat/AgentModelPickerDeviceTest.kt",
+      "sha256": "6d21d25bdc890df1cb0501764aeccea94f1cde55c0e722a5610b27d522ea3298",
+      "disposition": "Reference fixture source inspected; eight iOS policy fixtures authored, not executed; no native device/UI equivalence claim"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/AgentModelPickerPolicy.kt",
+      "sha256": "7990704da71cd6c20e4da9c03b5ab0650d7fe53d2928155785a78975d66cbac2",
+      "disposition": "Native source/group policy: stable selected/Codex ordering, concrete Desktop dedup, family-specific legacy folding, active legacy retention, old-only fallback, future IDs and labels; reuse public normalizedModelId, alias catalog support remains separately tracked by #4559"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentModelPicker.kt",
+      "sha256": "c06ec5184b4e175ced4928c4988c7d8fb72b493adc0520a55270cbb124997878",
+      "disposition": "Native current-route summary, segmented Desktop/cloud/local, inline model rows, one expanded provider, legacy disclosure, real logos, pinned supported reasoning, reload/setup controls and stay-open selection. Coalesced off-main source read and current conversation/identity/visible-page/capability rechecks. No native layout or concurrency acceptance"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentSessions.kt",
+      "sha256": "5d4daf90372db6368e33be1a295bc846ab55979265244235bc9494b9c4e21f41",
+      "disposition": "Existing iOS entry reused; removed old menu/configuration rendering from model picker only, unchanged persistence schema and routing"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityAgentSettings.kt",
+      "sha256": "a581f5218129b064c3c4ea9a25ac980746d03bb52d680c6247a90b822333d7d6",
+      "disposition": "Existing routing/import/pairing notifications reused for open-picker refresh; no manifest request from routing notifications and no MQTT/service changes"
+    },
+    {
+      "path": "apps/android/app/src/main/java/com/galaxyssi/chat/MainActivityCloudAndImages.kt",
+      "sha256": "747af63c247caaa9ce27b7f55c762e665b140d05c58404939fab83372aed7baa",
+      "disposition": "Existing routing/import/pairing notifications reused for open-picker refresh; no manifest request from routing notifications and no MQTT/service changes"
+    },
+    {
+      "path": "apps/android/app/src/main/res/layout/activity_main.xml",
+      "sha256": "c4a59830fc6cb8ad787169154c0d59836c78c491d690aaee5cddcfdf9ff2c9b2",
+      "disposition": "Native fixed footer outside ScrollView; no Agent home layout change"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-b+zh+Hans+CN/strings.xml",
+      "sha256": "88120f739563d48f77e905a17bc735866d8c32d3b5c02620972e842d2cd0db63",
+      "disposition": "English fallback/Chinese resources for picker controls and model descriptions; future-chat hint shown only when existing default selection actually equals current selection; no default-memory/catalog behavior duplicated"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-night/colors.xml",
+      "sha256": "49978756ac73f24a4b5ce2794a5adacd21568eceb62ae723d882dc99dc3f4f5c",
+      "disposition": "Reuse existing native adaptive surface/text/accent and brand image assets; no Android colors copied"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+      "sha256": "2a4f23a92b781319ca511a4270cb74e4b2f48e77f5cbb2b62f295f2d4e4c789e",
+      "disposition": "English fallback/Chinese resources for picker controls and model descriptions; future-chat hint shown only when existing default selection actually equals current selection; no default-memory/catalog behavior duplicated"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/colors.xml",
+      "sha256": "f3f9632e0ae66990c85463a4d7ecc0296c2b9e5e2b8e92549785125aa9c7e40a",
+      "disposition": "Reuse existing native adaptive surface/text/accent and brand image assets; no Android colors copied"
+    },
+    {
+      "path": "apps/android/app/src/main/res/values/strings.xml",
+      "sha256": "7d15bbdb53c2890291187bc78ba7f4ca5f1ce609cd00736d41dc7fba239c2e1c",
+      "disposition": "English fallback/Chinese resources for picker controls and model descriptions; future-chat hint shown only when existing default selection actually equals current selection; no default-memory/catalog behavior duplicated"
+    },
+    {
+      "path": "apps/android/app/src/test/java/com/galaxyssi/chat/AgentModelPickerPolicyTest.kt",
+      "sha256": "bfc4e0cc9feedf07b0cd311ecd2bbdf53cc3b2f5160ef1ab23f04838fec0bfc2",
+      "disposition": "Reference fixture source inspected; eight iOS policy fixtures authored, not executed; no native device/UI equivalence claim"
+    }
+  ]
+}
