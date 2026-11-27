@@ -19,8 +19,13 @@ class HealthAnswerBasisDeviceTest {
         var conversation = ""
         val turn = UUID.randomUUID().toString()
         try {
+            val job = UUID.randomUUID().toString()
+            val file = HealthOriginalStore(ctx, names.originals, names.originalRoot(ctx)).use {
+                it.importOriginal(job, "fixture only".byteInputStream(), "offline-source-fixture.pdf", "application/pdf", "file")
+            }
             HealthRecordStore(ctx, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE,
-                mapOf("glucose" to "6.3"), "mmol/L", System.currentTimeMillis() - 1000, reference = "4-6")) }
+                mapOf("glucose" to "6.3"), "mmol/L", System.currentTimeMillis() - 1000, reference = "4-6",
+                evidence = HealthEvidence(file.id, job, "basis-fixture", file.sha256, 1, "synthetic OCR", confirmed = true))) }
             HealthCareStore(ctx, names.care).use { care ->
                 care.configure(true, "")
                 HealthCareEngine.evaluate(ctx, names)
@@ -47,10 +52,13 @@ class HealthAnswerBasisDeviceTest {
                     activity.healthCareSurface = surface
                     surface.showForAgent(true); surface.resume()
                     assertNull(surface.answerRow(previous, turn))
-                    row = surface.answerRow(conversation, turn) as HealthAnswerBasisRow
+                    val answer = activity.agentAssistantTranscriptRow(AgentTranscriptEntry(UUID.randomUUID().toString(),
+                        AgentTranscriptRole.ASSISTANT, "Synthetic health answer", System.currentTimeMillis(),
+                        conversationId = conversation, turnId = turn)) as AgentStableAssistantRow
+                    row = answer.getChildAt(answer.childCount - 1) as HealthAnswerBasisRow
                     wrongTurn = surface.answerRow(conversation, UUID.randomUUID().toString()) as HealthAnswerBasisRow
                     activity.findViewById<FrameLayout>(android.R.id.content).addView(LinearLayout(activity).apply {
-                        orientation = LinearLayout.VERTICAL; addView(row); addView(wrongTurn)
+                        orientation = LinearLayout.VERTICAL; addView(answer); addView(wrongTurn)
                     })
                 }
                 fun await(check: () -> Boolean) {
@@ -64,14 +72,15 @@ class HealthAnswerBasisDeviceTest {
                 }
                 await { row.visibility == View.VISIBLE && row.childCount == 1 }
                 scenario.onActivity { assertTrue(row.getChildAt(0).performClick()); assertEquals(View.GONE, wrongTurn.visibility) }
-                await { row.childCount > 2 }
+                await { (0 until row.childCount).mapNotNull { row.getChildAt(it) as? android.widget.TextView }
+                    .any { it.text.contains("offline-source-fixture.pdf") } }
                 HealthPrivacyStore(ctx, names.privacy).use { it.change(HealthPrivacyOption.CONFIRMED_METRICS, false, it.policy().version) }
                 await { row.visibility == View.GONE && row.childCount == 0 && wrongTurn.childCount == 0 }
             }
         } finally {
             transcripts.switchConversation(previous)
             if (conversation.isNotEmpty()) transcripts.deleteConversation(conversation)
-            listOf(names.care, names.records, names.privacy, names.reminders, names.profile).forEach(ctx::deleteDatabase)
+            clearHealthOverviewFixture(ctx, names)
         }
     }
 }
