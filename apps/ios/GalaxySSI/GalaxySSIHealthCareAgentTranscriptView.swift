@@ -6,6 +6,7 @@ struct GalaxySSIHealthCareTranscriptRevision: Equatable {
   var conversation = ""
   var revision = 0
   var hasRows = false
+  var answerIDs: [UUID] = []
 }
 
 struct GalaxySSIHealthCareTranscriptRevisionKey: PreferenceKey {
@@ -83,6 +84,7 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
               Divider()
             }
             reply(row.reply)
+              .background(GalaxySSIReadingParagraphAnchor.RowMarker())
           }
           .padding(.vertical, 8)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,7 +100,8 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
     }
     .preference(key: GalaxySSIHealthCareTranscriptRevisionKey.self,
       value: .init(conversation: canRead ? conversation : "", revision: revision,
-        hasRows: canRead && (!rows.isEmpty || !legacyMarkers.isEmpty)))
+        hasRows: canRead && (!rows.isEmpty || !legacyMarkers.isEmpty),
+        answerIDs: canRead ? rows.compactMap { if case .answer = $0.reply { return $0.id }; return nil } : []))
     .onAppear(perform: refresh)
     .onChange(of: visible) { if $0 { refresh() } else { clear() } }
     .onChange(of: scene) { if $0 == .active { refresh() } else { clear() } }

@@ -3,6 +3,7 @@ import SwiftUI
 private let galaxySSIAgentTranscriptCoordinateSpace = "galaxyssi-agent-transcript"
 
 struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
+  @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.agentReplySpeechBlankTap) private var blankTap
   @State private var measuredContentBottom: CGFloat?
   @Binding var visibleMessageLimit: Int
@@ -17,7 +18,11 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
   @State private var draggingTranscript = false
   @State private var pinnedToLatest = false
   @State private var hasPrivateHealthRows = false
+  @State private var replySnapshot: GalaxySSIReadingPosition.Snapshot?
+  @State private var healthReplyIDs: Set<UUID>?
+  @State private var readingScroll = GalaxySSIChatScrollReference()
   private let transcriptTail = "agent-transcript-tail"
+  private var readingScope: String { store.profile.identityFingerprint + ":" + activeAgentConversationID }
 
   var agentSwipeRequest: Int
   @Binding var pendingAgentSwipeDirection: String
@@ -114,6 +119,10 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
               .padding(.horizontal, 12)
               .padding(.top, 8)
               .padding(.bottom, 16)
+              .background(GalaxySSIChatScrollResolver(reference: readingScroll))
+              .background(GalaxySSIReadingParagraphAnchor(
+                scope: store.profile.identityFingerprint + ":" + activeAgentConversationID + ":" + scrollEpoch.revision.uuidString,
+                holding: { scene == .active && store.canReadAgentTranscript && !transcriptAutoFollow && !draggingTranscript && olderTranscriptAnchor == nil }))
               .background(alignment: .leading) { blankSpeechTarget.frame(width: 12) }
               .background(alignment: .trailing) { blankSpeechTarget.frame(width: 12) }
               .background(alignment: .top) { blankSpeechTarget.frame(height: 8) }
@@ -162,6 +171,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           .onChanged { value in
             guard !draggingTranscript, abs(value.translation.height) >= abs(value.translation.width) else { return }
             draggingTranscript = true
+            transcriptAutoFollow = false
             scrollEpoch.invalidate()
             pinnedToLatest = false
             olderTranscriptAnchor = nil
@@ -191,9 +201,15 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onChange(of: agentSwipeRequest) { _ in
         applyPendingSwipe(with: proxy)
       }
+      .onChange(of: readingScope) { _ in
+        scrollEpoch.invalidate(); healthReplyIDs = nil; transcriptShowLatestButton = false
+        replySnapshot = .init(scope: readingScope, messages: messages)
+      }
       .onChange(of: activeAgentConversationID) { _ in
         scrollEpoch.invalidate()
         hasPrivateHealthRows = false
+        healthReplyIDs = nil
+        replySnapshot = .init(scope: readingScope, messages: messages)
         pinnedToLatest = false
         positionedConversation = activeAgentConversationID
         visibleMessageLimit = pageSize
@@ -211,6 +227,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         }
       }
       .onAppear {
+        replySnapshot = .init(scope: readingScope, messages: messages)
         guard positionedConversation != activeAgentConversationID else { return }
         positionedConversation = activeAgentConversationID
         transcriptAutoFollow = true
@@ -225,6 +242,8 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onDisappear {
         scrollEpoch.invalidate()
         draggingTranscript = false
+        replySnapshot = nil
+        healthReplyIDs = nil
         olderTranscriptAnchor = nil
       }
       .onChange(of: scene) { phase in
@@ -233,9 +252,12 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
         olderTranscriptAnchor = nil
         draggingTranscript = false
       }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+        scrollEpoch.invalidate(); replySnapshot = nil; healthReplyIDs = nil; transcriptShowLatestButton = false
+      }
       .onChange(of: messages.count) { _ in
         onMessagesChanged()
-        if transcriptAutoFollow {
+        if transcriptAutoFollow && !draggingTranscript {
           if let waitingID = latestWaitingIndicatorID {
             withAnimation(reduceMotion ? nil : Animation.default) {
               proxy.scrollTo(waitingID, anchor: .bottom)
@@ -249,16 +271,20 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
               proxy.scrollTo(last.id, anchor: .bottom)
             }
           }
-        } else if !messages.isEmpty {
+        }
+      }
+      .onChange(of: GalaxySSIReadingPosition.Snapshot(scope: readingScope, messages: messages)) { value in
+        if scene == .active, !transcriptAutoFollow, GalaxySSIReadingPosition.newReply(previous: replySnapshot, current: value) {
           transcriptShowLatestButton = true
         }
+        replySnapshot = value
       }
       .onChange(of: activeAgentPhase) { _ in
         onExecutionStateChanged()
       }
       .onChange(of: messages.last?.id) { id in
         guard messages.count >= pageSize, let id else { return }
-        guard transcriptAutoFollow else { transcriptShowLatestButton = true; return }
+        guard transcriptAutoFollow else { return }
         withAnimation(reduceMotion ? nil : Animation.default) {
           if let waiting = latestWaitingIndicatorID {
             proxy.scrollTo(waiting, anchor: .bottom)
@@ -273,7 +299,6 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onChange(of: waitingIndicatorCount) { _ in
         guard let last = transcriptMessages.last else { return }
         guard transcriptAutoFollow else {
-          transcriptShowLatestButton = true
           return
         }
         withAnimation(reduceMotion ? nil : Animation.default) {
@@ -282,7 +307,7 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       }
       .onChange(of: voiceTranscriptionPending) { pending in
         guard pending else { return }
-        transcriptAutoFollow = true
+        guard transcriptAutoFollow else { return }
         transcriptShowLatestButton = false
         withAnimation(reduceMotion ? nil : Animation.default) {
           proxy.scrollTo(voiceTranscriptionPendingViewID, anchor: .bottom)
@@ -291,7 +316,6 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onChange(of: waitingForAgentReply) { waiting in
         guard waiting else { return }
         guard transcriptAutoFollow else {
-          transcriptShowLatestButton = true
           return
         }
         withAnimation(reduceMotion ? nil : Animation.default) {
@@ -302,12 +326,17 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
       .onPreferenceChange(GalaxySSIHealthCareTranscriptRevisionKey.self) { value in
         guard scene == .active, value.conversation == activeAgentConversationID else {
           hasPrivateHealthRows = false
+          healthReplyIDs = nil
           return
         }
         hasPrivateHealthRows = value.hasRows
+        let answers = Set(value.answerIDs)
+        if !transcriptAutoFollow, let previous = healthReplyIDs, !answers.subtracting(previous).isEmpty {
+          transcriptShowLatestButton = true
+        }
+        healthReplyIDs = answers
         guard value.hasRows else { return }
         guard transcriptAutoFollow, !draggingTranscript else {
-          transcriptShowLatestButton = true
           return
         }
         let ticket = scrollEpoch.revision
@@ -339,13 +368,18 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           transcriptTopLoadTriggered = true
           onLoadOlderTranscriptMessages()
         }
-        let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 56
+        let nearBottom = metrics.contentMaxY <= metrics.viewportHeight + 1
+        let userScrolling = draggingTranscript || readingScroll.view.map { $0.isTracking || $0.isDragging || $0.isDecelerating } == true
+        if transcriptAutoFollow && !userScrolling {
+          if !nearBottom { proxy.scrollTo(transcriptTail, anchor: .bottom) }
+          return
+        }
+        guard userScrolling else { return }
         if nearBottom {
           transcriptAutoFollow = true
           transcriptShowLatestButton = false
         } else {
           transcriptAutoFollow = false
-          transcriptShowLatestButton = true
         }
       }
     }
@@ -382,7 +416,6 @@ struct GalaxySSIAgentTranscriptScrollView<Content: View>: View {
           proxy.scrollTo(first.id, anchor: .top)
         }
       }
-      transcriptShowLatestButton = !messages.isEmpty || hasPrivateHealthRows
       return
     }
 
