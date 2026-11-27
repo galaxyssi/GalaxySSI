@@ -39,20 +39,48 @@ pass, cancels and removes the output stage without replacing the destination.
 This remains cooperative checking, not hard preemption or protection against
 an arbitrary mutation between the last check and filesystem replacement.
 
-Eight new synthetic methods cover new bulk/target revisions, actual bridge
+Seventeen new synthetic methods cover new bulk/target revisions, actual bridge
 output/hash, stale-group rejection, replacement during snapshot callbacks,
 lifecycle invalidation/retry, streamed identity-order digest equivalence,
-missing staging rows and lifecycle loss during the second render pass.
-The complete scope has 293 authored methods (267 inherited, 18 original scratch
-and these eight); none compiled or executed. Source guards compare complete
+missing staging rows, lifecycle loss during the second render pass, and the
+legacy recovery/transaction cases below.
+The complete scope has 302 authored methods (267 inherited, 18 original scratch
+and these seventeen); none compiled or executed. Source guards compare complete
 retained files outside the declared revision/export hooks against updated
 #4607. Query-only validation now checks the actual shared view implementation.
 
-Historical persisted headers with blank revisions are still rejected, not
-silently assigned a guessed revision or declared repaired. On-demand legacy
-revision recovery remains required follow-up work. The new writer fix does not
-rewrite all old headers at startup; this integration is not full export/backlog
-completion or native acceptance.
+## On-demand legacy revision recovery and transaction correction
+
+Historical persisted headers with blank revisions are now resolved only when
+their source is requested for export. The exact authenticated header and source
+generation are captured, then the existing outside-writer preparation adapter
+authenticates all source members into private encrypted staging. Exact count and
+complete identity-ordered content digest are verified before a short canonical
+transaction. Publication rechecks generation and the original header ciphertext,
+then atomically updates only the encrypted header, bound preview and browse
+revision. Bodies, source generation, permissions, timestamps, vector epoch/head
+and source observation outbox are not rewritten. The global vector feed stamp's
+browse revision does advance; this is not a claim that every feed stamp field is
+unchanged. A previously prepared source replacement remains usable.
+
+The projection spec resolves the revision before recording its generated index
+entry, and does not prepare a legacy source after the write budget is exhausted.
+Direct snapshot/export consumers use the same resolver. Corruption, membership
+count mismatch, cancellation, a concurrent source change or header re-encryption
+rejects publication, not a guessed digest or an automatic retry. Recovery does
+not scan the entire library at startup. Preparation now owns a pure committed
+view instead of triggering unrelated corpus-wide index repair through the generic
+read helper. Missing Codable fields from arbitrary old schemas, crash-resumable
+recovery jobs and a complete export backlog remain outside this increment.
+
+A real nested SQLite transaction bug in the earlier targeted revision integration
+is also corrected: normalization must finish its scratch mutation transaction
+before identity ordering starts its own transactions. Digest ordering is allowed
+only for finished staging; lifecycle checks bracket each decoded digest record.
+New synthetic cases cover this ordering, legacy reopen and actual output/hash,
+concurrent replacement, exact-ciphertext CAS, count mismatch, injected failure,
+lifecycle invalidation/retry, prepared-generation/vector-ledger preservation and
+unauthenticated headers. These are authored source fixtures, not native results.
 
 ## Implemented iOS boundary
 

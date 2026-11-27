@@ -108,7 +108,7 @@ final class AgentKnowledgeProjectionIntegrationTests: XCTestCase {
     let stage = try AgentKnowledgeSourceStaging(source: "source")
     defer { stage.close() }
     for item in source { XCTAssertTrue(try stage.accept(item)) }
-    try stage.finishIncoming(); try stage.finishPrevious()
+    try stage.finishIncoming(); try stage.finishPrevious(); try stage.finishMutation()
     XCTAssertEqual(try stage.sourceRevision(), AgentKnowledgeSourceRevision.digest(source))
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
     var hash = SHA256()
@@ -123,7 +123,7 @@ final class AgentKnowledgeProjectionIntegrationTests: XCTestCase {
     let stage = try AgentKnowledgeSourceStaging(source: "source")
     defer { stage.close() }
     for item in items(1) { XCTAssertTrue(try stage.accept(item)) }
-    try stage.finishIncoming(); try stage.finishPrevious()
+    try stage.finishIncoming(); try stage.finishPrevious(); try stage.finishMutation()
     var raw: OpaquePointer?
     guard sqlite3_open(stage.fileURL.path, &raw) == SQLITE_OK else { throw Fault.injected }
     defer { sqlite3_close_v2(raw) }
@@ -147,6 +147,154 @@ final class AgentKnowledgeProjectionIntegrationTests: XCTestCase {
       XCTAssertEqual(scans, 2)
       XCTAssertEqual(try Data(contentsOf: destination), baseline)
       XCTAssertFalse(FileManager.default.fileExists(atPath: order.lease.directory.path))
+    }
+  }
+
+  func testSourceDigestCannotStartInsidePendingMutationTransaction() throws {
+    let stage = try AgentKnowledgeSourceStaging(source: "source")
+    defer { stage.close() }
+    for item in items(1) { XCTAssertTrue(try stage.accept(item)) }
+    try stage.finishIncoming(); try stage.finishPrevious()
+    XCTAssertThrowsError(try stage.sourceRevision())
+    try stage.finishMutation()
+    XCTAssertEqual(try stage.sourceRevision(), AgentKnowledgeSourceRevision.digest(items(1)))
+  }
+
+  private func rewriteHeader(_ root: URL, secrets: InMemorySecretStore,
+    transform: (inout AgentKnowledgeSourceGroup) -> Void) throws -> AgentKnowledgeSourceGroup {
+    var raw: OpaquePointer?
+    guard sqlite3_open(root.appendingPathComponent("knowledge.sqlite").path, &raw) == SQLITE_OK else { throw Fault.injected }
+    defer { sqlite3_close_v2(raw) }
+    var row: OpaquePointer?
+    guard sqlite3_prepare_v2(raw, "SELECT source_hash,encrypted_header FROM knowledge_source_headers", -1, &row, nil) == SQLITE_OK else { throw Fault.injected }
+    defer { sqlite3_finalize(row) }
+    guard sqlite3_step(row) == SQLITE_ROW, let text = sqlite3_column_text(row, 0),
+      let pointer = sqlite3_column_blob(row, 1) else { throw Fault.injected }
+    let hash = String(cString: text), encrypted = Data(bytes: pointer, count: Int(sqlite3_column_bytes(row, 1)))
+    guard sqlite3_step(row) == SQLITE_DONE else { throw Fault.injected }
+    let cipher = GalaxySSIAttachmentAtRestCipher(secrets: secrets, keyAccount: "agent.knowledge.row.aes256.v1")
+    let purpose = "agent-knowledge-source:\(hash)"
+    var group = try JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: cipher.decrypt(encrypted, expectedPurpose: purpose))
+    transform(&group)
+    let replacement = try cipher.encrypt(JSONEncoder.galaxySSI.encode(group), purpose: purpose)
+    var update: OpaquePointer?
+    guard sqlite3_prepare_v2(raw, "UPDATE knowledge_source_headers SET encrypted_header=?", -1, &update, nil) == SQLITE_OK else { throw Fault.injected }
+    defer { sqlite3_finalize(update) }
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    guard replacement.withUnsafeBytes({ sqlite3_bind_blob(update, 1, $0.baseAddress, Int32(replacement.count), transient) }) == SQLITE_OK,
+      sqlite3_step(update) == SQLITE_DONE, sqlite3_changes(raw) == 1 else { throw Fault.injected }
+    return group
+  }
+
+  private func legacyFixture(_ body: (AgentKnowledgeDatabase, URL, InMemorySecretStore, AgentKnowledgeSourceGroup) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: root.appendingPathComponent("knowledge.sqlite"), secrets: secrets)
+    XCTAssertTrue(database.replaceAll(items(1)))
+    let group = try rewriteHeader(root, secrets: secrets) { $0.sourceRevision = "" }
+    try body(database, root, secrets, group)
+  }
+
+  func testLegacyRevisionRecoverySurvivesReopenWithoutChangingSourceFields() throws {
+    try legacyFixture { database, root, secrets, group in
+      let browse = try database.sourceBrowseRevision()
+      let resolved = try database.resolveSourceExportGroup(group)
+      var expected = group; expected.sourceRevision = AgentKnowledgeSourceRevision.digest(items(1))
+      XCTAssertEqual(resolved, expected)
+      XCTAssertEqual(try database.sourceBrowseRevision(), browse + 1)
+      let reopened = AgentKnowledgeDatabase(fileURL: root.appendingPathComponent("knowledge.sqlite"), secrets: secrets)
+      XCTAssertEqual(try reopened.sourcePage().groups.first, resolved)
+      XCTAssertEqual(try reopened.sourceSnapshotItems(resolved).count, 3)
+      var invoked = false
+      XCTAssertEqual(try reopened.resolveSourceExportGroup(resolved, beforePublication: { invoked = true }), resolved)
+      XCTAssertFalse(invoked)
+    }
+  }
+
+  @MainActor func testActualBridgeRecoversLegacyRevisionBeforePublishingOutput() throws {
+    try legacyFixture { database, root, _, group in
+      let destination = root.appendingPathComponent("legacy.md")
+      let hash = try AgentIOSObsidianBridge.writeKnowledgeProjection(database: database, group: group,
+        sourceKey: "synthetic", type: "knowledge", fallbackTitle: "Synthetic", source: "source", destination: destination)
+      let output = try Data(contentsOf: destination)
+      XCTAssertEqual(hash, SHA256.hash(data: output).map { String(format: "%02x", $0) }.joined())
+      for item in items(1) { XCTAssertTrue(String(decoding: output, as: UTF8.self).contains(item.content)) }
+      XCTAssertEqual(try database.sourcePage().groups.first?.sourceRevision, AgentKnowledgeSourceRevision.digest(items(1)))
+    }
+  }
+
+  func testLegacyRecoveryRejectsConcurrentSourceReplacement() throws {
+    try legacyFixture { database, _, _, group in
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(group, beforePublication: {
+        try self.replace(database, generation: 2)
+      })) { XCTAssertEqual($0 as? AgentKnowledgeDatabaseError, .sourceReplacementChanged) }
+      let winner = try XCTUnwrap(database.sourcePage().groups.first)
+      XCTAssertEqual(winner.sourceRevision, AgentKnowledgeSourceRevision.digest(items(2)))
+      XCTAssertEqual(try database.sourceSnapshotItems(winner).count, 3)
+    }
+  }
+
+  func testLegacyRecoveryRejectsSameLogicalHeaderWithDifferentCiphertext() throws {
+    try legacyFixture { database, root, secrets, group in
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(group, beforePublication: {
+        _ = try self.rewriteHeader(root, secrets: secrets) { _ in }
+      })) { XCTAssertEqual($0 as? AgentKnowledgeDatabaseError, .staleCursor) }
+      XCTAssertEqual(try database.sourcePage().groups.first?.sourceRevision, "")
+      XCTAssertFalse(try database.resolveSourceExportGroup(group).sourceRevision.isEmpty)
+    }
+  }
+
+  func testLegacyRecoveryCountMismatchDoesNotPublishGuessedRevision() throws {
+    try legacyFixture { database, root, secrets, _ in
+      let mismatched = try rewriteHeader(root, secrets: secrets) { $0.chunkCount += 1 }
+      let revision = try database.sourceBrowseRevision()
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(mismatched)) {
+        XCTAssertEqual($0 as? AgentKnowledgeDatabaseError, .corruptRecord)
+      }
+      XCTAssertEqual(try database.sourceBrowseRevision(), revision)
+      XCTAssertEqual(try database.sourcePage().groups.first, mismatched)
+    }
+  }
+
+  func testLegacyRecoveryFaultAndLifecycleLossDoNotPublishAndAllowRetry() throws {
+    try legacyFixture { database, _, _, group in
+      let revision = try database.sourceBrowseRevision()
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(group, beforePublication: { throw Fault.injected }))
+      XCTAssertEqual(try database.sourceBrowseRevision(), revision)
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(group, beforePublication: { database.nativeFiles.invalidate() })) {
+        XCTAssertTrue($0 is CancellationError)
+      }
+      XCTAssertEqual(try database.sourceBrowseRevision(), revision)
+      XCTAssertEqual(try database.sourcePage().groups.first?.sourceRevision, "")
+      XCTAssertFalse(try database.resolveSourceExportGroup(group).sourceRevision.isEmpty)
+    }
+  }
+
+  func testLegacyMetadataRepairKeepsPreparedSourceGenerationAndVectorLedger() throws {
+    try legacyFixture { database, _, _, group in
+      var iterator = items(2).makeIterator()
+      let prepared = try database.prepareSourceReplacement("source", next: { iterator.next() })
+      defer { prepared.close() }
+      let before = try database.vectorFeedStamp(modelSHA256: String(repeating: "a", count: 64))
+      _ = try database.resolveSourceExportGroup(group)
+      let after = try database.vectorFeedStamp(modelSHA256: String(repeating: "a", count: 64))
+      XCTAssertEqual(before.epoch, after.epoch); XCTAssertEqual(before.head, after.head)
+      XCTAssertEqual(after.sourceRevision, before.sourceRevision + 1)
+      let result = try database.commitSourceReplacement(prepared); result.stage.close()
+      XCTAssertEqual(try database.sourcePage().groups.first?.sourceRevision, AgentKnowledgeSourceRevision.digest(items(2)))
+    }
+  }
+
+  func testLegacyRecoveryRejectsUnauthenticatedHeaderWithoutPublishing() throws {
+    try legacyFixture { database, root, _, group in
+      let revision = try database.sourceBrowseRevision()
+      var raw: OpaquePointer?
+      guard sqlite3_open(root.appendingPathComponent("knowledge.sqlite").path, &raw) == SQLITE_OK else { throw Fault.injected }
+      defer { sqlite3_close_v2(raw) }
+      XCTAssertEqual(sqlite3_exec(raw, "UPDATE knowledge_source_headers SET encrypted_header=x'00010203'", nil, nil, nil), SQLITE_OK)
+      XCTAssertThrowsError(try database.resolveSourceExportGroup(group))
+      XCTAssertEqual(try database.sourceBrowseRevision(), revision)
     }
   }
 }

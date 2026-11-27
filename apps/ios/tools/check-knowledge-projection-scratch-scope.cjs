@@ -7,12 +7,21 @@ function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.lengt
 function retained(f, s) {
   if (f === app + 'AgentKnowledgeModels.swift') return s.replace(section(s, 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'),
     section(old(f), 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'));
-  if (f === app + 'AgentKnowledgeDatabase.swift') return s
+  if (f === app + 'AgentKnowledgeDatabase.swift' && s.includes('sourceRevision: AgentKnowledgeSourceRevision.digest(members)')) return s
+    .replace(section(s, '  // Only an explicitly requested legacy source', '  func enumerateSourceSnapshotItems('), '')
+    .replace('    let resolved = try resolveSourceExportGroup(group)\n', '')
+    .replace('try enumerateSourceSnapshotItems(resolved)', 'try enumerateSourceSnapshotItems(group)')
+    .replace('== resolved.sourceRevision', '== group.sourceRevision')
+    .replace('        let view = try committedReadView()\n        defer { view.close() }\n        return try view.read { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in',
+      '        try readCommitted { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in')
     .replace(section(s, '  func enumerateSourceSnapshotItems(', '  func sourceBrowseRevision()'),
       section(old(f), '  func enumerateSourceSnapshotItems(', '  func sourceBrowseRevision()'))
-    .replace('updatedAtMillis: latest.updatedAtMillis,\n                  sourceRevision: try stage.sourceRevision())', 'updatedAtMillis: latest.updatedAtMillis)')
+    .replace('            try stage.finishMutation()\n            if changed > 0 {', '            if changed > 0 {')
+    .replace('          }\n          if changed > 0 {\n            try timing.measure(.observe)', '            try stage.finishMutation()\n          }\n          if changed > 0 {\n            try timing.measure(.observe)')
+    .replace('updatedAtMillis: latest.updatedAtMillis,\n                  sourceRevision: try stage.sourceRevision(checkActive: { try prepared.checkActive() }))', 'updatedAtMillis: latest.updatedAtMillis)')
     .replace('          updatedAtMillis: latest.updatedAtMillis,\n          sourceRevision: AgentKnowledgeSourceRevision.digest(members)', '          updatedAtMillis: latest.updatedAtMillis');
-  if (f === app + 'AgentKnowledgeSourceStaging.swift' && s.includes('  func sourceRevision()')) return s
+  if (f === app + 'AgentKnowledgeSourceStaging.swift' && s.includes('  func sourceRevision(side:')) return s
+    .replace('private(set) var previousCount', 'private var previousCount')
     .replace('      guard sqlite3_create_collation_v2(database, "SOURCE_ID_ORDER", SQLITE_UTF8, Unmanaged.passUnretained(self).toOpaque(), { context, ac, a, bc, b in\n        guard let context else { return 0 }\n        return Unmanaged<AgentKnowledgeSourceStaging>.fromOpaque(context).takeUnretainedValue().compare(a, ac, b, bc, identity: true)\n      }, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }\n', '')
     .replace('      try execute("CREATE INDEX source_identity_order ON ordering(side,sort_key COLLATE SOURCE_ID_ORDER)")\n', '')
     .replace('func orderedVisit(_ side: Side, byIdentity: Bool = false,', 'func orderedVisit(_ side: Side,')
@@ -20,7 +29,7 @@ function retained(f, s) {
     .replace('      let collation = byIdentity ? "SOURCE_ID_ORDER" : "SOURCE_ORDER"\n      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE \\(collation)")',
       '      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE SOURCE_ORDER")')
     .replace('if let previous, !(byIdentity ? AgentKnowledgeSourceRevision.identityPrecedes(previous.id, key.id) : less(previous, key))', 'if let previous, !less(previous, key)')
-    .replace(section(s, '  func sourceRevision()', '  func clearAllowed()'), '')
+    .replace(section(s, '  func sourceRevision(side:', '  func clearAllowed()'), '')
     .replace('bc: Int32, identity: Bool = false) -> Int32', 'bc: Int32) -> Int32')
     .replace('    if identity, let left, let right {\n      return AgentKnowledgeSourceRevision.identityPrecedes(left.id, right.id) ? -1 :\n        (AgentKnowledgeSourceRevision.identityPrecedes(right.id, left.id) ? 1 : 0)\n    }\n', '');
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/Agent(?:KnowledgeProjection(?:Order(?:Tests)?|Lease|IntegrationTests)|IOSObsidianTextScan|IOSProjectionDestination)\.swift/.test(l)).join('\n');
@@ -36,6 +45,8 @@ function retained(f, s) {
     s = s.replace(section(s, a, b), section(previous, originalStart, b));
   }
   return s.split('\n').filter(l => l.trim() !== 'try checkActive()').join('\n')
+    .replace('knowledgeProjectionSpec(appStore: appStore, group: page.groups[index], canPrepareLegacy: written < writeLimit)', 'knowledgeProjectionSpec(appStore: appStore, group: page.groups[index])')
+    .replace(section(s, '  private static func knowledgeProjectionSpec(', '    let source = group.localItemId'), section(previous, '  private static func knowledgeProjectionSpec(', '    let source = group.localItemId'))
     .replace('((URL, String?) throws -> String?)?', '((URL) throws -> String?)?')
     .replace('writeContent: { destination, expectedHash in', 'writeContent: { destination in')
     .replace('destination: destination,\n          expectedDestinationHash: expectedHash', 'destination: destination')
@@ -105,24 +116,49 @@ function validate() {
     'if status == SQLITE_DONE { break }', 'status == SQLITE_ROW', 'try view.read { _ in try consume(item) }',
     'emitted == group.chunkCount', 'AgentKnowledgeDatabaseError.staleCursor']);
   assert(!snapshot.includes('sqlite3_open_v2') && !snapshot.includes('try locked'));
-  includes(database, ['sourceRevision: try stage.sourceRevision()', 'sourceRevision: AgentKnowledgeSourceRevision.digest(members)']);
+  includes(snapshot, ['let group = try resolveSourceExportGroup(group)']);
+  const recovery = section(database, '  func resolveSourceExportGroup(', '  func enumerateSourceSnapshotItems(');
+  includes(recovery, ['guard group.sourceRevision.isBlank else { return group }', 'current == group',
+    'current.source.utf8.elementsEqual(group.source.utf8)', 'try sourceGeneration(hash: sourceHash, on: connection)',
+    'prepareSourceReplacement(group.source, next: { nil })', 'prepared.token == token', 'prepared.revision == baseline.1',
+    'stage.previousCount == Int64(group.chunkCount)', 'try stage.finishMutation()',
+    'stage.sourceRevision(side: .previous, checkActive:', 'try beforePublication()', 'BEGIN IMMEDIATE',
+    'sourceGeneration(hash: sourceHash) == prepared.revision', 'try originalHeader(on: database) == baseline.0',
+    'WHERE source_hash=? AND encrypted_header=?', 'insertSourcePreview(resolved', "typeof(revision)='integer'",
+    'revision<9223372036854775807', 'try prepared.commitCanonical', 'if !committed']);
+  assert(recovery.indexOf('try beforePublication()') < recovery.indexOf('return try locked'));
+  assert(recovery.indexOf('try stage.finishMutation()') < recovery.indexOf('stage.sourceRevision(side:'));
+  assert(!/replaceAll|insert\(item\)|removeSourceRecord|beginWriteBatch|enqueueSourceObservation|requestIndexRetry/.test(recovery));
+  const commit = section(database, '  func commitSourceReplacement(', '  private func validatePreparedIdentity(');
+  assert(commit.indexOf('try stage.finishMutation()') < commit.indexOf('sourceRevision: try stage.sourceRevision'));
+  const preparation = section(database, '  func prepareSourceReplacement(', '  func commitSourceReplacement(');
+  includes(preparation, ['let view = try committedReadView()', 'return try view.read { connection']);
+  assert(!/requestIndexRetry|try readCommitted/.test(preparation));
+  includes(producer, ['canPrepareLegacy: written < writeLimit', 'if canPrepareLegacy {',
+    'try appStore.agentKnowledgeDatabase.resolveSourceExportGroup(suppliedGroup)']);
+  includes(database, ['sourceRevision: try stage.sourceRevision(checkActive:', 'sourceRevision: AgentKnowledgeSourceRevision.digest(members)']);
   const stage = read(app + 'AgentKnowledgeSourceStaging.swift');
   includes(stage, ['SOURCE_ID_ORDER', 'CREATE INDEX source_identity_order', 'byIdentity: Bool = false',
-    'try orderedVisit(.incoming, byIdentity: true)', 'var accumulator = AgentKnowledgeSourceRevision.Accumulator()']);
-  const sourceHash = section(stage, '  func sourceRevision()', '  func clearAllowed()');
+    'try orderedVisit(side, byIdentity: true)', 'guard phase == .finished, !collationFailed',
+    'var accumulator = AgentKnowledgeSourceRevision.Accumulator()', 'try checkActive(); try accumulator.append($0); try checkActive()']);
+  const sourceHash = section(stage, '  func sourceRevision(side:', '  func clearAllowed()');
   assert(!sourceHash.includes('[AgentKnowledgeItem]') && !sourceHash.includes('.sorted'));
   const revision = section(read(app + 'AgentKnowledgeModels.swift'), 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:');
   includes(revision, ['private var hasher = SHA256()', 'encoder.outputFormatting = [.sortedKeys]',
     'UInt64(data.count).bigEndian', 'withUnsafeBytes(of: &length)', 'hasher.update(data: data)',
     'identityPrecedes($0.id, $1.id)', 'left.utf16.lexicographicallyPrecedes(right.utf16)']);
   const integration = read('apps/ios/GalaxySSITests/AgentKnowledgeProjectionIntegrationTests.swift');
-  assert.equal((integration.match(/func test/g) || []).length, 8);
+  assert.equal((integration.match(/func test/g) || []).length, 17);
   includes(integration, ['testBulkAndTargetedWritesPublishCompleteContentRevisions', 'testActualBridgeExportsFreshTargetedSourceAndExactOutputHash',
     'testStaleSourceGroupRejectsBeforeDeliveringAnyRecord', 'testSnapshotKeepsOldHeadersAndBodiesAcrossTargetedReplacement',
     'testLifecycleInvalidationStopsFurtherSnapshotDeliveryAndAllowsFreshView',
     'testStreamedSourceDigestUsesIdentityOrderAndLegacyEncoding', 'testMissingStagedRecordCannotPublishACompletedSourceDigest',
-    'testLifecycleChangeDuringSecondRenderPassPreservesDestination']);
-  console.log('Projection scratch, complete streamed source revisions, lifecycle-safe export, coordinated publication and 18 scratch plus 8 integration authored fixture contracts passed source checks only; no native acceptance.');
+    'testLifecycleChangeDuringSecondRenderPassPreservesDestination', 'testSourceDigestCannotStartInsidePendingMutationTransaction',
+    'testLegacyRevisionRecoverySurvivesReopenWithoutChangingSourceFields', 'testActualBridgeRecoversLegacyRevisionBeforePublishingOutput',
+    'testLegacyRecoveryRejectsConcurrentSourceReplacement', 'testLegacyRecoveryRejectsSameLogicalHeaderWithDifferentCiphertext',
+    'testLegacyRecoveryCountMismatchDoesNotPublishGuessedRevision', 'testLegacyRecoveryFaultAndLifecycleLossDoNotPublishAndAllowRetry',
+    'testLegacyMetadataRepairKeepsPreparedSourceGenerationAndVectorLedger', 'testLegacyRecoveryRejectsUnauthenticatedHeaderWithoutPublishing']);
+  console.log('Projection scratch, on-demand legacy revision recovery, finished-stage digest, lifecycle-safe export and 18 scratch plus 17 integration authored fixture contracts passed source checks only; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();

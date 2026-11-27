@@ -155,7 +155,7 @@ enum AgentIOSObsidianBridge {
       var visited = checkpoint?.visited ?? 0
       for index in page.groups.indices {
         let step = try project(
-          knowledgeProjectionSpec(appStore: appStore, group: page.groups[index]),
+          knowledgeProjectionSpec(appStore: appStore, group: page.groups[index], canPrepareLegacy: written < writeLimit),
           canWrite: written < writeLimit,
           root: root,
           stateStore: stateStore
@@ -264,8 +264,15 @@ enum AgentIOSObsidianBridge {
 
   private static func knowledgeProjectionSpec(
     appStore: GalaxySSIStore,
-    group: AgentKnowledgeSourceGroup
-  ) -> AgentIOSObsidianProjectionSpec {
+    group suppliedGroup: AgentKnowledgeSourceGroup,
+    canPrepareLegacy: Bool
+  ) throws -> AgentIOSObsidianProjectionSpec {
+    let group: AgentKnowledgeSourceGroup
+    if canPrepareLegacy {
+      group = try appStore.agentKnowledgeDatabase.resolveSourceExportGroup(suppliedGroup)
+    } else {
+      group = suppliedGroup
+    }
     let source = group.localItemId.ifBlank(group.source)
     let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
     let sourceKey = knowledgeSourceKey(group)

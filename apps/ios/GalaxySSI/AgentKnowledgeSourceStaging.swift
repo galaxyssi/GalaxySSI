@@ -22,7 +22,7 @@ final class AgentKnowledgeSourceStaging {
   private var allowedCount = 0
   private struct OrderKey: Codable { var id: String; var chunk: Int; var record: Bool }
   private(set) var incomingCount: Int64 = 0
-  private var previousCount: Int64 = 0
+  private(set) var previousCount: Int64 = 0
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
   init(source: String, parent: URL = FileManager.default.temporaryDirectory) throws {
@@ -126,7 +126,7 @@ final class AgentKnowledgeSourceStaging {
   // SQLite sorts only encrypted metadata. Bodies remain in the authenticated
   // staging table and are resolved one at a time after verifying their sort key.
   func orderedVisit(_ side: Side, byIdentity: Bool = false, consume: (AgentKnowledgeItem) throws -> Void) throws {
-    guard (phase == .finished || (byIdentity && phase == .prepared)), !collationFailed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    guard phase == .finished, !collationFailed else { throw AgentKnowledgeDatabaseError.corruptRecord }
     try execute("BEGIN IMMEDIATE")
     do {
       try statement("DELETE FROM ordering WHERE side=?") { row in
@@ -166,9 +166,9 @@ final class AgentKnowledgeSourceStaging {
       try execute("COMMIT")
     } catch { try? execute("ROLLBACK"); throw error }
   }
-  func sourceRevision() throws -> String {
+  func sourceRevision(side: Side = .incoming, checkActive: () throws -> Void = {}) throws -> String {
     var accumulator = AgentKnowledgeSourceRevision.Accumulator()
-    try orderedVisit(.incoming, byIdentity: true) { try accumulator.append($0) }
+    try orderedVisit(side, byIdentity: true) { try checkActive(); try accumulator.append($0); try checkActive() }
     return accumulator.finish()
   }
   func clearAllowed() throws {

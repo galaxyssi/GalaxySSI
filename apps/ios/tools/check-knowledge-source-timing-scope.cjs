@@ -27,7 +27,9 @@ for (const phase of ['stage', 'prepare', 'commit', 'ownership', 'apply', 'observ
   assert.equal(replacement.split(`timing.measure(.${phase})`).length - 1, 1, phase);
 }
 assert.ok(replacement.indexOf('timing.measure(.stage)') < replacement.indexOf('try stage.accept(item)'));
-assert.ok(replacement.indexOf('timing.measure(.prepare)') < replacement.indexOf('try readCommitted'));
+assert.ok(replacement.includes('let view = try committedReadView()'));
+assert.ok(replacement.indexOf('timing.measure(.prepare)') < replacement.indexOf('let view = try committedReadView()'));
+assert.ok(replacement.indexOf('let view = try committedReadView()') < replacement.indexOf('return try view.read { connection'));
 assert.ok(replacement.indexOf('timing.measure(.commit)') < replacement.indexOf('try locked'));
 assert.ok(replacement.indexOf('timing.measure(.ownership)') < replacement.indexOf('try validatePreparedIdentity'));
 assert.ok(replacement.indexOf('timing.measure(.apply)') < replacement.indexOf('try removeSourceRecord'));
