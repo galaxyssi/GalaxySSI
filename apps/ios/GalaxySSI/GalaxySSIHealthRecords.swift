@@ -2322,6 +2322,7 @@ struct GalaxySSIHealthRecords {
 
   private func careReminderIsCurrent(_ reminder: GalaxySSIHealthCareFollowUp.Reminder, archive: Archive,
       now: Date, verifyOriginal: Bool = true) -> Bool {
+    if reminder.labReview != nil { return localLabRecheckIsCurrent(reminder, archive: archive) }
     if reminder.appointment != nil { return appointmentReminderIsCurrent(reminder, archive: archive, now: now) }
     if reminder.journalReview != nil { return visitReviewIsCurrent(reminder, archive: archive) }
     return careFollowUpIsCurrent(concernID: reminder.concernID, metric: reminder.metric, actionID: reminder.actionID,
@@ -2414,6 +2415,13 @@ struct GalaxySSIHealthRecords {
     }
     if Self.careFollowUpPreferences(archive) != nil {
       for reminder in (archive.localCareFollowUps ?? [:]).values {
+        if let lab = reminder.labReview, localLabRecheckIsCurrent(reminder, archive: archive),
+          let concern = archive.localCare?.current[reminder.metric.rawValue] {
+          rows.append(.init(key: .init(bucket: .planned, due: reminder.requestedAt,
+            concern: concern.id, action: reminder.actionID), metric: concern.metric, revision: concern.revision,
+            reminderID: reminder.id, submittedFor: reminder.submittedFor, canRecord: false, labRecord: lab.record.id))
+          continue
+        }
         guard let source = reminder.journalReview, visitReviewIsCurrent(reminder, archive: archive),
               let concern = archive.localCare?.current[reminder.metric.rawValue] else { continue }
         rows.append(.init(key: .init(bucket: .planned, due: reminder.requestedAt,
@@ -2447,6 +2455,12 @@ struct GalaxySSIHealthRecords {
     let checkedItems = try rows.map { row -> Agenda.Item in
       guard let concern = archive.localCare?.current[row.metric.rawValue], concern.id == row.key.concern
       else { throw Failure.stale }
+      if let record = row.labRecord {
+        guard let reminder = archive.localCareFollowUps?[row.key.action], reminder.id == row.reminderID,
+          reminder.labReview?.record.id == record, localLabRecheckIsCurrent(reminder, archive: archive) else { throw Failure.stale }
+        return .init(scope: .init(concern: concern.id, metric: concern.metric), revision: concern.revision,
+          action: nil, reminder: reminder, plannedAt: row.key.due, bucket: row.key.bucket, canRecord: false)
+      }
       if let visit = row.journalVisit {
         guard let reminder = archive.localCareFollowUps?[row.key.action], reminder.id == row.reminderID,
               reminder.journalReview?.visit == visit, visitReviewIsCurrent(reminder, archive: archive)

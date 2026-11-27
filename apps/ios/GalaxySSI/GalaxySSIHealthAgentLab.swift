@@ -19,6 +19,13 @@ enum GalaxySSIHealthAgentLab {
     let allowed: Bool
     let consent: UUID?
   }
+  struct Recheck: Codable, Equatable {
+    let record: GalaxySSIHealthCare.Record
+    let permission: UUID
+    let conversation: String
+    let through: Date
+    var actionID: String { "local-lab-review:" + record.id.uuidString }
+  }
   struct Snapshot {
     let day: Date?
     let imported: Bool
@@ -76,6 +83,39 @@ enum GalaxySSIHealthAgentLab {
 }
 
 extension GalaxySSIHealthRecords {
+  func scheduleLocalLabRecheck(_ expected: GalaxySSIHealthReading, policy: GalaxySSIHealthAgentLab.Policy,
+    conversation: String, through: Date, replacing token: UUID?, at: Date, confirmed: Bool, now: Date = Date()) throws {
+    guard confirmed, UIApplication.shared.applicationState == .active, UIApplication.shared.isProtectedDataAvailable,
+      expected.metric.laboratory, expected.isValid, !expected.deleted, expected.measuredAt <= through,
+      at.timeIntervalSince1970.isFinite, at > now, through.timeIntervalSince1970.isFinite,
+      through.timeIntervalSince1970 > 0, through <= now, !conversation.isBlank, conversation.utf8.count <= 512 else { throw Failure.invalid }
+    try reconcileLocalCare(now: now)
+    var archive = try load()
+    guard policy.allowed, GalaxySSIHealthAgentLab.Policy(archive) == policy, archive.localCareAllowed == true,
+      let permission = archive.localCarePermission, Self.careFollowUpPreferences(archive) != nil else { throw Failure.permission }
+    guard archive.current.first(where: { $0.id == expected.id }) == expected,
+      let concern = archive.localCare?.current[expected.metric.rawValue], ![.paused, .closed].contains(concern.stage),
+      localCareProfileIsCurrent(concern.profileScope) else { throw Failure.stale }
+    let ref = GalaxySSIHealthAgentLab.Recheck(record: .init(expected), permission: permission, conversation: conversation, through: through)
+    guard archive.localCareFollowUps?[ref.actionID]?.id == token else { throw Failure.stale }
+    archive.localCareFollowUps = archive.localCareFollowUps ?? [:]
+    archive.localCareFollowUps?[ref.actionID] = .init(id: UUID(), actionID: ref.actionID, concernID: concern.id,
+      metric: expected.metric, requestedAt: at, labReview: ref)
+    try persistLocalLabAudit(archive)
+    NotificationCenter.default.post(name: Self.recordsChanged, object: owner)
+  }
+
+  func localLabRecheckIsCurrent(_ reminder: GalaxySSIHealthCareFollowUp.Reminder, archive: Archive) -> Bool {
+    guard let ref = reminder.labReview, reminder.appointment == nil, reminder.journalReview == nil,
+      ref.actionID == reminder.actionID, archive.derivesOverview == true, archive.localCareAllowed == true,
+      ref.record.revision > 0, ref.through.timeIntervalSince1970.isFinite, ref.through.timeIntervalSince1970 > 0,
+      archive.localCarePermission == ref.permission, let concern = archive.localCare?.current[reminder.metric.rawValue],
+      concern.id == reminder.concernID, ![.paused, .closed].contains(concern.stage), localCareProfileIsCurrent(concern.profileScope),
+      let row = archive.current.first(where: { $0.id == ref.record.id }), row.metric == reminder.metric,
+      row.metric.laboratory, row.isValid, row.measuredAt <= ref.through, GalaxySSIHealthCare.Record(row) == ref.record else { return false }
+    return true
+  }
+
   func localLabMeasurements(through: Date, once: GalaxySSIHealthAgentLab.Once? = nil,
     calendar: Calendar = .autoupdatingCurrent, now: Date = Date()) throws -> GalaxySSIHealthAgentLab.Snapshot {
     guard UIApplication.shared.applicationState == .active, UIApplication.shared.isProtectedDataAvailable,

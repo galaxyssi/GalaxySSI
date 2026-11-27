@@ -38,6 +38,7 @@ enum GalaxySSIHealthCareAgenda {
     let submittedFor: Date?
     let canRecord: Bool
     var journalVisit: UUID? = nil
+    var labRecord: UUID? = nil
 
     func matches(_ filter: Filter, dayEnd: Date) -> Bool {
       switch filter {

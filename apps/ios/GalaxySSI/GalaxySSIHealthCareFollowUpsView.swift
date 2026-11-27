@@ -68,6 +68,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   @State private var history: History?
   @State private var instructionSource: InstructionSource?
   @State private var journalReview: Agenda.Item?
+  @State private var labReview: GalaxySSIHealthAgentLab.Launch?
   @State private var cancelling: GalaxySSIHealthCareFollowUp.Reminder?
   @State private var failed = false
   @State private var disallowed = false
@@ -160,6 +161,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
         GalaxySSIHealthVisitJournalView(records: records, concern: item.scope.concern, metric: item.scope.metric, visit: visit)
       }
     }
+    .modifier(GalaxySSIHealthAgentLabSheet(launch: $labReview))
     .sheet(item: $history) { selection in
       NavigationView {
         GalaxySSIHealthCareFeedbackHistory(records: records, scope: selection.scope, actionID: selection.actionID)
@@ -187,6 +189,19 @@ private struct GalaxySSIHealthCareAgendaRows: View {
   @ViewBuilder private func row(_ item: Agenda.Item, remindersEnabled: Bool) -> some View {
     if let action = item.action {
       actionRow(item, action: action, remindersEnabled: remindersEnabled)
+    } else if let reminder = item.reminder, let lab = reminder.labReview {
+      VStack(alignment: .leading, spacing: 7) {
+        Text(item.scope.metric.title(language: language)).font(.subheadline.weight(.semibold))
+        Button(GalaxySSIHealthAgentLab.text("remind", "Recheck reminder", language)) {
+          guard canRead, let archive = try? records.load(), records.localLabRecheckIsCurrent(reminder, archive: archive),
+            let session = store.agentSession(id: lab.conversation), session.status == .active,
+            session.collaborationRoster == nil, session.globalTopicKey.isBlank, session.mergedIntoConversationId.isBlank,
+            store.switchAgentSession(session.id) else { return }
+          labReview = .init(owner: records.owner, conversation: session.id, mode: .results, through: lab.through)
+        }.buttonStyle(.borderless)
+        Text(reminder.requestedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+        Button(t("cancel_reminder", "Cancel reminder"), role: .destructive) { cancelling = reminder }.buttonStyle(.borderless)
+      }
     } else if let reminder = item.reminder, reminder.journalReview != nil {
       VStack(alignment: .leading, spacing: 7) {
         Button(GalaxySSIHealthCareFollowUp.JournalReview.text("title", "Post-visit review", language)) {
@@ -298,7 +313,7 @@ private struct GalaxySSIHealthCareAgendaRows: View {
 
   private func clear() {
     page = nil; cursors = []; editor = nil; history = nil; instructionSource = nil
-    cancelling = nil; journalReview = nil; failed = false; disallowed = false
+    cancelling = nil; journalReview = nil; labReview = nil; failed = false; disallowed = false
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
