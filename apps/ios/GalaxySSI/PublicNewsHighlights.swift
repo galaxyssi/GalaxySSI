@@ -36,7 +36,8 @@ enum PublicNewsHighlights {
   }
 
   static func select(
-    _ metadata: [Candidate], enabled: Set<PublicNewsInterest>, now: Date, limit: Int = maximum
+    _ metadata: [Candidate], enabled: Set<PublicNewsInterest>, now: Date, limit: Int = maximum,
+    deduplicateHeadlines: Bool = true
   ) throws -> [String] {
     let maximum = min(limit, Self.maximum)
     guard maximum > 0, !enabled.isEmpty else { return [] }
@@ -49,7 +50,7 @@ enum PublicNewsHighlights {
     var headlines = Set<DuplicateKey>()
     var articleIDs = Set<String>()
     let candidates = ordered.filter {
-      articleIDs.insert($0.id).inserted && headlines.insert(duplicateKey($0)).inserted
+      articleIDs.insert($0.id).inserted && (!deduplicateHeadlines || headlines.insert(duplicateKey($0)).inserted)
     }.map { ($0, $0.interests.intersection(enabled).sorted { $0.rawValue < $1.rawValue }) }
     guard !candidates.isEmpty else { return [] }
 

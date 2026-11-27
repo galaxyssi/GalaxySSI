@@ -7870,3 +7870,9 @@
 "mqtt_diagnostics_ms" = "%lld 毫秒";
 "mqtt_diagnostics_insufficient_samples" = "样本不足";
 "mqtt_diagnostics_delivery_detail" = "%d 个对端确认样本 · p50 %@ · p95 %@";
+"public_news_event_reports" = "%d 个来源";
+"public_news_event_new_count" = "上次阅读后新增 %d 篇";
+"public_news_event_new" = "新增";
+"public_news_event_sources" = "同一事件的报道";
+"public_news_event_removed" = "这篇报道已不在本机存档中。";
+"public_news_event_no_body" = "本机尚未下载这篇报道的原文。";
