@@ -88,6 +88,7 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   func setup(catalog: OpaquePointer) throws {
+    try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
     guard partitionBytes > 0, partitionRecords > 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let existed = FileManager.default.fileExists(atPath: root.path)
     if existed {
@@ -163,6 +164,7 @@ final class AgentKnowledgePrimaryPartitions {
       try Task.checkCancellation()
       try checkActive()
       if batch.hasWrites { try syncRoot(); try beforeCatalogPublication() }
+      try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
       try Task.checkCancellation()
       try checkActive()
       batch.prepared = true
@@ -242,6 +244,7 @@ final class AgentKnowledgePrimaryPartitions {
         try checkActive()
         try Task.checkCancellation()
         try beforePartitionCommit(id)
+        try AgentKnowledgePrimaryDurability.verify(database, role: .primary)
         try execute(database, "COMMIT")
         committed = true
       }
@@ -251,6 +254,7 @@ final class AgentKnowledgePrimaryPartitions {
     }
     batch?.hasWrites = true
     if batch == nil { try syncRoot(); try beforeCatalogPublication() }
+    try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
     try Task.checkCancellation()
     try checkActive()
     let reference = Reference(version: 1, partition: id, entry: entry, frames: frameCount,
@@ -576,6 +580,7 @@ final class AgentKnowledgePrimaryPartitions {
       try Task.checkCancellation()
       try checkActive()
       try beforePartitionCommit(writer.id)
+      try AgentKnowledgePrimaryDurability.verify(writer.database, role: .primary)
       try execute(writer.database, "COMMIT")
       batch.pending.remove(writer.id)
     }
@@ -665,9 +670,7 @@ final class AgentKnowledgePrimaryPartitions {
     if readOnly {
       try execute(database, "PRAGMA query_only=ON")
     } else {
-      try execute(database, "PRAGMA journal_mode=WAL")
-      try execute(database, "PRAGMA synchronous=FULL")
-      try execute(database, "PRAGMA fullfsync=ON")
+      try AgentKnowledgePrimaryDurability.configure(database, role: .primary)
       if create {
         try execute(database, "CREATE TABLE frames(entry_id TEXT NOT NULL,ordinal INTEGER NOT NULL CHECK(ordinal>=0),sealed BLOB NOT NULL,PRIMARY KEY(entry_id,ordinal)) WITHOUT ROWID")
       }

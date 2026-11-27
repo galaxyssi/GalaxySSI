@@ -2314,8 +2314,8 @@ final class AgentKnowledgeDatabase {
       nil
     ) == SQLITE_OK else { database = nil; return }
     sqlite3_busy_timeout(database, 5_000)
-    _ = execute("PRAGMA journal_mode = WAL")
-    _ = execute("PRAGMA synchronous = FULL")
+    do { try AgentKnowledgePrimaryDurability.configure(database, role: .catalog) }
+    catch { sqlite3_close_v2(database); self.database = nil; return }
     _ = execute("""
       CREATE TABLE IF NOT EXISTS knowledge_items (
         item_hash TEXT PRIMARY KEY NOT NULL,
