@@ -89,11 +89,16 @@ extension CloudModelClient {
     let systemPrompt = Self.conversationSystemPrompt(languagePolicy: languagePolicy, images: images) {
       CloudWebGrounding.currentEvidencePrompt()
     }
+    let requirement = await MainActor.run {
+      guard store.canReadAgentTranscript else { return "" }
+      return AgentSessionRequirement.value(store.agentSession(id: turns.last?.conversationId ?? ""),
+        owner: turns.last?.conversationId ?? "")
+    }
     return try conversationStreamingRequest(
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt,
+      systemPrompt: systemPrompt + "\n" + AgentSessionRequirement.prompt(requirement),
       requestId: requestId,
       images: images
     )

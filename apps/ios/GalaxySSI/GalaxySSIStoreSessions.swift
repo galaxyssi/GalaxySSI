@@ -57,6 +57,23 @@ final class AgentConversationDatabase: @unchecked Sendable {
     }
   }
 
+  func setSessionRequirement(id: String, expected: String, text: String) -> Bool {
+    locked {
+      guard !id.isBlank, !Task.isCancelled, let clean = AgentSessionRequirement.normalize(text),
+            execute("BEGIN IMMEDIATE") else { return false }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard var current = read(id) ?? readDraft(id), current.sessionRequirement == expected,
+            current.mergedIntoConversationId.isBlank else { return false }
+      current.sessionRequirement = clean
+      // Preserve draft state and activity order; change only the encrypted preference.
+      let saved = read(id) == nil ? saveDraft(current) : upsert(current)
+      guard saved, !Task.isCancelled, execute("COMMIT") else { return false }
+      committed = true
+      return true
+    }
+  }
+
   static func defaultFileURL(fileManager: FileManager = .default) -> URL {
     let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? fileManager.temporaryDirectory
@@ -758,6 +775,15 @@ extension GalaxySSIStore {
   @discardableResult
   func setAgentSessionPinned(id conversationId: String, pinned: Bool) -> Bool {
     mutateAgentConversation(id: conversationId) { $0.pinned = pinned }
+  }
+
+  @discardableResult
+  func setAgentSessionRequirement(id: String, expected: String, text: String, owner: String) -> Bool {
+    guard canReadAgentTranscript, profile.identityFingerprint == owner, activeAgentConversationId == id,
+          agentConversationDatabase.setSessionRequirement(id: id, expected: expected, text: text),
+          let saved = agentConversationDatabase.read(id) ?? agentConversationDatabase.readDraft(id) else { return false }
+    cacheAgentConversation(saved)
+    return true
   }
 
   @discardableResult

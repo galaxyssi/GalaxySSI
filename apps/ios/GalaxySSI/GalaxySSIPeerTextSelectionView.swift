@@ -5,6 +5,8 @@ struct GalaxySSIPeerTextSelectionContext {
   var maximumWidth: CGFloat
   var onDelete: () -> Void
   var onMore: (() -> Void)? = nil
+  var onSessionRequirement: ((String) -> Void)? = nil
+  var requirementTitle = ""
 }
 
 private struct GalaxySSIPeerTextSelectionKey: EnvironmentKey {
@@ -30,7 +32,8 @@ struct GalaxySSIPeerSelectableParagraphs: View {
     GalaxySSIPeerTextSelectionView(text: text,
       deleteTitle: GalaxySSILocalization.string("galaxyssi.message.delete", fallback: "Delete Message", language: language),
       onDelete: selection.onDelete, onMore: selection.onMore,
-      moreTitle: GalaxySSILocalization.string("galaxyssi.common.more", fallback: "More", language: language))
+      moreTitle: GalaxySSILocalization.string("galaxyssi.common.more", fallback: "More", language: language),
+      onSessionRequirement: selection.onSessionRequirement, requirementTitle: selection.requirementTitle)
       .frame(width: size.width, height: size.height, alignment: .leading)
   }
 }
@@ -62,6 +65,8 @@ struct GalaxySSIPeerTextSelectionView: UIViewRepresentable {
   var onMore: (() -> Void)? = nil
   var moreTitle = ""
   var accessibilityID = "ios.peer-message.selectable-text"
+  var onSessionRequirement: ((String) -> Void)? = nil
+  var requirementTitle = ""
 
   func makeUIView(context: Context) -> GalaxySSIPeerSelectionTextView {
     let view = GalaxySSIPeerSelectionTextView()
@@ -90,12 +95,15 @@ struct GalaxySSIPeerTextSelectionView: UIViewRepresentable {
     view.deleteTitle = deleteTitle
     view.onMoreMessage = onMore
     view.moreTitle = moreTitle
+    view.onSessionRequirement = onSessionRequirement
+    view.requirementTitle = requirementTitle
     view.accessibilityIdentifier = accessibilityID
   }
 
   static func dismantleUIView(_ view: GalaxySSIPeerSelectionTextView, coordinator: Coordinator) {
     view.onDeleteMessage = nil
     view.onMoreMessage = nil
+    view.onSessionRequirement = nil
     coordinator.cancelParagraphSelection()
     view.resignFirstResponder()
     view.clearLegacyMenu()
@@ -156,16 +164,22 @@ struct GalaxySSIPeerTextSelectionView: UIViewRepresentable {
                   suggestedActions: [UIMenuElement]) -> UIMenu? {
       guard let view = textView as? GalaxySSIPeerSelectionTextView,
             range.length > 0 else { return nil }
+      var actions = suggestedActions
+      if view.onSessionRequirement != nil {
+        actions.append(UIAction(title: view.requirementTitle, image: UIImage(systemName: "pin")) { [weak view] _ in
+          view?.editSessionRequirement(nil)
+        })
+      }
       if view.onMoreMessage != nil {
         let more = UIAction(title: view.moreTitle, image: UIImage(systemName: "ellipsis")) { [weak view] _ in
           view?.showPeerMessageActions(nil)
         }
-        return UIMenu(children: suggestedActions + [more])
+        return UIMenu(children: actions + [more])
       }
       guard view.onDeleteMessage != nil else { return nil }
       let delete = UIAction(title: view.deleteTitle, image: UIImage(systemName: "trash"),
         attributes: .destructive) { [weak view] _ in view?.delete(nil) }
-      return UIMenu(children: suggestedActions + [delete])
+      return UIMenu(children: actions + [delete])
     }
   }
 }
@@ -174,16 +188,21 @@ final class GalaxySSIPeerSelectionTextView: UITextView {
   private static weak var legacyOwner: GalaxySSIPeerSelectionTextView?
   var onDeleteMessage: (() -> Void)?
   var onMoreMessage: (() -> Void)?
+  var onSessionRequirement: ((String) -> Void)?
+  var requirementTitle = ""
   var deleteTitle = ""
   var moreTitle = ""
 
   override func becomeFirstResponder() -> Bool {
-    if #unavailable(iOS 16.0), onMoreMessage != nil {
+    if #unavailable(iOS 16.0), onMoreMessage != nil || onSessionRequirement != nil {
       let menu = UIMenuController.shared
       let action = #selector(showPeerMessageActions(_:))
-      let items = (menu.menuItems ?? []).filter { $0.action != action }
+      let requirementAction = #selector(editSessionRequirement(_:))
+      var items = (menu.menuItems ?? []).filter { $0.action != action && $0.action != requirementAction }
       Self.legacyOwner = self
-      menu.menuItems = items + [UIMenuItem(title: moreTitle, action: action)]
+      if onMoreMessage != nil { items.append(UIMenuItem(title: moreTitle, action: action)) }
+      if onSessionRequirement != nil { items.append(UIMenuItem(title: requirementTitle, action: requirementAction)) }
+      menu.menuItems = items
     }
     let active = super.becomeFirstResponder()
     if !active { clearLegacyMenu() }
@@ -200,12 +219,17 @@ final class GalaxySSIPeerSelectionTextView: UITextView {
     if #unavailable(iOS 16.0), Self.legacyOwner === self {
       Self.legacyOwner = nil
       let menu = UIMenuController.shared
-      let items = (menu.menuItems ?? []).filter { $0.action != #selector(showPeerMessageActions(_:)) }
+      let items = (menu.menuItems ?? []).filter {
+        $0.action != #selector(showPeerMessageActions(_:)) && $0.action != #selector(editSessionRequirement(_:))
+      }
       menu.menuItems = items.isEmpty ? nil : items
     }
   }
 
   override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    if action == #selector(editSessionRequirement(_:)) {
+      return onSessionRequirement != nil && selectedRange.length > 0
+    }
     if action == #selector(showPeerMessageActions(_:)) {
       return onMoreMessage != nil && selectedRange.length > 0
     }
@@ -229,6 +253,16 @@ final class GalaxySSIPeerSelectionTextView: UITextView {
     guard selectedRange.length > 0, let onMoreMessage else { return }
     resignFirstResponder()
     onMoreMessage()
+  }
+
+  @objc func editSessionRequirement(_ sender: Any?) {
+    let source = (text ?? "") as NSString
+    let range = selectedRange
+    guard let onSessionRequirement, range.location != NSNotFound, range.location >= 0,
+          range.length > 0, range.location <= source.length, range.length <= source.length - range.location else { return }
+    let selected = source.substring(with: range)
+    resignFirstResponder()
+    onSessionRequirement(selected)
   }
 }
 
