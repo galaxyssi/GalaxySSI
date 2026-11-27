@@ -1,0 +1,10 @@
+<resources>
+    <string name="chat_search_back">Back to search results</string>
+    <string name="chat_search_earlier">Earlier messages</string>
+    <string name="chat_search_later">Later messages</string>
+    <string name="chat_search_more">More matching messages</string>
+    <string name="chat_search_busy">Searching local messages…</string>
+    <string name="chat_search_failed">Could not finish searching local messages</string>
+    <string name="chat_search_gone">This message is no longer available</string>
+    <string name="chat_search_attachment">Attachment · %1$s</string>
+</resources>
