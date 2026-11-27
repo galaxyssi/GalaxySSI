@@ -10,6 +10,35 @@ import org.junit.Test
 
 class ReadingPositionDeviceTest {
     @get:org.junit.Rule val noPermissions = ViewportNoPermissionPromptRule()
+    @Test fun onlyAnIncomingMessageInTheOpenSyntheticPeerChatShowsItsArrow() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val peer = Contact(UUID.randomUUID().toString(), "Local viewport fixture", "")
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { screen ->
+                screen.onActivity { it.showChatPage(peer) }
+                val end = SystemClock.elapsedRealtime() + 15_000
+                var ready = false
+                while (!ready && SystemClock.elapsedRealtime() < end) {
+                    screen.onActivity { ready = it.isContactChatVisible(peer.id) }
+                    if (!ready) SystemClock.sleep(60)
+                }
+                assertTrue("Synthetic chat must be visible", ready)
+                screen.onActivity { a ->
+                    val arrow = a.findViewById<View>(R.id.peerReadingLatest)
+                    a.peerChatViewport.beginUserScroll()
+                    a.refreshVisibleMessages(peer.id)
+                    assertEquals(View.GONE, arrow.visibility)
+                    a.addMessage(ChatMessage(a.newMessageId(), "Simulated incoming body", false, peer), fromIncoming = true)
+                    assertEquals(View.VISIBLE, arrow.visibility)
+                    assertFalse(a.peerChatViewport.followLatest)
+                    arrow.performClick()
+                    assertTrue(a.peerChatViewport.followLatest)
+                    assertEquals(View.GONE, arrow.visibility)
+                    a.flushChatHistoryForRuntimeBoundary()
+                }
+            }
+        } finally { ChatHistoryStore.deleteContact(ctx, peer.id) }
+    }
     @Test fun delayedMediaGrowthAboveVisibleParagraphDoesNotDisplaceItsText() {
         ActivityScenario.launch(MainActivity::class.java).use { screen ->
             lateinit var list: androidx.recyclerview.widget.RecyclerView
