@@ -8,6 +8,46 @@ commits. Its full-main review includes physical primary partitions, batches,
 leases, periodic maintenance, checked durability, allocation recovery,
 statement reuse and bounded cached readers, not only this increment.
 
+## Prepared-source and committed-view integration
+
+The branch now merges updated #4602 at `b3fb18e58`, including updated #4596 and
+the #4625/#4623/#4621/#4619/#4616 source preparation, checked imports, streamed
+observation, committed lexical/vector reads and timing prerequisites. The
+original #4603 read-connection implementation remains common ancestry. These
+prerequisites are part of the full main diff, not newly delivered #3039 work.
+The base remains main and no merge wait, duplicate PR or author approval is
+needed to review this integration.
+
+Retain the newer catalog transaction, physical batch, generation fencing and
+managed private-view teardown. Physical compaction updates only authenticated
+primary references and compaction/allocation/retirement state: it must not edit
+logical knowledge rows, source generations, FTS or vector feeds. A prepared
+source therefore remains valid through pure compaction, but an actual source
+mutation still conflicts. This does not change the separate legacy inline-body
+migration's conservative generation conflict behavior.
+
+Production committed views hold independent physical snapshot leases through
+candidate/current validation, read callbacks and managed SQLite close. Existing
+EX admission defers compaction while such a view is active. After the view closes,
+the existing retirement boundary drains idle cached physical readers before
+unlinking files. No early release or writer-lock fallback is introduced.
+
+Four new synthetic integration methods cover preparation across compaction with
+unchanged logical source revision/vector feed/outbox receipts, actual candidate
+view deferral, targeted replacement/deletion between pages without resurrection,
+and failed targeted writes preserving references/dirty work/active state/outbox.
+These methods are authored only, not compiled or executed. The complete storage
+scope now contains 206 authored methods: the updated #4602 chain's 163, the
+existing 24 read-connection and 15 compaction methods, and these four cases.
+
+The read-connection guard now compares complete retained files/project content
+to pinned updated #4602. The compaction guard retains exact previous physical
+implementation comparisons and pins new catalog/statement prerequisites
+explicitly. Existing assertions are not removed to hide integration changes;
+the compaction check also invokes the prepared-source/view integration guard.
+Static contracts are not native concurrency, crash, performance or power-loss
+evidence. No Android measured result is an iOS acceptance result.
+
 ## Durable work selection
 
 Add small primary dirty/state tables and mutation triggers transactionally in

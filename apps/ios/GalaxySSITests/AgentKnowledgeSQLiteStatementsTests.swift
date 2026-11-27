@@ -186,4 +186,85 @@ final class AgentKnowledgeSQLiteStatementsTests: XCTestCase {
     XCTAssertLessThanOrEqual(after.idle, 32)
     XCTAssertLessThanOrEqual(after.sqlChars, 65_536)
   }
+
+  func testOwnedCloseDrainsIdleManagedAndUnmanagedPrograms() throws {
+    let f = try Fixture(), driver = AgentKnowledgeSQLiteStatements()
+    let database = try XCTUnwrap(f.database)
+    var cached: OpaquePointer?, borrowed: OpaquePointer?, unmanaged: OpaquePointer?
+    XCTAssertEqual(driver.prepare(database, "SELECT 1", -1, &cached, nil), SQLITE_OK)
+    driver.release(cached)
+    XCTAssertEqual(driver.prepare(database, "SELECT 2", -1, &borrowed, nil), SQLITE_OK)
+    XCTAssertEqual(sqlite3_prepare_v2(database, "SELECT 3", -1, &unmanaged, nil), SQLITE_OK)
+    XCTAssertEqual(sqlite3_step(unmanaged), SQLITE_ROW)
+    XCTAssertEqual(driver.close(database, finalizingUnmanaged: true), SQLITE_OK)
+    f.database = nil
+    XCTAssertNil(driver.stats(for: database))
+    XCTAssertEqual(driver.release(borrowed), SQLITE_MISUSE)
+    // All pointers above belong to the closed connection and must not be used.
+  }
+
+  func testGenericCloseDoesNotFinalizeAnUnrelatedStandalonePoolLease() throws {
+    let f = try Fixture(), driver = AgentKnowledgeSQLiteStatements()
+    let database = try XCTUnwrap(f.database), independent = try f.pool.acquire("SELECT 66")
+    var borrowed: OpaquePointer?
+    XCTAssertEqual(driver.prepare(database, "SELECT 77", -1, &borrowed, nil), SQLITE_OK)
+    XCTAssertEqual(driver.close(database), SQLITE_OK)
+    f.database = nil
+    try independent.access {
+      XCTAssertEqual(sqlite3_step($0), SQLITE_ROW)
+      XCTAssertEqual(sqlite3_column_int($0, 0), 66)
+    }
+    f.pool.close(); independent.close()
+  }
+
+  func testActualCommittedViewReusesInitializationQueryAndDrainsOnClose() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("knowledge.sqlite")
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    XCTAssertTrue(database.replaceAll([]))
+    let view = try AgentKnowledgeCommittedReadView(fileURL: url, checkActive: {})
+    var handle: OpaquePointer?
+    try view.read { connection in
+      handle = connection
+      let before = try XCTUnwrap(AgentKnowledgeSQLiteStatements.shared.stats(for: connection))
+      var row: OpaquePointer?
+      XCTAssertEqual(AgentKnowledgeSQLiteStatements.shared.prepare(connection,
+        "SELECT revision FROM knowledge_browse_revision WHERE id=1", -1, &row, nil), SQLITE_OK)
+      XCTAssertEqual(sqlite3_step(row), SQLITE_ROW)
+      AgentKnowledgeSQLiteStatements.shared.release(row)
+      let after = try XCTUnwrap(AgentKnowledgeSQLiteStatements.shared.stats(for: connection))
+      XCTAssertGreaterThan(after.reused, before.reused)
+    }
+    view.close()
+    XCTAssertNil(AgentKnowledgeSQLiteStatements.shared.stats(for: try XCTUnwrap(handle)))
+  }
+
+  func testActualSourceStagingReuseKeepsIdentityAndBindingIsolation() throws {
+    let stage = try AgentKnowledgeSourceStaging(source: "synthetic")
+    defer { stage.close() }
+    let first = AgentKnowledgeItem(id: "first", kind: .document, title: "First", content: "body one", source: "synthetic", updatedAtMillis: 1)
+    let second = AgentKnowledgeItem(id: "second", kind: .document, title: "Second", content: "body two", source: "synthetic", updatedAtMillis: 2)
+    XCTAssertTrue(try stage.accept(first)); XCTAssertTrue(try stage.accept(second))
+    XCTAssertFalse(try stage.accept(first))
+    try stage.finishIncoming()
+    for _ in 0..<3 {
+      var found: [AgentKnowledgeItem] = []
+      try stage.scan(.incoming) { found.append($0) }
+      XCTAssertEqual(Set(found.map(\.id)), Set(["first", "second"]))
+      XCTAssertEqual(found.first { $0.id == "first" }, first)
+      XCTAssertEqual(found.first { $0.id == "second" }, second)
+    }
+  }
+
+  func testSourceStagingCallbackFailureDoesNotPoisonLaterReads() throws {
+    let stage = try AgentKnowledgeSourceStaging(source: "synthetic")
+    defer { stage.close() }
+    let item = AgentKnowledgeItem(id: "first", kind: .document, title: "First", content: "body", source: "synthetic", updatedAtMillis: 1)
+    XCTAssertTrue(try stage.accept(item)); try stage.finishIncoming()
+    XCTAssertThrowsError(try stage.scan(.incoming) { _ in throw Fault.injected })
+    var found: [AgentKnowledgeItem] = []
+    try stage.scan(.incoming) { found.append($0) }
+    XCTAssertEqual(found, [item])
+  }
 }

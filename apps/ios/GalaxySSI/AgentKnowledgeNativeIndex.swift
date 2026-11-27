@@ -44,7 +44,7 @@ final class AgentKnowledgeNativeIndex {
     readyStamp = nil
     needsReplay = false
     try active(token)
-    let initial = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+    let initial = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease)
     if epoch != initial.epoch || generation != token {
       close()
       epoch = initial.epoch
@@ -53,7 +53,7 @@ final class AgentKnowledgeNativeIndex {
     do {
       if session == nil { session = try factory(initial, token, nil) }
       if session == nil {
-        var seed = try database.nativeRootSeed(provenance: provenance, stamp: initial)
+        var seed = try database.nativeRootSeed(provenance: provenance, stamp: initial, backgroundLease: backgroundLease)
         defer {
           if seed.vector != nil { for index in seed.vector!.indices { seed.vector![index] = 0 } }
         }
@@ -71,7 +71,7 @@ final class AgentKnowledgeNativeIndex {
         let checkpoint = try session.checkpoint()
         guard checkpoint.epoch == expectedEpoch else { throw AgentKnowledgeDatabaseError.staleCursor }
         let page = try database.vectorChangePage(modelSHA256: provenance.modelSHA256,
-          epoch: initial.epoch, afterSequence: checkpoint.sequence, limit: 1)
+          epoch: initial.epoch, afterSequence: checkpoint.sequence, limit: 1, backgroundLease: backgroundLease)
         guard let change = page.events.first else {
           guard checkpoint.pending == nil else { throw AgentKnowledgeNativeError.invalidRecord }
           return try markReady(checkpoint: checkpoint, token: token)
@@ -83,7 +83,7 @@ final class AgentKnowledgeNativeIndex {
         } else {
           let next = checkpoint.pending?.next ?? 0
           guard next >= 0, next < Int64(change.chunkCount) else { throw AgentKnowledgeNativeError.invalidRecord }
-          let vectors = try database.vectorReplayPage(event: change, provenance: provenance, afterChunkIndex: Int(next), limit: 64)
+          let vectors = try database.vectorReplayPage(event: change, provenance: provenance, afterChunkIndex: Int(next), limit: 64, backgroundLease: backgroundLease)
           _ = try session.begin(event, skip: vectors == nil)
           if let vectors {
             try active(token)
@@ -101,13 +101,13 @@ final class AgentKnowledgeNativeIndex {
   func search(_ vector: [Float], count: Int, token: UInt64) throws -> [AgentKnowledgeHit] {
     try active(token)
     guard generation == token, let session, let stamp = readyStamp,
-      try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
+      try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease) == stamp else {
       throw AgentKnowledgeDatabaseError.staleCursor
     }
     let count = min(max(count, 1), 256)
     let matches = try session.search(vector, count: count, breadth: max(256, count + 1))
     try active(token)
-    let hits = try database.resolveNativeMatches(matches, provenance: provenance, stamp: stamp)
+    let hits = try database.resolveNativeMatches(matches, provenance: provenance, stamp: stamp, backgroundLease: backgroundLease)
     try active(token)
     return hits
   }
@@ -143,7 +143,7 @@ final class AgentKnowledgeNativeIndex {
 
   private func markReady(checkpoint: AgentKnowledgeNativeCheckpoint, token: UInt64) throws -> Bool {
     try active(token)
-    let current = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256)
+    let current = try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease)
     let expectedEpoch = try AgentKnowledgeNativeWire.epoch(current.epoch).map { String(format: "%02x", $0) }.joined()
     if checkpoint.epoch == expectedEpoch, checkpoint.sequence == current.head, checkpoint.pending == nil {
       readyStamp = current
