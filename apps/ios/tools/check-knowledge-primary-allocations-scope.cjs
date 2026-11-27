@@ -51,14 +51,17 @@ function validate() {
     'Task.checkCancellation()', 'UUID(uuidString: id)?.uuidString.lowercased() == id']) assert(journal.includes(text), text);
   for (const forbidden of ['contentsOfDirectory', 'enumerator(', 'OR REPLACE', 'removeItem(']) assert(!journal.includes(forbidden), forbidden);
   const project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
-  assert.equal(retained(project, read(project)), old(project));
+  assert.equal(require('./check-knowledge-primary-durability-scope.cjs').retained(project, read(project)),
+    cp.execFileSync('git', ['show', 'a5d92e61c98c6a8ece94cb925bd07b49fd99a339:' + project], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n'));
   const guardFile = 'apps/ios/tools/check-knowledge-primary-durability-scope.cjs';
   assert.equal(read(guardFile), old(guardFile)
+    .replace("base = '97374e5882356fd28a3a251873b6c5cd7dfa6a54'", "base = 'a5d92e61c98c6a8ece94cb925bd07b49fd99a339'")
     .replace("const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n');",
       "const read = f => require('./check-knowledge-primary-allocations-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n'));")
     .replace('function retained(file, source) {\n', "function retained(file, source) {\n  source = require('./check-knowledge-primary-allocations-scope.cjs').retained(file, source);\n"));
   for (const name of ['AgentKnowledgeDatabase', 'AgentKnowledgePrimaryDurability', 'AgentKnowledgePrimaryFrameCodec',
-    'AgentKnowledgePrimaryReaderSlots', 'AgentKnowledgeStorageBackground']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    'AgentKnowledgePrimaryReaderSlots', 'AgentKnowledgeStorageBackground']) assert.equal(read(app + name + '.swift'),
+      name === 'AgentKnowledgeDatabase' ? require('./check-knowledge-statements-scope.cjs').predecessor(app + name + '.swift') : old(app + name + '.swift'), name);
   assert.equal((read('apps/ios/GalaxySSITests/AgentKnowledgePrimaryAllocationsTests.swift').match(/  func test/g) || []).length, 10);
   console.log('Separate allocation intent, EX-lease bounded replay, complete-set sidecar preflight and ten authored-only fixture source contracts passed; no native acceptance.');
 }

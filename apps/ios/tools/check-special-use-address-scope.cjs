@@ -3,7 +3,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..');
 const base = 'f2b671fa9a9728bfc6e1c94697bec0bdf89c943e';
 const app = 'apps/ios/GalaxySSI/';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-web-network-assurance-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const show = (ref, file) => cp.execFileSync('git', ['show', `${ref}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function once(source, from, to = '') {
