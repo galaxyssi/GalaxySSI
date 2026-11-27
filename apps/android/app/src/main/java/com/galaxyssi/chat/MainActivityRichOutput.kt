@@ -393,6 +393,10 @@ internal fun MainActivity.attachAgentTranscriptActions(textView: TextView, entry
                 entry.dedupeKey.startsWith("global-agent-digest:"))
 
         override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+            if (entry.role == AgentTranscriptRole.USER && entry.sourceConversationId.isBlank() &&
+                !AgentVoiceTranscriptPolicy.isPending(entry) && entry.conversationId.isNotBlank()) {
+                menu.add(0, AGENT_SELECTION_REQUIREMENT, 99, R.string.agent_session_requirement)
+            }
             if (feedbackEntry) {
                 menu.add(0, AGENT_SELECTION_HELPFUL, 100, R.string.agent_global_feedback_helpful)
                 menu.add(0, AGENT_SELECTION_NOT_RELEVANT, 101, R.string.agent_global_feedback_not_relevant)
@@ -408,6 +412,15 @@ internal fun MainActivity.attachAgentTranscriptActions(textView: TextView, entry
             mode: android.view.ActionMode,
             item: android.view.MenuItem
         ): Boolean = when (item.itemId) {
+            AGENT_SELECTION_REQUIREMENT -> {
+                val start = minOf(textView.selectionStart, textView.selectionEnd)
+                val end = maxOf(textView.selectionStart, textView.selectionEnd)
+                val selected = if (start >= 0 && end in (start + 1)..textView.length())
+                    textView.text.subSequence(start, end).toString() else entry.text
+                mode.finish()
+                editSessionRequirement(entry.conversationId, selected)
+                true
+            }
             AGENT_SELECTION_HELPFUL -> {
                 recordGlobalInsightFeedback(entry, GlobalAgentFeedbackKind.HELPFUL)
                 mode.finish()
@@ -443,6 +456,34 @@ private const val AGENT_SELECTION_HELPFUL = 0x534101
 private const val AGENT_SELECTION_NOT_RELEVANT = 0x534102
 private const val AGENT_SELECTION_TOO_FREQUENT = 0x534103
 private const val AGENT_SELECTION_DELETE = 0x534104
+private const val AGENT_SELECTION_REQUIREMENT = 0x534105
+
+private fun MainActivity.editSessionRequirement(id: String, selection: String) {
+    val owner = agentTranscriptStore.conversation(id)?.takeIf {
+        it.id == id && it.id == agentTranscriptStore.activeConversation().id
+    } ?: return
+    val field = android.widget.EditText(this).apply {
+        minLines = 2
+        maxLines = 6
+        filters = arrayOf(android.text.InputFilter.LengthFilter(MAX_SESSION_REQUIREMENT))
+        setText(owner.sessionRequirement.ifBlank { selection.trim().take(MAX_SESSION_REQUIREMENT) })
+        setSelection(length())
+        contentDescription = getString(R.string.agent_session_requirement)
+    }
+    fun save(text: String) {
+        if (agentTranscriptStore.activeConversation().id != id ||
+            !agentTranscriptStore.setSessionRequirement(id, text)) {
+            Toast.makeText(this, R.string.agent_session_requirement_unavailable, Toast.LENGTH_SHORT).show()
+        }
+    }
+    val panel = FrameLayout(this).apply { setPadding(dp(22), dp(8), dp(22), 0); addView(field) }
+    AlertDialog.Builder(this).setTitle(R.string.agent_session_requirement).setView(panel)
+        .setNegativeButton(android.R.string.cancel, null)
+        .setPositiveButton(R.string.common_save) { _, _ -> save(field.text.toString()) }
+        .apply { if (owner.sessionRequirement.isNotEmpty())
+            setNeutralButton(R.string.agent_session_requirement_remove) { _, _ -> save("") } }
+        .show()
+}
 
 internal fun MainActivity.recordGlobalInsightFeedback(entry: AgentTranscriptEntry, kind: GlobalAgentFeedbackKind) {
     recordGlobalInsightFeedback(entry.dedupeKey, kind)

@@ -412,7 +412,8 @@ internal object AgentSupervisedProjectLoop {
                 AgentSupervisedProjectContextCache.render(request).orEmpty()
             },
             conversationTransport = AgentPlanningTiming.measure("conversation") {
-                if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
+                if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank() ||
+                    request.conversationContext.sessionRequirement.isNotBlank()) {
                     AgentConversationTransportCache.render(
                         context = request.conversationContext,
                         maximumTokens = MAX_CONVERSATION_TOKENS,

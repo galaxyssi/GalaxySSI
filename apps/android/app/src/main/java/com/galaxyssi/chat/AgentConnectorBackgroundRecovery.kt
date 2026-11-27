@@ -120,7 +120,8 @@ internal class AgentConnectorBackgroundDelivery(
                     // Restoring an executable runtime normalizes approval waits; projection must not do that.
                     val runtime = if (accepted) null else runtimeFactory(sessions).apply {
                         activeConversationContext = AgentConversationContext(identity.conversationId, "", emptyList(),
-                            conversation.privateMode, trackingPaused = conversation.trackingPaused)
+                            conversation.privateMode, trackingPaused = conversation.trackingPaused,
+                            sessionRequirement = conversation.sessionRequirement.takeIf { conversation.id == identity.conversationId }.orEmpty())
                         activeConversationTurnId = identity.turnId
                     }
                     runtime?.bindExecutionLoopEventSink(AgentExecutionLoopEventSink(taskContext::persistExecutionLoop))

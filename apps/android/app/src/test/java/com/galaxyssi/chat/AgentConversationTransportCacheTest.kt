@@ -10,6 +10,18 @@ import java.util.concurrent.Executors
 
 class AgentConversationTransportCacheTest {
     @Test
+    fun `explicit session requirement survives history deduplication without importing global memory`() {
+        val goal = "Compare the results"
+        val base = context(goal).copy(summary = "", privateMode = true, globalContext = "GLOBAL_FIXTURE")
+        val pinned = base.copy(sessionRequirement = "Preserve the original units.")
+        val transport = pinned.asAgentTransportBlock(goal)
+        assertTrue(transport.contains("Preserve the original units."))
+        assertFalse(transport.contains("GLOBAL_FIXTURE"))
+        assertFalse(transport.contains(goal))
+        assertTrue(base.asAgentTransportBlock(goal).isEmpty())
+    }
+
+    @Test
     fun `same conversation context reuses its compiled transport`() {
         val context = context("Keep this project constraint")
 

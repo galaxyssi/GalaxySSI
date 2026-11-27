@@ -515,6 +515,7 @@ internal class AgentConversationDatabase(
             parentConversationId = item.optString("parent_conversation_id"),
             trackingPaused = item.optBoolean("tracking_paused"),
             globalTopicKey = item.optString("global_topic_key").take(MAX_GLOBAL_TOPIC_KEY_CHARACTERS),
+            sessionRequirement = item.optString("user_session_requirement").take(MAX_SESSION_REQUIREMENT),
             mergedIntoConversationId = item.optString("merged_into_conversation_id"),
             mergedAtMillis = item.optLong("merged_at_millis"),
             contextCompactedThroughMillis = item.optLong("context_compacted_through_millis"),
@@ -544,6 +545,7 @@ internal class AgentConversationDatabase(
         .put("parent_conversation_id", conversation.parentConversationId)
         .put("tracking_paused", conversation.trackingPaused)
         .put("global_topic_key", conversation.globalTopicKey)
+        .apply { if (conversation.sessionRequirement.isNotEmpty()) put("user_session_requirement", conversation.sessionRequirement) }
         .put("merged_into_conversation_id", conversation.mergedIntoConversationId)
         .put("merged_at_millis", conversation.mergedAtMillis)
         .put("context_compacted_through_millis", conversation.contextCompactedThroughMillis)

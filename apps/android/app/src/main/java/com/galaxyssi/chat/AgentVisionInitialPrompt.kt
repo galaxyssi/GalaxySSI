@@ -33,7 +33,8 @@ internal object AgentVisionInitialPrompt {
             append("Wait for its real receipt; the full execution contract and discovered schemas follow in the next turn. No Desktop commands, local OCR or fabricated tool results.\n")
             append(AgentSupervisedProjectPromptCodec.DYNAMIC_CONTEXT_HEADER)
             append("User goal: ").append(AgentPlannerObservation.sanitize(request.goal, 8_000)).append('\n')
-            if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank()) {
+            if (request.conversationContext.turns.isNotEmpty() || request.conversationContext.summary.isNotBlank() ||
+                request.conversationContext.sessionRequirement.isNotBlank()) {
                 append(AgentConversationTransportCache.render(request.conversationContext,
                     maximumTokens = 2_048, currentGoal = request.goal))
             }

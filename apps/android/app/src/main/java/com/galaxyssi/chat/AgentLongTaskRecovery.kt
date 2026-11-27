@@ -291,7 +291,8 @@ class AgentLongTaskRecoveryWorker(
                                     AgentLongTaskRecoveryMode.TEAM_RECONCILIATION)) {
                                 AgentTranscriptStore(context).conversation(workspace.conversationId)?.let { conversation ->
                                     runtime.activeConversationContext = AgentConversationContext(workspace.conversationId,
-                                        "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused)
+                                        "", emptyList(), conversation.privateMode, trackingPaused = conversation.trackingPaused,
+                                        sessionRequirement = conversation.sessionRequirement.takeIf { conversation.id == workspace.conversationId }.orEmpty())
                                     runtime.activeConversationTurnId = workspace.taskId
                                 }
                             }
