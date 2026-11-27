@@ -2,6 +2,51 @@ import XCTest
 @testable import GalaxySSI
 
 extension GalaxySSIStoreTests {
+  func testQueuedConnectorPreparationDoesNotFabricateRemoteAcceptance() throws {
+    var action = nativeConnectorWaitFixture().action
+    action.parameters[AgentIOSConnectorDispatch.sourceKey] = UUID().uuidString
+    action.parameters[AgentIOSConnectorDispatch.profileKey] = "profile"
+    action.parameters[AgentIOSConnectorDispatch.permissionKey] = "approved-mode"
+    let pending = AgentIOSConnectorDispatch.prepare(action)
+    XCTAssertTrue(pending.success)
+    XCTAssertEqual(pending.message, "Queued")
+    XCTAssertEqual(pending.metadata["awaiting_response"], "true")
+    XCTAssertEqual(pending.metadata["completion_verified"], "false")
+    for key in ["remote_task_status", "remote_task_status_seq", "remote_task_status_updated_at", "transport_accepted_at"] {
+      XCTAssertNil(pending.metadata[key], key)
+    }
+    let start = try XCTUnwrap(pending.metadata["resource_started_at"].flatMap(Int64.init))
+    XCTAssertTrue(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,
+      nowMillis: start + 14_999).isEmpty)
+    let overdue = AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,
+      nowMillis: start + 15_000)
+    XCTAssertEqual(overdue["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.notAccepted.rawValue)
+    XCTAssertNil(overdue["awaiting_response"])
+    XCTAssertNil(overdue["non_retriable"])
+  }
+
+  func testPreparedConnectorAcceptanceRequiresTheOriginalSourceAndContact() throws {
+    var action = nativeConnectorWaitFixture().action
+    action.parameters[AgentIOSConnectorDispatch.sourceKey] = UUID().uuidString
+    action.parameters[AgentIOSConnectorDispatch.profileKey] = "profile"
+    action.parameters[AgentIOSConnectorDispatch.permissionKey] = "approved-mode"
+    let pending = AgentIOSConnectorDispatch.prepare(action)
+    let source = try XCTUnwrap(pending.metadata["source_message_id"].flatMap(Int64.init))
+    let contact = try XCTUnwrap(pending.metadata["contact_id"])
+    XCTAssertNil(AgentConnectorTransportReceiptRecorder.recordAccepted(pending: pending,
+      sourceMessageId: source + 1, contactId: contact, nowMillis: 50_000))
+    XCTAssertNil(AgentConnectorTransportReceiptRecorder.recordAccepted(pending: pending,
+      sourceMessageId: source, contactId: "foreign", nowMillis: 50_000))
+    let accepted = try XCTUnwrap(AgentConnectorTransportReceiptRecorder.recordAccepted(pending: pending,
+      sourceMessageId: source, contactId: contact, nowMillis: 50_000))
+    XCTAssertEqual(accepted.metadata["remote_task_status"], "accepted")
+    XCTAssertEqual(accepted.metadata["transport_accepted_at"], "50000")
+    XCTAssertEqual(accepted.metadata["awaiting_response"], "true")
+    XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: accepted.metadata,
+      nowMillis: 95_000)["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.notRunning.rawValue)
+    XCTAssertEqual(try JSONDecoder().decode(AgentActionResult.self, from: JSONEncoder().encode(accepted)), accepted)
+  }
+
   func testOwnedConnectorRunIdentitySeparatesRetriesAndPreservesFirstManualIdentity() throws {
     let original = nativeConnectorWaitFixture().action
     let first = AgentControlPlaneActionExecutor.connectorRunId(action: original, agentId: "codex")
