@@ -1,0 +1,8 @@
+<resources>
+    <string name="attention_event_reports">%1$d 家来源</string>
+    <string name="attention_event_new_count"> · 新增 %1$d</string>
+    <string name="attention_event_sources">同一事件的报道</string>
+    <string name="attention_event_new">上次阅读后新增</string>
+    <string name="attention_event_no_body">本地暂无正文</string>
+    <string name="attention_event_excerpt">新增报道 · %1$s：%2$s</string>
+</resources>

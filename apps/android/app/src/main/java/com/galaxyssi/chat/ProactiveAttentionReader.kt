@@ -31,6 +31,7 @@ internal class ProactiveAttentionReader(
     val timeline = ProactiveAttentionTimeline()
     private val main = Handler(Looper.getMainLooper())
     private val stateStore = ProactiveAttentionReaderStateStore(storageContext)
+    private val articleContext = storageContext.applicationContext
     private val attention = ProactiveAttentionStore(storageContext)
     private val repository = GlobalAgentRepository(storageContext)
     private val titleStore = ProactiveAttentionTitleStore(storageContext)
@@ -49,7 +50,36 @@ internal class ProactiveAttentionReader(
     private val filters = listOf(AttentionFeedFilter.ALL, AttentionFeedFilter.UNREAD, AttentionFeedFilter.SAVED, AttentionFeedFilter.CURATED)
     private val manager = LinearLayoutManager(activity)
     private val adapter = ProactiveAttentionFeedAdapter { ProactiveAttentionArticleView(activity,
-        ::toggle, ::toggleSaved, ask, sources, evidence, ::articleAction, loadArticle = ::loadArticle) }
+        ::toggle, ::toggleSaved, ask, sources, evidence, ::articleAction, loadArticle = ::loadArticle,
+        showEvent = ::showEvent) }
+
+    private fun showEvent(event: AttentionEvent) {
+        val dates = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+        val labels = event.reports.map { r ->
+            val added = if (event.arrivedSinceRead(r)) activity.getString(R.string.attention_event_new) + " · " else ""
+            "$added${r.source} · ${dates.format(java.util.Date(r.date))}\n${r.title}" +
+                r.excerpts.firstOrNull()?.let { "\n$it" }.orEmpty()
+        }.toTypedArray()
+        android.app.AlertDialog.Builder(activity).setTitle(R.string.attention_event_sources)
+            .setItems(labels) { _, index ->
+                val report = event.reports[index]
+                worker.execute {
+                    val body = runCatching { AttentionArticleStore(articleContext).body(report.article) }.getOrNull()
+                    main.post {
+                        if (destroyed || !active || activity.isFinishing) return@post
+                        val detail = android.app.AlertDialog.Builder(activity).setTitle(report.source)
+                            .setMessage(report.title + "\n\n" + (body?.takeIf(String::isNotBlank)
+                                ?: activity.getString(R.string.attention_event_no_body)))
+                            .setPositiveButton(android.R.string.ok, null)
+                        timeline.sourceItem(report.key)?.let { item ->
+                            detail.setNeutralButton(R.string.attention_original) { _, _ -> sources(item) }
+                        }
+                        detail.show()
+                        if (!body.isNullOrBlank()) markRead(setOf(report.key), includeEventSource = true)
+                    }
+                }
+            }.setNegativeButton(android.R.string.cancel, null).show()
+    }
 
     private fun loadArticle(key: String, expanded: Boolean, loaded: (AttentionArticlePresentation?) -> Unit) {
         if (destroyed || worker.isShutdown) return
@@ -320,14 +350,15 @@ internal class ProactiveAttentionReader(
         }
     }
 
-    private fun markRead(keys: Set<String>) {
-        val selected = timeline.visible.filter { it.key in keys && it.key !in pendingReads && it.isNew }
+    private fun markRead(keys: Set<String>, includeEventSource: Boolean = false) {
+        val candidates = if (includeEventSource) keys.mapNotNull(timeline::sourceItem) else timeline.visible
+        val selected = candidates.filter { it.key in keys && it.key !in pendingReads && it.isNew }
         if (selected.isEmpty()) return
         val marking = selected.mapTo(hashSetOf()) { it.key }
         pendingReads += marking
         worker.execute {
             val result = runCatching { repository.markProactiveViewed(selected.flatMapTo(hashSetOf()) { it.messageIds }, System.currentTimeMillis()) }
-            if (result.isSuccess) AttentionNewsBudget.noteRead(activity.applicationContext)
+            if (result.isSuccess) AttentionNewsBudget.noteRead(articleContext)
             main.post {
                 pendingReads.removeAll(marking)
                 if (activity.isDestroyed) return@post
