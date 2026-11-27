@@ -3,6 +3,14 @@
 Baseline: Android PR #4611, merge `a619c31427f6311ed5cbe329e4331c95db6b9134`.
 The already-shared Desktop implementation is not changed by this iOS port.
 
+Integration-source follow-up: the checker exports an exact approved-revocation
+normalizer and a complete Store-version whitelist pinned to feature head
+`c1a85545b107b89f353fe73c7003008cbf5629ed` and baseline
+`fe0940f0cc538bfc6659a49588b066ea560917b8`. Independent source-scope guards can
+recognize these known pairing changes without accepting arbitrary Store edits.
+Importing the checker no longer runs its CLI assertions; direct invocation still
+runs every original pairing/deletion assertion and the exact Store comparison.
+
 Ordinary local and authenticated remote revocation now archive Desktop and Agent
 contacts by default, preserving their local history while removing transport,
 trust, pending transfers, control state and callable catalog entries. Existing
