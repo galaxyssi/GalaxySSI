@@ -27,7 +27,10 @@ internal object AttentionNewsCurationStore {
             }
         }
         val decorated = items.map { it.copy(newsSummary = summaries[it.newsArticleKey]) }
-        val selected = AttentionNewsCuration.select(decorated, now)
-        return decorated.map { item -> item.copy(newsSummary = item.newsSummary?.copy(selected = item.key in selected)) }
+        val events = AttentionNewsEvents.group(decorated)
+        val representatives = events.values.map { it.reports.first().key }.toHashSet()
+        val selected = AttentionNewsCuration.select(decorated.filter { it.key !in events || it.key in representatives }, now)
+        return decorated.map { item -> item.copy(newsSummary = item.newsSummary?.copy(
+            selected = item.key in selected, event = events[item.key])) }
     }
 }

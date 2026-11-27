@@ -26,7 +26,8 @@ internal class ProactiveAttentionArticleView(
     private val action: (GlobalProactiveInboxItem, AttentionHeadlineAction) -> Unit,
     private val loadBody: (String, (String?) -> Unit) -> Unit = { _, callback -> callback(null) },
     private val loadArticle: (String, Boolean, (AttentionArticlePresentation?) -> Unit) -> Unit = { _, _, callback -> callback(null) },
-    private val searchQuery: String = ""
+    private val searchQuery: String = "",
+    private val showEvent: ((AttentionEvent) -> Unit)? = null
 ) : LinearLayout(context) {
     private var row: AttentionReaderRow? = null
     private var generation = 0
@@ -36,6 +37,7 @@ internal class ProactiveAttentionArticleView(
     private var translationAttribution: ImageView? = null
     private var sourceLine: TextView? = null
     private var statusLine: TextView? = null
+    private var eventLine: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
     private var knowledge = false
@@ -132,6 +134,15 @@ internal class ProactiveAttentionArticleView(
         val status = horizontal()
         statusLine = label("", 11f, secondary = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         status.addView(statusLine, LayoutParams(0, -2, 1f))
+        eventLine = showEvent?.let { open ->
+            label("", 13f, true).apply {
+                tag = "attention-event:${item.key}"
+                gravity = Gravity.CENTER; minHeight = dp(44); setPadding(dp(8), 0, dp(8), 0)
+                setTextColor(context.getColor(R.color.galaxyssi_green))
+                setOnClickListener { row?.item?.newsSummary?.event?.let(open) }
+                status.addView(this)
+            }
+        }
         bookmark = icon(R.drawable.ic_attention_bookmark, R.string.attention_save) { save(item.key) }
         status.addView(bookmark)
         intro.addView(status)
@@ -213,6 +224,12 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
+        eventLine?.apply {
+            val event = next.item.newsSummary?.event
+            visibility = if (event == null) View.GONE else View.VISIBLE
+            if (event != null) text = context.getString(R.string.attention_event_reports, event.sources) +
+                if (event.newCount > 0) context.getString(R.string.attention_event_new_count, event.newCount) else ""
+        }
         // Freeze read color. Collapsed headline slots have stable heights, so translations can
         // arrive in place. Expanded text waits for the next explicit bind to avoid moving the body.
         if (!isAttachedToWindow) {

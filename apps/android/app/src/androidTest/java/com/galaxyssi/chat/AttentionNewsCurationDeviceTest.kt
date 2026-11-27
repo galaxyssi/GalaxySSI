@@ -62,6 +62,34 @@ class AttentionNewsCurationDeviceTest {
         assertEquals(item(1), disabled.single())
     }
 
+    @Test fun sameEventHasOneHighlightButBothLocalReportsRemainAvailableAndUnreadStateIsNotChanged() = database { db ->
+        insert(db, 1, url = "https://first.example/observations")
+        insert(db, 2, url = "https://second.example/observations")
+        val headline = "Researchers publish a detailed new map of the human brain"
+        val items = listOf(item(1).copy(title = headline), item(2).copy(title = headline))
+        val writes = android.database.DatabaseUtils.longForQuery(db, "SELECT total_changes()", null)
+        val rows = AttentionNewsCurationStore.decorate(db, items, setOf("biology"), now)
+        assertEquals(2, rows.size)
+        assertEquals(1, rows.count { it.newsSummary!!.selected })
+        assertEquals(setOf("first.example", "second.example"), rows.first().newsSummary!!.event!!.reports.map { it.source }.toSet())
+        assertTrue(rows.all { it.isNew }); assertEquals(writes, android.database.DatabaseUtils.longForQuery(db, "SELECT total_changes()", null))
+        val runner = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        runner.runOnMainSync {
+            val target = runner.targetContext
+            var opened: AttentionEvent? = null
+            val view = ProactiveAttentionArticleView(target, {}, {}, {}, {}, { _, _ -> }, { _, _ -> },
+                showEvent = { opened = it })
+            val selected = rows.single { it.newsSummary!!.selected }
+            view.bind(AttentionReaderRow(selected, false, false))
+            val chip = view.findViewWithTag<android.widget.TextView>("attention-event:${selected.key}")
+            assertEquals(target.getString(R.string.attention_event_reports, 2), chip.text.toString())
+            assertTrue(chip.performClick())
+            assertEquals(setOf("article-1", "article-2"), opened!!.reports.map { it.article }.toSet())
+            view.bind(AttentionReaderRow(item(3), false, false))
+            assertEquals(android.view.View.GONE, view.findViewWithTag<android.view.View>("attention-event:item-3").visibility)
+        }
+    }
+
     private fun insert(db: SQLiteDatabase, id: Int, url: String = "https://publisher.org/$id", publisher: String = "Publisher",
         topics: List<String> = listOf("biology"), state: String = "published") {
         db.execSQL("INSERT INTO articles VALUES(?,?,?,?,?,?,?)", arrayOf("article-$id", url, publisher, now - id, now - id, 0, state))
