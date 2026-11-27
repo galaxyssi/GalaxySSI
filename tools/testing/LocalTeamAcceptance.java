@@ -3,6 +3,7 @@ import com.galaxyssi.chat.AutoGoalTeamCommand;
 import com.galaxyssi.chat.TeamAnswerWithheld;
 import com.galaxyssi.chat.TeamContrastText;
 import com.galaxyssi.chat.TeamResultLabels;
+import com.galaxyssi.chat.TeamWriterFormatSession;
 import java.net.*;
 import java.net.http.*;
 import java.nio.file.Path;
@@ -10,6 +11,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import kotlin.Unit;
@@ -82,8 +84,10 @@ class LocalTeamAcceptance {
         this.schemaPlan = schemaPlan;
     }
 
-    Object ask(String system, String input, Continuation<? super String> continuation) {
+    Object ask(TeamWriterFormatSession session, AtomicBoolean constrainedWriterSent,
+               String system, String input, Continuation<? super String> continuation) {
         JSONObject call = new JSONObject(input);
+        String stage = call.getString("stage");
         calls.add(call);
         var planWire = AutoGoalTeamEngineKt.teamPlanWire(system, endpoint.toString(), schemaPlan ? "llama.cpp-json-schema" : "openai");
         JSONArray messages = new JSONArray()
@@ -92,11 +96,15 @@ class LocalTeamAcceptance {
         JSONObject body = new JSONObject().put("model", model).put("messages", messages)
             .put("temperature", 0).put("seed", 42).put("stream", false).put("max_tokens", 850)
             .put("chat_template_kwargs", new JSONObject().put("enable_thinking", false));
-        body.putOpt("response_format", planWire == null ? AutoGoalTeamEngineKt.teamAuditOutputFormat(system, endpoint.toString()) : planWire.getRequestFormat());
+        var writerFormat = planWire == null ? session.format(system, endpoint.toString(), stage) : null;
+        var format = planWire != null ? planWire.getRequestFormat() : writerFormat != null ? writerFormat
+            : AutoGoalTeamEngineKt.teamAuditOutputFormat(system, endpoint.toString());
+        body.putOpt("response_format", format);
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(110))
             .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
         var requestFuture = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
         var result = requestFuture.thenApply(response -> {
+            if (writerFormat != null) constrainedWriterSent.set(true);
             require(response.statusCode() == 200, "Model HTTP " + response.statusCode());
             JSONObject reply = new JSONObject(response.body());
             require(ids.add(reply.getString("id")), "Model reused a completion ID");
@@ -110,7 +118,8 @@ class LocalTeamAcceptance {
             require(!message.has("tool_calls") && !message.has("function_call"), "Unexpected tool request");
             String raw = message.getString("content");
             String content = planWire == null ? raw : planWire.decode(raw);
-            String stage = call.getString("stage");
+            if (planWire != null && stage.equals("plan") && response.previousResponse().isEmpty())
+                session.observe(endpoint.toString(), response.uri().toString(), response.headers().firstValue("server").orElse(null));
             if (stage.equals("role")) findings.put(call.getString("id"), content);
             if (stage.equals("synthesis")) draft = content;
             if (stage.equals("audit")) firstReview = content;
@@ -263,16 +272,21 @@ class LocalTeamAcceptance {
         String objective = concept ? conceptTurn : task(swapped);
         var words = ContrastWords.load(objective);
         var labels = words.labels();
+        var session = new TeamWriterFormatSession();
+        var constrainedWriterSent = new AtomicBoolean();
         String answer;
         boolean withheld = false;
         try {
             answer = BuildersKt.<String>runBlocking(EmptyCoroutineContext.INSTANCE,
-                (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(objective, labels, this::ask,
+                (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(objective, labels,
+                    (system, input, next) -> ask(session, constrainedWriterSent, system, input, next),
                     event -> { System.out.println(event); return Unit.INSTANCE; }, cont));
         } catch (TeamAnswerWithheld e) {
             if (!concept) throw e;
             withheld = true;
             answer = e.getReservation() + e.getPublicObjections();
+        } finally {
+            System.out.println("Constrained writer request confirmed sent: " + constrainedWriterSent.get());
         }
         var roles = calls.stream().filter(c -> Set.of("role","audit").contains(c.getString("stage"))).toList();
         var rewrites = calls.stream().filter(c -> c.getString("stage").equals("rewrite")).toList();

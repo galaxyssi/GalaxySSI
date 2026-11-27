@@ -56,11 +56,12 @@ internal object ConversationGoalRunner {
         } }
         val prompt = JSONObject().put("objective", g.objective).put("checkpoints", org.json.JSONArray(history))
             .put("pending", g.next).put("clarification", g.note).put("remaining_rounds", g.allowance - g.rounds).toString()
-        return text(context, g.route, g.chat, g.id, g.rounds, system, prompt, token, resolveCloud)
+        return text(context, g.route, g.chat, g.id, g.rounds, system, prompt, token, resolveCloud = resolveCloud)
     }
 
     internal suspend fun text(context: Context, route: GoalRoute, chat: String, run: String, round: Int,
         system: String, prompt: String, token: AgentNativeToolCancellationToken,
+        writerSession: TeamWriterFormatSession? = null,
         resolveCloud: (Context, String, String) -> JSONObject? = ::cloud): String {
         check(!token.isCancellationRequested)
         if (route.target == "local-llm") {
@@ -73,13 +74,20 @@ internal object ConversationGoalRunner {
         check(c.getString("cloud_model") == route.model && fingerprint(c) == route.endpointHash)
         val endpoint = c.getString("cloud_endpoint")
         val wire = teamPlanWire(system, endpoint, c.optString("cloud_api_style", "openai"))
-        val format = if (wire == null) teamAuditOutputFormat(system, endpoint) else wire.requestFormat
-        val response = CloudModelClient.nativeToolAdapter(context, c, emptyList(), textOnlyResponseFormat = format).complete(
+        val format = if (wire != null) wire.requestFormat else
+            writerSession?.format(system, endpoint, JSONObject(prompt).optString("stage")) ?: teamAuditOutputFormat(system, endpoint)
+        var advertisement: Pair<String, String?>? = null
+        val observe: ((String, String?) -> Unit)? = if (wire == null || writerSession == null) null
+            else { url, server -> advertisement = url to server }
+        val response = CloudModelClient.nativeToolAdapter(context, c, emptyList(), textOnlyResponseFormat = format,
+            onTextServer = observe).complete(
             AgentModelRequest(run, chat, "$run-$round", run, chat, round,
                 listOf(AgentModelMessage.system(wire?.system ?: system), AgentModelMessage.user(prompt)), "[]",
                 AgentNativeJsonCodec.sha256("[]"), 0, 3000, 120_000, 0, token))
         check(response.toolCalls.isEmpty())
-        return wire?.decode(response.assistantText) ?: response.assistantText
+        val decoded = wire?.decode(response.assistantText) ?: response.assistantText
+        advertisement?.let { (url, server) -> writerSession?.observe(endpoint, url, server) }
+        return decoded
     }
 
     fun name(g: ConversationGoal) = "conversation-goal:${g.id}:${g.generation}"
