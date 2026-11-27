@@ -8,6 +8,43 @@ shared ancestor commits; its full-main review includes physical primary storage,
 batches/leases, periodic maintenance, checked durability, allocation recovery,
 statement/reader reuse, mixed-live compaction and durable copy checkpoints.
 
+## Prepared-source integration follow-up
+
+This branch now merges updated #4605 at `3b8340ced`, including updated
+#4604/#4602/#4596 and the #4625/#4623/#4621/#4619/#4616 prepared-source,
+streamed observation/import, checked failure, committed-view and timing
+ancestry. These prerequisites remain visible in the full main diff and are
+not newly delivered #3044 work. The same formal PR/main base is retained;
+no duplicate PR, prerequisite merge wait or author approval is introduced.
+
+The actual newer targeted writer now uses the header-bearing insert path
+inside its owned physical batch. Preparation decodes old records from a pinned
+committed view and authenticates the physical header against that same view's
+source/timestamp indexes, rather than validating only an ID or trusting central
+metadata. Generation fences still reject intervening source mutations before
+publishing new records/headers/observations. Precommit failure preserves the
+previous pointer, body and outbox; a fresh preparation remains possible.
+
+The inherited primary/source fixture now asserts the actual 69-byte `khp1:`
+pointer instead of the old one-byte marker. Four additional synthetic methods
+cover prepared write/reopen/authenticated search, timestamp tampering before
+preparation, index mutation after preparation and pointer/body/outbox rollback.
+They are authored only, not compiled or executed. The complete storage scope
+contains 248 authored methods: 229 inherited, 15 original metadata and these
+four. That count is not native passing-test evidence.
+
+The metadata source guard now compares complete retained production/project
+content with pinned updated #4605. Previous copy/compaction/cache/durability
+and prepared-source assertions remain via declared header-hook normalization.
+Catalog read admission and physical retention are retained; same-store physical
+owner locks still serialize some body/header operations, so this is not a
+guarantee that every read avoids contention or has bounded latency.
+
+Existing legacy inline/headerless reads, lazy physical schema upgrades and
+full-record authentication remain. No global historical-header rewrite,
+central directory/FTS sharding, key-rotation recovery, device/performance/scale
+acceptance or complete Android/backlog parity is claimed.
+
 ## Actual iOS gap and adaptation
 
 iOS already stores the complete encoded record, including its descriptive fields,

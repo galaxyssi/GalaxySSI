@@ -17,7 +17,8 @@ assert.match(database, /guard stored, storeVectorReplayOrdinal\(checkpoint, vect
 assert.match(database, /CREATE TABLE IF NOT EXISTS knowledge_vector_replay_rows/);
 assert.match(database, /UNIQUE\(model_hash, item_hash, source_revision_hash, chunk_index\)/);
 assert.match(database, /knowledge_vector_replay_delete AFTER DELETE ON knowledge_vectors/);
-assert.match(database, /BEGIN DEFERRED TRANSACTION/);
+assert.match(read('AgentKnowledgeCommittedReadView.swift'), /BEGIN DEFERRED TRANSACTION/);
+assert.match(read('AgentKnowledgeCommittedReadView.swift'), /SELECT revision FROM knowledge_browse_revision WHERE id=1/);
 assert.match(database, /page.events.first == event/);
 assert.match(database, /latestSequence == event.sequence/);
 assert.match(database, /knowledge_vector_change_document ON knowledge_vector_changes\(model_hash, item_hash, sequence\)/);

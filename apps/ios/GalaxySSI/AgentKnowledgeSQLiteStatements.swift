@@ -165,7 +165,7 @@ final class AgentKnowledgeSQLiteStatements {
     lock.lock(); let lease = borrowed[statement]; lock.unlock()
     lease?.markFailed()
   }
-  @discardableResult func close(_ handle: OpaquePointer?) -> Int32 {
+  @discardableResult func close(_ handle: OpaquePointer?, finalizingUnmanaged: Bool = false) -> Int32 {
     guard let handle else { return SQLITE_OK }
     lock.lock()
     let pool = connections.removeValue(forKey: handle)
@@ -177,6 +177,11 @@ final class AgentKnowledgeSQLiteStatements {
     pool?.close()
     for lease in leases { lease.close() }
     for statement in raw { sqlite3_finalize(statement) }
+    // Opt in only for private, exclusively owned connections. Generic registry
+    // teardown must not finalize statements owned by an unrelated standalone pool.
+    if finalizingUnmanaged {
+      while let statement = sqlite3_next_stmt(handle, nil) { sqlite3_finalize(statement) }
+    }
     return sqlite3_close_v2(handle)
   }
   func stats(for handle: OpaquePointer) -> AgentKnowledgeStatementPool.Stats? {

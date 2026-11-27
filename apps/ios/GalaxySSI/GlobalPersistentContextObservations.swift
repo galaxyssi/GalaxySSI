@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 enum GlobalPersistentContextObservationExtractor {
@@ -53,6 +54,67 @@ enum GlobalPersistentContextObservationExtractor {
         }
         return nil
       }
+  }
+
+  static func knowledgeSourceMutation(stage: AgentKnowledgeSourceStaging,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) throws -> [GlobalConversationEvent] {
+    let before = try streamingKnowledgeSnapshot(stage: stage, side: .previous)
+    let after = try streamingKnowledgeSnapshot(stage: stage, side: .incoming)
+    if before == after { return [] }
+    if let after { return [knowledgeUpserted(previous: before, source: after, timestampMillis: timestampMillis)] }
+    if let before { return [knowledgeDeleted(before, timestampMillis: timestampMillis)] }
+    return []
+  }
+
+  private static func streamingKnowledgeSnapshot(stage: AgentKnowledgeSourceStaging,
+    side: AgentKnowledgeSourceStaging.Side) throws -> KnowledgeSourceSnapshot? {
+    try stage.clearAllowed()
+    var first: AgentKnowledgeItem?, summary = "", tags: [String] = [], kinds = Set<String>()
+    var count = 0, digest = SHA256()
+    var cloud = AgentKnowledgeCloudAccess.full, agent = AgentKnowledgeAgentAccess.anyPairedAgent
+    try stage.orderedVisit(side) { item in
+      if first == nil { first = item }
+      if summary.isBlank { summary = compact(item.summary, limit: maxKnowledgeSummary) }
+      for tag in item.tags {
+        let value = compact(tag, limit: 80)
+        if !value.isBlank, !tags.contains(value) {
+          tags.append(value); tags.sort()
+          if tags.count > maxTags { tags.removeLast() }
+        }
+      }
+      kinds.insert(item.kind.rawValue)
+      if item.cloudAccess == .deny { cloud = .deny }
+      else if item.cloudAccess == .summaryOnly && cloud != .deny { cloud = .summaryOnly }
+      if item.agentAccess == .localOnly { agent = .localOnly }
+      else if item.agentAccess == .selectedAgents && agent != .localOnly { agent = .selectedAgents }
+      for id in item.allowedAgentIds { try stage.rememberAllowed(id) }
+      let itemDigest = GlobalAgentText.privateFingerprint([item.id, item.kind.rawValue, item.title, item.content,
+        item.summary, item.tags.joined(separator: "|"), String(item.chunkIndex), String(item.chunkCount)].joined(separator: "\u{0000}"))
+      if count > 0 { digest.update(data: Data("|".utf8)) }
+      digest.update(data: Data(itemDigest.utf8)); count += 1
+    }
+    guard let first else { return nil }
+    let title = compact(first.title.replacingOccurrences(of: #"\s+\[\d+/\d+\]$"#, with: "", options: .regularExpression), limit: 180).ifBlank("Knowledge source")
+    let contentDigest = digest.finalize().map { String(format: "%02x", $0) }.joined()
+    let contentFingerprint = GlobalAgentText.stableKey(title, summary, tags.joined(separator: "|"), contentDigest)
+    // stableKey only consumes the first 2,000 normalized characters of all
+    // arguments. Keep one extra character plus its fixed access-policy prefix;
+    // trailing trim at this boundary cannot remove a character used by that hash.
+    var allowedPrefix = "", firstAllowed = true
+    let allowedCount = try stage.visitAllowed { id in
+      let normalized = id.lowercased().replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      let value = firstAllowed ? normalized.replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression) : "|" + normalized
+      if allowedPrefix.count < 2_001 { allowedPrefix = String((allowedPrefix + value).prefix(2_001)) }
+      firstAllowed = false
+    }
+    let accessFingerprint = GlobalAgentText.stableKey(cloud.rawValue, agent.rawValue, allowedPrefix)
+    let sourceKey = knowledgeSourceKey(first)
+    return KnowledgeSourceSnapshot(sourceKey: sourceKey, rootId: "knowledge-root:\(sourceKey)",
+      eventId: "knowledge:\(sourceKey):\(GlobalAgentText.stableKey(contentFingerprint, accessFingerprint))",
+      title: title, summary: summary, kind: kinds.sorted().joined(separator: ","), sourceKind: sourceKind(first.source),
+      itemCount: count, cloudAccess: cloud, agentAccess: agent, allowedAgentCount: allowedCount,
+      contextVisibility: cloud != .deny && agent == .anyPairedAgent ? .shareable : .localOnly,
+      contentFingerprint: contentFingerprint, accessFingerprint: accessFingerprint, tags: tags)
   }
 
   private static func memoryUpserted(
@@ -210,7 +272,7 @@ enum GlobalPersistentContextObservationExtractor {
     items: [AgentKnowledgeItem]
   ) -> KnowledgeSourceSnapshot {
     let ordered = items.sorted {
-      $0.chunkIndex == $1.chunkIndex ? $0.id < $1.id : $0.chunkIndex < $1.chunkIndex
+      $0.chunkIndex == $1.chunkIndex ? $0.id.utf16.lexicographicallyPrecedes($1.id.utf16) : $0.chunkIndex < $1.chunkIndex
     }
     let first = ordered[0]
     let title = compact(
