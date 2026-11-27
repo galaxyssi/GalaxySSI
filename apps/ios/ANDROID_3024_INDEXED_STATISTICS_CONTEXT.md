@@ -8,12 +8,54 @@ those shared commits; the full-main review also includes the physical store,
 leases/batching, periodic maintenance, checked durability, allocation recovery,
 statement/read-connection reuse, compaction, copy checkpoints and record headers.
 
+## Committed-statistics integration follow-up
+
+The branch now merges updated #4606 at `f6eb451d1`, including the updated
+primary/copy/compaction/statement/source chains and #4625/#4623/#4621/#4619/
+#4616 ancestry. These prerequisites remain part of the full main diff, not
+newly delivered #3024 features. The existing formal PR/base main is retained
+without a prerequisite merge wait, duplicated patches or author approval.
+
+One actual producer gap is corrected here: `knowledgeStats()` previously
+entered the canonical writer lock. It now owns a pinned committed query-only
+view, reading transactional item/source counters, both completion flags and
+the covering latest-timestamp value in one SELECT. It does not enter the
+canonical writer, read its own uncommitted transaction, decode a body, count a
+corpus, request lexical repair or invoke a model. The dedicated view path
+deliberately avoids the general read helper's asynchronous index-retry effect.
+Underlying counter tables/triggers, catalog mutations, crypto and indexes are
+unchanged. The new view has the same physical retention/managed-close and
+lifecycle admission as other committed adapters, not new background authority.
+Protected-data/admission failures remain truthful unavailability, not zero.
+
+Require native INTEGER types for all five values, nonnegative counts/time,
+full-width Int64 zero/one completion flags, exact native count conversion and
+SQLITE_DONE after the single row. REAL/TEXT corruption or wide flags must not
+silently truncate into apparently valid totals/status. Return partial counts
+only when valid completion flags actually say indexing is incomplete.
+
+Five additional synthetic methods cover old committed counters while another
+writer is held, rejection of own uncommitted reads, malformed types/wide flags,
+partial versus exact wide metadata, and no scheduling of a known repair task.
+The complete scope now contains 267 authored methods: 248 inherited primary/
+source fixtures, 14 original context methods and these five. None was compiled
+or executed; this is not timing, concurrency, UI or native acceptance evidence.
+
+The statistics guard pins updated #4606 for full retained consumer/project and
+database comparisons. Only the declared count-read admission/validation block
+is normalized for older storage guards, whose assertions remain. It directly
+checks the new single-view typed SQL and absence of bodies/repair/aggregate
+fallbacks. Private/task-scoped lazy capture and metadata-only prompt rules are
+unchanged. Same-store physical locks and OS scheduling can still cause waits;
+no universal nonblocking or latency guarantee is introduced.
+
 ## Existing producer and actual remaining gap
 
 iOS already reads transactional item/source directory counters and the covering
 timestamp index, retaining 64-bit SQLite values and incomplete-enrollment status.
-That exact database implementation, its mutations/triggers, crypto, schemas and
-covering index remain unchanged. Do not claim a new aggregate-query replacement
+The original consumer increment left that producer unchanged; the follow-up
+above changes its read admission and typed validation, not its mutations/triggers,
+crypto, schemas or covering index. Do not claim a new aggregate-query replacement
 where the indexed path already existed. The gap was in consumers: a failed
 indexed read enumerated an in-memory UI cache and reported it as an exact total;
 the status command rendered partial totals as exact and grouped the cache;
@@ -70,7 +112,8 @@ The wide counters are intentionally synthetic state, not billions of records
 or a measured latency/capacity benchmark. Existing indexed-stat mutation/reopen
 fixtures remain untouched and are not claimed as newly executed.
 
-The full-main scope contains 156 authored Swift methods, not 156 passing tests.
+The earlier review scope contained 156 authored Swift methods, not passing tests;
+the integrated totals and remaining limits are stated above.
 The source guard pins the predecessor, limits changed consumer/model/service/
 localization/project sections, verifies actual producer and consumer call sites,
 and retains all eight older source guards through a checked normalization hook.

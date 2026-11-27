@@ -5,9 +5,59 @@ Incremental iOS parent: b602dc1063447c70a13952d75b81116a45162aa4 (#4607).
 This branch retains the shared storage ancestry from #4596 and #4600-#4607;
 the complete diff against main must be reviewed, not only this increment.
 
+## Prepared-source export integration follow-up
+
+The branch now merges updated #4607 at `d29e681d2`, including the newer
+statistics admission, primary metadata/copy/compaction and prepared-source
+chains. All of that shared ancestry remains part of the complete main diff,
+not newly delivered #3022 work. The same formal PR/main base is retained;
+no duplicate PR or dependency merge wait is introduced.
+
+An actual exporter blocker was found: both bulk source groups and targeted
+replacement headers omitted `sourceRevision`, while snapshot enumeration
+rejects an empty revision. New bulk writes now compute the complete legacy
+sorted-JSON/length-prefixed SHA-256 digest. Targeted writes compute the same
+digest after normalization using encrypted staging with a separate indexed
+identity collation, one decoded record at a time. No source-sized body array
+is added to that path. Chunk-based observation/projection order is unchanged.
+Canonical-equivalent but byte-distinct IDs get an explicit raw UTF-16 tie-break;
+ordinary valid legacy revision encodings remain unchanged. Missing/corrupt
+staged data aborts rather than yielding a partial completed digest.
+
+Source enumeration now owns the shared committed-view adapter, original
+lifecycle generation and physical retention lease. Header/body authentication,
+strict keyset progression, integer timestamps, exact member count and explicit
+ROW/DONE/errors remain checked, with scoped statement return on exceptions.
+Each delivered record is checked before/after its callback. A source changed
+before view admission rejects a stale group; a change after admission retains
+the consistent original WAL/body snapshot and defers physical reclamation.
+
+The writer retains its original native lifecycle generation through both
+authenticated scratch scans, output writes and pre-publication checks. A
+generation change after source enumeration, including during the second render
+pass, cancels and removes the output stage without replacing the destination.
+This remains cooperative checking, not hard preemption or protection against
+an arbitrary mutation between the last check and filesystem replacement.
+
+Eight new synthetic methods cover new bulk/target revisions, actual bridge
+output/hash, stale-group rejection, replacement during snapshot callbacks,
+lifecycle invalidation/retry, streamed identity-order digest equivalence,
+missing staging rows and lifecycle loss during the second render pass.
+The complete scope has 293 authored methods (267 inherited, 18 original scratch
+and these eight); none compiled or executed. Source guards compare complete
+retained files outside the declared revision/export hooks against updated
+#4607. Query-only validation now checks the actual shared view implementation.
+
+Historical persisted headers with blank revisions are still rejected, not
+silently assigned a guessed revision or declared repaired. On-demand legacy
+revision recovery remains required follow-up work. The new writer fix does not
+rewrite all old headers at startup; this integration is not full export/backlog
+completion or native acceptance.
+
 ## Implemented iOS boundary
 
-The existing source-snapshot enumeration and two-pass Markdown rendering remain.
+The existing two-pass Markdown rendering remains; source enumeration is hardened
+as described above.
 This increment replaces its persistent-key scratch database with a private job
 directory, fresh in-memory CryptoKit AES-GCM key, encrypted sort metadata and
 encrypted item bodies. Production scratch does not persist the key or expose a
@@ -54,7 +104,8 @@ output-stage cleanup guarantee. Non-knowledge projection adapters are unchanged.
 Eighteen synthetic XCTest methods are authored, including real bridge output,
 late corruption, interrupted scans, active/orphan leases, Unicode boundaries,
 destination edits and reentrant close. They supplement 156 inherited authored
-fixtures (174 across this shared scope). They have not been compiled or run.
+fixtures (174 across that earlier review scope). They have not been compiled or run;
+the integrated totals and remaining gaps are stated above.
 JavaScript checks validate source contracts and retained surrounding code only.
 No native compilation, XCTest, device acceptance, CI monitoring or IPA generation
 is part of this increment. No Android performance measurements are transferred.

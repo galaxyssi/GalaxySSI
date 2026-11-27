@@ -1,11 +1,29 @@
 // Source contracts only. This does not compile Swift or execute XCTest.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = 'b602dc1063447c70a13952d75b81116a45162aa4', app = 'apps/ios/GalaxySSI/';
+const root = path.resolve(__dirname, '../../..'), base = 'd29e681d2bd99dffe3fc5e8a5af8e95108f2eb33', app = 'apps/ios/GalaxySSI/';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(f, s) {
-  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/Agent(?:KnowledgeProjection(?:Order(?:Tests)?|Lease)|IOSObsidianTextScan|IOSProjectionDestination)\.swift/.test(l)).join('\n');
+  if (f === app + 'AgentKnowledgeModels.swift') return s.replace(section(s, 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'),
+    section(old(f), 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'));
+  if (f === app + 'AgentKnowledgeDatabase.swift') return s
+    .replace(section(s, '  func enumerateSourceSnapshotItems(', '  func sourceBrowseRevision()'),
+      section(old(f), '  func enumerateSourceSnapshotItems(', '  func sourceBrowseRevision()'))
+    .replace('updatedAtMillis: latest.updatedAtMillis,\n                  sourceRevision: try stage.sourceRevision())', 'updatedAtMillis: latest.updatedAtMillis)')
+    .replace('          updatedAtMillis: latest.updatedAtMillis,\n          sourceRevision: AgentKnowledgeSourceRevision.digest(members)', '          updatedAtMillis: latest.updatedAtMillis');
+  if (f === app + 'AgentKnowledgeSourceStaging.swift' && s.includes('  func sourceRevision()')) return s
+    .replace('      guard sqlite3_create_collation_v2(database, "SOURCE_ID_ORDER", SQLITE_UTF8, Unmanaged.passUnretained(self).toOpaque(), { context, ac, a, bc, b in\n        guard let context else { return 0 }\n        return Unmanaged<AgentKnowledgeSourceStaging>.fromOpaque(context).takeUnretainedValue().compare(a, ac, b, bc, identity: true)\n      }, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }\n', '')
+    .replace('      try execute("CREATE INDEX source_identity_order ON ordering(side,sort_key COLLATE SOURCE_ID_ORDER)")\n', '')
+    .replace('func orderedVisit(_ side: Side, byIdentity: Bool = false,', 'func orderedVisit(_ side: Side,')
+    .replace('guard (phase == .finished || (byIdentity && phase == .prepared)), !collationFailed', 'guard phase == .finished, !collationFailed')
+    .replace('      let collation = byIdentity ? "SOURCE_ID_ORDER" : "SOURCE_ORDER"\n      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE \\(collation)")',
+      '      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE SOURCE_ORDER")')
+    .replace('if let previous, !(byIdentity ? AgentKnowledgeSourceRevision.identityPrecedes(previous.id, key.id) : less(previous, key))', 'if let previous, !less(previous, key)')
+    .replace(section(s, '  func sourceRevision()', '  func clearAllowed()'), '')
+    .replace('bc: Int32, identity: Bool = false) -> Int32', 'bc: Int32) -> Int32')
+    .replace('    if identity, let left, let right {\n      return AgentKnowledgeSourceRevision.identityPrecedes(left.id, right.id) ? -1 :\n        (AgentKnowledgeSourceRevision.identityPrecedes(right.id, left.id) ? 1 : 0)\n    }\n', '');
+  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/Agent(?:KnowledgeProjection(?:Order(?:Tests)?|Lease|IntegrationTests)|IOSObsidianTextScan|IOSProjectionDestination)\.swift/.test(l)).join('\n');
   if (f !== app + 'AgentIOSObsidianProjection.swift' || !s.includes('let publication = try AgentIOSProjectionDestination')) return s;
   const previous = old(f);
   for (const [a, b] of [
@@ -17,7 +35,8 @@ function retained(f, s) {
     const originalStart = a === '    try publication.publish(temporary)' ? '    try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temporary.path)' : a;
     s = s.replace(section(s, a, b), section(previous, originalStart, b));
   }
-  return s.replace('((URL, String?) throws -> String?)?', '((URL) throws -> String?)?')
+  return s.split('\n').filter(l => l.trim() !== 'try checkActive()').join('\n')
+    .replace('((URL, String?) throws -> String?)?', '((URL) throws -> String?)?')
     .replace('writeContent: { destination, expectedHash in', 'writeContent: { destination in')
     .replace('destination: destination,\n          expectedDestinationHash: expectedHash', 'destination: destination')
     .replace('scratchCipher suppliedScratchCipher: GalaxySSIAttachmentAtRestCipher? = nil,\n    expectedDestinationHash: String? = nil,\n    scratchOrder suppliedOrder: AgentKnowledgeProjectionOrder? = nil', 'scratchCipher suppliedScratchCipher: GalaxySSIAttachmentAtRestCipher? = nil')
@@ -33,12 +52,14 @@ function includes(source, values) { for (const value of values) assert(source.in
 function validate() {
   const projection = app + 'AgentIOSObsidianProjection.swift', project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   for (const f of [projection, project]) assert.equal(retained(f, read(f)), old(f), f);
-  for (const name of ['AgentKnowledgeDatabase.swift', 'AgentIOSObsidianModels.swift']) assert.equal(read(app + name), old(app + name));
+  for (const name of ['AgentKnowledgeDatabase.swift', 'AgentKnowledgeModels.swift', 'AgentKnowledgeSourceStaging.swift', 'AgentIOSObsidianModels.swift'])
+    assert.equal(retained(app + name, read(app + name)), old(app + name), 'Outside declared source revision/export hooks: ' + name);
   const tests = 'apps/ios/GalaxySSITests/AgentIOSObsidianProjectionTests.swift';
   assert.equal(read(tests), old(tests), 'Retain existing projection fixtures');
   const projectGuard = 'tools/dev/check-ios-project.js';
   assert.equal(read(projectGuard), old(projectGuard).replace('  [models, "agent.obsidian.order.aes256.v1"],',
-    '  [models, "obsidian-order-key:v2:"],\n  [models, "galaxyssi-knowledge-projection-v2"],\n  [models, "seen == count"],\n  [tests, "testLateScratchCorruptionCannotPublishOrReplaceTheDestination"],'));
+    '  [models, "obsidian-order-key:v2:"],\n  [models, "galaxyssi-knowledge-projection-v2"],\n  [models, "seen == count"],\n  [tests, "testLateScratchCorruptionCannotPublishOrReplaceTheDestination"],')
+    .replace('  [models, "PRAGMA query_only = ON"],', '  [read("apps/ios/GalaxySSI/AgentKnowledgeCommittedReadView.swift"), "PRAGMA query_only=ON"],'));
   const guard = 'apps/ios/tools/check-knowledge-statistics-context-scope.cjs';
   assert.equal(read(guard), old(guard)
     .replace("const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n');", "const read = f => require('./check-knowledge-projection-scratch-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n'));")
@@ -66,6 +87,9 @@ function validate() {
   includes(destination, ['NSFileCoordinator()', 'try Self.fingerprint(target) == baseline', 'expected != baseline',
     'O_EXCL | O_NOFOLLOW', 'FileProtectionType.complete', 'replaceItemAt', 'Task.checkCancellation()']);
   const producer = read(projection);
+  includes(producer, ['guard let generation = database.nativeFiles.readToken()',
+    'guard database.nativeFiles.readToken() == generation', 'func checkActive() throws']);
+  assert.equal((producer.match(/try checkActive\(\)/g) || []).length, 4);
   assert(producer.indexOf('try scanOrdered { part in') < producer.indexOf('let temporary = try publication.stage'));
   includes(producer, ['try order.finish()', 'try order.scan', 'expectedDestinationHash: expectedHash', 'content: scanned.prefix']);
   const fixture = read('apps/ios/GalaxySSITests/AgentKnowledgeProjectionOrderTests.swift');
@@ -74,7 +98,31 @@ function validate() {
     'testCloseDuringScanDefersNativeDisposalAndStopsFurtherDelivery', 'testLiveLeasesSurviveConcurrentJobSweep',
     'testTextScanHandlesUTF8SequencesAcrossEveryChunkBoundary', 'testDestinationChangedDuringPreparationPreservesUserEdit',
     'testActualProjectionRawIDTieOrderAndExactOutputHash', 'testLateScratchCorruptionCannotPublishOrReplaceTheDestination']);
-  console.log('Projection scratch encryption, ordering/EOF, leases, bounded edit scan, coordinated publication and 18 authored fixture contracts passed source checks only; no native acceptance.');
+  const database = read(app + 'AgentKnowledgeDatabase.swift');
+  const snapshot = section(database, '  func enumerateSourceSnapshotItems(', '  func sourceBrowseRevision()');
+  includes(snapshot, ['let view = try committedReadView()', 'defer { view.close() }', 'try view.read { snapshot in',
+    'current.sourceRevision == group.sourceRevision', 'sqlite3_step(header) == SQLITE_DONE', 'let status = sqlite3_step(page)',
+    'if status == SQLITE_DONE { break }', 'status == SQLITE_ROW', 'try view.read { _ in try consume(item) }',
+    'emitted == group.chunkCount', 'AgentKnowledgeDatabaseError.staleCursor']);
+  assert(!snapshot.includes('sqlite3_open_v2') && !snapshot.includes('try locked'));
+  includes(database, ['sourceRevision: try stage.sourceRevision()', 'sourceRevision: AgentKnowledgeSourceRevision.digest(members)']);
+  const stage = read(app + 'AgentKnowledgeSourceStaging.swift');
+  includes(stage, ['SOURCE_ID_ORDER', 'CREATE INDEX source_identity_order', 'byIdentity: Bool = false',
+    'try orderedVisit(.incoming, byIdentity: true)', 'var accumulator = AgentKnowledgeSourceRevision.Accumulator()']);
+  const sourceHash = section(stage, '  func sourceRevision()', '  func clearAllowed()');
+  assert(!sourceHash.includes('[AgentKnowledgeItem]') && !sourceHash.includes('.sorted'));
+  const revision = section(read(app + 'AgentKnowledgeModels.swift'), 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:');
+  includes(revision, ['private var hasher = SHA256()', 'encoder.outputFormatting = [.sortedKeys]',
+    'UInt64(data.count).bigEndian', 'withUnsafeBytes(of: &length)', 'hasher.update(data: data)',
+    'identityPrecedes($0.id, $1.id)', 'left.utf16.lexicographicallyPrecedes(right.utf16)']);
+  const integration = read('apps/ios/GalaxySSITests/AgentKnowledgeProjectionIntegrationTests.swift');
+  assert.equal((integration.match(/func test/g) || []).length, 8);
+  includes(integration, ['testBulkAndTargetedWritesPublishCompleteContentRevisions', 'testActualBridgeExportsFreshTargetedSourceAndExactOutputHash',
+    'testStaleSourceGroupRejectsBeforeDeliveringAnyRecord', 'testSnapshotKeepsOldHeadersAndBodiesAcrossTargetedReplacement',
+    'testLifecycleInvalidationStopsFurtherSnapshotDeliveryAndAllowsFreshView',
+    'testStreamedSourceDigestUsesIdentityOrderAndLegacyEncoding', 'testMissingStagedRecordCannotPublishACompletedSourceDigest',
+    'testLifecycleChangeDuringSecondRenderPassPreservesDestination']);
+  console.log('Projection scratch, complete streamed source revisions, lifecycle-safe export, coordinated publication and 18 scratch plus 8 integration authored fixture contracts passed source checks only; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();

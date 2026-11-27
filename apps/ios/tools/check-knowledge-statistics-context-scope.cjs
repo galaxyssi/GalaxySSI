@@ -1,6 +1,6 @@
 // Static contracts only; no Swift/XCTest, database execution or UI/device acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = 'd518ac4220dda2a83c09f24c0f4097469b901afe', app = 'apps/ios/GalaxySSI/';
+const root = path.resolve(__dirname, '../../..'), base = 'f6eb451d14caa820e2ba2328eb280e3799798120', app = 'apps/ios/GalaxySSI/';
 const read = f => require('./check-knowledge-projection-scratch-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
@@ -12,7 +12,9 @@ const promptBlock = `      if let snapshot = request.knowledgeStats,
 `;
 function retained(f, s) {
   s = require('./check-knowledge-projection-scratch-scope.cjs').retained(f, s);
-  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/AgentKnowledgeStatisticsContext(?:Tests)?\.swift/.test(l)).join('\n');
+  if (f === app + 'AgentKnowledgeDatabase.swift') return s.replace(section(s, '  func knowledgeStats()', '  struct PrimaryMigrationPage:'),
+    section(old(f), '  func knowledgeStats()', '  struct PrimaryMigrationPage:'));
+  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/AgentKnowledgeStatistics(?:Context|ReadAdmission)(?:Tests)?\.swift/.test(l)).join('\n');
   if (f === app + 'AgentKnowledgeModels.swift') return s.replace('  var countsUnavailable: Bool\n', '')
     .replace('    countsComplete: Bool = true,\n    countsUnavailable: Bool = false', '    countsComplete: Bool = true')
     .replace('    self.countsComplete = countsComplete && !countsUnavailable\n    self.countsUnavailable = countsUnavailable', '    self.countsComplete = countsComplete')
@@ -60,11 +62,16 @@ function validate() {
   assert(read(app + 'GalaxySSIServices.swift').includes('planningRequest.knowledgeStats = AgentKnowledgeStatisticsContext.capture'));
   assert(read(app + 'GalaxySSIServices.swift').includes('commandResult.parameters.sorted'));
   const database = read(app + 'AgentKnowledgeDatabase.swift');
-  assert.equal(database, old(app + 'AgentKnowledgeDatabase.swift'), 'Existing SQLite producer, schema, crypto and mutations remain unchanged');
+  assert.equal(retained(app + 'AgentKnowledgeDatabase.swift', database), old(app + 'AgentKnowledgeDatabase.swift'), 'Outside the declared statistics read admission, schema, crypto and mutations remain unchanged');
   const stats = section(database, '  func knowledgeStats()', '  struct PrimaryMigrationPage:');
   for (const text of ['FROM knowledge_item_count_state i', 'JOIN knowledge_source_directory_state d',
-    'ORDER BY updated_at DESC, item_hash ASC LIMIT 1', 'sqlite3_column_int64(statement, 0)', 'itemComplete == 1 && directory.complete']) assert(stats.includes(text), text);
-  for (const forbidden of ['COUNT(*)', 'MAX(updated_at)', 'decode(', '.all()']) assert(!stats.includes(forbidden), forbidden);
+    'ORDER BY updated_at DESC, item_hash ASC LIMIT 1', 'sqlite3_column_int64(statement, 0)', 'itemComplete == 1 && directoryComplete == 1',
+    'let view = try committedReadView()', 'defer { view.close() }', 'return try view.read { connection in',
+    'on: connection', 'sqlite3_column_type(statement, Int32($0)) == SQLITE_INTEGER',
+    'Int(exactly: items)', 'Int(exactly: sources)', 'sqlite3_step(statement) == SQLITE_DONE']) assert(stats.includes(text), text);
+  for (const text of ['sqlite3_column_int64(statement, 2)', 'sqlite3_column_int64(statement, 4)']) assert(stats.includes(text), text);
+  for (const forbidden of ['COUNT(*)', 'MAX(updated_at)', 'decode(', '.all()', 'try locked', 'sourceDirectoryState()',
+    'requestIndexRetry(', 'try readCommitted']) assert(!stats.includes(forbidden), forbidden);
   const translations = read(app + 'zh-Hans.lproj/Localizable.strings').split('\n').filter(l => l.startsWith('"knowledge_stats_'));
   assert.equal(translations.length, 5);
   for (const key of ['complete', 'partial']) assert.equal((translations.find(l => l.startsWith('"knowledge_stats_' + key + '"')).match(/%lld/g) || []).length, 2);
@@ -74,7 +81,13 @@ function validate() {
     'testPromptBuilderRechecksPrivacyForRestoredRequests', 'testOverviewUsesBoundedIndexedSourcesInsteadOfEmptyUICache',
     'testPartialDirectoryDoesNotClaimKnowledgeIsEmpty', 'testUnavailableCountersDoNotFallBackToCachedExactTotals',
     '9007199254740993', 'EXPLAIN QUERY PLAN', 'COVERING']) assert(fixture.includes(text), text);
-  console.log('Retained indexed/64-bit producer, truthful partial/unavailable overview and trace, scoped durable planner snapshots, localization and 14 authored-only fixture contracts passed source checks; no native acceptance.');
+  const admission = read('apps/ios/GalaxySSITests/AgentKnowledgeStatisticsReadAdmissionTests.swift');
+  assert.equal((admission.match(/func test/g) || []).length, 5);
+  for (const name of ['StatisticsCompleteUnderHeldUncommittedWriterUsingPreviousCommittedCounters',
+    'ReentrantStatisticsNeverReadTheirOwnUncommittedWriter',
+    'MalformedCounterTypesAndWideFlagsBecomeUnavailableInsteadOfTruncatedTotals',
+    'SingleViewRetainsPartialFlagsAndExactWideIntegerMetadata', 'MetadataStatisticsDoNotRequestKnownLexicalRepair']) assert(admission.includes('func test' + name + '('), name);
+  console.log('Committed indexed/64-bit metadata-only producer, truthful overview/planner privacy, localization and 14 context plus 5 admission authored-only fixture contracts passed source checks; no native acceptance.');
 }
 module.exports = {retained, validate};
 if (require.main === module) validate();

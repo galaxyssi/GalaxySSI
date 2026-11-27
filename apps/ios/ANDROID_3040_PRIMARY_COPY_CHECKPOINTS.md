@@ -8,6 +8,47 @@ its full-main scope includes the physical primary store, batches/leases,
 periodic maintenance, checked durability, recoverable allocations, bounded
 statements/read connections and mixed-live compaction, not only this increment.
 
+## Prepared-source integration follow-up
+
+The branch now merges updated #4604 at `7daa20adb`, including updated #4602,
+#4596 and the #4625/#4623/#4621/#4619/#4616 source preparation, streamed
+observation/import, checked failures, committed read views and timing ancestry.
+These unmerged prerequisites are part of the complete main diff, not newly
+delivered #3040 features. This updates the existing formal PR without changing
+its main base, waiting for parent merges or creating a duplicate.
+
+Keep the new targeted source physical batch and generation/lifecycle fences,
+the owned committed-view teardown and the existing exact-reference copy CAS.
+A pure copy/checkpoint/verification publication does not mutate logical source
+generations or observations, so already prepared source content remains usable.
+An intervening targeted replacement/deletion changes the authoritative reference;
+resume removes the obsolete copy job and retires its destination rather than
+publishing the old body. User writes do not unlink files still retained by an
+open snapshot or pending job. A failed targeted write rolls back its references
+and outbox without changing the exact durable copy checkpoint.
+
+Actual candidate views keep the physical retention lease while validation is
+in progress. EX copy maintenance defers rather than advancing prefixes or
+reclaiming files under those views. Once they close, normal copy/verification
+and retirement can resume. Legacy inline-body migration's conservative source
+generation conflict behavior is unchanged; not all physical operations are
+claimed to preserve a prepared task's generation.
+
+Five additional synthetic XCTest methods cover preparation across paged copy
+and verification, successful replacement invalidating a partial copy, complete
+source deletion without resurrection, rollback retaining an exact checkpoint,
+and actual candidate view deferral with an unchanged prefix. They exercise the
+real database/source APIs, not only low-level synthetic raw payload writers.
+The full storage scope has 229 authored methods (206 inherited, 18 original
+copy/state and these five), none compiled or executed. These are not device,
+process-death, performance or capacity results.
+
+The copy guard compares complete retained production/test/project content
+against pinned updated #4604. Older compaction and reader/cache guards retain
+their exact full-file comparisons through declared copy-hook normalization.
+All branch ancestry and validation limits must remain visible in PR review;
+static checks do not establish native behavior.
+
 ## Authenticated durable state
 
 Records above 16 frames register a dedicated sealed destination and one copy

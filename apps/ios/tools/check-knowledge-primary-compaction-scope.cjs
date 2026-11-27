@@ -1,9 +1,11 @@
 // Static source contracts only; no Swift, native SQLite, filesystem or crash execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '2931b3745de15e95f917d306f7adb15ac54cafdd';
+const integrated = 'b3fb18e58c2fea7e31a4e02862f11691323111b3';
 const app = 'apps/ios/GalaxySSI/', primaryFile = app + 'AgentKnowledgePrimaryPartitions.swift';
 const read = f => require('./check-knowledge-primary-copy-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const integratedSource = f => cp.execFileSync('git', ['show', integrated + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) { const a = source.indexOf(start), b = source.indexOf(end, a + start.length); assert(a >= 0 && b > a, start); return source.slice(a, b); }
 const wrapper = `    var result = Data()
     try walkFrames(database, reference: reference, itemHash: itemHash, partition: partition, checkActive: checkActive) {
@@ -19,7 +21,7 @@ const wrapper = `    var result = Data()
 let pinnedPrimary;
 function retained(f, source) {
   source = require('./check-knowledge-primary-copy-scope.cjs').retained(f, source);
-  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryCompaction(?:Tests)?\.swift/.test(l)).join('\n');
+  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryCompaction(?:Integration)?(?:Tests)?\.swift/.test(l)).join('\n');
   if (f !== primaryFile || !source.includes('  private func compactExclusively(')) return source;
   pinnedPrimary ??= old(primaryFile);
   source = source.replace('    var moved: Int = 0\n', '').replace('    try AgentKnowledgePrimaryCompaction.setup(catalog)\n', '')
@@ -83,15 +85,17 @@ function validate() {
     'sqlite3_step($0) == SQLITE_DONE']) assert(queue.includes(text), text);
   const guard = 'apps/ios/tools/check-knowledge-read-connections-scope.cjs';
   assert.equal(read(guard), old(guard)
+    .replace("base = '78a541cf118c37f0a01187357c8818e51f4a3709'", "base = 'b3fb18e58c2fea7e31a4e02862f11691323111b3'")
     .replace("const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n');",
       "const read = f => require('./check-knowledge-primary-compaction-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n'));")
     .replace('function retained(f, source) {\n', "function retained(f, source) {\n  source = require('./check-knowledge-primary-compaction-scope.cjs').retained(f, source);\n"));
   const project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
-  assert.equal(retained(project, read(project)), old(project));
+  assert.equal(require('./check-knowledge-read-connections-scope.cjs').retained(project, read(project)), integratedSource(project));
   for (const name of ['AgentKnowledgeDatabase', 'AgentKnowledgePrimaryReadConnections', 'AgentKnowledgeReadConnectionPool',
     'AgentKnowledgeSQLiteStatements', 'AgentKnowledgePrimaryReaderSlots', 'AgentKnowledgePrimaryAllocations',
     'AgentKnowledgePrimaryDurability', 'AgentKnowledgePrimaryFrameCodec', 'AgentKnowledgeStorageBackground'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(read(app + name + '.swift'), ['AgentKnowledgeDatabase', 'AgentKnowledgeSQLiteStatements'].includes(name)
+      ? integratedSource(app + name + '.swift') : old(app + name + '.swift'), name);
   const fixture = read('apps/ios/GalaxySSITests/AgentKnowledgePrimaryCompactionTests.swift');
   assert.equal((fixture.match(/  func test/g) || []).length, 15);
   for (const text of ['testEightRecordPagesResumeFromRemainingSourceReferences', 'testBetweenPageDeletionAndReplacementWinWithoutResurrection',
@@ -99,6 +103,14 @@ function validate() {
     'testExistingBackgroundStorageSlicePreservesLogicalSourceRevision', 'testLegacyDiscoveryAndCandidateSelectionUseBoundedKeysetPages',
     'testCatalogCommitSurvivesFailureBeforePhysicalUnlink', 'testCorruptAndOversizedFrameRejectWithoutPublishingDestination',
     'AgentKnowledgePrimaryPartitionsTests.Fixture', 'maximumPages: 8']) assert(fixture.includes(text), text);
+  assert(!/UPDATE knowledge_items|knowledge_source_generations|UPDATE knowledge_vector/.test(queue), 'Physical compaction must not mutate logical records/generations/feeds');
+  const integration = read('apps/ios/GalaxySSITests/AgentKnowledgePrimaryCompactionIntegrationTests.swift');
+  assert.equal((integration.match(/  func test/g) || []).length, 4);
+  for (const name of ['PreparedSourceSurvivesPhysicalCompactionWithoutChangingLogicalRevisionOrFeed',
+    'ActualCandidateValidationDefersCompactionUntilViewCloses',
+    'TargetedReplacementBetweenCompactionPagesWinsWithoutResurrection',
+    'FailedTargetedWritePreservesCompactionQueueReferencesAndOutbox']) assert(integration.includes('func test' + name + '('), name);
+  require('./check-knowledge-primary-source-integration-scope.cjs');
   console.log('Bounded dirty discovery/selection, streaming authenticated relocation, physical-before-catalog publication, retained EX/snapshot/cache barriers and 15 authored-only fixtures passed source contracts; no native acceptance.');
 }
 module.exports = {retained, validate};

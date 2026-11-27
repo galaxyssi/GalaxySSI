@@ -258,7 +258,7 @@ const requiredSourceSnippets = [
   [models, "agent-knowledge-source-preview:v1:"],
   [tests, "testSourcePreviewsArePersistedLazilyAndRejectHeaderMismatch"],
   [models, "func sourceSnapshotItems(_ group: AgentKnowledgeSourceGroup)"],
-  [models, "PRAGMA query_only = ON"],
+  [read("apps/ios/GalaxySSI/AgentKnowledgeCommittedReadView.swift"), "PRAGMA query_only=ON"],
   [models, "ORDER BY updated_at DESC, item_hash ASC LIMIT 64"],
   [tests, "testSourceSnapshotPagesMembersAndRejectsStaleRevision"],
   [models, "func enumerateSourceSnapshotItems("],

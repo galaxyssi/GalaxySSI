@@ -305,6 +305,11 @@ enum AgentIOSObsidianBridge {
     scratchOrder suppliedOrder: AgentKnowledgeProjectionOrder? = nil
   ) throws -> String? {
     let fileManager = FileManager.default
+    guard let generation = database.nativeFiles.readToken() else { throw CancellationError() }
+    func checkActive() throws {
+      try Task.checkCancellation()
+      guard database.nativeFiles.readToken() == generation else { throw CancellationError() }
+    }
     let publication = try AgentIOSProjectionDestination(destination, expected: expectedDestinationHash)
     let order = try suppliedOrder ?? AgentKnowledgeProjectionOrder(cipher: suppliedScratchCipher)
     defer { order.close() }
@@ -325,6 +330,7 @@ enum AgentIOSObsidianBridge {
     var redacted = false
     func scanOrdered(_ consume: (String) throws -> Void) throws {
       try order.scan { item in
+        try checkActive()
         try consume(AgentIOSObsidianProjectionPrivacyPolicy.transcriptText(item.content)
           .trimmingCharacters(in: .whitespacesAndNewlines))
         if count == 0 {
@@ -361,6 +367,7 @@ enum AgentIOSObsidianBridge {
         tags: tags,
         body: "Sensitive content omitted by GalaxySSI"
       )
+      try checkActive()
       try publication.publish(Data(content.utf8), job: jobId)
       return sha256(content)
     }
@@ -380,6 +387,7 @@ enum AgentIOSObsidianBridge {
     let output = try FileHandle(forWritingTo: temporary)
     var outputHasher = SHA256()
     func write(_ data: Data) throws {
+      try checkActive()
       try output.write(contentsOf: data)
       outputHasher.update(data: data)
     }
@@ -399,6 +407,7 @@ enum AgentIOSObsidianBridge {
       try? output.close()
       throw error
     }
+    try checkActive()
     try publication.publish(temporary)
     return outputHasher.finalize().map { String(format: "%02x", $0) }.joined()
   }

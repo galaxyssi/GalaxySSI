@@ -20,12 +20,12 @@ struct AgentIOSWebKnowledgeImportResult {
 struct AgentIOSURLSessionWebKnowledgeImporter {
   var provider: AgentIOSWebIntelligenceToolProviding
   var nowMillis: () -> Int64
-  var store: (String, String, String, [String]) -> [AgentKnowledgeItem]
+  var store: (String, String, String, [String]) throws -> [AgentKnowledgeItem]
 
   init(
     provider: AgentIOSWebIntelligenceToolProviding = AgentIOSURLSessionWebIntelligenceProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
-    store: @escaping (String, String, String, [String]) -> [AgentKnowledgeItem]
+    store: @escaping (String, String, String, [String]) throws -> [AgentKnowledgeItem]
   ) {
     self.provider = provider
     self.nowMillis = nowMillis
@@ -92,7 +92,13 @@ struct AgentIOSURLSessionWebKnowledgeImporter {
     let source = fetched.output["url"]?.stringValue?.ifBlank(url) ?? url
     let host = URL(string: source)?.host?.lowercased().ifBlank("web") ?? "web"
     let title = fetched.output["title"]?.stringValue?.ifBlank(host) ?? host
-    let items = store(title, content, source, ["import", "web", host])
+    let items: [AgentKnowledgeItem]
+    do { items = try store(title, content, source, ["import", "web", host]) }
+    catch AgentKnowledgeDatabaseError.sourceReplacementChanged {
+      return .failure(message: "Knowledge source changed during preparation. Import again using the current source.", code: "knowledge_source_changed")
+    } catch {
+      return .failure(message: "The web page could not be stored in Agent knowledge.", code: "knowledge_store_failed")
+    }
     guard !items.isEmpty else {
       return .failure(message: "The web page was read but could not be stored in Agent knowledge.", code: "knowledge_store_failed")
     }
