@@ -39,3 +39,29 @@ final class AgentKnowledgeIndexKeyMemo {
     String(decoding: bytes.flatMap { [digits[Int($0 >> 4)], digits[Int($0 & 15)]] }, as: UTF8.self)
   }
 }
+
+// All bodies are synchronous. A committed reader and a writer on different
+// threads share this owner, never an operation entry or its ephemeral key.
+final class AgentKnowledgeIndexOperationScope {
+  private final class Operation { var memo: AgentKnowledgeIndexKeyMemo? }
+  private let slot = "com.galaxyssi.knowledge.index-operation." + UUID().uuidString
+
+  func withOperation<T>(_ body: () throws -> T) rethrows -> T {
+    let dictionary = Thread.current.threadDictionary
+    if dictionary[slot] is Operation { return try body() }
+    let operation = Operation()
+    dictionary[slot] = operation
+    defer {
+      dictionary.removeObject(forKey: slot)
+      operation.memo?.close()
+    }
+    return try body()
+  }
+
+  func key(_ input: String, calculate: () -> String) -> String {
+    guard let operation = Thread.current.threadDictionary[slot] as? Operation else { return calculate() }
+    if operation.memo == nil { operation.memo = try? AgentKnowledgeIndexKeyMemo() }
+    guard let memo = operation.memo, let value = try? memo.key(input, calculate: calculate) else { return calculate() }
+    return value
+  }
+}

@@ -112,6 +112,7 @@ final class AgentKnowledgeIndexKeyMemoTests: XCTestCase {
       XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
       defer { sqlite3_close(raw) }
       XCTAssertEqual(sqlite3_exec(raw, "UPDATE knowledge_items SET encrypted_payload=X'00'", nil, nil, nil), SQLITE_OK)
+      XCTAssertEqual(sqlite3_exec(raw, "DELETE FROM knowledge_primary_refs", nil, nil, nil), SQLITE_OK)
       XCTAssertThrowsError(try database.items(ids: ["memo"]))
       XCTAssertEqual(secrets.indexReads, 1)
       XCTAssertThrowsError(try database.items(ids: ["memo"]))
@@ -160,8 +161,116 @@ final class AgentKnowledgeIndexKeyMemoTests: XCTestCase {
         gate.signal(); XCTAssertEqual(admission, .completed)
         _ = XCTWaiter.wait(for: [writerDone], timeout: 5)
       }
-      // This only checks hash admission. Existing final snapshot validation can
-      // still wait for the writer; Android #3033 addresses that separate boundary.
+      // This checks hash admission only, not an end-to-end writer-held latency target.
+    }
+  }
+}
+
+// Synchronous read/write operation scopes; authored only unless run by XCTest.
+extension AgentKnowledgeIndexKeyMemoTests {
+  func testNestedScopeSharesOnlyItsOuterOperationAndDropsOnReturn() {
+    let scope = AgentKnowledgeIndexOperationScope()
+    var calculations = 0
+    func hash() -> String { calculations += 1; return output }
+    scope.withOperation {
+      _ = scope.key("input", calculate: hash)
+      scope.withOperation { for _ in 0..<20 { _ = scope.key("input", calculate: hash) } }
+    }
+    XCTAssertEqual(calculations, 1)
+    scope.withOperation { _ = scope.key("input", calculate: hash) }
+    XCTAssertEqual(calculations, 2)
+  }
+
+  func testThrowingScopeClearsMemoAndUnscopedHashesAreNeverRetained() {
+    let scope = AgentKnowledgeIndexOperationScope()
+    var calculations = 0
+    func hash() -> String { calculations += 1; return output }
+    XCTAssertThrowsError(try scope.withOperation {
+      _ = scope.key("input", calculate: hash)
+      throw Fault.injected
+    })
+    _ = scope.key("input", calculate: hash); _ = scope.key("input", calculate: hash)
+    XCTAssertEqual(calculations, 3)
+    scope.withOperation { _ = scope.key("input", calculate: hash) }
+    XCTAssertEqual(calculations, 4)
+  }
+
+  func testDifferentDatabaseScopesNeverBorrowEachOthersEntryOnOneThread() {
+    let first = AgentKnowledgeIndexOperationScope(), second = AgentKnowledgeIndexOperationScope()
+    var calculations = 0
+    func hash() -> String { calculations += 1; return output }
+    first.withOperation {
+      _ = first.key("input", calculate: hash)
+      second.withOperation { _ = second.key("input", calculate: hash) }
+      _ = first.key("input", calculate: hash)
+    }
+    XCTAssertEqual(calculations, 2)
+    _ = first.key("input", calculate: hash)
+    XCTAssertEqual(calculations, 3)
+  }
+
+  private final class Calculations {
+    private let lock = NSLock()
+    private var value = 0
+    func increment() -> String { lock.lock(); defer { lock.unlock() }; value += 1; return String(repeating: "a", count: 64) }
+    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+  }
+
+  func testConcurrentReadersOwnSeparateEntriesWithoutBlockingEachOther() {
+    let scope = AgentKnowledgeIndexOperationScope(), calls = Calculations()
+    let entered = DispatchSemaphore(value: 0), finish = DispatchSemaphore(value: 0), group = DispatchGroup()
+    for _ in 0..<2 {
+      group.enter()
+      DispatchQueue.global().async {
+        defer { group.leave() }
+        scope.withOperation {
+          _ = scope.key("input", calculate: calls.increment)
+          entered.signal()
+          _ = finish.wait(timeout: .now() + 5)
+          _ = scope.key("input", calculate: calls.increment)
+        }
+      }
+    }
+    let first = entered.wait(timeout: .now() + 2), second = entered.wait(timeout: .now() + 2)
+    finish.signal(); finish.signal()
+    XCTAssertEqual(first, .success); XCTAssertEqual(second, .success)
+    XCTAssertEqual(group.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(calls.count, 2)
+  }
+
+  func testCommittedViewBracketsMemoAndDropsItAfterThrowingRead() throws {
+    try fixture { _, url, _ in
+      let scope = AgentKnowledgeIndexOperationScope()
+      let view = try AgentKnowledgeCommittedReadView(fileURL: url, indexMemoScope: scope) {}
+      defer { view.close() }
+      var calculations = 0
+      func hash() -> String { calculations += 1; return output }
+      XCTAssertThrowsError(try view.read { _ in
+        _ = scope.key("input", calculate: hash); _ = scope.key("input", calculate: hash)
+        throw Fault.injected
+      })
+      try view.read { _ in
+        _ = scope.key("input", calculate: hash)
+        try view.read { _ in _ = scope.key("input", calculate: hash) }
+      }
+      XCTAssertEqual(calculations, 2)
+    }
+  }
+
+  func testClosingViewInsideReadCannotRetainAnOperationMemo() throws {
+    try fixture { _, url, _ in
+      let scope = AgentKnowledgeIndexOperationScope()
+      let view = try AgentKnowledgeCommittedReadView(fileURL: url, indexMemoScope: scope) {}
+      defer { view.close() }
+      var calculations = 0
+      func hash() -> String { calculations += 1; return output }
+      XCTAssertThrowsError(try view.read { _ in
+        _ = scope.key("input", calculate: hash)
+        view.close()
+      })
+      scope.withOperation { _ = scope.key("input", calculate: hash) }
+      XCTAssertEqual(calculations, 2)
+      XCTAssertThrowsError(try view.read { _ in XCTFail("Closed view admitted a read") })
     }
   }
 }

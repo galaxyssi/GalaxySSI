@@ -23,40 +23,67 @@ and legacy reads remain unchanged.
 - Input lookup tokens use a fresh per-operation 256-bit key and exact UTF-8 bytes.
   Canonically equivalent Unicode strings, embedded NUL and empty input do not
   accidentally share a token through Swift string-key normalization.
-- The outer `locked` operation closes and drops the memo on every exit, including
-  throws. Nested operations under the same recursive lock share that operation's
-  memo. A failed calculation is not cached; closing during calculation cannot
-  resurrect entries. No process-wide persistent-index-key cache is introduced.
-- `keyedHash` uses a nonblocking recursive try-lock before inspecting operation
-  state. Independent snapshots cannot inspect/borrow another thread's memo and
-  fall back to the original calculation without waiting for the writer lock.
-  This is hash admission only, not complete nonblocking read admission.
+- A private per-database operation scope uses an opaque thread-dictionary slot.
+  The outer synchronous operation closes/drops its memo on every exit, including
+  throws. Nested operations for that owner on the same thread share only that
+  outer lifetime. Different threads and database owners never borrow an entry.
+  Calculation failures are not cached; close cannot resurrect entries. No
+  process-wide persistent-index-key cache is introduced.
+- Both the outer `locked` writer operation and each database-owned committed
+  view `read` enter the same scope mechanism. The hash path no longer inspects
+  the writer lock. Unscoped hashing calculates directly without retaining values.
+  A read memo lasts for one synchronous `read` activation, not the entire snapshot
+  or query lifetime. There is no cache carried across async suspension. This is
+  hash admission/lifetime control, not a measured end-to-end nonblocking result.
 - Persistent HMAC inputs/key accounts are unchanged. Byte-to-hex formatting
   produces the same lowercase, zero-padded output without per-byte formatting
   calls. Hashing and authenticated body decode remain distinct checks.
 
 ## Boundaries
 
-- This does not port Android's metadata-only source-ownership read: current main
-  still authenticates/decodes full records. The open iOS primary-storage/source
-  replacement work is separate; this independent branch does not include its
-  ancestry or claim to have optimized those not-yet-main paths.
-- Final candidate validation and several vector APIs still acquire the writer
-  monitor. Android #3033 and #3034 address those separate read-admission changes;
-  this PR does not claim held-writer ranked-query or source-replacement latency.
+- Main `e6bd822b0` now contains prepared source replacement, committed read/vector
+  admission, primary storage/durability/allocations, statement reuse and reusable
+  read connections. This PR retains that ancestry; none of those are newly
+  delivered #3032 features. Android metadata-only ownership optimization and
+  further primary-header work remain separate. Full bodies still decode where
+  required by current main.
+- Original memo wiring cached only writer-locked operations. Integration now
+  covers the shared committed-read adapter as well, without changing WAL pinning,
+  lifecycle checks, statement disposal or physical retention lease order.
+  Registered-model cold writer enrollment and other existing writer boundaries
+  are unchanged. No held-writer ranked-query/source-replacement latency claim.
 - The key and cache references are discarded, but Swift/CryptoKit do not provide
   a verified hard-zeroization guarantee here. One operation can still be long;
-  an entry/lookup input can be large even though retained cache entries are
-  bounded. Keychain and cipher internals may still serialize work independently.
+  an entry/lookup input can be large even though retained entries per operation
+  are bounded. Independent threads each own their bound; this is not a global
+  memory cap. Keychain and cipher internals may still serialize independently.
 - No Android device measurements, fresh/retained corpus timings, schema migration
   acceptance or universal performance target are asserted for iOS.
 
 ## Verification
 
-Twelve deliberately synthetic XCTest methods are authored for cache lifetime,
+Eighteen deliberately synthetic XCTest methods are authored for cache lifetime,
 LRU, exact UTF-8 identities, calculation failure, close/reentrancy, capacity,
 hex compatibility, database error cleanup, persistent/reopen compatibility and
-cross-thread hash admission. They have not been compiled or executed. Source
+cross-thread hash admission, nested/throwing/unscoped lifetimes, owner separation,
+concurrent scopes and committed-read error/reentrant-close cleanup. The corruption
+fixture now also removes primary references before testing an invalid legacy
+payload; changing the old placeholder alone no longer corrupts main's primary
+body. They have not been compiled or executed. Source
 guards and the iOS project structure check are static checks only. No native
 build, typecheck, XCTest/Rust execution, CI monitoring, IPA or private evidence
 is part of this change.
+
+The main merge preserves both sides of concurrent Xcode source registrations.
+The focused scope check compares complete database/read-view/project content to
+that main outside declared memo hooks, and retains the original LRU/hex kernel.
+Read-connection guards normalize only those hooks for older contracts; no SQL,
+ownership, encryption, WAL or durable primary implementation is replaced by a
+cached digest.
+
+Current verification passes the memo scope, all eight native-knowledge source
+guards and check:ios. Six older whole-file guards (read-connections, statements,
+primary allocations/durability/partitions and primary-source integration) fail
+on project or coordinator baseline drift. A read-only loader of main's original
+scripts and sources reproduced the same failures. They are not counted as passes
+and their assertions are not disabled. There is no full-repository-green claim.
