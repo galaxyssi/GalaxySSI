@@ -238,6 +238,7 @@ struct ToolCallPayload: Codable, Equatable {
   var nameDelta: String
   var argumentsDelta: String
   var argumentsMode: ToolCallArgumentsMode
+  var singleNativeFunction: Bool
 
   private enum CodingKeys: String, CodingKey {
     case callId
@@ -245,6 +246,7 @@ struct ToolCallPayload: Codable, Equatable {
     case nameDelta
     case argumentsDelta
     case argumentsMode
+    case singleNativeFunction
   }
 
   init(
@@ -252,13 +254,15 @@ struct ToolCallPayload: Codable, Equatable {
     index: Int,
     nameDelta: String = "",
     argumentsDelta: String = "",
-    argumentsMode: ToolCallArgumentsMode = .delta
+    argumentsMode: ToolCallArgumentsMode = .delta,
+    singleNativeFunction: Bool = false
   ) {
     self.callId = callId
     self.index = index
     self.nameDelta = nameDelta
     self.argumentsDelta = argumentsDelta
     self.argumentsMode = argumentsMode
+    self.singleNativeFunction = singleNativeFunction
   }
 
   init(from decoder: Decoder) throws {
@@ -268,6 +272,7 @@ struct ToolCallPayload: Codable, Equatable {
     nameDelta = try container.decodeIfPresent(String.self, forKey: .nameDelta) ?? ""
     argumentsDelta = try container.decodeIfPresent(String.self, forKey: .argumentsDelta) ?? ""
     argumentsMode = try container.decodeIfPresent(ToolCallArgumentsMode.self, forKey: .argumentsMode) ?? .delta
+    singleNativeFunction = try container.decodeIfPresent(Bool.self, forKey: .singleNativeFunction) ?? false
   }
 }
 

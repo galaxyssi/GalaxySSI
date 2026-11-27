@@ -8,6 +8,7 @@ struct AgentConversationalTeamLaunch: Identifiable {
   let command: AgentConversationalTeamCommand
   let selection: AgentModelSelection
   var source: AgentLocalTeamReviewSource? = nil
+  var pin: AgentConversationGoal.Route? = nil
 }
 
 @MainActor
@@ -103,6 +104,9 @@ struct GalaxySSIConversationalTeamView: View {
     .onDisappear(perform: clear)
   }
   private func routes() -> [AgentConversationGoal.Route] {
+    if let pin = launch.pin {
+      return AgentPinnedCloudTeamAdmission.current(pin, store: store, conversation: launch.conversation) ? [pin] : []
+    }
     let all = AgentConversationGoalInference.routes(store: store, conversation: launch.conversation)
     guard launch.selection.mode == .manual else { return all }
     let target = launch.selection.targetId
@@ -126,6 +130,7 @@ struct GalaxySSIConversationalTeamView: View {
       guard available else { throw AgentConversationalTeamJob.Failure.stale }
       var next = AgentConversationalTeamJob(conversation: launch.conversation, objective: objective, route: route)
       next.source = launch.source
+      next.pinnedCloud = launch.pin == nil ? nil : true
       try repository.replace(next, expected: nil)
       if launch.source == nil {
         _ = store.appendOutgoing(objective, to: "hermes", status: .delivered, turnId: next.id.uuidString, readOnlyAnalysis: true,
@@ -173,24 +178,27 @@ extension AgentHomeView {
       outgoing.sourceConversationId.isBlank, homeVisible, scenePhase == .active, draft.isBlank, attachments.isEmpty,
       AgentConversationGoalRuntime.eligible(activeAgentSession),
       AgentConversationalTeamCommand.allowsModelReview(outgoing.content, language: interfaceLanguage) else { return }
-    let candidate = AgentLocalTeamReviewWindow.Candidate(owner: store.profile.identityFingerprint,
+    var candidate = AgentLocalTeamReviewWindow.Candidate(owner: store.profile.identityFingerprint,
       conversation: outgoing.conversationId, source: .init(message: outgoing.id, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString)),
       objective: outgoing.content, revision: expectedRevision,
       selection: AgentModelSelectionSettings.selection(for: outgoing.conversationId, defaults: store.defaults))
-    modelTeamReview.bind(candidate) {
+    candidate.pin = AgentPinnedCloudTeamAdmission.selectedRoute(store: store, conversation: outgoing.conversationId)
+    let submitted = candidate
+    modelTeamReview.bind(submitted) {
       homeVisible && scenePhase == .active && store.canReadAgentTranscript && UIApplication.shared.isProtectedDataAvailable &&
         expectedRevision == teamDraftRevision && draft.isBlank && attachments.isEmpty &&
-        candidate.owner == store.profile.identityFingerprint && candidate.conversation == store.activeAgentConversationId &&
-        candidate.selection == AgentModelSelectionSettings.selection(for: candidate.conversation, defaults: store.defaults) &&
+        submitted.owner == store.profile.identityFingerprint && submitted.conversation == store.activeAgentConversationId &&
+        submitted.selection == AgentModelSelectionSettings.selection(for: submitted.conversation, defaults: store.defaults) &&
         AgentConversationGoalRuntime.eligible(activeAgentSession) &&
-        candidate.source.matches(store, conversation: candidate.conversation, objective: candidate.objective)
+        submitted.source.matches(store, conversation: submitted.conversation, objective: submitted.objective) &&
+        (submitted.pin == nil || submitted.pin.map { AgentPinnedCloudTeamAdmission.current($0, store: store, conversation: submitted.conversation) } == true)
     }
   }
   func offerModelTeamReview() {
     guard let candidate = modelTeamReview.claim(), conversationalTeamLaunch == nil, conversationGoalLaunch == nil,
       localLabLaunch == nil, healthCareSubmission == nil else { return }
     conversationalTeamLaunch = .init(owner: candidate.owner, conversation: candidate.conversation,
-      revision: candidate.revision, command: .start(candidate.objective), selection: candidate.selection, source: candidate.source)
+      revision: candidate.revision, command: .start(candidate.objective), selection: candidate.selection, source: candidate.source, pin: candidate.pin)
   }
   func teamLaunchIsCurrent(_ launch: AgentConversationalTeamLaunch) -> Bool {
     homeVisible && scenePhase == .active && launch.revision == teamDraftRevision && attachments.isEmpty &&

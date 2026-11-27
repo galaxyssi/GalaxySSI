@@ -52,6 +52,7 @@ final class AgentLocalTeamReviewWindow: ObservableObject {
     let objective: String
     let revision: UUID
     let selection: AgentModelSelection
+    var pin: AgentConversationGoal.Route? = nil
   }
   private final class WeakWindow {
     weak var value: AgentLocalTeamReviewWindow?
@@ -64,9 +65,14 @@ final class AgentLocalTeamReviewWindow: ObservableObject {
   private var requested = false
   private var proposed = false
   private var key = ""
+  private var cloudTicket: UUID?
+  private var answerSHA = ""
+  private var cloudRuntime: UUID?
   func invalidate() {
     if Self.windows[key]?.value === self { Self.windows.removeValue(forKey: key) }
     candidate = nil; proposal = nil; requested = false; proposed = false; usable = { false }; key = ""
+    cloudTicket = nil; answerSHA = ""
+    cloudRuntime = nil
   }
   private static func key(owner: String, conversation: String, turn: String) -> String {
     AgentModelLoopRecoveryIdentity.sha256(["owner": owner, "conversation": conversation, "turn": turn])
@@ -88,12 +94,60 @@ final class AgentLocalTeamReviewWindow: ObservableObject {
   }
   static func mark(owner: String, conversation: String, turn: String) {
     let key = key(owner: owner, conversation: conversation, turn: turn)
-    guard let window = windows[key]?.value, window.requested, window.usable() else { return }
+    guard let window = windows[key]?.value, window.requested, window.usable(), window.candidate?.pin == nil else { return }
     window.proposed = true
   }
   static func delivered(owner: String, conversation: String, turn: String) {
     let key = key(owner: owner, conversation: conversation, turn: turn)
-    guard let window = windows[key]?.value, window.proposed, window.usable(), let candidate = window.candidate else { return }
+    guard let window = windows[key]?.value, window.proposed, window.usable(), let candidate = window.candidate, candidate.pin == nil else { return }
+    window.proposed = false; window.proposal = candidate
+  }
+  static func requestCloud(owner: String, conversation: String, turn: String, route: AgentConversationGoal.Route,
+    objective: String? = nil) -> UUID? {
+    let key = key(owner: owner, conversation: conversation, turn: turn)
+    guard let runtime = AgentPinnedCloudTeamDelivery.runtime, let window = windows[key]?.value, let candidate = window.candidate,
+      window.usable(), candidate.pin == route, candidate.selection.mode == .manual,
+      candidate.selection.targetId == route.target, candidate.selection.modelId == route.model,
+      objective == nil || objective == candidate.objective else { return nil }
+    guard !window.requested else {
+      if window.cloudRuntime != runtime {
+        window.cloudTicket = nil; window.cloudRuntime = nil; window.answerSHA = ""; window.proposed = false
+      }
+      return nil
+    }
+    let requirements = AgentTaskRequirementAnalyzer.analyze(candidate.objective)
+    guard !requirements.liveDataRequired, !requirements.localOnly, requirements.executionHorizon != .longRunning,
+      AgentConversationalTeamCommand.allowsModelReview(candidate.objective, language: LanguagePolicySettings.auto),
+      !AgentPhoneRuntimePolicy.shouldUsePhoneRuntime(goal: candidate.objective) else { return nil }
+    let ticket = UUID(); window.requested = true; window.cloudTicket = ticket; window.cloudRuntime = runtime
+    return ticket
+  }
+  static func ownsCloud(owner: String, conversation: String, turn: String, ticket: UUID, route: AgentConversationGoal.Route) -> Bool {
+    let key = key(owner: owner, conversation: conversation, turn: turn)
+    guard let window = windows[key]?.value else { return false }
+    return window.cloudTicket == ticket && window.cloudRuntime == AgentPinnedCloudTeamDelivery.runtime &&
+      window.candidate?.pin == route && window.usable()
+  }
+  static func markCloud(owner: String, conversation: String, turn: String, ticket: UUID, answer: String) -> Bool {
+    let key = key(owner: owner, conversation: conversation, turn: turn)
+    guard let runtime = AgentPinnedCloudTeamDelivery.runtime, let window = windows[key]?.value,
+      window.cloudTicket == ticket, window.cloudRuntime == runtime, window.usable(), window.answerSHA.isEmpty else { return false }
+    window.answerSHA = AgentBlobProtocol.sha256(Data(answer.utf8)); window.proposed = true
+    return true
+  }
+  static func cloudDelivered(_ message: ChatMessage, store: GalaxySSIStore) {
+    let key = key(owner: store.profile.identityFingerprint, conversation: message.conversationId,
+      turn: message.turnId.ifBlank(message.id.uuidString))
+    guard let runtime = AgentPinnedCloudTeamDelivery.runtime, let window = windows[key]?.value,
+      window.cloudRuntime == runtime, let candidate = window.candidate, let pin = candidate.pin,
+      window.cloudTicket != nil, window.proposed, window.usable(), !message.isMine, !message.isSystem,
+      message.contactId == "hermes", message.deliveryStatus == .delivered, message.sourceConversationId.isBlank, message.richOutputJson.isBlank,
+      window.answerSHA == AgentBlobProtocol.sha256(Data(message.content.utf8)),
+      AgentPinnedCloudTeamAdmission.current(pin, store: store, conversation: candidate.conversation),
+      let stored = store.persistedMessage(id: message.id, contactId: message.contactId),
+      !stored.isMine, !stored.isSystem, stored.deliveryStatus == .delivered, stored.sourceConversationId.isBlank,
+      stored.content == message.content, stored.conversationId == candidate.conversation, stored.turnId == candidate.source.turn,
+      stored.richOutputJson.isBlank else { return }
     window.proposed = false; window.proposal = candidate
   }
   func claim() -> Candidate? {

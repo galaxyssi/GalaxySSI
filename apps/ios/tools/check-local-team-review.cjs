@@ -33,7 +33,7 @@ const submit = read('GalaxySSI/GalaxySSIAgentHomeMessageSubmission.swift');
 assert(submit.includes('hasExtras: isVoiceSubmission || !outgoingAttachments.isEmpty || assistantRunID != nil'));
 const ui = read('GalaxySSI/GalaxySSIConversationalTeamView.swift');
 for (const token of ['launch.source?.matches(store', 'if launch.source == nil {', 'next.source = launch.source',
-  'modelTeamReview.bind(candidate)', 'candidate.source.matches(store', 'modelTeamReview.claim()',
+  'modelTeamReview.bind(submitted)', 'submitted.source.matches(store', 'modelTeamReview.claim()',
   'source: candidate.source', 'draft.isBlank, attachments.isEmpty']) assert(ui.includes(token), token);
 const runtime = read('GalaxySSI/AgentConversationalTeamRuntime.swift');
 assert(runtime.includes('actual.source == original.source') && runtime.includes('original.source?.matches(store'));

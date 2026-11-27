@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 struct ParsedModelStreamFrame: Equatable {
   var textDeltas: [String] = []
@@ -81,7 +82,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
         callId: call.string("id"),
         index: call.int("index", fallback: offset),
         nameDelta: function?.string("name") ?? "",
-        argumentsDelta: function?.string("arguments") ?? ""
+        argumentsDelta: function?.string("arguments") ?? "",
+        singleNativeFunction: Self.singleFunction(root: json, calls: delta?.array("tool_calls") ?? [], call: call, function: function)
       )
     }
     return ParsedModelStreamFrame(
@@ -114,7 +116,8 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
         callId: call.string("id"),
         index: call.int("index", fallback: offset),
         nameDelta: function?.string("name") ?? "",
-        argumentsDelta: function?.string("arguments") ?? ""
+        argumentsDelta: function?.string("arguments") ?? "",
+        singleNativeFunction: Self.singleFunction(root: json, calls: message?.array("tool_calls") ?? [], call: call, function: function)
       )
     }
     return ParsedModelStreamFrame(
@@ -126,6 +129,18 @@ private final class OpenAIModelStreamAdapter: ModelStreamProviderAdapter {
       reportedModel: json.string("model").nonBlank,
       providerReasoningDelta: message?["reasoning_content"] as? String
     )
+  }
+}
+
+private extension OpenAIModelStreamAdapter {
+  static func singleFunction(root: [String: Any], calls: [Any], call: [String: Any], function: [String: Any]?) -> Bool {
+    guard root.array("choices").count == 1, calls.count == 1, let function else { return false }
+    if let index = call["index"] {
+      guard let value = index as? NSNumber, CFGetTypeID(value) != CFBooleanGetTypeID(), value.doubleValue == 0 else { return false }
+    }
+    return (call["type"] == nil || call["type"] as? String == "function") &&
+      (call["id"] == nil || call["id"] is String) && (function["name"] == nil || function["name"] is String) &&
+      (function["arguments"] == nil || function["arguments"] is String)
   }
 }
 

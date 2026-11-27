@@ -8,6 +8,7 @@ struct AgentConversationalTeamJob: Codable, Equatable, Identifiable {
   let objective: String
   let route: AgentConversationGoal.Route
   var source: AgentLocalTeamReviewSource? = nil
+  var pinnedCloud: Bool? = nil
   private(set) var state: State = .queued
   private(set) var calls = 0
   private(set) var revision = 0
@@ -18,7 +19,7 @@ struct AgentConversationalTeamJob: Codable, Equatable, Identifiable {
   var active: Bool { state == .queued || state == .running }
   var valid: Bool {
     !conversation.isBlank && conversation.utf8.count <= 512 && !objective.isBlank && objective.utf16.count <= 4_000 &&
-      route.valid && (source == nil || source?.valid == true) &&
+      route.valid && (source == nil || source?.valid == true) && (pinnedCloud != true || (route.kind == .cloud && source != nil)) &&
       (0...AgentConversationalTeamProtocol.maximumCalls).contains(calls) && revision >= 0 && revision < Int.max &&
       (state != .queued || (calls == 0 && revision == 0)) &&
       (state == .finished ? (!answer.isBlank && answer.utf16.count <= 64_000 && !answer.contains("```galaxyssi-rich")) : answer.isEmpty)
