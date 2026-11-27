@@ -674,6 +674,8 @@ struct ConversationView: View {
   @State private var messageWindowOldest: GalaxySSIChatHistoryCursor?
   @State private var messageWindowNewest: GalaxySSIChatHistoryCursor?
   @State private var messageScroll = GalaxySSIChatScrollReference()
+  @State private var newPeerReply = false
+  @State private var peerReplySnapshot: GalaxySSIReadingPosition.Snapshot?
   private let messageScrollSpace = "conversation-message-viewport"
   private let messageTail = "conversation-message-tail"
   @State private var pendingVoiceRiskConfirmation: GalaxySSIConversationVoiceRiskConfirmation?
@@ -789,6 +791,7 @@ struct ConversationView: View {
                     firstRenderedMessageID: firstRenderedMessageID, proxy: proxy)
                 }
                 .id(message.id)
+                .background(GalaxySSIReadingParagraphAnchor.RowMarker())
                 .background {
                   GeometryReader { row in
                     Color.clear.preference(key: GalaxySSIChatMessageFramesKey.self,
@@ -809,6 +812,9 @@ struct ConversationView: View {
             .padding(.top, 14)
             .padding(.bottom, 10)
             .background(GalaxySSIChatScrollResolver(reference: messageScroll))
+            .background(GalaxySSIReadingParagraphAnchor(scope: peerReadingScope + ":" + messageViewportEpoch.revision.uuidString,
+              holding: { scenePhase == .active && store.canRestoreMessageViewport && !messageViewportSuspended && !messageViewportDragging &&
+                initialMessageScrollCompleted && !messageViewportNearLatest && pendingMessageAnchor == nil }))
             .background {
               GeometryReader { content in
                 Color.clear.preference(
@@ -819,10 +825,24 @@ struct ConversationView: View {
             }
           }
           .coordinateSpace(name: messageScrollSpace)
+          .overlay(alignment: .bottomTrailing) {
+            if newPeerReply && !isSystemNoticeContact {
+              GalaxySSIAgentLatestButton(title: t("galaxyssi.agent.latest", "Back to latest")) {
+                messageViewportEpoch.invalidate()
+                newPeerReply = false
+                messageViewportNearLatest = true
+                pinLatestAfterSend = true
+                openLatestMessageWindow()
+                scrollToMessageTail(proxy)
+              }
+              .padding(.trailing, 16).padding(.bottom, 12)
+            }
+          }
           .simultaneousGesture(DragGesture(minimumDistance: 12)
             .onChanged { value in
               guard !messageViewportDragging, abs(value.translation.height) >= abs(value.translation.width) else { return }
               messageViewportDragging = true
+              messageViewportNearLatest = false
               pinLatestAfterSend = false
               pendingMessageAnchor = nil
               pickerMessageAnchor = nil
@@ -835,6 +855,7 @@ struct ConversationView: View {
           .onAppear {
             messageViewportHeight = viewport.size.height
             resetMessageWindowIfNeeded()
+            peerReplySnapshot = .init(scope: peerReadingScope, messages: displayedMessages)
             scrollToInitialMessageIfReady(proxy)
           }
           .onChange(of: viewport.size.height) { height in
@@ -853,9 +874,11 @@ struct ConversationView: View {
                let message = renderedMessages.first(where: { $0.id == id }) {
               visibleMessageAnchor = .init(cursor: GalaxySSIChatHistoryCursor(message), top: top)
             }
-            if let id = renderedMessages.last?.id {
+            let userScrolling = messageViewportDragging || messageScroll.view.map { $0.isTracking || $0.isDragging || $0.isDecelerating } == true
+            if userScrolling, let id = renderedMessages.last?.id {
               messageViewportNearLatest = messageWindowNewest == nil &&
-                (frames[id].map { $0.maxY <= messageViewportHeight + 56 } ?? false)
+                (frames[id].map { $0.maxY <= messageViewportHeight + 1 } ?? false)
+              if messageViewportNearLatest { newPeerReply = false }
             }
           }
           .onChange(of: messageViewportEpoch.revision) { _ in
@@ -875,6 +898,15 @@ struct ConversationView: View {
               }
             }
             refreshVisibleContactReadState()
+          }
+          .onChange(of: GalaxySSIReadingPosition.Snapshot(scope: peerReadingScope, messages: displayedMessages)) { value in
+            if scenePhase == .active, !messageViewportSuspended, !isSystemNoticeContact, !messageViewportNearLatest,
+              GalaxySSIReadingPosition.newReply(previous: peerReplySnapshot, current: value) { newPeerReply = true }
+            peerReplySnapshot = value
+          }
+          .onChange(of: peerReadingScope) { _ in
+            newPeerReply = false
+            peerReplySnapshot = .init(scope: peerReadingScope, messages: displayedMessages)
           }
           .onChange(of: waitingMessageIDs.count) { _ in
             guard !messageViewportSuspended, messageWindowNewest == nil,
@@ -1212,6 +1244,8 @@ struct ConversationView: View {
     messageViewportEpoch.invalidate()
     messageViewportSuspended = false
     messageViewportDragging = false
+    newPeerReply = false
+    peerReplySnapshot = nil
     pinLatestAfterSend = false
     pendingMessageAnchor = nil
     pickerMessageAnchor = nil
@@ -1241,6 +1275,8 @@ struct ConversationView: View {
       pendingMessageAnchor = pendingMessageAnchor ?? visibleMessageAnchor
     }
     messageViewportSuspended = true
+    newPeerReply = false
+    peerReplySnapshot = nil
     messageViewportDragging = false
     loadingOlderMessages = false
     messageViewportEpoch.invalidate()
@@ -1773,6 +1809,7 @@ struct ConversationView: View {
   private var composerAttachmentScope: String {
     contact.id + ":" + (visibleAgentConversationId ?? "")
   }
+  private var peerReadingScope: String { store.profile.identityFingerprint + ":" + composerAttachmentScope }
 
   private func openCameraAttachmentPicker() {
     guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
