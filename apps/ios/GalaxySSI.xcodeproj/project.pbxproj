@@ -1878,6 +1878,14 @@
     A10000000000000000000125 /* AgentMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* AgentMemoryModels.swift */; };
     A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000536 /* AgentKnowledgeModels.swift */; };
     A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000880 /* AgentKnowledgeDatabase.swift */; };
+    A10000000000000000003E5F /* AgentKnowledgeSourceStaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E5F /* AgentKnowledgeSourceStaging.swift */; };
+    A10000000000000000003E68 /* AgentKnowledgePreparedSourceReplacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E68 /* AgentKnowledgePreparedSourceReplacement.swift */; };
+    A10000000000000000003E69 /* AgentKnowledgeSourcePreparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E69 /* AgentKnowledgeSourcePreparationTests.swift */; };
+    A10000000000000000003E6A /* AgentKnowledgeSourceWriteTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E6A /* AgentKnowledgeSourceWriteTiming.swift */; };
+    A10000000000000000003E6B /* AgentKnowledgeSourceWriteTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E6B /* AgentKnowledgeSourceWriteTimingTests.swift */; };
+    A10000000000000000003E6C /* AgentKnowledgePrimarySourceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E6C /* AgentKnowledgePrimarySourceIntegrationTests.swift */; };
+    A10000000000000000003E61 /* AgentKnowledgeChunkSequence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E61 /* AgentKnowledgeChunkSequence.swift */; };
+    A10000000000000000003E60 /* AgentKnowledgeSourceReplacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E60 /* AgentKnowledgeSourceReplacementTests.swift */; };
     A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */; };
     F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */; };
     F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */; };
@@ -1890,6 +1898,10 @@
     F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */; };
     F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */; };
     F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */; };
+    A10000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift */; };
+    A10000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift */; };
+    A10000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */; };
+    A10000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */; };
     F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */; };
     A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
     A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
@@ -4146,6 +4158,14 @@
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000880 /* AgentKnowledgeDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabase.swift; sourceTree = "<group>"; };
+    A20000000000000000003E5F /* AgentKnowledgeSourceStaging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSourceStaging.swift; sourceTree = "<group>"; };
+    A20000000000000000003E68 /* AgentKnowledgePreparedSourceReplacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePreparedSourceReplacement.swift; sourceTree = "<group>"; };
+    A20000000000000000003E69 /* AgentKnowledgeSourcePreparationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSourcePreparationTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E6A /* AgentKnowledgeSourceWriteTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSourceWriteTiming.swift; sourceTree = "<group>"; };
+    A20000000000000000003E6B /* AgentKnowledgeSourceWriteTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSourceWriteTimingTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E6C /* AgentKnowledgePrimarySourceIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimarySourceIntegrationTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E61 /* AgentKnowledgeChunkSequence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeChunkSequence.swift; sourceTree = "<group>"; };
+    A20000000000000000003E60 /* AgentKnowledgeSourceReplacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeSourceReplacementTests.swift; sourceTree = "<group>"; };
     A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeDatabaseTests.swift; sourceTree = "<group>"; };
     F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativePublicationTests.swift; sourceTree = "<group>"; };
     F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndexTests.swift; sourceTree = "<group>"; };
@@ -4158,6 +4178,10 @@
     F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeWire.swift; sourceTree = "<group>"; };
     F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeBridge.swift; sourceTree = "<group>"; };
     F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeFiles.swift; sourceTree = "<group>"; };
+    A20000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeCommittedReadView.swift; sourceTree = "<group>"; };
+    A20000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeIndexRetryGate.swift; sourceTree = "<group>"; };
+    A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeReadAdmissionTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorReadAdmissionTests.swift; sourceTree = "<group>"; };
     F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndex.swift; sourceTree = "<group>"; };
     A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
     A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
@@ -5764,10 +5788,16 @@
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000536 /* AgentKnowledgeModels.swift */,
         A20000000000000000000880 /* AgentKnowledgeDatabase.swift */,
+        A20000000000000000003E5F /* AgentKnowledgeSourceStaging.swift */,
+        A20000000000000000003E68 /* AgentKnowledgePreparedSourceReplacement.swift */,
+        A20000000000000000003E6A /* AgentKnowledgeSourceWriteTiming.swift */,
+        A20000000000000000003E61 /* AgentKnowledgeChunkSequence.swift */,
         A20000000000000000000884 /* AgentKnowledgeVectorModels.swift */,
         F30050000000000000000021 /* AgentKnowledgeNativeWire.swift */,
         F30050000000000000000022 /* AgentKnowledgeNativeBridge.swift */,
         F30050000000000000000023 /* AgentKnowledgeNativeFiles.swift */,
+        A20000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift */,
+        A20000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift */,
         F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */,
         F30050000000000000000028 /* AgentKnowledgeBackgroundScheduler.swift */,
         A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */,
@@ -6684,8 +6714,14 @@
         A20000000000000000000430 /* AgentInlineMarkdownTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000881 /* AgentKnowledgeDatabaseTests.swift */,
+        A20000000000000000003E60 /* AgentKnowledgeSourceReplacementTests.swift */,
+        A20000000000000000003E69 /* AgentKnowledgeSourcePreparationTests.swift */,
+        A20000000000000000003E6B /* AgentKnowledgeSourceWriteTimingTests.swift */,
+        A20000000000000000003E6C /* AgentKnowledgePrimarySourceIntegrationTests.swift */,
         F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */,
         F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */,
+        A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */,
+        A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */,
         F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */,
         F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
@@ -8079,10 +8115,16 @@
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000536 /* AgentKnowledgeModels.swift in Sources */,
         A10000000000000000000880 /* AgentKnowledgeDatabase.swift in Sources */,
+        A10000000000000000003E5F /* AgentKnowledgeSourceStaging.swift in Sources */,
+        A10000000000000000003E68 /* AgentKnowledgePreparedSourceReplacement.swift in Sources */,
+        A10000000000000000003E6A /* AgentKnowledgeSourceWriteTiming.swift in Sources */,
+        A10000000000000000003E61 /* AgentKnowledgeChunkSequence.swift in Sources */,
         A10000000000000000000884 /* AgentKnowledgeVectorModels.swift in Sources */,
         F30050000000000000000011 /* AgentKnowledgeNativeWire.swift in Sources */,
         F30050000000000000000012 /* AgentKnowledgeNativeBridge.swift in Sources */,
         F30050000000000000000013 /* AgentKnowledgeNativeFiles.swift in Sources */,
+        A10000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift in Sources */,
+        A10000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift in Sources */,
         F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */,
         F30050000000000000000018 /* AgentKnowledgeBackgroundScheduler.swift in Sources */,
         A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */,
@@ -9121,8 +9163,14 @@
         A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000881 /* AgentKnowledgeDatabaseTests.swift in Sources */,
+        A10000000000000000003E60 /* AgentKnowledgeSourceReplacementTests.swift in Sources */,
+        A10000000000000000003E69 /* AgentKnowledgeSourcePreparationTests.swift in Sources */,
+        A10000000000000000003E6B /* AgentKnowledgeSourceWriteTimingTests.swift in Sources */,
+        A10000000000000000003E6C /* AgentKnowledgePrimarySourceIntegrationTests.swift in Sources */,
         F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */,
         F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */,
+        A10000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift in Sources */,
+        A10000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift in Sources */,
         F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */,
         F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,

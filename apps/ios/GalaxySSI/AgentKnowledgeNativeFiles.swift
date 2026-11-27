@@ -31,6 +31,7 @@ final class AgentKnowledgeNativeFiles {
   let masterKeyAccount: String
   private let namespace: String
   private let secrets: GalaxySSISecretStore
+  private let notifications: NotificationCenter
   private var generation: UInt64 = 0
   private var destroying = false
   private var suspended = false
@@ -39,7 +40,8 @@ final class AgentKnowledgeNativeFiles {
   private var backgroundLeases = Set<UUID>()
   private var observers: [NSObjectProtocol] = []
 
-  init(databaseURL: URL, secrets: GalaxySSISecretStore) {
+  init(databaseURL: URL, secrets: GalaxySSISecretStore, notifications: NotificationCenter = .default) {
+    self.notifications = notifications
     let path = databaseURL.standardizedFileURL.path
     namespace = SHA256.hash(data: Data(path.utf8)).map { String(format: "%02x", $0) }.joined()
     rootDirectory = URL(fileURLWithPath: path + ".native", isDirectory: true)
@@ -47,14 +49,14 @@ final class AgentKnowledgeNativeFiles {
     self.secrets = secrets
     for name in [UIApplication.willResignActiveNotification, UIApplication.protectedDataWillBecomeUnavailableNotification,
       UIApplication.didBecomeActiveNotification, UIApplication.protectedDataDidBecomeAvailableNotification] {
-      observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+      observers.append(notifications.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
         self?.transition(name)
       })
     }
   }
 
   deinit {
-    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    for observer in observers { notifications.removeObserver(observer) }
     invalidate()
   }
 
@@ -67,6 +69,13 @@ final class AgentKnowledgeNativeFiles {
   func activeToken() -> UInt64? {
     Self.keyLock.lock()
     defer { Self.keyLock.unlock() }
+    return destroying || suspended || protectedUnavailable ? nil : generation
+  }
+
+  func readToken(backgroundLease: BackgroundLease? = nil) -> UInt64? {
+    Self.keyLock.lock()
+    defer { Self.keyLock.unlock() }
+    if let backgroundLease { return validBackgroundLease(backgroundLease) ? generation : nil }
     return destroying || suspended || protectedUnavailable ? nil : generation
   }
 

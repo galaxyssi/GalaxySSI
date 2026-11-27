@@ -25,6 +25,20 @@ enum AgentLatencyStage: String, Codable, CaseIterable {
   case phoneRuntimeImageDecodeFinished = "phone_runtime_image_decode_finished"
   case phoneRuntimeImageEncodeStarted = "phone_runtime_image_encode_started"
   case phoneRuntimeImageEncodeFinished = "phone_runtime_image_encode_finished"
+  case phoneRuntimeKnowledgeSourceTotalStarted = "phone_runtime_knowledge_source_total_started"
+  case phoneRuntimeKnowledgeSourceTotalFinished = "phone_runtime_knowledge_source_total_finished"
+  case phoneRuntimeKnowledgeSourceStageStarted = "phone_runtime_knowledge_source_stage_started"
+  case phoneRuntimeKnowledgeSourceStageFinished = "phone_runtime_knowledge_source_stage_finished"
+  case phoneRuntimeKnowledgeSourcePrepareStarted = "phone_runtime_knowledge_source_prepare_started"
+  case phoneRuntimeKnowledgeSourcePrepareFinished = "phone_runtime_knowledge_source_prepare_finished"
+  case phoneRuntimeKnowledgeSourceCommitStarted = "phone_runtime_knowledge_source_commit_started"
+  case phoneRuntimeKnowledgeSourceCommitFinished = "phone_runtime_knowledge_source_commit_finished"
+  case phoneRuntimeKnowledgeSourceOwnershipStarted = "phone_runtime_knowledge_source_ownership_started"
+  case phoneRuntimeKnowledgeSourceOwnershipFinished = "phone_runtime_knowledge_source_ownership_finished"
+  case phoneRuntimeKnowledgeSourceApplyStarted = "phone_runtime_knowledge_source_apply_started"
+  case phoneRuntimeKnowledgeSourceApplyFinished = "phone_runtime_knowledge_source_apply_finished"
+  case phoneRuntimeKnowledgeSourceObserveStarted = "phone_runtime_knowledge_source_observe_started"
+  case phoneRuntimeKnowledgeSourceObserveFinished = "phone_runtime_knowledge_source_observe_finished"
   case phoneModelRequestStarted = "phone_model_request_started"
   case phoneModelRequestFinished = "phone_model_request_finished"
   case phoneModelClientLockWaitStarted = "phone_model_client_lock_wait_started"
@@ -119,6 +133,13 @@ enum AgentLatencyContract {
     ("phone_runtime_image_original_probe_ms", .phoneRuntimeImageOriginalProbeStarted, .phoneRuntimeImageOriginalProbeFinished),
     ("phone_runtime_image_decode_ms", .phoneRuntimeImageDecodeStarted, .phoneRuntimeImageDecodeFinished),
     ("phone_runtime_image_encode_ms", .phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished),
+    ("phone_runtime_knowledge_source_total_ms", .phoneRuntimeKnowledgeSourceTotalStarted, .phoneRuntimeKnowledgeSourceTotalFinished),
+    ("phone_runtime_knowledge_source_stage_ms", .phoneRuntimeKnowledgeSourceStageStarted, .phoneRuntimeKnowledgeSourceStageFinished),
+    ("phone_runtime_knowledge_source_prepare_ms", .phoneRuntimeKnowledgeSourcePrepareStarted, .phoneRuntimeKnowledgeSourcePrepareFinished),
+    ("phone_runtime_knowledge_source_commit_ms", .phoneRuntimeKnowledgeSourceCommitStarted, .phoneRuntimeKnowledgeSourceCommitFinished),
+    ("phone_runtime_knowledge_source_ownership_ms", .phoneRuntimeKnowledgeSourceOwnershipStarted, .phoneRuntimeKnowledgeSourceOwnershipFinished),
+    ("phone_runtime_knowledge_source_apply_ms", .phoneRuntimeKnowledgeSourceApplyStarted, .phoneRuntimeKnowledgeSourceApplyFinished),
+    ("phone_runtime_knowledge_source_observe_ms", .phoneRuntimeKnowledgeSourceObserveStarted, .phoneRuntimeKnowledgeSourceObserveFinished),
     ("phone_model_request_ms", .phoneModelRequestStarted, .phoneModelRequestFinished),
     ("phone_model_client_lock_wait_ms", .phoneModelClientLockWaitStarted, .phoneModelClientLockWaitFinished),
     ("phone_model_worker_lock_wait_ms", .phoneModelWorkerLockWaitStarted, .phoneModelWorkerLockWaitFinished),
@@ -213,6 +234,13 @@ enum AgentRuntimeTimingPhase: String, CaseIterable {
   case imageOriginalProbe = "image_original_probe"
   case imageDecode = "image_decode"
   case imageEncode = "image_encode"
+  case knowledgeSourceTotal = "knowledge_source_total"
+  case knowledgeSourceStage = "knowledge_source_stage"
+  case knowledgeSourcePrepare = "knowledge_source_prepare"
+  case knowledgeSourceCommit = "knowledge_source_commit"
+  case knowledgeSourceOwnership = "knowledge_source_ownership"
+  case knowledgeSourceApply = "knowledge_source_apply"
+  case knowledgeSourceObserve = "knowledge_source_observe"
 
   var boundaries: (start: AgentLatencyStage, finish: AgentLatencyStage) {
     switch self {
@@ -232,6 +260,20 @@ enum AgentRuntimeTimingPhase: String, CaseIterable {
       return (.phoneRuntimeImageDecodeStarted, .phoneRuntimeImageDecodeFinished)
     case .imageEncode:
       return (.phoneRuntimeImageEncodeStarted, .phoneRuntimeImageEncodeFinished)
+    case .knowledgeSourceTotal:
+      return (.phoneRuntimeKnowledgeSourceTotalStarted, .phoneRuntimeKnowledgeSourceTotalFinished)
+    case .knowledgeSourceStage:
+      return (.phoneRuntimeKnowledgeSourceStageStarted, .phoneRuntimeKnowledgeSourceStageFinished)
+    case .knowledgeSourcePrepare:
+      return (.phoneRuntimeKnowledgeSourcePrepareStarted, .phoneRuntimeKnowledgeSourcePrepareFinished)
+    case .knowledgeSourceCommit:
+      return (.phoneRuntimeKnowledgeSourceCommitStarted, .phoneRuntimeKnowledgeSourceCommitFinished)
+    case .knowledgeSourceOwnership:
+      return (.phoneRuntimeKnowledgeSourceOwnershipStarted, .phoneRuntimeKnowledgeSourceOwnershipFinished)
+    case .knowledgeSourceApply:
+      return (.phoneRuntimeKnowledgeSourceApplyStarted, .phoneRuntimeKnowledgeSourceApplyFinished)
+    case .knowledgeSourceObserve:
+      return (.phoneRuntimeKnowledgeSourceObserveStarted, .phoneRuntimeKnowledgeSourceObserveFinished)
     }
   }
 }
@@ -244,6 +286,7 @@ struct AgentRuntimeTiming {
     taskId: String,
     phase: AgentRuntimeTimingPhase,
     outcome: (T) -> String = { _ in "completed" },
+    deferJournal: Bool = false,
     operation: () throws -> T
   ) rethrows -> T {
     let normalizedTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -253,7 +296,8 @@ struct AgentRuntimeTiming {
     tracer.recordOpaque(
       taskId: normalizedTaskId,
       stage: boundaries.start,
-      operationId: operationId
+      operationId: operationId,
+      deferJournal: deferJournal
     )
     var resultOutcome = "failed"
     defer {
@@ -261,7 +305,8 @@ struct AgentRuntimeTiming {
         taskId: normalizedTaskId,
         stage: boundaries.finish,
         operationId: operationId,
-        outcome: resultOutcome
+        outcome: resultOutcome,
+        deferJournal: deferJournal
       )
     }
     do {
@@ -488,6 +533,8 @@ final class AgentLatencyTracer {
   private let lock = NSLock()
   private var seen: Set<String> = []
   private var outcomes: [String: String] = [:]
+  private var pendingOpaquePoints = 0
+  private static let pendingOpaqueLimit = 256
 
   init(
     journal: AgentLatencyJournal,
@@ -542,11 +589,12 @@ final class AgentLatencyTracer {
     stage: AgentLatencyStage,
     operationId: String,
     outcome: String = "",
-    monotonicNs: Int64? = nil
+    monotonicNs: Int64? = nil,
+    deferJournal: Bool = false
   ) {
     let cleanTaskId = taskId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanTaskId.isEmpty else { return }
-    journal.append(AgentLatencyPoint(
+    let point = AgentLatencyPoint(
       traceId: AgentLatencyContract.opaqueId(cleanTaskId),
       clockId: clockId,
       stage: stage,
@@ -554,7 +602,18 @@ final class AgentLatencyTracer {
       wallClockMs: max(0, wallClockMs()),
       outcome: normalizedOutcome(outcome, emptyAllowed: true),
       operationId: AgentLatencyContract.opaqueId(operationId)
-    ))
+    )
+    guard deferJournal else { journal.append(point); return }
+    // Bounded best-effort diagnostics: pressure drops points, never business work.
+    // Missing boundaries remain incomplete, rather than successful samples.
+    lock.lock()
+    guard pendingOpaquePoints < Self.pendingOpaqueLimit else { lock.unlock(); return }
+    pendingOpaquePoints += 1
+    lock.unlock()
+    journalQueue.async { [self] in
+      journal.append(point)
+      lock.lock(); pendingOpaquePoints -= 1; lock.unlock()
+    }
   }
 
   func visible(taskId: String, final: Bool) {
