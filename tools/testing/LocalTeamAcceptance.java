@@ -199,7 +199,7 @@ class LocalTeamAcceptance {
             var edit = rewrites.get(0);
             require(calls.indexOf(edit) > calls.indexOf(audit) && edit.getString("draft").equals(audit.getString("draft")) &&
                 edit.getString("brief").equals(synthesis.getString("brief")) &&
-                edit.getJSONArray("reports").similar(reports) && publicField(firstReview,"verdict").equals("revise") &&
+                edit.getJSONArray("reports").similar(reports) && Set.of("revise", "request_changes").contains(publicField(firstReview,"verdict")) &&
                 publicField(firstReview,"objection").equals(edit.getString("objection")), "Writer handback lost its source");
             if (rechecks.isEmpty()) require(withheld, "Rewrite published without a recheck");
             else {

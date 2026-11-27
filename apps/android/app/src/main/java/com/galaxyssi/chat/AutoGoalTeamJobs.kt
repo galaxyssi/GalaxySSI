@@ -118,7 +118,8 @@ internal object AutoGoalTeamJobs {
         val answer = try {
             runBlocking {
                 val labels = TeamResultLabels(ctx.getString(R.string.auto_team_correction), ctx.getString(R.string.auto_team_objections),
-                    ctx.getString(R.string.auto_team_passing), ctx.getString(R.string.auto_team_none), ctx.getString(R.string.auto_team_limitation))
+                    ctx.getString(R.string.auto_team_passing), ctx.getString(R.string.auto_team_none), ctx.getString(R.string.auto_team_limitation),
+                    ctx.getString(R.string.auto_team_review_reason_missing))
                 runAutoGoalTeam(job.getString("objective"), labels, { instructions, payload -> coroutineScope {
                     val call = AgentNativeToolCancellationSource()
                     val registration = cancel.token.invokeOnCancellation { call.cancel() }

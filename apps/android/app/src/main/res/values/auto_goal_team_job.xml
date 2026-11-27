@@ -7,6 +7,7 @@
     <string name="auto_team_job_withheld">The reviewer withheld the draft: %1$s</string>
     <string name="auto_team_final_audit_missing">You requested an independent final review, but the model did not assign a final reviewer. No draft was published.</string>
     <string name="auto_team_correction">Reviewer correction:</string>
+    <string name="auto_team_review_reason_missing">The reviewer did not give a specific reason.</string>
     <string name="auto_team_objections">Reported disagreements:</string>
     <string name="auto_team_passing">Pass all gates:</string>
     <string name="auto_team_none">None</string>

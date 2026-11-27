@@ -239,12 +239,16 @@ Use `--falsifiable-concept` instead to test a fresh, concise conversational
 request for a prediction, a mutually incompatible observation under the same
 conditions, and an evidence gap. No candidate, measurement or answer is supplied.
 This single-turn result does not replace the longer follow-up test.
-If the final editor objects but returns the same draft, the original synthesis
+If the final editor requests changes with a specific objection and no replacement, or returns the same draft, the original synthesis
 role can rewrite once. It receives the objection and its original public reports.
 The same editor must explicitly approve the replacement; it sees only its
 original review context plus the rejected draft and revised text. A veto or
 unchanged rewrite withholds the answer. If fewer than two calls remain out of
 twelve, neither extra call starts. Neither turn adds a role to the receipt.
+For a falsifiable claim, contributors, the writer and the editor distinguish a
+contrary observation made with a working readout from an invalid measurement.
+Neither a broken readout nor an assumed outcome tests the prediction.
+This is a reasoning instruction, not a guarantee of scientific accuracy.
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 
