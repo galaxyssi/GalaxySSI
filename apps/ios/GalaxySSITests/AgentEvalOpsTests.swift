@@ -4,6 +4,160 @@ import XCTest
 
 @MainActor
 final class AgentEvalOpsTests: XCTestCase {
+  func testGovernanceMissingStateIsDistinctFromCorruptCiphertext() throws {
+    try withCheckedGovernance { store, defaults, secrets in
+      XCTAssertTrue(store.gaps().isEmpty); XCTAssertTrue(store.lastErrorDescription.isEmpty)
+      let gap = try XCTUnwrap(store.upsertGap(knowledgeGap()))
+      XCTAssertEqual(store.gap(id: gap.id), gap)
+      let corrupt = Data("synthetic corrupt ciphertext".utf8)
+      defaults.set(corrupt, forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1")
+      let writes = secrets.writes
+      XCTAssertTrue(store.gaps().isEmpty); XCTAssertFalse(store.lastErrorDescription.isEmpty)
+      XCTAssertNil(store.upsertGap(gap)); XCTAssertNil(store.updateGapStatus(id: gap.id, status: .resolved))
+      XCTAssertNil(store.appendDecision(checkedDecision()))
+      XCTAssertNil(store.recordDecisionOutcome(id: "decision", outcome: "resolved", evidenceRefs: []))
+      XCTAssertEqual(defaults.data(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1"), corrupt)
+      XCTAssertEqual(secrets.writes, writes)
+    }
+  }
+
+  func testGovernanceAuthenticatedInvalidJSONAndUnknownPlaintextAreNotReplaced() throws {
+    try withCheckedGovernance { store, defaults, secrets in
+      let key = AgentCognitiveGovernanceStore.defaultKey
+      XCTAssertTrue(GalaxySSIEncryptedUserDefaultsStore.write(Data("not JSON".utf8), defaults: defaults, key: key, secrets: secrets))
+      let sealed = defaults.data(forKey: key + ".encrypted.v1")
+      XCTAssertNil(store.upsertGap(knowledgeGap())); XCTAssertFalse(store.lastErrorDescription.isEmpty)
+      XCTAssertEqual(defaults.data(forKey: key + ".encrypted.v1"), sealed)
+      defaults.removeObject(forKey: key + ".encrypted.v1"); defaults.set("unknown legacy value", forKey: key)
+      XCTAssertNil(store.appendDecision(checkedDecision()))
+      XCTAssertEqual(defaults.string(forKey: key), "unknown legacy value")
+      XCTAssertNil(defaults.object(forKey: key + ".encrypted.v1"))
+    }
+  }
+
+  func testGovernanceUnavailableKeyDoesNotCreateAReplacementKeyOrEmptyStore() throws {
+    try withCheckedGovernance { store, defaults, secrets in
+      let gap = try XCTUnwrap(store.upsertGap(knowledgeGap()))
+      let sealed = defaults.data(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1"), writes = secrets.writes
+      secrets.readsBeforeUnavailable = 0; secrets.rejectWrites = true
+      XCTAssertNil(store.upsertGap(gap)); XCTAssertNil(store.gap(id: gap.id))
+      XCTAssertEqual(secrets.writes, writes)
+      XCTAssertEqual(defaults.data(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1"), sealed)
+      secrets.readsBeforeUnavailable = nil; secrets.rejectWrites = false
+      XCTAssertEqual(store.gap(id: gap.id), gap); XCTAssertTrue(store.lastErrorDescription.isEmpty)
+    }
+  }
+
+  func testGovernanceFirstWriteFailureDoesNotReturnASavedObject() throws {
+    try withCheckedGovernance { store, defaults, secrets in
+      secrets.rejectWrites = true
+      XCTAssertNil(store.upsertGap(knowledgeGap())); XCTAssertEqual(store.lastErrorDescription, "governance_write_failed")
+      XCTAssertNil(store.appendDecision(checkedDecision()))
+      XCTAssertNil(defaults.object(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1"))
+    }
+  }
+
+  func testGovernanceFailedMutationsPreserveThePreviouslyCommittedCiphertext() throws {
+    try withCheckedGovernance { store, defaults, secrets in
+      let gap = try XCTUnwrap(store.upsertGap(knowledgeGap()))
+      let decision = try XCTUnwrap(store.appendDecision(checkedDecision()))
+      let sealed = defaults.data(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1")
+      for operation in 0..<4 {
+        secrets.readsBeforeUnavailable = 1; secrets.rejectWrites = true
+        switch operation {
+        case 0: XCTAssertNil(store.upsertGap(gap))
+        case 1: XCTAssertNil(store.updateGapStatus(id: gap.id, status: .resolved))
+        case 2: XCTAssertNil(store.appendDecision(checkedDecision()))
+        default: XCTAssertNil(store.recordDecisionOutcome(id: decision.id, outcome: "resolved", evidenceRefs: ["synthetic"]))
+        }
+        XCTAssertEqual(store.lastErrorDescription, "governance_write_failed")
+        XCTAssertEqual(defaults.data(forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1"), sealed)
+        secrets.readsBeforeUnavailable = nil; secrets.rejectWrites = false
+        XCTAssertEqual(store.gap(id: gap.id), gap); XCTAssertEqual(store.decisions(), [decision])
+      }
+    }
+  }
+
+  func testGovernanceUnreadableDetectionDoesNotCreateAnUnrelatedNewGap() throws {
+    try withCheckedGovernance { store, _, secrets in
+      _ = store.upsertGap(knowledgeGap()); secrets.readsBeforeUnavailable = 0
+      let run = recordedRun(runId: "synthetic", request: "Verify compatibility", status: .failed)
+      XCTAssertNil(AgentKnowledgeGapDetector.observe(store: store, run: run, sample: gapSample("synthetic")))
+      XCTAssertFalse(store.lastErrorDescription.isEmpty)
+    }
+  }
+
+  func testGovernanceUnreadableOrMissingGapCannotQueueResearchFromTransientInput() async throws {
+    try await withCheckedGovernanceBridge { store, research, bridge, defaults, _ in
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      await bridge.observe(gap).value; XCTAssertTrue(research.state().tasks.isEmpty)
+      _ = store.upsertGap(gap)
+      defaults.set(Data("corrupt".utf8), forKey: AgentCognitiveGovernanceStore.defaultKey + ".encrypted.v1")
+      await bridge.observe(gap).value; XCTAssertTrue(research.state().tasks.isEmpty)
+    }
+  }
+
+  func testGovernanceResearchStatusFailureReconcilesWithoutQueuingAnotherTask() async throws {
+    try await withCheckedGovernanceBridge { store, research, bridge, _, secrets in
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      _ = store.upsertGap(gap)
+      secrets.readsBeforeUnavailable = 3; secrets.rejectWrites = true
+      await bridge.observe(gap).value
+      XCTAssertEqual(store.lastErrorDescription, "governance_write_failed")
+      XCTAssertEqual(research.state().tasks.count, 1)
+      secrets.readsBeforeUnavailable = nil; secrets.rejectWrites = false
+      XCTAssertEqual(store.gap(id: gap.id)?.status, .open); XCTAssertTrue(store.decisions().isEmpty)
+      await bridge.observe(gap).value; await bridge.observe(gap).value
+      XCTAssertEqual(research.state().tasks.count, 1)
+      XCTAssertEqual(store.gap(id: gap.id)?.status, .researching); XCTAssertEqual(store.decisions().count, 1)
+    }
+  }
+
+  func testGovernanceResearchDecisionFailureRetriesOnlyMissingBookkeeping() async throws {
+    try await withCheckedGovernanceBridge { store, research, bridge, _, secrets in
+      var gap = knowledgeGap(); gap.sourceConversationIds = ["a"]
+      _ = store.upsertGap(gap)
+      secrets.readsBeforeUnavailable = 5; secrets.rejectWrites = true
+      await bridge.observe(gap).value
+      XCTAssertEqual(store.lastErrorDescription, "governance_write_failed")
+      secrets.readsBeforeUnavailable = nil; secrets.rejectWrites = false
+      XCTAssertEqual(store.gap(id: gap.id)?.status, .researching); XCTAssertTrue(store.decisions().isEmpty)
+      await bridge.observe(gap).value; await bridge.observe(gap).value
+      XCTAssertEqual(research.state().tasks.count, 1); XCTAssertEqual(store.decisions().count, 1)
+    }
+  }
+
+  func testGovernanceBridgeUsesCurrentSavedGapInsteadOfOldCallerProse() async throws {
+    try await withCheckedGovernanceBridge { store, research, bridge, _, _ in
+      var current = knowledgeGap(); current.sourceConversationIds = ["current"]
+      _ = store.upsertGap(current)
+      var stale = current; stale.topic = "Stale"; stale.sourceConversationIds = ["stale"]
+      await bridge.observe(stale).value
+      XCTAssertEqual(research.state().tasks.first?.sourceConversationIds, ["current"])
+      XCTAssertEqual(research.state().tasks.first?.topic, current.topic)
+    }
+  }
+
+  private func checkedDecision() -> AgentDecisionLogEntry {
+    .init(id: "decision", question: "Synthetic question", decision: "Synthetic decision", alternatives: [], evidenceRefs: [], rationale: "Synthetic")
+  }
+  private func withCheckedGovernance(_ body: (AgentCognitiveGovernanceStore, UserDefaults, GovernanceCheckedSecrets) throws -> Void) throws {
+    let suite = "governance-checked-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = GovernanceCheckedSecrets(), store = AgentCognitiveGovernanceStore(defaults: defaults, secrets: secrets)
+    try body(store, defaults, secrets)
+  }
+  private func withCheckedGovernanceBridge(_ body: @MainActor (AgentCognitiveGovernanceStore,
+    GalaxySSIGlobalResearchRuntimeStore, AgentKnowledgeGapResearchBridge, UserDefaults, GovernanceCheckedSecrets) async throws -> Void) async throws {
+    let suite = "governance-bridge-checked-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let secrets = GovernanceCheckedSecrets(), governance = AgentCognitiveGovernanceStore(defaults: defaults, secrets: secrets)
+    let research = GalaxySSIGlobalResearchRuntimeStore(fileURL: root.appendingPathComponent("research.json"))
+    let bridge = AgentKnowledgeGapResearchBridge(researchStore: research, governance: governance); bridge.install { true }
+    try await body(governance, research, bridge, defaults, secrets)
+  }
+
   func testKnowledgeGapSourceProofRoundtripAndLegacyDecode() throws {
     var gap = knowledgeGap()
     gap.sourceConversationIds = ["a", "b"]
@@ -876,4 +1030,40 @@ private final class KnowledgeGapPolicyProbe {
   var reads = 0
   var enabled = true
   var research: GalaxySSIGlobalResearchRuntimeStore?
+}
+
+private final class GovernanceCheckedSecrets: GalaxySSISecretStore {
+  private let backing = InMemorySecretStore(), lock = NSRecursiveLock()
+  private var remaining: Int?
+  private var rejected = false
+  private var attempts = 0
+  var readsBeforeUnavailable: Int? {
+    get { locked { remaining } }
+    set { locked { remaining = newValue } }
+  }
+  var rejectWrites: Bool {
+    get { locked { rejected } }
+    set { locked { rejected = newValue } }
+  }
+  var writes: Int { locked { attempts } }
+  func string(account: String) -> String? {
+    locked {
+      if let value = remaining {
+        guard value > 0 else { return nil }
+        remaining = value - 1
+      }
+      return backing.string(account: account)
+    }
+  }
+  func setString(_ value: String, account: String) throws {
+    try locked {
+      attempts += 1
+      if rejected { throw CocoaError(.fileWriteNoPermission) }
+      try backing.setString(value, account: account)
+    }
+  }
+  func delete(account: String) { locked { backing.delete(account: account) } }
+  private func locked<T>(_ work: () throws -> T) rethrows -> T {
+    lock.lock(); defer { lock.unlock() }; return try work()
+  }
 }
