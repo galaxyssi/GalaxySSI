@@ -48,6 +48,7 @@ final class AgentKnowledgePrimaryPartitions {
   private let partitionBytes: Int64
   private let partitionRecords: Int64
   private let readerSlots: AgentKnowledgePrimaryReaderSlots
+  private let readConnections: AgentKnowledgePrimaryReadConnections
   private let writerLock = NSLock()
   private let readerLock = NSLock()
   private let leaseLock = NSLock()
@@ -72,7 +73,8 @@ final class AgentKnowledgePrimaryPartitions {
        beforePartitionCommit: @escaping (String) throws -> Void = { _ in },
        readerSlots: AgentKnowledgePrimaryReaderSlots = .shared,
        afterAllocationIntent: @escaping (String) throws -> Void = { _ in },
-       afterAllocationFile: @escaping (String) throws -> Void = { _ in }) {
+       afterAllocationFile: @escaping (String) throws -> Void = { _ in },
+       readConnections: AgentKnowledgePrimaryReadConnections = .shared) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -84,11 +86,13 @@ final class AgentKnowledgePrimaryPartitions {
     self.afterRetiredUnlink = afterRetiredUnlink
     self.beforePartitionCommit = beforePartitionCommit
     self.readerSlots = readerSlots
+    self.readConnections = readConnections
     self.afterAllocationIntent = afterAllocationIntent
     self.afterAllocationFile = afterAllocationFile
   }
 
   deinit {
+    try? readConnections.clear(root: root)
     writers.values.forEach { AgentKnowledgeSQLiteStatements.shared.close($0.database) }
     if accessDescriptor >= 0 { Darwin.close(accessDescriptor) }
     if directoryDescriptor >= 0 { Darwin.close(directoryDescriptor) }
@@ -322,8 +326,18 @@ final class AgentKnowledgePrimaryPartitions {
     if pending == nil { readerLease = try readerSlots.acquire(checkActive: checkActive) }
     else { readerLease = nil }
     defer { readerLease?.end() }
-    let database = try pending ?? open(partition, create: false, readOnly: true)
-    defer { if pending == nil { AgentKnowledgeSQLiteStatements.shared.close(database) } }
+    if let pending {
+      return try readFrames(pending, reference: reference, itemHash: itemHash, partition: partition, checkActive: checkActive)
+    }
+    return try readConnections.read(root: root, file: root.appendingPathComponent(partition + ".sqlite"),
+      directoryDescriptor: directoryDescriptor, checkActive: checkActive,
+      open: { try open(partition, create: false, readOnly: true) }) { database in
+      try readFrames(database, reference: reference, itemHash: itemHash, partition: partition, checkActive: checkActive)
+    }
+  }
+
+  private func readFrames(_ database: OpaquePointer, reference: Reference, itemHash: String, partition: String,
+                          checkActive: () throws -> Void) throws -> Data {
     let frames = try prepare(database, "SELECT ordinal,sealed FROM frames WHERE entry_id=? ORDER BY ordinal")
     defer { AgentKnowledgeSQLiteStatements.shared.release(frames) }
     try bind(reference.entry, index: 1, statement: frames)
@@ -407,6 +421,7 @@ final class AgentKnowledgePrimaryPartitions {
     guard try Self.flock(accessDescriptor, LOCK_EX) else {
       return nil
     }
+    try readConnections.clear(root: root, requireIdle: true)
     return try operation()
   }
 
@@ -530,6 +545,7 @@ final class AgentKnowledgePrimaryPartitions {
 
   private func unlinkRetired(_ id: String) throws {
     try validatePartitionFiles(id, requireMain: false)
+    try readConnections.retire(root: root, file: root.appendingPathComponent(id + ".sqlite"))
     guard Self.token(id), directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     for suffix in ["-wal", "-shm", "-journal", ""] {
       let name = id + ".sqlite" + suffix

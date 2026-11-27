@@ -64,7 +64,8 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
 
     init(bytes: Int64 = 64 * 1_024 * 1_024, records: Int64 = 65_536,
          beforeCatalogPublication: @escaping () throws -> Void = {}, beforePartitionCommit: @escaping (String) throws -> Void = { _ in },
-         readerSlots: AgentKnowledgePrimaryReaderSlots = .shared) throws {
+         readerSlots: AgentKnowledgePrimaryReaderSlots = .shared,
+         readConnections: AgentKnowledgePrimaryReadConnections = .shared) throws {
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       var raw: OpaquePointer?
       guard sqlite3_open(url.path, &raw) == SQLITE_OK, let raw else { throw AgentKnowledgeDatabaseError.unavailable }
@@ -73,7 +74,8 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       try sql("CREATE TABLE knowledge_items(item_hash TEXT PRIMARY KEY,encrypted_payload BLOB NOT NULL)")
       try sql("CREATE TABLE knowledge_external_payloads(item_hash TEXT PRIMARY KEY,file_name TEXT NOT NULL UNIQUE,plaintext_bytes INTEGER NOT NULL,plaintext_sha256 TEXT NOT NULL)")
       store = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: secrets, partitionBytes: bytes, partitionRecords: records,
-        beforeCatalogPublication: beforeCatalogPublication, beforePartitionCommit: beforePartitionCommit, readerSlots: readerSlots)
+        beforeCatalogPublication: beforeCatalogPublication, beforePartitionCommit: beforePartitionCommit, readerSlots: readerSlots,
+        readConnections: readConnections)
       try store.setup(catalog: catalog)
     }
     deinit {

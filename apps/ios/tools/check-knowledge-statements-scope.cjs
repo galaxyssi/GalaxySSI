@@ -6,7 +6,7 @@ const app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
 const production = ['AgentKnowledgeDatabase', 'AgentKnowledgePrimaryPartitions', 'AgentKnowledgePrimaryAllocations', 'AgentKnowledgePrimaryDurability',
   'AgentKnowledgeCommittedReadView', 'AgentKnowledgeSourceStaging'];
 const fixtures = ['AgentKnowledgePrimaryPartitionsTests', 'AgentKnowledgePrimaryDurabilityTests'];
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-read-connections-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const integratedSource = f => cp.execFileSync('git', ['show', integrated + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function predecessor(f) {
@@ -17,6 +17,7 @@ function predecessor(f) {
   return old(f);
 }
 function retained(f, source) {
+  source = require('./check-knowledge-read-connections-scope.cjs').retained(f, source);
   if (f.endsWith('check-knowledge-primary-allocations-scope.cjs')) return source
     .replace("  assert.equal(require('./check-knowledge-primary-durability-scope.cjs').retained(project, read(project)),\n    cp.execFileSync('git', ['show', 'a5d92e61c98c6a8ece94cb925bd07b49fd99a339:' + project], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\\r\\n/g, '\\n'));",
       '  assert.equal(retained(project, read(project)), old(project));')
