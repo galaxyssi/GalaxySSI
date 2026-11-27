@@ -1,6 +1,6 @@
 // Source contracts only; not Swift, native SQLite, filesystem or concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = '78a541cf118c37f0a01187357c8818e51f4a3709';
+const root = path.resolve(__dirname, '../../..'), base = 'b3fb18e58c2fea7e31a4e02862f11691323111b3';
 const app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
 const read = f => require('./check-knowledge-primary-compaction-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');

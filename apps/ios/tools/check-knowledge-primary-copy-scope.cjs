@@ -1,6 +1,6 @@
 // Static source contracts only; no Swift/native SQLite/device/crash execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = 'a51312cd07ff03dab56340d8493802d789cffc8b', app = 'apps/ios/GalaxySSI/';
+const root = path.resolve(__dirname, '../../..'), base = '7daa20adba10021a163dd8d56b89fdb24712c05a', app = 'apps/ios/GalaxySSI/';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
@@ -13,7 +13,7 @@ const large = `    if old.frames > AgentKnowledgePrimaryCopyState.framePage {
     }
 `;
 function retained(f, source) {
-  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryCopy(?:State|Store)?(?:Tests)?\.swift/.test(l)).join('\n');
+  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryCopy(?:State|Store|Integration)?(?:Tests)?\.swift/.test(l)).join('\n');
   if (f === app + 'AgentKnowledgeStorageBackground.swift') return source.replace('    guard started.isFinite, deadline.isFinite, now.isFinite, now >= started else { throw CancellationError() }\n    if now >= deadline { throw AgentKnowledgeStorageYield.exhausted }',
     '    guard started.isFinite, deadline.isFinite, now.isFinite, now >= started, now < deadline else { throw CancellationError() }');
   if (f === 'apps/ios/GalaxySSITests/AgentKnowledgePrimaryCompactionTests.swift') return source
@@ -88,6 +88,11 @@ function validate() {
   for (const name of ['AgentKnowledgeDatabase', 'AgentKnowledgePrimaryReadConnections', 'AgentKnowledgeReadConnectionPool',
     'AgentKnowledgeSQLiteStatements', 'AgentKnowledgePrimaryReaderSlots', 'AgentKnowledgePrimaryAllocations', 'AgentKnowledgePrimaryDurability', 'AgentKnowledgePrimaryFrameCodec'])
     assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+  const integration = read('apps/ios/GalaxySSITests/AgentKnowledgePrimaryCopyIntegrationTests.swift');
+  assert.equal((integration.match(/  func test/g) || []).length, 5);
+  for (const name of ['PreparedSourceRemainsValidAcrossCopyAndVerificationCheckpoints',
+    'TargetedReplacementCancelsStaleCopyWithoutPublishingOldBody', 'TargetedSourceDeletionDoesNotResurrectCopiedRecord',
+    'FailedTargetedWritePreservesExactCopyCheckpointAndSource', 'ActualReadViewDefersCopyWithoutAdvancingDurablePrefix']) assert(integration.includes('func test' + name + '('), name);
   console.log('Authenticated durable copy/verify cursors, physical-before-checkpoint ordering, exact-reference publication, ownership/retirement guards and 18 authored-only fixture contracts passed source checks; no native acceptance.');
 }
 module.exports = {retained, validate};
