@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 final class AgentWorkspaceNativeToolExecutor {
+  static let preparationQueue = DispatchQueue(label: "galaxyssi.workspace-restore", qos: .utility)
   private static let maxBatchFiles = 64
   private static let maxBatchWriteBytes: Int64 = 1_024 * 1_024
 
@@ -45,6 +46,8 @@ final class AgentWorkspaceNativeToolExecutor {
   }
 
   private var workspaces: [String: [String: Entry]] = [:]
+  private let stateLock = NSLock()
+  private var persistentStatePrepared = false
   private let policy: AgentWorkspaceFilePolicy
   private let nowMillis: () -> Int64
   private let stateStore: AgentWorkspaceNativeToolStateStore?
@@ -56,13 +59,30 @@ final class AgentWorkspaceNativeToolExecutor {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
     stateStore: AgentWorkspaceNativeToolStateStore? = nil,
-    runtimeRoot: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    runtimeRoot: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
+    preparationQueue: DispatchQueue? = nil
   ) {
     self.policy = policy
     self.nowMillis = nowMillis
     self.stateStore = stateStore
     self.runtimeRoot = runtimeRoot
-    self.workspaces = Self.restoreWorkspaces(stateStore?.load() ?? [:])
+    if let preparationQueue {
+      preparationQueue.async { [weak self] in self?.preparePersistentState() }
+    } else {
+      preparePersistentState()
+    }
+  }
+
+  private func preparePersistentState() {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    preparePersistentStateUnlocked()
+  }
+
+  private func preparePersistentStateUnlocked() {
+    guard !persistentStatePrepared else { return }
+    workspaces = Self.restoreWorkspaces(stateStore?.load() ?? [:])
+    persistentStatePrepared = true
   }
 
   func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
@@ -93,6 +113,9 @@ final class AgentWorkspaceNativeToolExecutor {
   }
 
   private func run(toolId: String, input: AgentMcpJSONObject) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    preparePersistentStateUnlocked()
     let workspaceId = canonicalWorkspaceId(string(input, "workspace_id")) ?? string(input, "workspace_id")
     switch toolId {
     case AgentPhoneNativeToolCatalog.workspaceInitialize:

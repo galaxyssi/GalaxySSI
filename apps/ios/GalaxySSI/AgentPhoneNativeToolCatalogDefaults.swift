@@ -131,7 +131,8 @@ extension AgentPhoneNativeToolCatalog {
     let resolvedWorkspaceStore = workspaceStore ?? AgentWorkspaceNativeToolExecutor(
       nowMillis: nowMillis,
       stateStore: stores.workspaceStateStore,
-      runtimeRoot: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(storageRootURL: storageRootURL)
+      runtimeRoot: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(storageRootURL: storageRootURL),
+      preparationQueue: AgentWorkspaceNativeToolExecutor.preparationQueue
     )
     let resolvedHomeAssistantProvider = homeAssistantProvider ?? AgentIOSConfiguredHomeAssistantToolProvider(
       settingsProvider: homeAssistantSettingsProvider
