@@ -200,8 +200,10 @@ final class GalaxySSIStore: ObservableObject {
     }
   }
   @Published internal(set) var agentMemoryItems: [AgentMemoryItem]
+  internal var publishingCommittedKnowledgeCache = false
   @Published internal(set) var agentKnowledgeItems: [AgentKnowledgeItem] {
     didSet {
+      guard !publishingCommittedKnowledgeCache else { return }
       guard agentKnowledgeDatabase.replaceAll(agentKnowledgeItems) else { return }
       AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
       save()

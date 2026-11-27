@@ -47,13 +47,13 @@ enum AgentAttachmentKnowledgeImporter {
         return
       }
       let source = "agent-attachment:\(conversationId):\(attachment.id)"
-      importedCount += store.replaceAgentKnowledgeSource(
+      importedCount += store.replaceAgentKnowledgeSourceCount(
         title: attachment.displayName,
         content: content,
         source: source,
         kind: knowledgeKind(for: attachment.displayName),
         tags: knowledgeTags(for: attachment)
-      ).count
+      )
     }
   }
 

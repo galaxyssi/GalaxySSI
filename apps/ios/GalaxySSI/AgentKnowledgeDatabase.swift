@@ -9,6 +9,11 @@ enum AgentKnowledgeDatabaseError: Error, Equatable {
   case sourceDirectoryNotReady(processedGroups: Int64)
 }
 
+struct AgentKnowledgeSourceObservation: Equatable {
+  var receipt: String
+  var event: GlobalConversationEvent
+}
+
 enum AgentKnowledgeVectorChangeOperation: String, Codable, Equatable {
   case ready
   case removal
@@ -1542,7 +1547,11 @@ final class AgentKnowledgeDatabase {
   func replaceAll(_ items: [AgentKnowledgeItem]) -> Bool {
     locked {
       guard validateIdentities(items), execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
-      guard execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items"),
+      // Legacy whole-snapshot writers cannot preserve the source handoff's
+      // history/ACL boundary. Invalidate it atomically rather than replay stale
+      // summaries after an access-policy change, restore or user reset.
+      guard execute("DELETE FROM knowledge_source_observations"),
+            execute("DELETE FROM knowledge_fts"), execute("DELETE FROM knowledge_items"),
             execute("DELETE FROM knowledge_source_headers") else {
         _ = execute("ROLLBACK")
         return false
@@ -1593,6 +1602,212 @@ final class AgentKnowledgeDatabase {
       }
       return true
     }
+  }
+
+  // The producer is consumed once before acquiring the catalog writer. The
+  // returned scratch belongs to the caller until cache publication completes.
+  func replaceSource(_ source: String, next: () throws -> AgentKnowledgeItem?,
+    beforeCommit: (AgentKnowledgeSourceStaging) throws -> Void = { _ in },
+    afterMutation: (Int) throws -> Void = { _ in }) throws -> (stage: AgentKnowledgeSourceStaging, changed: Int) {
+    guard !source.isBlank, source == source.trimmingCharacters(in: .whitespacesAndNewlines) else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    let stage = try AgentKnowledgeSourceStaging(source: source)
+    do {
+      while let item = try next() { try stage.accept(item) }
+      try stage.finishIncoming()
+      let changed = try locked { () throws -> Int in
+        guard execute("BEGIN IMMEDIATE") else { throw AgentKnowledgeDatabaseError.unavailable }
+        var committed = false
+        defer { if !committed { _ = execute("ROLLBACK") } }
+        let sourceHash = keyedHash(source)
+        var after = "", policy: AgentKnowledgeItem?
+        while true {
+          try Task.checkCancellation()
+          guard let page = prepare("SELECT item_hash FROM knowledge_items WHERE source_hash=? AND item_hash>? ORDER BY item_hash LIMIT 64") else {
+            throw AgentKnowledgeDatabaseError.unavailable
+          }
+          bind(sourceHash, at: 1, to: page); bind(after, at: 2, to: page)
+          var keys: [String] = []
+          var status = sqlite3_step(page)
+          while status == SQLITE_ROW {
+            guard let text = sqlite3_column_text(page, 0) else { sqlite3_finalize(page); throw AgentKnowledgeDatabaseError.corruptRecord }
+            keys.append(String(cString: text)); status = sqlite3_step(page)
+          }
+          sqlite3_finalize(page)
+          guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+          if keys.isEmpty { break }
+          for key in keys {
+            guard key > after, let old = try sourceRecord(hash: key), old.source.utf8.elementsEqual(source.utf8) else {
+              throw AgentKnowledgeDatabaseError.corruptRecord
+            }
+            try stage.rememberPrevious(old)
+            if policy == nil || old.updatedAtMillis < policy!.updatedAtMillis ||
+              (old.updatedAtMillis == policy!.updatedAtMillis && key < keyedHash(policy!.id)) { policy = old }
+            after = key
+          }
+        }
+        try stage.finishPrevious()
+        // Reject ownership conflicts before any canonical row, FTS or vector edit.
+        try stage.scan(.incoming) { item in
+          if let owned = try sourceRecord(hash: keyedHash(item.id)) {
+            guard owned.id.utf8.elementsEqual(item.id.utf8), owned.source.utf8.elementsEqual(source.utf8) else {
+              throw AgentKnowledgeDatabaseError.corruptRecord
+            }
+          }
+        }
+        var changed = 0, latest: AgentKnowledgeItem?
+        try stage.scan(.previous) { old in
+          if try stage.item(old.id, side: .incoming) == nil {
+            try removeSourceRecord(old); changed += 1; try afterMutation(changed)
+          }
+        }
+        try stage.scan(.incoming) { candidate in
+          try Task.checkCancellation()
+          var item = candidate
+          if let policy {
+            item.cloudAccess = policy.cloudAccess; item.agentAccess = policy.agentAccess
+            item.allowedAgentIds = policy.allowedAgentIds
+          }
+          if item.summary.isBlank { item.summary = String(item.content.prefix(700)) }
+          let old = try stage.item(item.id, side: .previous)
+          var comparable = item; comparable.updatedAtMillis = old?.updatedAtMillis ?? item.updatedAtMillis
+          if comparable == old { item = old! }
+          else {
+            if let old { try removeSourceRecord(old) }
+            guard insert(item) else { throw AgentKnowledgeDatabaseError.unavailable }
+            try sourceStatement("INSERT OR IGNORE INTO knowledge_vector_queue(model_hash,item_hash) SELECT model_hash,? FROM knowledge_vector_enrollment", keyedHash(item.id))
+            changed += 1; try afterMutation(changed)
+          }
+          try stage.normalized(item)
+          if latest == nil || item.updatedAtMillis > latest!.updatedAtMillis ||
+            (item.updatedAtMillis == latest!.updatedAtMillis && keyedHash(item.id) < keyedHash(latest!.id)) { latest = item }
+        }
+        if changed > 0 {
+          try sourceStatement("DELETE FROM knowledge_source_headers WHERE source_hash=?", sourceHash)
+          if let latest {
+            let group = AgentKnowledgeSourceGroup(source: source,
+              title: latest.title.replacingOccurrences(of: "\\s+\\[[0-9]+/[0-9]+\\]$", with: "", options: .regularExpression),
+              itemIds: [], chunkCount: Int(stage.incomingCount), cloudAccess: latest.cloudAccess,
+              agentAccess: latest.agentAccess, allowedAgentIds: latest.allowedAgentIds, updatedAtMillis: latest.updatedAtMillis)
+            guard insertSourceHeader(group) else { throw AgentKnowledgeDatabaseError.unavailable }
+          }
+          guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {
+            throw AgentKnowledgeDatabaseError.unavailable
+          }
+        }
+        try stage.finishMutation()
+        if changed > 0 {
+          for event in try GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(stage: stage) {
+            try enqueueSourceObservation(event)
+          }
+        }
+        try beforeCommit(stage)
+        try Task.checkCancellation()
+        guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+        committed = true
+        return changed
+      }
+      return (stage, changed)
+    } catch { stage.close(); throw error }
+  }
+
+  private func sourceRecord(hash: String) throws -> AgentKnowledgeItem? {
+    guard let row = prepare("SELECT item_hash,encrypted_payload FROM knowledge_items WHERE item_hash=?") else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_finalize(row) }; bind(hash, at: 1, to: row)
+    let status = sqlite3_step(row)
+    if status == SQLITE_DONE { return nil }
+    guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+    return try decode(row, hashColumn: 0, payloadColumn: 1)
+  }
+
+  // A durable handoff, not automatic global-model ingestion. A consumer must
+  // acknowledge only after its own durable processing succeeds.
+  func pendingSourceObservations(limit: Int = 64) throws -> [AgentKnowledgeSourceObservation] {
+    try locked {
+      guard (1...64).contains(limit), let row = prepare("SELECT receipt,event_hash,encrypted_payload FROM knowledge_source_observations ORDER BY sequence LIMIT ?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { sqlite3_finalize(row) }; sqlite3_bind_int(row, 1, Int32(limit))
+      var result: [AgentKnowledgeSourceObservation] = []
+      while true {
+        let status = sqlite3_step(row)
+        if status == SQLITE_DONE { return result }
+        guard status == SQLITE_ROW, let receiptText = sqlite3_column_text(row, 0), let hashText = sqlite3_column_text(row, 1), let encrypted = blob(row, column: 2) else {
+          throw AgentKnowledgeDatabaseError.corruptRecord
+        }
+        let receipt = String(cString: receiptText), hash = String(cString: hashText)
+        guard UUID(uuidString: receipt) != nil else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        let event = try JSONDecoder.galaxySSI.decode(GlobalConversationEvent.self,
+          from: cipher.decrypt(encrypted, expectedPurpose: "knowledge-observation:\(receipt):\(hash)"))
+        guard keyedHash(event.id) == hash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        result.append(AgentKnowledgeSourceObservation(receipt: receipt, event: event))
+      }
+    }
+  }
+
+  func acknowledgeSourceObservations(receipts: [String]) throws {
+    try locked {
+      guard receipts.count <= 64, receipts.allSatisfy({ UUID(uuidString: $0) != nil }), execute("BEGIN IMMEDIATE") else { throw AgentKnowledgeDatabaseError.unavailable }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      for receipt in receipts { try sourceStatement("DELETE FROM knowledge_source_observations WHERE receipt=?", receipt) }
+      guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+      committed = true
+    }
+  }
+
+  private func enqueueSourceObservation(_ event: GlobalConversationEvent) throws {
+    let hash = keyedHash(event.id)
+    let receipt = UUID().uuidString.lowercased()
+    let encrypted = try cipher.encrypt(JSONEncoder.galaxySSI.encode(event), purpose: "knowledge-observation:\(receipt):\(hash)")
+    guard let size = Int32(exactly: encrypted.count),
+      let row = prepare("INSERT INTO knowledge_source_observations(receipt,event_hash,encrypted_payload) VALUES(?,?,?)") else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_finalize(row) }; bind(receipt, at: 1, to: row); bind(hash, at: 2, to: row)
+    guard encrypted.withUnsafeBytes({ sqlite3_bind_blob(row, 3, $0.baseAddress, size, Self.transient) }) == SQLITE_OK,
+      sqlite3_step(row) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+  }
+
+  private func sourceStatement(_ sql: String, _ hash: String) throws {
+    guard let row = prepare(sql) else { throw AgentKnowledgeDatabaseError.unavailable }
+    defer { sqlite3_finalize(row) }; bind(hash, at: 1, to: row)
+    guard sqlite3_step(row) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+  }
+
+  private func removeSourceRecord(_ item: AgentKnowledgeItem) throws {
+    let hash = keyedHash(item.id)
+    guard let row = prepare("SELECT model_hash,vector_key,encrypted_payload FROM knowledge_vectors WHERE item_hash=? ORDER BY model_hash,vector_key") else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_finalize(row) }; bind(hash, at: 1, to: row)
+    var previousModel = ""
+    while true {
+      let status = sqlite3_step(row)
+      if status == SQLITE_DONE { break }
+      guard status == SQLITE_ROW, let modelText = sqlite3_column_text(row, 0),
+        let keyText = sqlite3_column_text(row, 1), let encrypted = blob(row, column: 2) else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
+      let model = String(cString: modelText), key = String(cString: keyText)
+      let checkpoint = try AgentKnowledgeVectorStorage.decode(vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)))
+      guard checkpoint.itemId.utf8.elementsEqual(item.id.utf8), keyedHash(checkpoint.id) == key,
+        keyedHash(checkpoint.provenance.modelSHA256.lowercased()) == model else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      if model != previousModel {
+        guard publishVectorChange(operation: .removal, itemId: item.id, modelSHA256: checkpoint.provenance.modelSHA256,
+          sourceRevision: checkpoint.sourceRevision, chunkCount: 0, updatedAtMillis: item.updatedAtMillis) else {
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+        previousModel = model
+      }
+    }
+    try sourceStatement("DELETE FROM knowledge_vectors WHERE item_hash=?", hash)
+    try sourceStatement("DELETE FROM knowledge_vector_queue WHERE item_hash=?", hash)
+    try sourceStatement("DELETE FROM knowledge_fts WHERE item_hash=?", hash)
+    try sourceStatement("DELETE FROM knowledge_items WHERE item_hash=?", hash)
   }
 
   private func insert(_ item: AgentKnowledgeItem) -> Bool {
@@ -1790,6 +2005,8 @@ final class AgentKnowledgeDatabase {
       )
       """)
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_idx ON knowledge_items(source_hash, updated_at)")
+    _ = execute("CREATE INDEX IF NOT EXISTS knowledge_source_keypage_idx ON knowledge_items(source_hash, item_hash)")
+    _ = execute("CREATE TABLE IF NOT EXISTS knowledge_source_observations(sequence INTEGER PRIMARY KEY AUTOINCREMENT,receipt TEXT NOT NULL UNIQUE,event_hash TEXT NOT NULL,encrypted_payload BLOB NOT NULL)")
     _ = execute("CREATE INDEX IF NOT EXISTS knowledge_item_recent ON knowledge_items(updated_at DESC, item_hash ASC)")
     setupExternalPayloads()
     _ = execute("""
