@@ -155,7 +155,7 @@ internal object LocalModelWebToolRunner {
         val baseRegistry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null, browserDispatch?.managedOwner)
         val review = if (!managedTeam && !restoreSavedRequest && !hasAttachments && collaborationSourceMessageId == null &&
             progressIdentity?.contactId == "local-llm" && !PhoneAssistantTaskControl.isBound(turnId))
-            AgentConversationWindows.localTeamReview(conversationId, turnId) else null
+            AgentConversationWindows.modelTeamReview(conversationId, turnId) else null
         var session: LocalModelWebToolSession? = null
         val outcome = runCancellableLocalRequest(cancellationToken) {
             val journal = EncryptedAgentModelLoopJournal(context.applicationContext)

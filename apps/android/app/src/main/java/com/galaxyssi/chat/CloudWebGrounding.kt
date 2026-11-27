@@ -304,6 +304,9 @@ object CloudWebGrounding {
                 }
             }
 
+    internal fun invokesInlineTool(content: String, name: String): Boolean =
+        name in content && INLINE_INVOKE_START.findAll(content).any { it.groupValues[1].trim() == name }
+
     fun parseInlineToolCalls(content: String): List<InlineToolCall> {
         if (!containsInternalToolProtocol(content)) return emptyList()
         val calls = mutableListOf<InlineToolCall>()

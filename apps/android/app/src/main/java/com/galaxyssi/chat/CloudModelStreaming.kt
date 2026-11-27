@@ -70,7 +70,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         citationPreviewEnabled: Boolean = false,
         recoveryScope: AgentModelLoopScope? = null,
         collaborationEvidence: CollaborationCloudEvidence? = null,
-        supervisedControl: Boolean = false
+        supervisedControl: Boolean = false,
+        onTeamReviewAnswer: ((String) -> Unit)? = null
     ): Flow<ModelStreamEvent> = flow {
         lifetimes.run(requestId) {
             val imageSession = CloudImageAnnotationSession(context, images, requestId, collaborationEvidence)
@@ -89,7 +90,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
             val execute: suspend (AgentModelLoopRecords?) -> Unit = { records ->
                 streamConversationOwned(context, effectiveContact, turns, requestId, images, connectTimeoutMillis,
                     readTimeoutMillis, onToolEvent, effectiveTools, systemPromptOverride, citationPreviewEnabled,
-                    imageSession, records, textPolicy, publication, auditSink, trialProfile).collect { event ->
+                    imageSession, records, textPolicy, publication, auditSink, trialProfile,
+                    onTeamReviewAnswer.takeIf { effectiveTools && collaborationEvidence == null && images.isEmpty() }).collect { event ->
                     if (event is ModelStreamEvent.TextDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.ToolCallDelta) lastSequence = maxOf(lastSequence, event.sequence)
                     if (event is ModelStreamEvent.Completed) {
@@ -123,7 +125,8 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
         textPolicy: CloudConversationTextPolicy,
         publication: CollaborationPublicationRecovery?,
         auditSink: ModelCallAuditSink?,
-        trialProfile: CollaborationTrialProfile?
+        trialProfile: CollaborationTrialProfile?,
+        onTeamReviewAnswer: ((String) -> Unit)?
     ): Flow<ModelStreamEvent> = flow {
         var useStreaming = contact.optBoolean("cloud_streaming_enabled", true)
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
@@ -274,16 +277,21 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                 val roundStarted = System.nanoTime()
                 var firstActivity = false
                 val assembler = ToolCallDeltaAssembler()
+                var reviewAdvertised = false
+                val reviewFrames = onTeamReviewAnswer?.let { PinnedCloudTeamOffer.Frames() }
                 val inlineProtocolGuard = InlineToolProtocolStreamGuard()
                 var roundFailure: ModelStreamEvent.Failed? = null
                 var roundCompleted = false
                 val roundBudgetMillis = research.limits.modelTimeoutMillis
                 val finishedWithinBudget = withTimeoutOrNull(roundBudgetMillis) {
-                    val roundRequest = CloudResearchRequestMode.apply(prepared.toRequest(
+                    val ordinaryRequest = CloudResearchRequestMode.apply(prepared.toRequest(
                             roundId = roundId,
                             connectTimeoutMillis = connectTimeoutMillis,
                             readTimeoutMillis = minOf(readTimeoutMillis, roundBudgetMillis)
                         ), useStreaming).copy(auditSink = auditSink)
+                    val roundRequest = if (onTeamReviewAnswer != null && roundNumber == 0L && restored.isEmpty())
+                        PinnedCloudTeamOffer.advertise(ordinaryRequest) else ordinaryRequest
+                    reviewAdvertised = roundRequest !== ordinaryRequest
                     Log.i("GalaxySSIWebLatency", "model_round request=$requestId round=$roundNumber stage=request " +
                         "prepare_ms=${(System.nanoTime() - roundStarted) / 1_000_000L} input_chars=${roundRequest.bodyJson.length}")
                     Log.i("GalaxySSIWebLatency", "model_payload request=$requestId round=$roundNumber " +
@@ -328,6 +336,7 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                                 }
                             }
                             is ModelStreamEvent.ToolCallDelta -> {
+                                reviewFrames?.observe(event.payload)
                                 assembler.accept(event.payload)
                                 emit(
                                     ModelStreamEvent.ToolCallDelta(
@@ -417,6 +426,28 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                 }
                 val rawRoundText = inlineProtocolGuard.rawText()
+                val structuredCalls = assembler.completedCalls()
+                // Consume this terminal encoding before either inline-protocol parsing or tool dispatch.
+                if (onTeamReviewAnswer != null && structuredCalls.any { it.name == PinnedCloudTeamOffer.NAME }) {
+                    val answer = if (reviewAdvertised) PinnedCloudTeamOffer.answer(structuredCalls,
+                        reviewFrames?.singleNativeSlot == true, lastFinishReason, rawRoundText.isNotBlank()) else null
+                    if (answer != null && !AgentSupervisedControlContent.isProtocol(answer)) {
+                        // Never bypass the phone planner's completion/evidence checks.
+                        val result = if (textPolicy.supervisedControl) JSONObject().put("disposition", "respond")
+                            .put("final_response", answer).toString() else answer
+                        emit(ModelStreamEvent.TextDelta(requestId, globalSequence.incrementAndGet(), result,
+                            System.nanoTime() / 1_000_000L))
+                        onTeamReviewAnswer(answer)
+                    } else if (!emittedText || bufferRoundText) {
+                        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED)
+                        emit(ModelStreamEvent.Failed(requestId, ModelStreamError(PinnedCloudTeamOffer.INVALID,
+                            "Invalid structured final answer")))
+                        return@flow
+                    }
+                    AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                    emit(ModelStreamEvent.Completed(requestId, lastFinishReason, System.nanoTime() / 1_000_000L))
+                    return@flow
+                }
                 if (!allowExternalTools && publication == null) {
                     if (textPolicy.supervisedControl) {
                         // The phone plan parser, not the chat presentation filter, owns this payload.
@@ -449,7 +480,19 @@ object CloudConversationStreamEngine : CloudModelStreamClient {
                     )
                     return@flow
                 }
-                val structuredCalls = assembler.completedCalls()
+                // Only the invitation requires a native frame. Ordinary inline web tools keep their usual handling.
+                if (reviewAdvertised && structuredCalls.isEmpty() &&
+                    CloudWebGrounding.invokesInlineTool(rawRoundText, PinnedCloudTeamOffer.NAME)) {
+                    if (emittedText) {
+                        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                        emit(ModelStreamEvent.Completed(requestId, lastFinishReason, System.nanoTime() / 1_000_000L))
+                    } else {
+                        AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.FAILED)
+                        emit(ModelStreamEvent.Failed(requestId, ModelStreamError(PinnedCloudTeamOffer.INVALID,
+                            "No ordinary answer or native tool response")))
+                    }
+                    return@flow
+                }
                 val inlineCalls = CloudWebGrounding.parseInlineToolCalls(rawRoundText)
                 val usesInlineProtocol = structuredCalls.isEmpty() && inlineCalls.isNotEmpty()
                 val calls = if (usesInlineProtocol) {

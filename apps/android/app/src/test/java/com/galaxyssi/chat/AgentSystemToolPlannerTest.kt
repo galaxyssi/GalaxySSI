@@ -9,6 +9,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentSystemToolPlannerTest {
+    @Test fun ordinaryPinnedCloudChatCanInviteReviewThroughTheRealPhonePlannerOnlyOnTheFirstStep() {
+        val pin = mapOf("connector_id" to "direct-cloud", "manual_target_locked" to "true", "manual_model_id" to "chosen")
+        val action = AgentAction("cloud", AgentActionKind.CALL_CONNECTOR, "Cloud", AgentRisk.LOW,
+            AgentActionStatus.PENDING_CONFIRMATION, "Answer", parameters = pin, requiresConfirmation = false)
+        val req = request("Compare fixed and metered fares as pricing models.", ScreenContext("Fixture", pageTitle = "Chat"), emptyList())
+        assertTrue(AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(req.goal, req.conversationContext, action))
+        val first = AgentPhoneReasoningProviderPlanner(action).plan(req).actions.single()
+        assertTrue(first.isSupervisedProjectConnector())
+        assertTrue(PinnedCloudTeamAdmission.ordinary(first.parameters, "direct-cloud", "chosen"))
+        for (extra in listOf("supervised_iteration" to "1", SUPERVISED_PROJECT_REPAIR_KIND_PARAMETER to "format",
+            INTERNAL_TASK_EXECUTION_MODE to "execute", "depends_on" to "another", "use_outputs_from" to "previous")) {
+            assertFalse(PinnedCloudTeamAdmission.ordinary(first.parameters + extra, "direct-cloud", "chosen"))
+        }
+    }
+
     @Test fun attachmentsRemainPhoneOwnedWithoutCommandOrPathKeywords() {
         for (goal in listOf("Show it", "Here is the result I want", "Please identify this", "Render the revision")) {
             assertTrue(goal, AgentSupervisedProjectRoutingPolicy.requiresModelDirectedExecution(goal, hasAttachments = true))

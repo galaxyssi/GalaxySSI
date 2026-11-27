@@ -29,10 +29,12 @@ internal object AutoGoalTeamJobs {
     }
 
     fun start(context: Context, chat: AgentConversation, objective: String, route: GoalRoute,
-        sourceTurn: String? = null): Boolean = synchronized(lock) {
+        sourceTurn: String? = null, pinnedCloud: Boolean = false): Boolean = synchronized(lock) {
         val ctx = context.applicationContext
         require(objective.isNotBlank() && objective.length <= 4000)
         check(valid(ctx, chat.id))
+        if (pinnedCloud) check(sourceTurn != null && AutoGoalTeamCommand.allowsModelReview(objective) &&
+            !AgentTaskRequirementAnalyzer.analyze(objective).localOnly && PinnedCloudTeamAdmission.current(ctx, chat.id, route))
         val transcript = AgentTranscriptStore(ctx)
         if (sourceTurn != null) {
             val original = transcript.firstEntryForTurn(chat.id, sourceTurn)
@@ -46,6 +48,7 @@ internal object AutoGoalTeamJobs {
         val id = UUID.randomUUID().toString()
         val turn = sourceTurn ?: id
         val job = JSONObject().put("id", id).put("turn", turn).put("state", "queued").put("objective", objective).put("route", route.json())
+            .put("pinned_cloud", pinnedCloud)
         val request = OneTimeWorkRequestBuilder<AutoGoalTeamWorker>().setInputData(workDataOf("chat" to chat.id, "id" to id))
             .setConstraints(Constraints.Builder().apply {
                 if (route.target != "local-llm") setRequiredNetworkType(NetworkType.CONNECTED)
@@ -123,7 +126,9 @@ internal object AutoGoalTeamJobs {
                         try { awaitCancellation() } finally { call.cancel() }
                     }
                     try { withContext(Dispatchers.IO) {
-                        synchronized(lock) { check(!stopped() && own()?.optString("state") == "running" && valid(ctx, chat)) }
+                        synchronized(lock) { check(!stopped() && own()?.optString("state") == "running" &&
+                            valid(ctx, chat)) }
+                        if (job.optBoolean("pinned_cloud")) check(PinnedCloudTeamAdmission.current(ctx, chat, route))
                         val round = calls.incrementAndGet()
                         check(round <= 12)
                         ConversationGoalRunner.text(ctx, route, chat, id, round,

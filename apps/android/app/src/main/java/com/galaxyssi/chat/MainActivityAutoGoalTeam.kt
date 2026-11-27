@@ -3,30 +3,139 @@ package com.galaxyssi.chat
 import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Context
+import java.lang.ref.WeakReference
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
-// Only turn IDs cross threads; the original text and dialog belong to the submitting window.
+// No prompt or provider credentials cross threads with a review invitation.
 internal class TeamReviewDraft {
     @Volatile var revision = 0L
         private set
-    @Volatile var modelTurn: Pair<String, String>? = null
-        private set
+    private class Binding(val ids: Pair<String, String>, val pin: GoalRoute?, var supervised: SupervisedTeamReview? = null)
+    @Volatile private var binding: Binding? = null
     var dialog: AlertDialog? = null
 
-    fun invalidate() {
+    @Synchronized fun invalidate() {
         revision++
-        modelTurn = null
+        binding?.supervised?.forgetDelivery()
+        binding = null
         dialog?.dismiss()
         dialog = null
     }
 
-    fun bind(revisionAtSend: Long, chat: String, turn: String) {
-        if (revision == revisionAtSend) modelTurn = chat to turn
+    @Synchronized fun bind(revisionAtSend: Long, chat: String, turn: String, pin: GoalRoute? = null) {
+        if (revision == revisionAtSend) {
+            binding?.supervised?.forgetDelivery()
+            binding = Binding(chat to turn, pin)
+        }
     }
 
-    fun claim(chat: String, turn: String): Boolean {
-        if (modelTurn != (chat to turn)) return false
-        modelTurn = null
+    @Synchronized fun owns(chat: String, turn: String, pin: GoalRoute? = null): Boolean =
+        binding?.let { it.ids == (chat to turn) && it.pin == pin } == true
+
+    @Synchronized fun arm(chat: String, turn: String, pin: GoalRoute, answer: String, runtime: Any): Boolean {
+        val current = binding ?: return false
+        if (!owns(chat, turn, pin) || current.supervised != null || answer.isBlank()) return false
+        val ticket = SupervisedTeamReview(chat, turn, pin, answer, runtime)
+        if (!ticket.registerDelivery()) return false
+        current.supervised = ticket
         return true
+    }
+
+    @Synchronized fun takeFresh(response: AgentConnectorResponse, runtime: Any): SupervisedTeamReview? =
+        binding?.supervised?.takeIf { it.takeFresh(response, runtime) }
+
+    @Synchronized fun claim(chat: String, turn: String, pin: GoalRoute? = null, receipt: SupervisedTeamReview? = null): Boolean {
+        if (!owns(chat, turn, pin) || binding?.supervised !== receipt ||
+            (receipt != null && !receipt.persisted)) return false
+        binding = null
+        return true
+    }
+}
+
+internal class SupervisedTeamReview(val chat: String, val turn: String, val pin: GoalRoute, answer: String, runtime: Any) {
+    companion object {
+        private val awaitingDelivery = ConcurrentHashMap<String, SupervisedTeamReview>()
+        fun hasPendingDelivery(turn: String) = awaitingDelivery.containsKey(turn)
+        fun markDelivery(response: AgentConnectorResponse): Boolean =
+            awaitingDelivery[response.turnId]?.markFresh(response) == true
+    }
+
+    fun registerDelivery() = awaitingDelivery.putIfAbsent(turn, this) == null
+    fun forgetDelivery() { awaitingDelivery.remove(turn, this) }
+    private val origin = WeakReference(runtime)
+    private val answerDigest = digest(answer)
+    private fun digest(body: String) = MessageDigest.getInstance("SHA-256").digest(body.toByteArray(Charsets.UTF_8))
+    private fun matches(body: String) = answerDigest.contentEquals(digest(body))
+    private var fresh: WeakReference<AgentConnectorResponse>? = null
+    private var waitingConnector: Pair<Long, String>? = null
+    @Volatile var persisted = false
+        private set
+
+    @Synchronized private fun markFresh(response: AgentConnectorResponse): Boolean {
+        if (fresh != null || response.conversationId != chat || response.turnId != turn ||
+            response.executionContactId != pin.target || response.sourceMessageId <= 0 || !response.success ||
+            response.remoteFailure || response.deliveryFailureCode.isNotBlank() || response.richOutputJson.isNotBlank()) return false
+        fresh = WeakReference(response)
+        forgetDelivery()
+        return true
+    }
+
+    @Synchronized fun takeFresh(response: AgentConnectorResponse, runtime: Any): Boolean {
+        if (fresh?.get() !== response) return false
+        fresh?.clear()
+        return origin.get() === runtime
+    }
+
+    fun awaiting(phase: AgentPhase, result: AgentActionResult?, action: AgentAction?, source: Long): Boolean {
+        if (action == null || result == null) return false
+        if (phase != AgentPhase.WAITING_RESPONSE || result.metadata["awaiting_response"] != "true" ||
+            result.metadata["source_message_id"]?.toLongOrNull() != source || result.actionId != action.id ||
+            !originalConnector(action)) return false
+        waitingConnector = source to action.id
+        return true
+    }
+
+    private fun originalConnector(action: AgentAction) = action.isSupervisedProjectConnector() &&
+        PinnedCloudTeamAdmission.ordinary(action.parameters, pin.target, pin.model)
+
+    fun completed(state: AgentUiState?, source: Long): Boolean {
+        val result = state?.lastActionResult ?: return false
+        val meta = result.metadata
+        if (state.phase != AgentPhase.COMPLETED || !result.success || !state.plan?.artifactRichOutputJson.isNullOrBlank() ||
+            !meta["rich_output"].isNullOrBlank() || !matches(result.message)) return false
+        if (meta["supervised_direct_response"] == "true") {
+            return meta["source_message_id"]?.toLongOrNull() == source && meta["awaiting_response"] == "false" &&
+                meta["recovered_after_timeout"] == "false"
+        }
+
+        // An executable completion replaces the connector result with the local marker's result.
+        // The connector moves to actionHistory; the marker does not inherit its source receipt.
+        val plan = state.plan ?: return false
+        val connector = plan.actionHistory.singleOrNull() ?: return false
+        val marker = plan.actions.singleOrNull() ?: return false
+        return waitingConnector == (source to connector.id) && plan.plannerProfile == PHONE_SUPERVISED_PROJECT_PLANNER_PROFILE &&
+            connector.status == AgentActionStatus.COMPLETED && originalConnector(connector) &&
+            marker.isTaskCompleteMarker() && marker.status == AgentActionStatus.COMPLETED && marker.id == result.actionId &&
+            marker.description == result.message && marker.result == result.message &&
+            meta["awaiting_response"] != "true" && meta["recovered_after_timeout"] != "true" &&
+            meta["action_effect_replayed"] != "true" && meta["cancelled"] != "true" &&
+            "source_message_id" !in meta && "supervised_direct_response" !in meta
+    }
+
+    fun finalized(original: AgentPlan?, accepted: AgentUiState?, finalized: AgentUiState, source: Long): Boolean {
+        val acceptedPlan = accepted?.plan ?: return false
+        val finalPlan = finalized.plan ?: return false
+        if (original == null || original.planId != acceptedPlan.planId || accepted.sessionId != finalized.sessionId ||
+            acceptedPlan.planId != finalPlan.planId || acceptedPlan.revision != finalPlan.revision ||
+            accepted.lastActionResult?.actionId != finalized.lastActionResult?.actionId) return false
+        val marker = acceptedPlan.actions.singleOrNull()?.isTaskCompleteMarker() == true
+        return (!marker || acceptedPlan.revision == original.revision + 1) &&
+            completed(accepted, source) && completed(finalized, source)
+    }
+
+    fun finalBody(writtenChat: String, writtenTurn: String, body: String) {
+        persisted = writtenChat == chat && writtenTurn == turn && matches(body)
     }
 }
 
@@ -51,20 +160,23 @@ internal fun MainActivity.handleAutoGoalTeam(chat: AgentConversation, text: Stri
     return true
 }
 
-internal fun MainActivity.offerModelTeamReview(chatId: String, turn: String) {
-    if (!conversationWindow.teamReview.claim(chatId, turn)) return
+internal fun MainActivity.offerModelTeamReview(chatId: String, turn: String, pin: GoalRoute? = null,
+    receipt: SupervisedTeamReview? = null, cancellation: AgentTaskCancellationSource? = null) {
+    if (!conversationWindow.teamReview.claim(chatId, turn, pin, receipt)) return
     val chat = agentTranscriptStore.activeConversation()
     val text = agentTurnGoals[turn] ?: return
     if (chat.id != chatId || !AutoGoalTeamCommand.allowsModelReview(text)) return
-    reviewAutoGoalTeam(chat, AutoGoalTeamCommand.Start(text), "", hasExtras = false, fromModel = true, sourceTurn = turn)
+    reviewAutoGoalTeam(chat, AutoGoalTeamCommand.Start(text), "", hasExtras = false, fromModel = true,
+        sourceTurn = turn, pin = pin, cancellation = cancellation)
 }
 
 private fun MainActivity.reviewAutoGoalTeam(chat: AgentConversation, command: AutoGoalTeamCommand,
-    draftText: String, hasExtras: Boolean, fromModel: Boolean, sourceTurn: String? = null) {
+    draftText: String, hasExtras: Boolean, fromModel: Boolean, sourceTurn: String? = null, pin: GoalRoute? = null,
+    cancellation: AgentTaskCancellationSource? = null) {
     val draft = conversationWindow.teamReview
     val submitted = draft.revision
     val ctx = applicationContext
-    fun modelWindowValid() = !fromModel || (draft.revision == submitted &&
+    fun modelWindowValid() = !fromModel || (draft.revision == submitted && cancellation?.isCancellationRequested != true &&
         getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == false)
     fun inChat() = !isFinishing && !isDestroyed && !runtimePlaintextCleared && activeMainTab == PAGE_AGENT &&
         agentTranscriptStore.activeConversation().id == chat.id &&
@@ -123,7 +235,9 @@ private fun MainActivity.reviewAutoGoalTeam(chat: AgentConversation, command: Au
                 runOnUiThread { notice(R.string.auto_goal_team_health) }
                 return@background
             }
-            val routes = teamRoutes(ctx, chat.id)
+            fun routesNow() = if (pin == null) teamRoutes(ctx, chat.id)
+                else listOf(pin).filter { PinnedCloudTeamAdmission.current(ctx, chat.id, it) }
+            val routes = routesNow()
             runOnUiThread {
                 if (!ready()) return@runOnUiThread
                 fun host(route: GoalRoute) = if (route.target == "local-llm") getString(R.string.auto_goal_team_device) else route.host
@@ -140,12 +254,13 @@ private fun MainActivity.reviewAutoGoalTeam(chat: AgentConversation, command: Au
                                     return@dispatch
                                 }
                                 // Compare the endpoint fingerprint too, not just the displayed model/host.
-                                if (route !in teamRoutes(ctx, chat.id)) {
+                                if (route !in routesNow()) {
                                     runOnUiThread { notice(R.string.auto_goal_team_route_changed) }
                                     return@dispatch
                                 }
                                 if (!modelWindowValid()) return@dispatch
-                                completed(AutoGoalTeamJobs.start(ctx, current, command.objective, route, sourceTurn), R.string.auto_goal_team_active)
+                                completed(AutoGoalTeamJobs.start(ctx, current, command.objective, route, sourceTurn,
+                                    pinnedCloud = pin != null), R.string.auto_goal_team_active)
                             }
                         })
                 }

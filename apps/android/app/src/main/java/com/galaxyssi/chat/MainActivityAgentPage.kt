@@ -1413,7 +1413,8 @@ internal fun MainActivity.submitAgentGoal(
     val turnId = healthCareSubmission?.grant?.turnId ?: UUID.randomUUID().toString()
     if (healthCareSubmission != null && (healthCareSubmission.grant.conversationId != conversation.id ||
             healthCareSubmission.question != goal)) return
-    AgentTurnReceipt.begin(this, conversation.id, turnId, AgentModelSelectionSettings.selection(this, conversation.id),
+    val submittedModel = AgentModelSelectionSettings.selection(this, conversation.id)
+    AgentTurnReceipt.begin(this, conversation.id, turnId, submittedModel,
         voice = voiceTraceId.isNotBlank())
     onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
     if (fileReadSource != null) AgentTurnReceipt.bindFileRead(this, fileReadSource, turnId)
@@ -1538,6 +1539,9 @@ internal fun MainActivity.submitAgentGoal(
             HealthCareDiscussionPolicy.historyForGrant(agentTranscriptStore.context(conversation.id, excludeTurnId = turnId),
                 approved.grant, care::discussionGrant)
         } }
+        val reviewPin = if (modelReviewRevision != null && submittedModel.mode == AgentModelSelectionMode.MANUAL &&
+            !AgentTaskRequirementAnalyzer.analyze(goal).localOnly)
+            runCatching { PinnedCloudTeamAdmission.selectedRoute(applicationContext, submittedModel) }.getOrNull() else null
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (isSubmissionCancelled()) return@runOnUiThread
@@ -1583,7 +1587,7 @@ internal fun MainActivity.submitAgentGoal(
                 val priorReference = priorVisualReference.takeIf { contentGoal == baseGoal }
                 if (contentAttachments.isEmpty() && priorReference == null) {
                     if (modelReviewRevision != null && contentGoal == goal && priorVisualReference == null) {
-                        conversationWindow.teamReview.bind(modelReviewRevision, conversation.id, turnId)
+                        conversationWindow.teamReview.bind(modelReviewRevision, conversation.id, turnId, reviewPin)
                     }
                     continueAgentGoalSubmission(
                         goal = contentGoal,
