@@ -16,6 +16,8 @@ function revocation(source) {
   return source.slice(begin, end);
 }
 function retainedPairingServices(source) {
+  const observation = path.join(__dirname, 'check-observation-job-lifecycle-scope.cjs');
+  if (fs.existsSync(observation)) source = require(observation).retainedServices(source);
   const learning = path.join(__dirname, 'check-learning-outbox-scope.cjs');
   if (fs.existsSync(learning)) source = require(learning).retainedServices(source);
   if (!source.includes('func revokeDesktopPairing(desktopId: String) async -> Bool')) return source;
