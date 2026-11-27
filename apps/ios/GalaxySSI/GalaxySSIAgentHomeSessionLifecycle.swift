@@ -29,11 +29,19 @@ extension AgentHomeView {
     transcriptContentMinY = 0
   }
 
+  var auditRefreshIdentity: String? {
+    guard homeVisible, scenePhase == .active, store.canReadAgentTranscript,
+          !transcriptRuntimeCleared, !store.profile.identityFingerprint.isBlank else { return nil }
+    return store.profile.identityFingerprint
+  }
+
+  var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] {
+    homeAudit.records(for: auditRefreshIdentity)
+  }
+
   func refreshAgentRuntimeAuditRecords() {
-    agentRuntimeAuditRecords = AgentNativeToolDefaultStores
-      .makePersistentStores()
-      .auditStore
-      .list(limit: 12, toolId: "", status: nil)
+    guard let identity = auditRefreshIdentity else { homeAudit.invalidate(); return }
+    homeAudit.refresh(identity: identity)
   }
 
   func refreshAgentRouteState() {
@@ -82,6 +90,7 @@ extension AgentHomeView {
   }
 
   func clearAgentRuntimePlaintextPresentation() {
+    homeAudit.invalidate()
     coordinator.clearSupervisedAnswerPreviews()
     composerSubmissionID = nil
     invalidateVoiceAppAnchor()
