@@ -122,14 +122,14 @@ test("stale, displaced and editable native contexts cannot save the previous att
   }
 });
 
-function rendererContext(attachmentIndex, files, button = 2) {
+function rendererContext(attachmentIndex, files, button = 2, storedRoute = "route") {
   let handler, payload;
   const row = { dataset: { peerMessageId: "message" } };
   const attachment = attachmentIndex === null ? null : { dataset: { peerAttachmentIndex: String(attachmentIndex) } };
   const context = {
     state: { activePeerRouteId: "route" },
     elements: { messages: { addEventListener: (_name, listener) => { handler = listener; } } },
-    peerMessagesFor: () => [{ message_id: "message", attachments: files }], t: (value) => value,
+    peerMessagesFor: () => [{ message_id: "message", client_route_id: storedRoute, attachments: files }], t: (value) => value,
     window: { galaxyssi: { preparePeerMessageContext: (value) => { payload = value; } } }
   };
   const start = workspace.indexOf('elements.messages.addEventListener("pointerdown"');
@@ -145,6 +145,7 @@ test("renderer forwards the clicked file rather than the first attachment", () =
   assert.equal(payload.attachmentAvailable, true);
   assert.equal(payload.messageId, "message");
   assert.equal(payload.routeId, "route");
+  assert.equal(rendererContext(0, [{ name: "old.pdf" }], 2, "retired-route").routeId, "retired-route");
 });
 
 test("renderer handles message whitespace, missing files, unavailable files and left click", () => {

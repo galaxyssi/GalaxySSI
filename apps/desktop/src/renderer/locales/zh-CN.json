@@ -324,7 +324,7 @@
 , "The recording exceeds two minutes. Please use a shorter recording.": "录音超过两分钟，请缩短后重新录音。"
 , "The recording is too large. Please use a shorter recording.": "录音数据过大，请缩短后重新录音。"
 , "Local speech recognition failed. Please try again.": "本机语音识别失败，请重试。"
-, "Revoke this phone? It must scan the QR code again.": "撤销这台手机吗？撤销后必须重新扫描二维码。"
+, "Unpair this phone and keep chats on this computer? Update the phone first to keep its copy.": "解除手机配对并保留电脑上的聊天记录？请先更新手机端，以保留手机上的副本。"
 , "Capabilities": "能力"
 , "Long-term memory, Skills, and MCP": "长期记忆、技能与 MCP"
 , "Memory": "记忆"

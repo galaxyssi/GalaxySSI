@@ -314,10 +314,12 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.assertEqual("inbound", messages[0]["direction"])
 
     def test_client_revocation_cleans_only_the_calling_phone(self):
+        peer_store = PeerChatStore(Path(self.temp.name) / "peer-chat.db")
+        message = peer_store.append(client_route_id=self.first["client_route_id"], direction="inbound", content="keep")
         with (
-            patch.object(mqtt_bridge, "forget_paired_client_transport", return_value={
-                "deleted_peer_messages": 2,
-            }) as cleanup,
+            patch("peer_chat_store.peer_chat_store", return_value=peer_store),
+            patch.object(mqtt_bridge, "forget_paired_client_transport", wraps=mqtt_bridge.forget_paired_client_transport) as cleanup,
+            patch.object(mqtt_bridge, "discard_route", return_value={}),
             patch.object(mqtt_bridge, "remove_peer_signal_session") as remove_session,
             patch.object(mqtt_bridge, "reconcile_mqtt_subscriptions", return_value={
                 "ok": True,
@@ -342,6 +344,7 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         )
         reconcile.assert_called_once_with(self.mqtt)
         self.assertIsNone(pairing_state.get_client(self.first["client_route_id"]))
+        self.assertEqual("keep", peer_store.get_message(message["message_id"])["content"])
         self.assertIsNotNone(pairing_state.get_client(self.second["client_route_id"]))
         self.assertEqual([], self.agent_starts)
 

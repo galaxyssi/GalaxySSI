@@ -793,8 +793,10 @@ function peerClientName(client) {
 }
 
 function peerMessagesFor(routeId = state.activePeerRouteId) {
+  const client = pairedClients().find((item) => item.client_route_id === routeId);
+  const routes = new Set([routeId, ...(client?.history_route_ids || [])]);
   return state.peerMessages
-    .filter((message) => message.client_route_id === routeId)
+    .filter((message) => routes.has(message.client_route_id))
     .sort((a, b) => Number(a.created_at_ms) - Number(b.created_at_ms));
 }
 
@@ -4774,7 +4776,7 @@ async function deleteConversationIds(conversationIds) {
         ? Number(response?.deleted_messages || 0)
         : Array.isArray(response?.deleted_task_ids) ? response.deleted_task_ids.length : 0;
       if (deletedCount <= 0) throw new Error(`Conversation was not deleted: ${id}`);
-      return { kind: group.kind, deletedCount };
+      return { kind: group.kind, deletedCount, routes: response?.deleted_route_ids || [id] };
     }));
     const failedIds = [];
     const deletedIds = [];
@@ -4786,7 +4788,8 @@ async function deleteConversationIds(conversationIds) {
       deletedIds.push(id);
       state.pinnedConversationIds.delete(id);
       if (groupsById.get(id)?.kind === "device") {
-        state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== id);
+        const removed = new Set(results[index].value.routes);
+        state.peerMessages = state.peerMessages.filter((message) => !removed.has(message.client_route_id));
         if (state.activePeerRouteId === id) {
           state.activePeerRouteId = "";
           document.querySelector("#agentApp").classList.remove("peer-mode");
@@ -5397,7 +5400,7 @@ function bindEvents() {
     const file = Number.isSafeInteger(attachmentIndex) && attachmentIndex >= 0
       ? message.attachments?.[attachmentIndex] : null;
     window.galaxyssi.preparePeerMessageContext({
-      routeId: state.activePeerRouteId,
+      routeId: message.client_route_id,
       messageId: message.message_id,
       copyText: message.content || (message.attachments || []).map((file) => file.name).join("\n"),
       copyLabel: t("Copy"),
@@ -5506,10 +5509,9 @@ function bindEvents() {
       return;
     }
     const revokeButton = event.target.closest("[data-revoke-client]");
-    if (!revokeButton || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;
+    if (!revokeButton || !window.confirm(t("Unpair this phone and keep chats on this computer? Update the phone first to keep its copy."))) return;
     const revokedRouteId = revokeButton.dataset.revokeClient;
     state.pairing = await window.galaxyssi.clearPairing(revokedRouteId);
-    state.peerMessages = state.peerMessages.filter((message) => message.client_route_id !== revokedRouteId);
     if (state.activePeerRouteId === revokedRouteId) {
       state.activePeerRouteId = "";
       document.querySelector("#agentApp").classList.remove("peer-mode");

@@ -28,6 +28,12 @@ internal object DesktopPairingLifecycle {
         contact.remove(HISTORY_ONLY)
     }
 
+    fun canRestoreHistory(contact: JSONObject, pairedFingerprint: String?): Boolean {
+        if (!isHistoryOnly(contact)) return true
+        val original = contact.optString("desktop_fingerprint").ifBlank { contact.optString("identity_fingerprint") }
+        return original.isNotBlank() && original.equals(pairedFingerprint, ignoreCase = true)
+    }
+
     fun belongsToDesktop(contact: JSONObject, desktopId: String): Boolean {
         val cleanDesktopId = desktopId.trim()
         if (cleanDesktopId.isBlank()) return false
@@ -45,11 +51,7 @@ internal object DesktopPairingLifecycle {
         val cleanDesktopId = desktopId.trim()
         if (cleanDesktopId.isBlank()) return DesktopPairingRemoval("", emptySet())
 
-        val removedContactIds = AppStore.deleteDesktopConnector(
-            appContext,
-            cleanDesktopId,
-            deleteMessages = true
-        )
+        val removedContactIds = AppStore.archiveDesktopContacts(appContext, cleanDesktopId)
         removedContactIds.forEach { contactId ->
             CloudConversationContextStore.removeContact(appContext, contactId)
         }

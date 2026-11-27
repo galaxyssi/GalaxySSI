@@ -43,6 +43,30 @@ class PairingStateDurabilityTests(unittest.TestCase):
         pairing_state._last_good_state = None
         pairing_state._last_good_path = ""
 
+    def test_repair_restores_local_messages_without_reusing_transport(self):
+        from peer_chat_store import PeerChatStore
+
+        store = PeerChatStore(self.registry.parent / "test-chat.db")
+        old = self._pair_client()["client_route_id"]
+        message = store.append(client_route_id=old, direction="inbound", content="fixture")
+        pairing_state.clear_pairing_state(old)
+        self._simulate_restart()
+        self.assertIsNone(pairing_state.get_client(old))
+        impostor = "b" * 64
+        def pair_other(route):
+            return pairing_state.record_pairing_success(impostor, "other", client_route_id=route,
+                display_name="Test phone", link_secret=new_link_secret(), local_identity_fingerprint="d" * 64)
+        with self.assertRaisesRegex(ValueError, "archived identity"):
+            pair_other(old)
+        other_route = pair_other(new_route_id())["client_route_id"]
+        self.assertNotIn(old, pairing_state.history_routes(other_route))
+        new = self._pair_client()["client_route_id"]
+        self.assertNotEqual(old, new)
+        active = next(c for c in pairing_state.pairing_status()["clients"] if c["client_route_id"] == new)
+        visible = [row for route in active["history_route_ids"] for row in store.list_messages(route)]
+        self.assertEqual([message["message_id"]], [row["message_id"] for row in visible])
+
+
     def _persisted_state(self) -> dict:
         return read_secure_json(
             self.registry,
