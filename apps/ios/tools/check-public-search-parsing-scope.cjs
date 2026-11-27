@@ -6,7 +6,7 @@ const android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const base = '492bebe922013c2f707b38e4ddc849a655deba68';
 const git = (...args) => cp.execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 16_000_000 });
 const read = file => require('./check-web-fallback-scope.cjs').retainedFallbackFile(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+  require('./check-web-network-assurance-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')));
 const swift = name => 'apps/ios/GalaxySSI/' + name + '.swift';
 const parser = read(swift('AgentIOSPublicSearchParser'));
 for (const token of ['import SwiftSoup', 'SwiftSoup.parse(source, baseURL)',
