@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 
 /** The selected on-device model chooses and observes tools without delegating its reasoning. */
 internal class LocalModelWebToolSession(
@@ -23,8 +24,10 @@ internal class LocalModelWebToolSession(
 
     val lastInference: LocalModelInferenceResult?
         get() = lastInferenceRef.get()
+    var proposedTeamReview = false
+        private set
 
-    fun adapter(catalog: List<AgentNativeToolDescriptor>): AgentModelAdapter = AgentModelAdapter { request ->
+    fun adapter(catalog: List<AgentNativeToolDescriptor>, offerTeamReview: Boolean = false): AgentModelAdapter = AgentModelAdapter { request ->
         if (request.cancellationToken.isCancellationRequested) {
             throw CancellationException("Local model web request cancelled")
         }
@@ -38,11 +41,12 @@ internal class LocalModelWebToolSession(
                 maximumMessageCharacters = 24_000
             )
         )
+        val allowReview = offerTeamReview && request.round == 1
         val inference = infer(
-            systemPrompt = LocalModelWebToolProtocol.systemPrompt(catalog),
+            systemPrompt = LocalModelWebToolProtocol.systemPrompt(catalog, allowReview),
             userPrompt = LocalModelWebToolProtocol.turnPrompt(compacted.messages)
         )
-        var response = LocalModelWebToolProtocol.decode(inference.text, inference)
+        var response = LocalModelWebToolProtocol.decode(inference.text, inference, allowReview)
         if (response.toolCalls.isEmpty()) {
             val encodedEvidence = LocalModelWebToolProtocol.encodedEvidence(request.messages)
             val validation = AgentWebEvidenceVerification.validateAnswer(
@@ -74,6 +78,7 @@ internal class LocalModelWebToolSession(
                 }
             }
         }
+        proposedTeamReview = response.providerMetadata[LocalModelWebToolProtocol.TEAM_REVIEW] == true
         AgentTurnReceipt.localModel(appContext, request, response.providerMetadata["profile_id"])
         response
     }
@@ -148,6 +153,9 @@ internal object LocalModelWebToolRunner {
             browserStore.managedState(browserDispatch) != AgentManagedBrowserState.READY)
             throw AgentModelLoopRecoveryException("managed_browser_not_ready_on_restore")
         val baseRegistry = registry(context, conversationId, turnId, collaborationSourceMessageId, browserDispatch != null, browserDispatch?.managedOwner)
+        val review = if (!managedTeam && !restoreSavedRequest && !hasAttachments && collaborationSourceMessageId == null &&
+            progressIdentity?.contactId == "local-llm" && !PhoneAssistantTaskControl.isBound(turnId))
+            AgentConversationWindows.localTeamReview(conversationId, turnId) else null
         var session: LocalModelWebToolSession? = null
         val outcome = runCancellableLocalRequest(cancellationToken) {
             val journal = EncryptedAgentModelLoopJournal(context.applicationContext)
@@ -180,7 +188,7 @@ internal object LocalModelWebToolRunner {
             val localSession = LocalModelWebToolSession(context, saved.preferredProfileId,
                 saved.hasAttachments, saved.scope.task).also { session = it }
             AgentModelToolLoop(
-                modelAdapter = localSession.adapter(availableCatalog.descriptors),
+                modelAdapter = localSession.adapter(availableCatalog.descriptors, offerTeamReview = review != null),
                 toolRegistry = registry,
                 disclosedToolManifestJson = catalog.manifest.json,
                 disclosedToolManifestSha256 = catalog.manifest.sha256,
@@ -201,6 +209,7 @@ internal object LocalModelWebToolRunner {
         check(outcome.status == AgentModelToolLoopStatus.COMPLETED && outcome.assistantText.isNotBlank()) {
             outcome.error?.message ?: "The local model web loop did not complete"
         }
+        if (session?.proposedTeamReview == true && !cancellationToken.isCancellationRequested) review?.invoke()
         return LocalModelWebToolCompletion(outcome.assistantText, session?.lastInference)
     }
 
@@ -243,7 +252,9 @@ internal object LocalModelWebToolProtocol {
         "Rewrite the complete answer using only the supplied verified web evidence. " +
             "Return normal user-facing prose with Markdown source links. Do not return JSON or call tools."
 
-    fun systemPrompt(catalog: List<AgentNativeToolDescriptor>): String = buildString {
+    const val TEAM_REVIEW = "propose_team_review"
+
+    fun systemPrompt(catalog: List<AgentNativeToolDescriptor>, offerTeamReview: Boolean = false): String = buildString {
         append("You are the currently selected GalaxySSI on-device model. You decide whether public web evidence ")
         append("is needed; the host does not decide from keywords. For stable knowledge or ordinary conversation, ")
         append("answer without tools. For changing, unknown, disputed, or source-dependent claims, call the most ")
@@ -291,6 +302,13 @@ internal object LocalModelWebToolProtocol {
         append("{\"answer\":\"final user-facing answer\",\"tool_calls\":[]} or ")
         append("{\"answer\":\"optional brief progress\",\"tool_calls\":[")
         append("{\"id\":\"unique-call-id\",\"name\":\"exact tool id\",\"arguments\":{}}]}.\n")
+        if (offerTeamReview) {
+            append("For a self-contained complex textual objective where independent approaches would materially help, ")
+            append("you may add \"$TEAM_REVIEW\":true to the normal final answer object with empty tool_calls. ")
+            append("Answer the request normally even if the user declines. Never call a tool to propose a team. ")
+            append("The phone alone offers review; nothing has started. Omit for simple, personal, context-dependent ")
+            append("or explicitly solo requests. Do not supply an objective, recipient or budget.\n")
+        }
         append("Available tools (exact IDs and input contracts):\n")
         if (catalog.any { it.id == AgentToolDiscoveryTools.ID }) {
             append("This is the initial readiness snapshot for this execution slice, not a permanent capability restriction. ")
@@ -306,10 +324,20 @@ internal object LocalModelWebToolProtocol {
         )
     )
 
-    fun decode(raw: String, inference: LocalModelInferenceResult): AgentModelResponse {
+    fun decode(raw: String, inference: LocalModelInferenceResult, offerTeamReview: Boolean = false): AgentModelResponse {
         val clean = raw.afterThinking().trim()
-        val root = extractJsonObject(clean)
-        val calls = root?.optJSONArray("tool_calls")?.let(::decodeCalls).orEmpty()
+        // Do not interpret a quoted example, fenced snippet or substring of prose as a UI request.
+        val envelope = if (offerTeamReview && TEAM_REVIEW in raw) runCatching {
+            val text = raw.trim().let { if (it.startsWith("<think>")) it.substringAfter("</think>").trim() else it }
+            val json = JSONTokener(text)
+            (json.nextValue() as? JSONObject)?.takeIf { text.startsWith('{') && json.nextClean() == '\u0000' }
+        }.getOrNull() else null
+        val root = envelope ?: extractJsonObject(clean)
+        // A proposal cannot smuggle sibling tool calls, even in a malformed envelope.
+        val reviewEnvelope = root?.has(TEAM_REVIEW) == true && root.opt(TEAM_REVIEW) != false
+        val calls = if (reviewEnvelope) emptyList() else root?.optJSONArray("tool_calls")?.let(::decodeCalls).orEmpty()
+        val proposed = envelope != null && envelope.length() == 3 && envelope.opt(TEAM_REVIEW) == true &&
+            (envelope.opt("answer") as? String)?.isNotBlank() == true && envelope.optJSONArray("tool_calls")?.length() == 0
         val answer = root?.optString("answer").orEmpty().trim().ifBlank {
             root?.optString("message").orEmpty().trim()
         }.ifBlank {
@@ -331,7 +359,7 @@ internal object LocalModelWebToolProtocol {
                 "backend" to inference.backend,
                 "elapsed_ms" to inference.elapsedMillis,
                 "decode_tokens_per_second" to inference.decodeTokensPerSecond
-            )
+            ).also { if (proposed) it[TEAM_REVIEW] = true }
         )
     }
 
