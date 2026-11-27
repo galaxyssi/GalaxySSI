@@ -66,7 +66,16 @@ The focused JavaScript check compares full retained policy/pool/fixture sources 
 the parent increment. It verifies default native observer wiring, owner fences,
 reset scope, epoch assignment/receipt gating and unchanged socket/durable/receipt
 kernels. Prior diagnostic and lifecycle assertions remain, with declared
-normalization only. These checks are not native runtime or network evidence.
+normalization only. After main sync to `c1e1529ed`, coordinator/resources/project
+comparisons retain that exact main, including #4596; those inherited features
+are not new MQTT work. These checks are not native runtime or network evidence.
+
+The three MQTT source guards, interactive-request-hedge and check:ios pass.
+Five older standalone whole-file checks (active-native-observation,
+native-delivery-acceptance, connector-acceptance-evidence, desktop-probe-owner and
+phone-local-model-resource) now fail. The same failures were reproduced using
+only main's original scripts and source through a read-only baseline loader.
+They are not counted as passes; their original assertions are not disabled.
 
 NWPath comparison follows [Apple's Network NWPath API](https://developer.apple.com/documentation/network/nwpath),
 not SSID polling or the deprecated NetworkExtension NWPath class. Real callback

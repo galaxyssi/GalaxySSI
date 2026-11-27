@@ -1,7 +1,7 @@
 // Source contracts only. No Swift compile, native network, SwiftUI render or XCTest execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '13917b93ccad3e3dd8511229dc0cac1a86c514df', app = 'apps/ios/GalaxySSI/';
-const syncedMain = '26259d6503ef4b60ce8eb2346a1bbb2b85bbf12d';
+const syncedMain = 'c1e1529ed1160a34564eb57606dfd209fc7a61ba';
 const read = file => require('./check-mqtt-network-metrics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = (file, ref = base) => cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
@@ -74,7 +74,7 @@ function validate() {
     'Task.sleep(nanoseconds: 1_000_000_000)', 'stats.samples > 0', 'stats.samples >= 30, let value = stats.p95',
     'path.pendingSubscriptions', 'path.queuedPublishes', 'path.inflightPublishes', '.fixedSize(horizontal: false, vertical: true)']);
   const stringsFile = app + 'zh-Hans.lproj/Localizable.strings', strings = read(stringsFile);
-  assert.equal(retained(stringsFile, strings), old(stringsFile), 'Append only diagnostic resource keys');
+  assert.equal(retained(stringsFile, strings), old(stringsFile, syncedMain), 'Append only diagnostic resource keys');
   const keys = [...view.matchAll(/t\("(mqtt_diagnostics_[^"]+)"/g)].map(m => m[1]);
   assert.equal(new Set(keys).size, 14);
   for (const key of new Set(keys)) assert.equal(strings.split('"' + key + '" =').length, 2, key);
@@ -95,12 +95,15 @@ function validate() {
   for (const name of ['check-mqtt-network-lifecycle-scope.cjs', 'check-active-native-observation-scope.cjs']) {
     const file = 'apps/ios/tools/' + name;
     let expected = old(file, name.includes('active-native') ? syncedMain : base).replace('const read = file => ' + rawRead + ';', 'const read = file => ' + normalizer + ';');
+    if (name.includes('network-lifecycle')) expected = expected
+      .replace("const old = file => cp.execFileSync('git', ['show', base + ':' + file]", "const old = (file, ref = base) => cp.execFileSync('git', ['show', ref + ':' + file]")
+      .replace("old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), 'No deployment, source registration or version churn'", "old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'c1e1529ed1160a34564eb57606dfd209fc7a61ba'), 'Retain latest main deployment, source registration and version'");
     if (name.includes('active-native')) expected = expected.replace('function retained(file, source) {\n',
       "function retained(file, source) {\n  source = require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, source);\n");
     assert.equal(read(file), expected, 'Retain earlier checks beyond declared diagnostics: ' + name);
   }
   assert.equal(read('apps/ios/tools/check-desktop-probe-owner-scope.cjs'), old('apps/ios/tools/check-desktop-probe-owner-scope.cjs', syncedMain));
-  assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'));
+  assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj', syncedMain));
   console.log('Actual owner-fenced per-path MQTT diagnostics, localized foreground presentation, unchanged delivery kernels and nine authored-only observational fixtures passed source checks; no native/UI acceptance.');
 }
 module.exports = {retained, validate};

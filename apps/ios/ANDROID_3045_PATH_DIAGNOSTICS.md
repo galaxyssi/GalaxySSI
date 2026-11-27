@@ -70,7 +70,8 @@ does not call connect or exercise an actual socket/monitor.
 
 The source guard compares full retained client, path, pool, runtime, view and
 existing fixtures against the initial lifecycle commit. The coordinator retains
-new main `26259d650` including #4593/#4594/#4595 acceptance and observation work,
+new main `c1e1529ed` including #4593/#4594/#4595 acceptance/observation and #4596
+knowledge import work,
 merged without changing those kernels. Older lifecycle and active-observation
 guards normalize only the declared observational additions; probe-owner checks
 keep the newer main chain through those guards. Their original assertions remain.

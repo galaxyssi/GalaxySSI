@@ -81,7 +81,15 @@ function validate() {
     assert(!/GalaxySSIMqttBrokerPool \{/.test(original), 'All old fake pools disable the OS observer: ' + file);
   }
   const guard = 'apps/ios/tools/check-mqtt-path-diagnostics-scope.cjs';
+  const mainProjectRetention = `    if (name.includes('network-lifecycle')) expected = expected
+      .replace("const old = file => cp.execFileSync('git', ['show', base + ':' + file]", "const old = (file, ref = base) => cp.execFileSync('git', ['show', ref + ':' + file]")
+      .replace("old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), 'No deployment, source registration or version churn'", "old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'c1e1529ed1160a34564eb57606dfd209fc7a61ba'), 'Retain latest main deployment, source registration and version'");
+`;
   const expected = old(guard)
+    .replace("    if (name.includes('active-native')) expected", mainProjectRetention + "    if (name.includes('active-native')) expected")
+    .replace("const syncedMain = '26259d6503ef4b60ce8eb2346a1bbb2b85bbf12d';", "const syncedMain = 'c1e1529ed1160a34564eb57606dfd209fc7a61ba';")
+    .replace("old(stringsFile), 'Append only diagnostic resource keys'", "old(stringsFile, syncedMain), 'Append only diagnostic resource keys'")
+    .replace("old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'));", "old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj', syncedMain));")
     .replace("const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');",
       "const read = file => require('./check-mqtt-network-metrics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));")
     .replace('function retained(file, s) {\n', "function retained(file, s) {\n  s = require('./check-mqtt-network-metrics-scope.cjs').retained(file, s);\n");
