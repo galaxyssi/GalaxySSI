@@ -113,10 +113,29 @@ class LocalTeamAcceptance {
         require(audits.size() == 1 && calls.indexOf(audits.get(0)) > calls.indexOf(synthesis) &&
             !audits.get(0).getString("draft").isBlank(), "No independent final-draft review");
         require(reports.length() == roles.size()-1, "Missing contributor report at synthesis");
+        var audit = audits.get(0);
+        var parents = audit.getJSONArray("reports");
+        Set<String> assigned = new HashSet<>();
+        for (int i=0; i<parents.length(); i++) assigned.add(parents.getJSONObject(i).getString("id"));
+        Map<String,String> expectedObjections = new LinkedHashMap<>();
         for (int i=0; i<reports.length(); i++) {
             JSONObject report = reports.getJSONObject(i);
-            if (!report.isNull("dissent")) require(answer.contains(report.getString("dissent")), "Dropped reservation");
+            if (!report.isNull("dissent")) {
+                String id = report.getString("id"), dissent = report.getString("dissent");
+                require(answer.contains(dissent), "Dropped reservation");
+                if (!assigned.contains(id)) expectedObjections.put(id, dissent);
+            }
         }
+        var additional = audit.optJSONArray("additional_objections");
+        int count = additional == null ? 0 : additional.length();
+        require(count == expectedObjections.size(), "Incorrect number of non-parent objections in audit");
+        for (int i=0; i<count; i++) {
+            var entry = additional.getJSONObject(i);
+            require(entry.keySet().equals(Set.of("id","dissent")) &&
+                entry.getString("dissent").equals(expectedObjections.remove(entry.getString("id"))),
+                "Audit did not receive exactly the originating role's public objection");
+        }
+        require(expectedObjections.isEmpty(), "Missing non-parent objection");
         System.out.println("Final public answer:\n" + answer);
         System.out.println("Transport verified: " + roles.size() + " model-chosen roles, " + ids.size() + " distinct completions.");
         System.out.println("Numerical reference (fictional model only): " + reference(swapped));

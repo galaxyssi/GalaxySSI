@@ -86,6 +86,11 @@ took place. The next turn does not inherit permission to delegate.
 In numbered plans, the last reviewer whose output is not needed by a later
 role reads the actual synthesized draft, its assigned sources and the original
 objective. This is one of the roles the model selected, not an extra call.
+If another contributor raised an explicit reservation, the final editor sees
+its role ID and public objection even without a dependency on that role.
+No other part of a non-parent report is forwarded. The originating chat
+retains these objections even when the editor withholds the draft or does
+not confirm the source-table result. They are not presented as verified facts.
 Intermediate reviewers still work before their consumers. The final editor can
 accept, revise with a public correction, or withhold with a reason. A cancelled
 or malformed audit does not release the draft.

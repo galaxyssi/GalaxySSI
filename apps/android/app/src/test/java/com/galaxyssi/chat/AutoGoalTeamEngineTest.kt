@@ -28,6 +28,11 @@ class AutoGoalTeamEngineTest {
                     assertEquals("Both cases pass.", request.getString("draft"))
                     val parents = request.getJSONArray("reports")
                     assertEquals(listOf("role2", "role5"), (0 until parents.length()).map { parents.getJSONObject(it).getString("id") })
+                    val other = request.getJSONArray("additional_objections")
+                    assertEquals(1, other.length())
+                    assertEquals(setOf("id", "dissent"), other.getJSONObject(0).keys().asSequence().toSet())
+                    assertEquals("role9", other.getJSONObject(0).getString("id"))
+                    assertEquals("Still disputed.", other.getJSONObject(0).getString("dissent"))
                     """{"verdict":"revise","objection":"One threshold was missed.","answer":"Only the second passes."}"""
                 }
                 else -> error("Unexpected stage")
@@ -38,6 +43,43 @@ class AutoGoalTeamEngineTest {
         for (part in listOf("Only the second passes.", "One threshold was missed.", "Still disputed.")) assertTrue(part in result)
         assertEquals(12, fake.calls.size)
         assertEquals(listOf("synthesis", "audit"), fake.calls.takeLast(2))
+    }
+
+    @Test fun independentObjectionCanVetoAnApparentlyCompleteSynthesisWithoutExposingItsReport() = runBlocking {
+        for (dispute in listOf(false, true)) {
+            val objection = "The readings come from a simulation, not a measured sample."
+            val unpublished = "The candidate was experimentally verified."
+            val reviewerReason = "No candidate-specific measurements were supplied."
+            val fake = Fake(plan("WORK|-|Summarize readings", "CRITIC|-|Check provenance",
+                "REVIEW|1|Review the conclusion")) { p ->
+                when (p.getString("stage")) {
+                    "role" -> {
+                        assertFalse(p.has("additional_objections"))
+                        assertEquals(0, p.getJSONArray("reports").length())
+                        if (p.getString("id") == "role2") report("Non-parent finding must stay out of the audit.", if (dispute) objection else "-")
+                        else report("Reported readings.")
+                    }
+                    "synthesis" -> JSONObject().put("answer", unpublished).toString()
+                    "audit" -> {
+                        assertFalse(p.toString().contains("Non-parent finding"))
+                        if (p.has("additional_objections")) {
+                            assertEquals(objection, p.getJSONArray("additional_objections").getJSONObject(0).getString("dissent"))
+                            JSONObject().put("verdict", "withhold").put("objection", reviewerReason).toString()
+                        } else """{"verdict":"accept"}"""
+                    }
+                    else -> error("Unexpected stage")
+                }
+            }
+            val result = runCatching { fake.run() }
+            if (dispute) {
+                val failure = result.exceptionOrNull() as TeamAnswerWithheld
+                assertEquals(reviewerReason, failure.reservation)
+                assertEquals("\n\nReported disagreements:\n- [role2] $objection", failure.publicObjections)
+                assertFalse(unpublished in failure.publicObjections)
+                assertFalse("Team completed." in fake.events)
+            } else assertEquals(unpublished, result.getOrThrow())
+            assertEquals(5, fake.calls.size)
+        }
     }
 
     @Test fun withheldMalformedOrCancelledAuditsCannotPublishTheDraft() = runBlocking {
