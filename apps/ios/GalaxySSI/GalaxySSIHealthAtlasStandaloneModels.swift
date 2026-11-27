@@ -9,6 +9,7 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
   let depth: Int
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
+  @State private var agentReturnOffset: Double = 0
   private var selection: Binding<GalaxySSIHealthAtlasState.Selection> { state.detailBinding(entry, depth: depth) }
   private var research: Binding<Bool> {
     Binding(get: { selection.wrappedValue.researchPresented == true }, set: { if !$0 { state.closeResearch(entry) } })
@@ -40,10 +41,10 @@ struct GalaxySSIHealthAtlasStandaloneModels: View {
       .navigationTitle(GalaxySSIHealthAtlasText.get(entry.name, language)).navigationBarTitleDisplayMode(.inline)
       .safeAreaInset(edge: .bottom) {
         GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry),
-          selectionSnapshot: { state.functionSnapshot(entry) }, onPreviewStateChange: {
-            if $0 { state.playback.pause() }
+          selectionSnapshot: { state.questionSnapshot(entry, depth: depth) }, onPreviewStateChange: {
+            if $0 { agentReturnOffset = scrollMemory.offset; state.playback.pause() }
             state.previewPresented = $0
-          }).padding(.horizontal)
+          }, onDiscussionReturn: { scrollMemory.restore(agentReturnOffset) }).padding(.horizontal)
       }
       .background(NavigationLink(isActive: research) {
         GalaxySSIHealthAtlasResearch(atlas: atlas, entry: entry, state: state, records: records, depth: depth)
