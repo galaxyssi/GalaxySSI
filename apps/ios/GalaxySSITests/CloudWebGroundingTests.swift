@@ -368,6 +368,87 @@ final class CloudWebGroundingTests: XCTestCase {
     XCTAssertEqual(research["engine_fanout"], .int(3))
   }
 
+  func testDedicatedImageAliasPreservesEverySupportedRequestedCount() {
+    for count in 1...12 {
+      let result = CloudWebGrounding.normalizeArguments(name: "web_image_search", arguments: [
+        "query": .string("Existing lighthouse photographs"), "max_results": .int(Int64(count))
+      ])
+      XCTAssertEqual(result["limit"], .int(Int64(count)))
+      XCTAssertEqual(result["query"], .string("Existing lighthouse photographs"))
+      XCTAssertEqual(result["profile"], .string("fast"))
+      XCTAssertEqual(result["verticals"], .array([.string("image")]))
+      XCTAssertEqual(result["engine_fanout"], .int(3))
+      XCTAssertNil(result["max_results"])
+    }
+  }
+
+  func testDedicatedImageAliasDefaultsToThreeAndClampsWithoutIntegerOverflow() {
+    XCTAssertEqual(CloudWebGrounding.normalizeArguments(name: "web_image_search", arguments: [:])["limit"], .int(3))
+    let boundaries: [(Int64, Int64)] = [(Int64.min, 1), (0, 1), (13, 12), (Int64.max, 12)]
+    for (requested, expected) in boundaries {
+      let result = CloudWebGrounding.normalizeArguments(name: "web_image_search", arguments: ["max_results": .int(requested)])
+      XCTAssertEqual(result["limit"], .int(expected))
+    }
+    XCTAssertEqual(CloudWebGrounding.normalizeArguments(name: " WEB_IMAGE_SEARCH\n",
+      arguments: ["max_results": .int(2)])["limit"], .int(2))
+  }
+
+  func testDedicatedImageRequestReachesRegistryWithRequestedCountAndScope() throws {
+    final class Provider: AgentIOSWebIntelligenceToolProviding {
+      let implementationId = "fixture.image-count", engineCatalogSize = 1, rankerId = "fixture"
+      var inputs: [AgentMcpJSONObject] = []
+      var contexts: [AgentNativeToolInvocationContext] = []
+      func availability(operation: AgentIOSWebIntelligenceOperation) -> AgentNativeToolAvailability { .available }
+      func invoke(operation: AgentIOSWebIntelligenceOperation, input: AgentMcpJSONObject,
+                  invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+        XCTAssertEqual(operation, .search)
+        inputs.append(input); contexts.append(invocation.context)
+        return .success(output: ["operation": .string("search"), "status": .string("completed"), "results": .array([])])
+      }
+    }
+    let provider = Provider()
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebIntelligenceNativeToolCatalog.networkPermission],
+      grantedConsents: [AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent])
+    let output = CloudWebGrounding.executeTool(provider: provider, name: "web_image_search", arguments: [
+      "query": .string("Two existing lighthouse photos"), "max_results": .int(2)
+    ], context: context)
+    XCTAssertEqual(decodeObject(output)?["status"], .string("completed"))
+    XCTAssertEqual(provider.inputs.count, 1)
+    XCTAssertEqual(provider.inputs.first?["limit"], .int(2))
+    XCTAssertEqual(provider.inputs.first?["query"], .string("Two existing lighthouse photos"))
+    XCTAssertEqual(provider.contexts.first?.grantedPermissions, context.grantedPermissions)
+    XCTAssertEqual(provider.contexts.first?.grantedConsents, context.grantedConsents)
+    _ = CloudWebGrounding.executeTool(provider: provider, name: "web_image_search",
+      arguments: ["query": .string("No permission"), "max_results": .int(1)],
+      context: AgentNativeToolInvocationContext())
+    XCTAssertEqual(provider.inputs.count, 1)
+  }
+
+  func testImageCountFixDoesNotDowngradeExplicitResearchPlansOrOptions() {
+    let plan: AgentMcpJSONValue = .array([.object(["query": .string("Source comparison")])])
+    let explicit: AgentMcpJSONObject = ["query": .string("Study"), "query_plan": plan,
+      "profile": .string("deep"), "evidence_limit": .int(17), "engine_fanout": .int(8)]
+    XCTAssertEqual(CloudWebGrounding.normalizeArguments(name: "web_research", arguments: explicit), explicit)
+    let planOnly: AgentMcpJSONObject = ["query": .string("Study"), "query_plan": plan]
+    XCTAssertEqual(CloudWebGrounding.normalizeArguments(name: "web_research", arguments: planOnly), planOnly)
+    let fast = CloudWebGrounding.normalizeArguments(name: "web_research", arguments: [
+      "query": .string("A focused lookup"), "query_plan": .array([]), "evidence_limit": .int(7), "engine_fanout": .int(2)])
+    XCTAssertEqual(fast["profile"], .string("fast"))
+    XCTAssertEqual(fast["evidence_limit"], .int(7))
+    XCTAssertEqual(fast["engine_fanout"], .int(2))
+  }
+
+  func testImageRetrievalIntentAndSchemaAgreeWithCountNormalization() throws {
+    let prompt = CloudWebGrounding.currentEvidencePrompt()
+    XCTAssertTrue(prompt.contains("retrieval, not a request to generate"))
+    XCTAssertTrue(prompt.contains("only when the user requests creation or transformation"))
+    XCTAssertTrue(prompt.contains("do not repeat captions"))
+    let tool = try XCTUnwrap(CloudWebGrounding.openAITools().first { $0["function"]?.objectValue?["name"] == .string("web_image_search") })
+    let count = try XCTUnwrap(tool["function"]?.objectValue?["parameters"]?.objectValue?["properties"]?.objectValue?["max_results"]?.objectValue)
+    XCTAssertEqual(count["minimum"], .int(1)); XCTAssertEqual(count["maximum"], .int(12))
+  }
+
   func testParsesDeepSeekDSMLCallsWithoutExposingProtocolText() {
     let content = """
       <\u{ff5c}DSML\u{ff5c}tool_calls>

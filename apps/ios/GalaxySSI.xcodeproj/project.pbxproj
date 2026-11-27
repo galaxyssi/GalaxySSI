@@ -935,6 +935,7 @@
     C3007C100000000000000001 /* CloudWebToolFailurePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */; };
     C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */; };
     C3007C200000000000000001 /* CloudWebFastSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C200000000000000002 /* CloudWebFastSearchTests.swift */; };
+    A16B3E5B0000000000000001 /* AgentOrderedReplyImagesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A16B3E5B0000000000000002 /* AgentOrderedReplyImagesTests.swift */; };
     C3007C300000000000000001 /* AgentPlanningContextTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C300000000000000002 /* AgentPlanningContextTiming.swift */; };
     C3007C300000000000000003 /* AgentPlanningContextTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */; };
     C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */; };
@@ -4416,6 +4417,7 @@
     C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicy.swift; sourceTree = "<group>"; };
     C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicyTests.swift; sourceTree = "<group>"; };
     C3007C200000000000000002 /* CloudWebFastSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebFastSearchTests.swift; sourceTree = "<group>"; };
+    A16B3E5B0000000000000002 /* AgentOrderedReplyImagesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOrderedReplyImagesTests.swift; sourceTree = "<group>"; };
     C3007C300000000000000002 /* AgentPlanningContextTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningContextTiming.swift; sourceTree = "<group>"; };
     C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningContextTimingTests.swift; sourceTree = "<group>"; };
     C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimePrewarmTests.swift; sourceTree = "<group>"; };
@@ -6954,6 +6956,7 @@
         C3007C000000000000000002 /* CloudWebFallbackTests.swift */,
         C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */,
         C3007C200000000000000002 /* CloudWebFastSearchTests.swift */,
+        A16B3E5B0000000000000002 /* AgentOrderedReplyImagesTests.swift */,
         C3007C300000000000000004 /* AgentPlanningContextTimingTests.swift */,
         C3007C400000000000000002 /* GlobalRealtimePrewarmTests.swift */,
         C3007C500000000000000004 /* GlobalAgentDashboardLoaderTests.swift */,
@@ -9441,6 +9444,7 @@
         C3007C000000000000000001 /* CloudWebFallbackTests.swift in Sources */,
         C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */,
         C3007C200000000000000001 /* CloudWebFastSearchTests.swift in Sources */,
+        A16B3E5B0000000000000001 /* AgentOrderedReplyImagesTests.swift in Sources */,
         C3007C300000000000000003 /* AgentPlanningContextTimingTests.swift in Sources */,
         C3007C400000000000000001 /* GlobalRealtimePrewarmTests.swift in Sources */,
         C3007C500000000000000003 /* GlobalAgentDashboardLoaderTests.swift in Sources */,
