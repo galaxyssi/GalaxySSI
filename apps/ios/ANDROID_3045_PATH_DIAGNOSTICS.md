@@ -67,10 +67,13 @@ broker-pool source. Together with the ten lifecycle additions, nineteen methods
 are authored by this PR; none compiled or executed. The native-client fixture
 does not call connect or exercise an actual socket/monitor.
 
-The source guard compares full retained client, path, pool, runtime, coordinator,
-view and existing fixtures against the initial lifecycle commit. Older lifecycle
-and probe-owner guards normalize only the declared observational additions;
-their original assertions remain. Scheduling, Signal/journal/inbox/outbox,
+The source guard compares full retained client, path, pool, runtime, view and
+existing fixtures against the initial lifecycle commit. The coordinator retains
+new main `26259d650` including #4593/#4594/#4595 acceptance and observation work,
+merged without changing those kernels. Older lifecycle and active-observation
+guards normalize only the declared observational additions; probe-owner checks
+keep the newer main chain through those guards. Their original assertions remain.
+Scheduling, Signal/journal/inbox/outbox,
 chunking, route/receipt and delivery kernels are unchanged.
 
 No Swift compilation, XCTest/native tests, screenshots/UI rendering, real broker,

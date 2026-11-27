@@ -1,8 +1,9 @@
 // Source contracts only. No Swift compile, native network, SwiftUI render or XCTest execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '13917b93ccad3e3dd8511229dc0cac1a86c514df', app = 'apps/ios/GalaxySSI/';
+const syncedMain = '26259d6503ef4b60ce8eb2346a1bbb2b85bbf12d';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
-const old = file => cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const old = (file, ref = base) => cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(file, s) {
   if (file === app + 'GalaxySSIMqttClient.swift' && s.includes('  func diagnosticSnapshot()')) return s
@@ -38,8 +39,9 @@ function validate() {
   for (const name of ['GalaxySSIMqttClient', 'GalaxySSIMqttBrokerPool', 'MqttBrokerPath', 'MqttBusinessTransportRuntime',
     'GalaxySSIServices', 'GalaxySSILinkDiagnosticsView']) {
     const file = app + name + '.swift';
-    assert.equal(retained(file, read(file)), old(file), 'Only declared observational diagnostic hooks: ' + name);
-    assert.equal(retained(file, retained(file, read(file))), old(file), 'Idempotent retained normalization: ' + name);
+    const expected = old(file, name === 'GalaxySSIServices' ? syncedMain : base);
+    assert.equal(retained(file, read(file)), expected, 'Only declared observational diagnostic hooks: ' + name);
+    assert.equal(retained(file, retained(file, read(file))), expected, 'Idempotent retained normalization: ' + name);
   }
   const client = read(app + 'GalaxySSIMqttClient.swift');
   const capture = section(client, '  func diagnosticSnapshot()', '  func disconnect()');
@@ -89,13 +91,14 @@ function validate() {
     assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), 'Unchanged scheduling/receipt/durable kernel: ' + name);
   const normalizer = "require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'))";
   const rawRead = "fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')";
-  for (const name of ['check-mqtt-network-lifecycle-scope.cjs', 'check-desktop-probe-owner-scope.cjs']) {
+  for (const name of ['check-mqtt-network-lifecycle-scope.cjs', 'check-active-native-observation-scope.cjs']) {
     const file = 'apps/ios/tools/' + name;
-    let expected = old(file).replace('const read = file => ' + rawRead + ';', 'const read = file => ' + normalizer + ';');
-    if (name.includes('desktop-probe')) expected = expected.replace('function retained(file, source) {\n',
+    let expected = old(file, name.includes('active-native') ? syncedMain : base).replace('const read = file => ' + rawRead + ';', 'const read = file => ' + normalizer + ';');
+    if (name.includes('active-native')) expected = expected.replace('function retained(file, source) {\n',
       "function retained(file, source) {\n  source = require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, source);\n");
     assert.equal(read(file), expected, 'Retain earlier checks beyond declared diagnostics: ' + name);
   }
+  assert.equal(read('apps/ios/tools/check-desktop-probe-owner-scope.cjs'), old('apps/ios/tools/check-desktop-probe-owner-scope.cjs', syncedMain));
   assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), old('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'));
   console.log('Actual owner-fenced per-path MQTT diagnostics, localized foreground presentation, unchanged delivery kernels and nine authored-only observational fixtures passed source checks; no native/UI acceptance.');
 }
