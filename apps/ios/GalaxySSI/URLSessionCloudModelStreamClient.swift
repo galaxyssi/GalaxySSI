@@ -7,13 +7,17 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
   private var activeTasks: [String: Task<Void, Never>] = [:]
   private var cancelReasons: [String: ModelStreamCancelReason] = [:]
   private var timings: [String: ModelStreamTiming] = [:]
+  private let observesTextServer: Bool
+  private var lastTextServerAdvertisement: (requestId: String, value: CloudTextServerAdvertisement)?
 
   init(
     session: URLSession? = nil,
-    elapsedMillis: @escaping () -> Int64 = URLSessionCloudModelStreamClient.defaultElapsedMillis
+    elapsedMillis: @escaping () -> Int64 = URLSessionCloudModelStreamClient.defaultElapsedMillis,
+    observesTextServer: Bool = false
   ) {
     sessions = CloudModelStreamSessionPool(session: session, now: elapsedMillis)
     self.elapsedMillis = elapsedMillis
+    self.observesTextServer = observesTextServer
   }
 
   static func mobileStreamingConfiguration() -> URLSessionConfiguration {
@@ -79,10 +83,15 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
     locked { timings[requestId] }
   }
 
+  func textServerAdvertisement(requestId: String) -> CloudTextServerAdvertisement? {
+    locked { lastTextServerAdvertisement?.requestId == requestId ? lastTextServerAdvertisement?.value : nil }
+  }
+
   private func run(
     _ request: ModelStreamRequest,
     continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
   ) async {
+    if observesTextServer { locked { lastTextServerAdvertisement = nil } }
     let privateContinuation = request.preserveProviderReasoning && request.isDirectDeepSeekChatEndpoint
     let state = ModelStreamEmissionState(preserveProviderReasoning: privateContinuation)
     let timing = ModelStreamTimingTracker(requestId: request.requestId, now: elapsedMillis)
@@ -121,8 +130,11 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
       }
       let sessionLease = sessions.acquire()
       defer { sessionLease.end() }
+      let textServerObserver = observesTextServer && !privateContinuation && request.provider == .openAICompatible &&
+        request.transport == .completeJSON ? CloudTextServerObservation() : nil
+      let delegate: URLSessionTaskDelegate? = privateContinuation ? NoPrivateContinuationRedirects() : textServerObserver
       let (bytes, response) = try await sessionLease.session.bytes(for: urlRequest,
-        delegate: privateContinuation ? NoPrivateContinuationRedirects() : nil)
+        delegate: delegate)
       timing.mark("request_write_end")
       timing.mark("response_headers")
       try throwIfCancelled(request.requestId)
@@ -158,6 +170,9 @@ final class URLSessionCloudModelStreamClient: CloudModelStreamClient {
         return
       }
 
+      if let advertisement = textServerObserver?.advertisement(response: http) {
+        locked { lastTextServerAdvertisement = (request.requestId, advertisement) }
+      }
       if request.transport == .completeJSON {
         let body = try await collectBody(bytes)
         timing.mark("first_frame")
