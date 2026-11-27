@@ -16,14 +16,20 @@ enum CloudSearchPageReads {
     private let lock = NSLock()
     private var closed = false
     private var values: [Int: Attempt] = [:]
+    private let deadline: DispatchTime
+    private let wallDeadline: Int64
+    init(deadline: DispatchTime, wallDeadline: Int64) { self.deadline = deadline; self.wallDeadline = wallDeadline }
     var cancelled: Bool { lock.lock(); defer { lock.unlock() }; return closed }
-    func store(_ value: Attempt, at index: Int) {
+    func store(_ value: Attempt, at index: Int, finishedAt: Int64) {
       lock.lock(); defer { lock.unlock() }
-      if !closed { values[index] = value }
+      if !closed, finishedAt < wallDeadline, DispatchTime.now() < deadline { values[index] = value }
     }
-    func finish(_ urls: [String], reason: String) -> [Attempt] {
+    func finish(_ urls: [String], reason: String, discardResults: Bool = false) -> [Attempt] {
       lock.lock(); defer { lock.unlock() }; closed = true
-      return urls.enumerated().map { values[$0.offset] ?? Attempt(url: $0.element, result: nil, stopped: reason) }
+      defer { values.removeAll() }
+      return urls.enumerated().map {
+        (discardResults ? nil : values[$0.offset]) ?? Attempt(url: $0.element, result: nil, stopped: reason)
+      }
     }
   }
 
@@ -43,39 +49,56 @@ enum CloudSearchPageReads {
   static func read(_ urls: [String], provider: AgentIOSWebIntelligenceToolProviding,
                    context: AgentNativeToolInvocationContext, budgetMillis: Int64 = 8_000,
                    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
-                   cancelled: () -> Bool = { Task.isCancelled }) -> [Attempt] {
-    let urls = Array(urls.prefix(4)), collector = Collector()
+                   cancelled: () -> Bool = { Task.isCancelled },
+                   schedule: (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) },
+                   beforePublication: () -> Void = {}) -> [Attempt] {
+    let urls = Array(urls.prefix(4))
+    func stopped(_ reason: String) -> [Attempt] { urls.map { Attempt(url: $0, result: nil, stopped: reason) } }
     guard !urls.isEmpty else { return [] }
-    if cancelled() { return collector.finish(urls, reason: "page_read_cancelled") }
+    if cancelled() { return stopped("page_read_cancelled") }
     let now = nowMillis()
     let budget = min(max(budgetMillis, 0), 8_000)
     let proposed = now.addingReportingOverflow(budget)
     let deadline = min(context.deadlineEpochMillis ?? Int64.max, proposed.overflow ? Int64.max : proposed.partialValue)
-    guard deadline > now, budget > 0 else { return collector.finish(urls, reason: "page_read_deadline") }
+    guard deadline > now, budget > 0 else { return stopped("page_read_deadline") }
     let difference = deadline.subtractingReportingOverflow(now)
     let remaining = difference.overflow ? budget : min(budget, difference.partialValue)
-    guard remaining >= 1_000 else { return collector.finish(urls, reason: "page_read_insufficient_budget") }
+    guard remaining >= 1_000 else { return stopped("page_read_insufficient_budget") }
     let waitDeadline = DispatchTime.now() + .milliseconds(Int(remaining))
+    let collector = Collector(deadline: waitDeadline, wallDeadline: deadline)
     let group = DispatchGroup()
     for (index, url) in urls.enumerated() {
       var child = context
-      child.invocationId = "\(context.invocationId.prefix(100))-page-\(index)"
-      child.idempotencyKey = context.idempotencyKey.map { "\($0.prefix(100))-page-\(index)" }
+      func key(_ parent: String, kind: String) -> String {
+        "page-\(kind)-" + AgentMcpJSONCodec.sha256(["parent": .string(parent), "url": .string(url), "index": .int(Int64(index))])
+      }
+      child.invocationId = key(context.invocationId, kind: "invocation")
+      child.idempotencyKey = context.idempotencyKey.map { key($0, kind: "idempotency") }
       child.deadlineEpochMillis = deadline
       let childContext = child
       group.enter()
-      DispatchQueue.global(qos: .userInitiated).async {
+      schedule {
         defer { group.leave() }
         guard !collector.cancelled else { return }
         do {
           // Registry descriptor caches and audit stores are not shared between workers.
           let registry = try AgentNativeToolRegistry().registerExecutables(
             AgentPhoneNativeToolCatalog.webIntelligenceExecutableDefinitions(provider: provider))
+          let clock = nowMillis(), uptime = DispatchTime.now().uptimeNanoseconds
+          let wall = deadline.subtractingReportingOverflow(clock)
+          let wallRemaining = wall.overflow ? (clock < deadline ? remaining : 0) : max(0, wall.partialValue)
+          let monotonicRemaining = waitDeadline.uptimeNanoseconds > uptime
+            ? Int64((waitDeadline.uptimeNanoseconds - uptime) / 1_000_000) : 0
+          let requestRemaining = min(remaining, wallRemaining, monotonicRemaining)
+          guard requestRemaining >= 1_000 else {
+            collector.store(Attempt(url: url, result: nil, stopped: "page_read_insufficient_budget"), at: index, finishedAt: clock)
+            return
+          }
           let result = registry.invoke(AgentIOSWebIntelligenceNativeToolCatalog.toolId(.fetch),
-            input: ["url": .string(url), "timeout_ms": .int(remaining)], context: childContext,
+            input: ["url": .string(url), "timeout_ms": .int(requestRemaining)], context: childContext,
             hooks: AgentNativeToolInvocationHooks(nowMillis: nowMillis, cancellationRequested: { collector.cancelled }))
-          collector.store(Attempt(url: url, result: result, stopped: nil), at: index)
-        } catch { collector.store(Attempt(url: url, result: nil, stopped: "page_read_setup_failed"), at: index) }
+          collector.store(Attempt(url: url, result: result, stopped: nil), at: index, finishedAt: nowMillis())
+        } catch { collector.store(Attempt(url: url, result: nil, stopped: "page_read_setup_failed"), at: index, finishedAt: nowMillis()) }
       }
     }
     var reason = "page_read_deadline"
@@ -83,7 +106,9 @@ enum CloudSearchPageReads {
       if cancelled() { reason = "page_read_cancelled"; break }
       if DispatchTime.now() >= waitDeadline { break }
     }
-    return collector.finish(urls, reason: reason)
+    beforePublication()
+    if cancelled() { reason = "page_read_cancelled" }
+    return collector.finish(urls, reason: reason, discardResults: reason == "page_read_cancelled")
   }
 
   static func attach(to output: AgentMcpJSONObject, attempts: [Attempt]) -> AgentMcpJSONObject {

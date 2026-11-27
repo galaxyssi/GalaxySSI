@@ -1,8 +1,10 @@
 # Android #3027: concurrent ranked source-page reads
 
 Android merge: ade1033cb1efa697805718d41aeb5411e7cdc5dc (#3027).
-Independent iOS base: 8a794e82ebe8f09790e41139295ffb7ac1ee9701 (main).
-This does not inherit the unmerged #4610 image/session/diagnostic changes.
+Follow-up integration base: 932bff3712599517cafa8c90180dd9c3f80b70b0 (main).
+#4612 and #4613 are now merged. This follow-up retains their page-read integration,
+retrieval cancellation, project registrations and #4610 image/session changes.
+The serial-page comparison checkpoint remains deb134e35da3ec029978ddd998000a7e265ed52a.
 
 ## Observed gap and production integration
 
@@ -16,7 +18,8 @@ Select up to four ranked HTTPS URLs, reject credentials and de-duplicate with th
 existing canonical URL policy. Each worker owns an independent native registry:
 descriptor caches, replay and audit stores are not shared across threads. Invoke
 the same native fetch executable/provider with copied owner/session/turn, grants,
-consents and attributes, distinct child invocation keys and one shared hard
+consents and attributes, child keys hashed from the full parent identity, URL
+and rank (without truncation collisions), and one shared hard
 deadline no later than the original parent deadline. No network/cache consent is
 added. Keep the existing provider's public-address, redirect and cache controls;
 this is not new DNS-pinning or network-security acceptance.
@@ -25,6 +28,11 @@ The page phase has an eight-second monotonic wait budget, including queue time,
 capped by the parent's remaining wall-clock deadline. Poll caller cancellation,
 and skip new fetches when less than the native schema's minimum one second is
 available, reporting insufficient budget rather than granting a fresh timeout.
+Recompute the request timeout after worker scheduling and registry setup using
+both remaining wall-clock and monotonic time. Reject result storage after either
+deadline. Recheck caller cancellation after all workers finish; cancellation
+discards even already-completed page bodies before aggregate publication while
+retaining the original search discoveries and cancellation diagnostics.
 Seal the collector on return and provide cancellation to registry checkpoints.
 Late workers cannot modify returned aggregate evidence. A synchronous/custom
 provider that ignores checkpoints may keep running; there is no force-kill or
@@ -56,10 +64,12 @@ inside this web PR. Remaining Android-to-iOS gaps are still active work.
 
 ## Verification boundaries
 
-Eleven new synthetic Swift methods are authored for ranked URL admission,
+Fifteen synthetic Swift methods are authored for ranked URL admission,
 concurrent entry, owner/grant/deadline propagation, denied/expired/cancelled work,
 partial evidence/stats/verification, late completion, actual executeTool opt-in,
-no hidden page reads and bounded diagnostic compaction. They have not been
+no hidden page reads, bounded diagnostic compaction, queued-worker budgets,
+completion-boundary cancellation, late wall-clock results and long parent keys.
+They have not been
 compiled or executed. Source-contract checks compare the narrow integration with
 main and inspect actual worker/merge calls, not runtime throughput or correctness.
 No Swift/native tests, live network/provider/UI acceptance, measured latency, CI
@@ -67,6 +77,11 @@ monitoring or IPA are performed. Android/Desktop sources and versions are
 unchanged, with iOS 15 minimum retained. No raw reports/private data are committed.
 
 The historical web-fallback, web-tool-failure and fast-search-defaults source
-guards were attempted and still fail on existing streaming-engine/cached-capacity
+guards were attempted and still fail on existing streaming-engine/web-media
 baseline drift. Their reported production files are unchanged against main. No
-old engine behavior or fixed cache-byte limit is restored to satisfy those checks.
+old engine or media-provider behavior is restored to satisfy those checks.
+Image-request-count, ordered-reply-images, MQTT-inbound-timing and knowledge-
+publication-cancellation scope checks also fail at older whole-file checkpoints.
+All seven failures were reproduced using only files from integration main; the
+mobile-stream-session check passes. The focused page-read check, project
+structure check, JavaScript syntax and changed-source Han placement pass.

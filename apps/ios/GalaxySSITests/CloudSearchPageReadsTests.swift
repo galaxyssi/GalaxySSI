@@ -70,7 +70,8 @@ final class CloudSearchPageReadsTests: XCTestCase {
       XCTAssertEqual(invocation.context.conversationId, parent.conversationId)
       XCTAssertEqual(invocation.context.turnId, parent.turnId)
       XCTAssertEqual(invocation.context.attributes, parent.attributes)
-      XCTAssertEqual(invocation.input["timeout_ms"], .int(1_500))
+      let timeout = try XCTUnwrap(invocation.input["timeout_ms"]?.intValue)
+      XCTAssertTrue((1_000...1_500).contains(timeout))
     }
   }
 
@@ -146,6 +147,67 @@ final class CloudSearchPageReadsTests: XCTestCase {
     XCTAssertEqual(output["evidence_pack"]?.objectValue?["page_reads"]?.arrayValue?.count, 2)
     XCTAssertEqual(provider.observed.filter { $0.input["url"] != nil }.count, 2)
     for invocation in provider.observed { XCTAssertEqual(invocation.context.turnId, context.turnId) }
+  }
+
+  func testCancellationAfterWorkersCompleteDiscardsBodiesBeforePublication() throws {
+    var cancelled = false
+    let urls = ["https://source.test/a"]
+    let provider = Provider { _, invocation in Self.body(invocation) }
+    let attempts = CloudSearchPageReads.read(urls, provider: provider, context: context,
+      cancelled: { cancelled }, schedule: { $0() }, beforePublication: { cancelled = true })
+    XCTAssertEqual(provider.observed.count, 1)
+    XCTAssertNil(attempts.first?.result)
+    XCTAssertEqual(attempts.first?.stopped, "page_read_cancelled")
+    let output = CloudSearchPageReads.attach(to: search(urls), attempts: attempts)
+    let pack = try XCTUnwrap(output["evidence_pack"]?.objectValue)
+    XCTAssertEqual(pack["items"]?.arrayValue?.first?.objectValue?["evidence_level"], .string("discovery_snippet"))
+    XCTAssertEqual(pack["stats"]?.objectValue?["document_count"], .int(0))
+  }
+
+  func testQueuedWorkerCannotReuseTheAdmissionTimeout() {
+    var clock: Int64 = 1_000
+    var parent = context; parent.deadlineEpochMillis = 2_000
+    let provider = Provider { _, invocation in Self.body(invocation) }
+    let attempts = CloudSearchPageReads.read(["https://source.test/a"], provider: provider,
+      context: parent, nowMillis: { clock }, schedule: { work in clock = 1_001; work() })
+    XCTAssertTrue(provider.observed.isEmpty)
+    XCTAssertEqual(attempts.first?.stopped, "page_read_insufficient_budget")
+  }
+
+  func testChildIdentifiersUseTheFullParentAndURLWithoutTruncationCollisions() throws {
+    let provider = Provider { _, invocation in Self.body(invocation) }
+    for suffix in ["first", "second"] {
+      var parent = context
+      parent.invocationId = String(repeating: "i", count: 100) + suffix
+      parent.idempotencyKey = String(repeating: "k", count: 100) + suffix
+      _ = CloudSearchPageReads.read(["https://source.test/a"], provider: provider,
+        context: parent, schedule: { $0() })
+    }
+    var parent = context
+    parent.invocationId = String(repeating: "i", count: 100) + "first"
+    parent.idempotencyKey = String(repeating: "k", count: 100) + "first"
+    _ = CloudSearchPageReads.read(["https://source.test/b"], provider: provider,
+      context: parent, schedule: { $0() })
+    let calls = provider.observed
+    XCTAssertEqual(calls.count, 3)
+    XCTAssertEqual(Set(calls.map { $0.context.invocationId }).count, 3)
+    XCTAssertEqual(Set(calls.compactMap { $0.context.idempotencyKey }).count, 3)
+    for call in calls {
+      XCTAssertLessThanOrEqual(call.context.invocationId.utf8.count, 128)
+      XCTAssertLessThanOrEqual(try XCTUnwrap(call.context.idempotencyKey).utf8.count, 128)
+      XCTAssertEqual(call.context.turnId, context.turnId)
+    }
+  }
+
+  func testBodyCompletingAfterWallDeadlineCannotPublish() {
+    var clock: Int64 = 1_000
+    var parent = context; parent.deadlineEpochMillis = 3_000
+    let provider = Provider { _, invocation in clock = 3_001; return Self.body(invocation) }
+    let attempts = CloudSearchPageReads.read(["https://source.test/a"], provider: provider,
+      context: parent, nowMillis: { clock }, schedule: { $0() })
+    XCTAssertEqual(provider.observed.count, 1)
+    XCTAssertNil(attempts.first?.result)
+    XCTAssertEqual(attempts.first?.stopped, "page_read_deadline")
   }
 
   func testNoOptInDoesNotIntroduceHiddenPageFetches() {
