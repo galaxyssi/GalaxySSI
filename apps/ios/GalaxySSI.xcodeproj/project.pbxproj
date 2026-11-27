@@ -7,8 +7,6 @@
   objects = {
 
 /* Begin PBXBuildFile section */
-    C3007D000000000000000001 /* AgentUnplannedNativeDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000002 /* AgentUnplannedNativeDispatch.swift */; };
-    C3007D000000000000000003 /* AgentUnplannedNativeDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000004 /* AgentUnplannedNativeDispatchTests.swift */; };
     F30050000000000000000001 /* GalaxySSIMemory in Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; };
     F30050000000000000000002 /* GalaxySSIMemory in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
     C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */; };
@@ -937,9 +935,11 @@
     C3007BD00000000000000001 /* AgentIOSWebSearchRetentionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BD00000000000000002 /* AgentIOSWebSearchRetentionTests.swift */; };
     C3007BE00000000000000001 /* AgentIOSEncodedWebRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BE00000000000000002 /* AgentIOSEncodedWebRequestTests.swift */; };
     C3007BF00000000000000001 /* AgentSequentialPlanNodeDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BF00000000000000002 /* AgentSequentialPlanNodeDispatch.swift */; };
+    C3007D000000000000000001 /* AgentUnplannedNativeDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000002 /* AgentUnplannedNativeDispatch.swift */; };
     C3007C100000000000000001 /* AgentApprovedCaptureDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000002 /* AgentApprovedCaptureDispatch.swift */; };
     C3007C100000000000000003 /* AgentApprovedCaptureDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000004 /* AgentApprovedCaptureDispatchTests.swift */; };
     C3007BF00000000000000003 /* AgentSequentialPlanNodeDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007BF00000000000000004 /* AgentSequentialPlanNodeDispatchTests.swift */; };
+    C3007D000000000000000003 /* AgentUnplannedNativeDispatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000004 /* AgentUnplannedNativeDispatchTests.swift */; };
     C3007C000000000000000001 /* CloudWebFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C000000000000000002 /* CloudWebFallbackTests.swift */; };
     C3007C100000000000000001 /* CloudWebToolFailurePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */; };
     C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */; };
@@ -2457,8 +2457,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-    C3007D000000000000000002 /* AgentUnplannedNativeDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUnplannedNativeDispatch.swift; sourceTree = "<group>"; };
-    C3007D000000000000000004 /* AgentUnplannedNativeDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUnplannedNativeDispatchTests.swift; sourceTree = "<group>"; };
     F30050000000000000000003 /* GalaxySSIMemory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GalaxySSIMemory.framework; sourceTree = BUILT_PRODUCTS_DIR; };
     C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSConnectorDispatch.swift; sourceTree = "<group>"; };
     A20000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModelFailureEvidence.swift; sourceTree = "<group>"; };
@@ -4600,9 +4598,11 @@
     C3007BD00000000000000002 /* AgentIOSWebSearchRetentionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchRetentionTests.swift; sourceTree = "<group>"; };
     C3007BE00000000000000002 /* AgentIOSEncodedWebRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSEncodedWebRequestTests.swift; sourceTree = "<group>"; };
     C3007BF00000000000000002 /* AgentSequentialPlanNodeDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSequentialPlanNodeDispatch.swift; sourceTree = "<group>"; };
+    C3007D000000000000000002 /* AgentUnplannedNativeDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUnplannedNativeDispatch.swift; sourceTree = "<group>"; };
     C3007C100000000000000002 /* AgentApprovedCaptureDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentApprovedCaptureDispatch.swift; sourceTree = "<group>"; };
     C3007C100000000000000004 /* AgentApprovedCaptureDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentApprovedCaptureDispatchTests.swift; sourceTree = "<group>"; };
     C3007BF00000000000000004 /* AgentSequentialPlanNodeDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSequentialPlanNodeDispatchTests.swift; sourceTree = "<group>"; };
+    C3007D000000000000000004 /* AgentUnplannedNativeDispatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUnplannedNativeDispatchTests.swift; sourceTree = "<group>"; };
     C3007C000000000000000002 /* CloudWebFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebFallbackTests.swift; sourceTree = "<group>"; };
     C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicy.swift; sourceTree = "<group>"; };
     C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebToolFailurePolicyTests.swift; sourceTree = "<group>"; };
@@ -5851,8 +5851,8 @@
         C3007BB00000000000000002 /* AgentIOSWebPageDiff.swift */,
         C3007BC00000000000000002 /* AgentIOSWebWatchPolicy.swift */,
         C3007BF00000000000000002 /* AgentSequentialPlanNodeDispatch.swift */,
-        C3007C100000000000000002 /* AgentApprovedCaptureDispatch.swift */,
         C3007D000000000000000002 /* AgentUnplannedNativeDispatch.swift */,
+        C3007C100000000000000002 /* AgentApprovedCaptureDispatch.swift */,
         C3007C100000000000000002 /* CloudWebToolFailurePolicy.swift */,
         C3007C300000000000000002 /* AgentPlanningContextTiming.swift */,
         C3007B700000000000000004 /* IndexedAgentWorkspaceStore.swift */,
@@ -7212,8 +7212,8 @@
         C3007BD00000000000000002 /* AgentIOSWebSearchRetentionTests.swift */,
         C3007BE00000000000000002 /* AgentIOSEncodedWebRequestTests.swift */,
         C3007BF00000000000000004 /* AgentSequentialPlanNodeDispatchTests.swift */,
-        C3007C100000000000000004 /* AgentApprovedCaptureDispatchTests.swift */,
         C3007D000000000000000004 /* AgentUnplannedNativeDispatchTests.swift */,
+        C3007C100000000000000004 /* AgentApprovedCaptureDispatchTests.swift */,
         C3007C000000000000000002 /* CloudWebFallbackTests.swift */,
         C3007C100000000000000004 /* CloudWebToolFailurePolicyTests.swift */,
         C3007C200000000000000002 /* CloudWebFastSearchTests.swift */,
@@ -8880,8 +8880,8 @@
         C3007BB00000000000000001 /* AgentIOSWebPageDiff.swift in Sources */,
         C3007BC00000000000000001 /* AgentIOSWebWatchPolicy.swift in Sources */,
         C3007BF00000000000000001 /* AgentSequentialPlanNodeDispatch.swift in Sources */,
-        C3007C100000000000000001 /* AgentApprovedCaptureDispatch.swift in Sources */,
         C3007D000000000000000001 /* AgentUnplannedNativeDispatch.swift in Sources */,
+        C3007C100000000000000001 /* AgentApprovedCaptureDispatch.swift in Sources */,
         C3007C100000000000000001 /* CloudWebToolFailurePolicy.swift in Sources */,
         C3007C300000000000000001 /* AgentPlanningContextTiming.swift in Sources */,
         C3007B700000000000000003 /* IndexedAgentWorkspaceStore.swift in Sources */,
@@ -9797,8 +9797,8 @@
         C3007BD00000000000000001 /* AgentIOSWebSearchRetentionTests.swift in Sources */,
         C3007BE00000000000000001 /* AgentIOSEncodedWebRequestTests.swift in Sources */,
         C3007BF00000000000000003 /* AgentSequentialPlanNodeDispatchTests.swift in Sources */,
-        C3007C100000000000000003 /* AgentApprovedCaptureDispatchTests.swift in Sources */,
         C3007D000000000000000003 /* AgentUnplannedNativeDispatchTests.swift in Sources */,
+        C3007C100000000000000003 /* AgentApprovedCaptureDispatchTests.swift in Sources */,
         C3007C000000000000000001 /* CloudWebFallbackTests.swift in Sources */,
         C3007C100000000000000003 /* CloudWebToolFailurePolicyTests.swift in Sources */,
         C3007C200000000000000001 /* CloudWebFastSearchTests.swift in Sources */,
