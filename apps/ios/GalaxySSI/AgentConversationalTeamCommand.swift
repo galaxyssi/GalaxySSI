@@ -23,6 +23,17 @@ enum AgentConversationalTeamCommand: Equatable {
     }
   }
   private static let negative = #"\b(?:do not|don't|don\u2019t|not to|never|without|no need to|no)\s+(?:(?:do|use|using|form|forming|ask|asking|have|having|need|want|get|an?|the|any|to)\s+){0,4}(?:team|agents?|multiple agents|multi-agent|delegat\w*|independent(?:ly)?)\b"#
+  private static let meta = #"^(?:(?:please |can you |could you )?(?:explain|translate|define|describe|tell me (?:about|how|what|why))\b|(?:what|why|how|when|where|should|does|is it|do (?:i|we))\b)"#
+  static func requestsFinalAudit(_ text: String) -> Bool {
+    guard text.utf16.count <= 8_000, let regex = try? NSRegularExpression(pattern: quotes) else { return false }
+    let visible = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: " ")
+    let audit = #"(?:^|\bplease\s+|\bthen\s+|\band\s+)(?:provide\s+|perform\s+|arrange\s+|request\s+|get\s+)?(?:independently (?:review|audit|check)|(?:an? )?independent (?:final )?(?:review|audit|check)(?: of)?) (?:the |my |our )?(?:final (?:answer|draft|response|report)|conclusion)\b"#
+    return visible.components(separatedBy: separators).contains { clause in
+      let value = clause.trimmingCharacters(in: .whitespacesAndNewlines)
+      return !matches(value, key: "negative", english: negative) && !matches(value, key: "meta", english: meta) &&
+        matches(value, key: "final_audit", english: audit)
+    }
+  }
   static func allowsModelReview(_ text: String, language: String) -> Bool {
     !text.isBlank && !text.hasPrefix("/") && makeStart(text) == .start(text) &&
       !matches(text, key: "negative", english: negative) &&
@@ -50,7 +61,6 @@ enum AgentConversationalTeamCommand: Equatable {
     let prefix = String(text.prefix(4_000))
     let visible = quoted.stringByReplacingMatches(in: prefix, range: NSRange(prefix.startIndex..., in: prefix), withTemplate: " ")
     if matches(visible, key: "negative", english: negative) { return nil }
-    let meta = #"^(?:(?:please |can you |could you )?(?:explain|translate|define|describe|tell me (?:about|how|what|why))\b|(?:what|why|how|when|where|should|does|is it|do (?:i|we))\b)"#
     let requested = visible.components(separatedBy: separators).contains { clause in
       let value = clause.trimmingCharacters(in: .whitespacesAndNewlines)
       return !value.isEmpty && !matches(value, key: "meta", english: meta) &&

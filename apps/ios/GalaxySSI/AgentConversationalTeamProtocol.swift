@@ -4,7 +4,7 @@ enum AgentConversationalTeamProtocol {
   static let maximumRoles = 10
   static let maximumParallel = 3
   static let maximumCalls = 12
-  enum Failure: Error { case objective, plan, report, synthesis, transport, timeout, stalled, budget }
+  enum Failure: Error { case objective, plan, report, synthesis, transport, timeout, stalled, budget, finalAuditMissing }
   enum Kind: String, Codable, Sendable { case worker, reviewer, dissent }
   struct Role: Codable, Equatable, Sendable {
     let id: String
@@ -36,6 +36,7 @@ enum AgentConversationalTeamProtocol {
     Group related calculations or table rows into one assignment; do not assign a role per data point.
     Independent roles can work together through named dependencies. To audit another result,
     assign a reviewer that depends on the role that produces it. An independent critic can use dissent.
+    When final_review_required is true, include a terminal REVIEW to audit the actual final draft.
     Write one line per role: WORK|parents|task, REVIEW|parents|task, or CRITIC|parents|task.
     Roles are numbered automatically from 1. Parents are - or comma-separated earlier role numbers.
     At most three parents or children per role. Tasks and brief: <=400 characters, no pipes.

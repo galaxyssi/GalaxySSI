@@ -329,7 +329,8 @@ struct CloudModelConfigurationView: View {
         modelId: modelId,
         endpoint: endpoint,
         apiKey: apiKey,
-        apiStyle: preset.apiStyle
+        apiStyle: preset.apiStyle,
+        teamPlanConstrainedDecoding: preset.teamPlanConstrainedDecoding
       )
       createdContactId = contact.id
       errorText = ""

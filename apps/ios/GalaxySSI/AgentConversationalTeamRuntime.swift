@@ -151,6 +151,9 @@ final class AgentConversationalTeamRuntime: ObservableObject {
           answer = outcome.publicText(disagreementsTitle: text("disagreements", "Independent disagreements", store),
             correctionTitle: text("correction", "Reviewer correction:", store)) + "\n\n" +
             String(format: text("receipt", "%lld roles / %lld model calls", store), Int64(outcome.roleCount), Int64(outcome.calls))
+        } catch AgentConversationalTeamProtocol.Failure.finalAuditMissing {
+          guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
+          answer = text("final_audit_missing", "No independent final reviewer was assigned. The team stopped before worker calls; no draft was published.", store)
         } catch let issue as AgentTeamDraftAudit.Failure {
           guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
           switch issue {

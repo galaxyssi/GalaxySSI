@@ -1693,7 +1693,8 @@ final class GalaxySSIStore: ObservableObject {
     modelId: String,
     endpoint: String,
     apiKey: String,
-    apiStyle: GalaxySSICloudAPIStyle
+    apiStyle: GalaxySSICloudAPIStyle,
+    teamPlanConstrainedDecoding: Bool = false
   ) throws -> GalaxySSIContact {
     let providerName = provider.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Custom")
     let cleanDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1709,6 +1710,10 @@ final class GalaxySSIStore: ObservableObject {
     guard CloudModelCredentialPolicy.isStoredCredential(cleanAPIKey) else {
       throw GalaxySSIError.missingAPIKey
     }
+    guard !teamPlanConstrainedDecoding || (apiStyle == .openAICompatible && AgentTeamPlanWire.canonicalEndpoint(cleanEndpoint)) else {
+      throw GalaxySSIError.invalidPayload(GalaxySSILocalization.string("galaxyssi.conversation_team.schema_endpoint",
+        fallback: "Constrained team planning requires a canonical loopback OpenAI endpoint.", language: languagePolicy.interfaceLanguage))
+    }
     let now = Date()
     let providerSlug = GalaxySSIStore.slug(providerName)
     let contactId = "cloud:\(providerSlug)"
@@ -1722,7 +1727,8 @@ final class GalaxySSIStore: ObservableObject {
       endpoint: cleanEndpoint,
       apiStyle: apiStyle,
       keychainAccount: account,
-      updatedAt: now
+      updatedAt: now,
+      teamPlanConstrainedDecoding: teamPlanConstrainedDecoding ? true : nil
     )
     var contact = contacts.first { $0.id == contactId } ?? GalaxySSIContact(
       id: contactId,

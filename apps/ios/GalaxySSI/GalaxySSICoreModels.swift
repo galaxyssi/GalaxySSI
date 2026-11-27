@@ -541,6 +541,7 @@ struct CloudModelConfig: Codable, Identifiable, Equatable, Hashable {
   var apiStyle: GalaxySSICloudAPIStyle
   var keychainAccount: String
   var updatedAt: Date
+  var teamPlanConstrainedDecoding: Bool? = nil
 }
 
 struct CloudModelPreset: Identifiable, Equatable, Hashable {
@@ -550,6 +551,7 @@ struct CloudModelPreset: Identifiable, Equatable, Hashable {
   var modelId: String
   var endpoint: String
   var apiStyle: GalaxySSICloudAPIStyle
+  var teamPlanConstrainedDecoding = false
 
   static let androidParity: [CloudModelPreset] = [
     CloudModelPreset(provider: "OpenAI", name: "GPT-5.6 Sol", modelId: "gpt-5.6-sol", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
@@ -572,7 +574,9 @@ struct CloudModelPreset: Identifiable, Equatable, Hashable {
     CloudModelPreset(provider: "OpenRouter", name: "OpenRouter Auto", modelId: "openrouter/auto", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "OpenRouter", name: "GPT-6.2 Astra via OpenRouter", modelId: "openai/gpt-6.2-astra", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
     CloudModelPreset(provider: "OpenRouter", name: "GPT-6.2 Sol via OpenRouter", modelId: "openai/gpt-6.2-sol", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
-    CloudModelPreset(provider: "Custom", name: "OpenAI Compatible", modelId: "model-id", endpoint: "https://api.example.com/v1/chat/completions", apiStyle: .openAICompatible)
+    CloudModelPreset(provider: "Custom", name: "OpenAI Compatible", modelId: "model-id", endpoint: "https://api.example.com/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Custom", name: "llama.cpp (JSON Schema)", modelId: "local-model", endpoint: "http://127.0.0.1:8080/v1/chat/completions",
+      apiStyle: .openAICompatible, teamPlanConstrainedDecoding: true)
   ]
 }
 
