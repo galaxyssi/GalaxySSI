@@ -141,6 +141,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     AgentKnowledgeBackgroundScheduler.register()
     AgentKnowledgeStorageBackground.register()
     AgentIOSOriginalPageArchiveBackground.register()
+    AgentConversationGoalBackground.register()
     return true
   }
 
@@ -418,6 +419,7 @@ private struct GalaxySSIRuntimeRoot: View {
       .modifier(GalaxySSIHealthMotionLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthReviewNotificationLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthCareFollowUpLifecycle(store: runtime.store))
+      .modifier(AgentConversationGoalLifecycle(store: runtime.store))
       .modifier(GalaxySSIHealthCareResearchLifecycle(store: runtime.store, coordinator: runtime.coordinator))
       .modifier(GalaxySSIHealthCareModelAttentionLifecycle(store: runtime.store, coordinator: runtime.coordinator))
       .galaxySSITextScale(runtime.store.displaySettings)
