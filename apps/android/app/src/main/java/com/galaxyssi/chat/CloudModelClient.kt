@@ -369,19 +369,17 @@ object CloudModelClient {
                         val body = JSONObject()
                         if (provider != AgentModelToolProvider.GEMINI) body.put("model", contact.getString("cloud_model"))
                         copyJsonFields(conversation, body)
+                        if (toolCatalog.descriptors.isNotEmpty()) body.put("tools", toolCatalog.encoded)
                         when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> {
-                                body.put("tools", toolCatalog.encoded)
-                                    .put("tool_choice", "auto")
-                                    .put("stream", false)
+                                if (toolCatalog.descriptors.isNotEmpty()) body.put("tool_choice", "auto")
+                                body.put("stream", false)
                             }
                             AgentModelToolProvider.ANTHROPIC -> {
-                                body.put("tools", toolCatalog.encoded)
-                                    .put("max_tokens", request.remainingTokens.coerceIn(256L, 4_000L))
+                                body.put("max_tokens", request.remainingTokens.coerceIn(256L, 4_000L))
                             }
                             AgentModelToolProvider.GEMINI -> {
-                                body.put("tools", toolCatalog.encoded)
-                                    .put(
+                                body.put(
                                         "generationConfig",
                                         JSONObject()
                                             .put("temperature", 0.1)

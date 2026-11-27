@@ -1,0 +1,23 @@
+<resources>
+    <string name="goal_title">会话长期目标</string>
+    <string name="goal_help">/goal 目标内容：创建后台写作或分析目标\n/goal 状态：查看进度\n/goal 暂停：暂停执行\n/goal 继续 [补充说明]：从已有成果继续\n/goal 停止：结束目标并保留结果</string>
+    <string name="goal_round">第 %1$d 轮 · %2$s</string>
+    <string name="goal_running">进行中</string>
+    <string name="goal_paused">已暂停</string>
+    <string name="goal_blocked">需要处理</string>
+    <string name="goal_done">已完成</string>
+    <string name="goal_stopped">已停止</string>
+    <string name="goal_chat_unavailable">请在普通 Agent 会话中使用，不附带文件或提及成员。</string>
+    <string name="goal_interrupted">上轮请求中断，结果未知，未自动重发。输入 /goal 继续 可从已保存的成果接着做。</string>
+    <string name="goal_invalid">模型没有返回可保存的阶段成果。之前的成果已保留。</string>
+    <string name="goal_provider_error">%1$s 本轮未成功。请检查模型连接和授权，再继续。</string>
+    <string name="goal_save_error">操作未完成，或目标状态已改变。请用 /goal 状态 核对。</string>
+    <string name="goal_command_receipt">长期目标：%1$s · %2$s</string>
+    <string name="goal_confirm">%1$s\n\n执行模型：%2$s\n本次最多 %3$d 轮。仅向此模型提供目标、阶段成果和补充说明；云端调用可能产生费用。不调用工具，不读取其他聊天。</string>
+    <string name="goal_run">开始执行</string>
+    <string name="goal_existing">此会话已有目标。可查看、暂停或继续；要换目标，请先停止。</string>
+    <string name="goal_no_provider">没有可用的端侧或直连云模型，请先在模型设置中配置。后台目标不会调用配对的 Desktop Agent。</string>
+    <string name="goal_choose">选择本次长期目标的模型</string>
+    <string name="goal_not_resumable">只有已暂停或需要处理的目标才能继续，请用 /goal 状态 查看。</string>
+    <string name="goal_budget">本次轮数已用完。输入 /goal 继续 可授权下一组轮次。</string>
+</resources>
