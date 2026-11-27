@@ -1426,6 +1426,7 @@
     C46490000000000000000001 /* AgentTeamPlanWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46490000000000000000002 /* AgentTeamPlanWire.swift */; };
     C46490000000000000000003 /* AgentTeamPlanJSONPreflight.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46490000000000000000004 /* AgentTeamPlanJSONPreflight.swift */; };
     C46490000000000000000005 /* AgentTeamPlanWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46490000000000000000006 /* AgentTeamPlanWireTests.swift */; };
+    C46510000000000000000001 /* AgentModelAuthoredFinalReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46510000000000000000002 /* AgentModelAuthoredFinalReviewTests.swift */; };
     C46470000000000000000001 /* AgentTeamPublicObjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */; };
     C46460000000000000000001 /* AgentPinnedCloudTeamOffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46460000000000000000002 /* AgentPinnedCloudTeamOffer.swift */; };
     C46460000000000000000003 /* AgentPinnedCloudTeamAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46460000000000000000004 /* AgentPinnedCloudTeamAdmission.swift */; };
@@ -3846,6 +3847,7 @@
     C46490000000000000000002 /* AgentTeamPlanWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPlanWire.swift; sourceTree = "<group>"; };
     C46490000000000000000004 /* AgentTeamPlanJSONPreflight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPlanJSONPreflight.swift; sourceTree = "<group>"; };
     C46490000000000000000006 /* AgentTeamPlanWireTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPlanWireTests.swift; sourceTree = "<group>"; };
+    C46510000000000000000002 /* AgentModelAuthoredFinalReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelAuthoredFinalReviewTests.swift; sourceTree = "<group>"; };
     C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPublicObjectionTests.swift; sourceTree = "<group>"; };
     C46460000000000000000002 /* AgentPinnedCloudTeamOffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPinnedCloudTeamOffer.swift; sourceTree = "<group>"; };
     C46460000000000000000004 /* AgentPinnedCloudTeamAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPinnedCloudTeamAdmission.swift; sourceTree = "<group>"; };
@@ -7304,6 +7306,7 @@
         C46440000000000000000006 /* AgentTeamComparisonSheetTests.swift */,
         C46440000000000000000008 /* AgentTeamDraftAuditTests.swift */,
         C46490000000000000000006 /* AgentTeamPlanWireTests.swift */,
+        C46510000000000000000002 /* AgentModelAuthoredFinalReviewTests.swift */,
         C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */,
         C46460000000000000000006 /* AgentPinnedCloudTeamOfferTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
@@ -9888,6 +9891,7 @@
         C46440000000000000000005 /* AgentTeamComparisonSheetTests.swift in Sources */,
         C46440000000000000000007 /* AgentTeamDraftAuditTests.swift in Sources */,
         C46490000000000000000005 /* AgentTeamPlanWireTests.swift in Sources */,
+        C46510000000000000000001 /* AgentModelAuthoredFinalReviewTests.swift in Sources */,
         C46470000000000000000001 /* AgentTeamPublicObjectionTests.swift in Sources */,
         C46460000000000000000005 /* AgentPinnedCloudTeamOfferTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,

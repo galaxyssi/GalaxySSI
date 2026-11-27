@@ -12,7 +12,7 @@ for (const token of ['system == AgentConversationalTeamProtocol.planner', 'apiSt
   'if !constrained, ["ROLE", "WORK", "REVIEW", "CRITIC", "SYNTHESIS"].contains(prefix)',
   'AgentTeamPlanJSONPreflight(reply); try preflight.validate()', 'Set(object.keys) == ["roles", "synthesis"]',
   'Set(role.keys) == ["kind", "parents", "task"]', 'guard case .int(let number) = value',
-  '[.control, .format, .lineSeparator, .paragraphSeparator]', 'AgentConversationalTeamProtocol.plan(canonical)',
+  '[.control, .format, .lineSeparator, .paragraphSeparator]', 'let plan = try AgentConversationalTeamProtocol.plan(text)',
   '"maxLength": .int(400)', '"maximum": .int(10)', 'max: 3', 'max: 10']) assert(wire.includes(token), token);
 const preflight = read('GalaxySSI/AgentTeamPlanJSONPreflight.swift');
 for (const token of ['cursor == bytes.count', 'depth <= 5, nodes <= 100', 'keys.insert(key).inserted', 'keys.count <= 10',
