@@ -16,6 +16,8 @@ function revocation(source) {
   return source.slice(begin, end);
 }
 function retainedPairingServices(source) {
+  const learning = path.join(__dirname, 'check-learning-outbox-scope.cjs');
+  if (fs.existsSync(learning)) source = require(learning).retainedServices(source);
   if (!source.includes('func revokeDesktopPairing(desktopId: String) async -> Bool')) return source;
   const exact = revocation(show(approved, 'GalaxySSIServices'));
   assert.equal(source.split(exact).length, 2, 'Only the pinned approved revocation implementation may normalize');
