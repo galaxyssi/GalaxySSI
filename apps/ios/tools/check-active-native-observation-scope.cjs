@@ -1,7 +1,7 @@
 // Source contracts only; no Swift timers, transport, recovery or native fixtures executed.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
+const base = '85ffb607cc2bf1127ae6f3e9858ece5ed200d2e1';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -34,7 +34,7 @@ function retained(file, source) {
   if (file.endsWith('AgentConnectorTimeoutResolverTests.swift') && source.includes('  func testActiveObservationWakeUsesUnacceptedAndAcceptedStageClocks'))
     return source.replace(section(source, '  func testActiveObservationWakeUsesUnacceptedAndAcceptedStageClocks',
       '  func testObservationDeadlineUsesStageSpecificAnchors'), '');
-  if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
+  if (file.endsWith('check-native-delivery-acceptance-scope.cjs')) return source
     .replace("const read = file => require('./check-active-native-observation-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-active-native-observation-scope.cjs').retained(file, source);\n", '');
@@ -42,7 +42,7 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'AgentAutomationModels.swift',
-    'apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift', 'apps/ios/tools/check-desktop-probe-owner-scope.cjs'])
+    'apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift', 'apps/ios/tools/check-native-delivery-acceptance-scope.cjs'])
     assert.equal(retained(file, read(file)), old(file), file);
   const service = read(app + 'GalaxySSIServices.swift');
   const wake = section(service, '  private func nativeConnectorObservationContext(', '  private func recordNativeConnectorObservation(');

@@ -1,7 +1,8 @@
 # Active native connector observation wakes
 
 Android #3119 follow-up from main
-`8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
+`85ffb607cc2bf1127ae6f3e9858ece5ed200d2e1`, synchronized during merge conflict
+resolution with #4593/#4594 and their source checks retained.
 
 ## Actual connection
 

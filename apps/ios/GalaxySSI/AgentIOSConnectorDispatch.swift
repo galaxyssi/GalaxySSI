@@ -83,7 +83,7 @@ struct AgentIOSConnectorDispatch {
       metadata: ["awaiting_response": "true", "completion_verified": "false",
         "source_message_id": String(source), "contact_id": target, "resource_id": target,
         "conversation_id": conversation, "turn_id": turn, "task_id": task, "remote_task_id": task,
-        "execution_generation": "1", "remote_task_status": "queued",
+        "execution_generation": "1",
         "resource_started_at": String(AgentControlPlaneClock.nowMillis())])
   }
 
