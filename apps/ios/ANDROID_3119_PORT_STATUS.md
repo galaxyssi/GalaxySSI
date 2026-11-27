@@ -114,6 +114,15 @@ All 17 Android changed files are pinned with explicit dispositions. Manual selec
 
 ## Verification Limits
 
+### Native journal delivery acceptance follow-up
+
+See `ANDROID_3119_NATIVE_DELIVERY_ACCEPTANCE.md`: numeric-source message delivery
+completions now reach the exact saved native waiting receipt through an owned
+task commit before completion consumption. Replay cannot refresh its acceptance
+clock or overwrite newer remote progress. Uncertainty, phase and original result
+ownership remain intact. Seven fixture methods are source only; active timeout and
+broader callback/native acceptance remain incomplete.
+
 ### Native connector acceptance evidence follow-up
 
 See `ANDROID_3119_CONNECTOR_ACCEPTANCE_EVIDENCE.md`: new local queue receipts no
