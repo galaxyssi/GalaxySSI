@@ -14577,27 +14577,36 @@ final class MessageCoordinator: ObservableObject {
           let executor = localNativeToolRuntime?.actionExecutor else { return }
     guard UIApplication.shared.applicationState == .active,
           AgentIOSCaptureSystemPermission.state(for: wait.kind) == .granted,
+          !store.agentSafetySettings.executionPaused, store.agentSafetySettings.taskExecutionMode != .planOnly,
           wait.permissionMode == store.agentSafetySettings.permissionMode else {
       pauseCapturePermission(wait, task: &task, stage: "recheck_required")
       return
     }
     if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
-    var dispatched = wait
-    dispatched.dispatched = true
-    task.capturePermission = dispatched
-    task.phase = .executing
-    task.verification = "User-visible capture dispatched"
-    task.updatedAtMillis = AgentControlPlaneClock.nowMillis()
-    captureDispatches[task.taskId] = wait.token
-    store.upsertAgentTask(task)
-    recordCapturePermissionEvent(.runStarted, wait: wait, stage: "dispatched")
     var scoped = scopedLocalNativeExecutionAction(action, outgoing: outgoing, task: task)
     scoped.parameters["_galaxyssi_capture_permission_preflight"] = "true"
     let executionAction = scoped
     let screen = currentAgentScreenContext
+    guard let prepared = AgentApprovedCaptureDispatch.prepare(wait: wait, task: task, outgoing: outgoing,
+      executionAction: executionAction, screen: screen, nowMillis: AgentControlPlaneClock.nowMillis()) else {
+      pauseCapturePermission(wait, task: &task, stage: "checkpoint_invalid")
+      return
+    }
+    guard store.commitOwnedAgentTaskState(expected: task, updated: prepared.task) else {
+      lastError = localizedReply("galaxyssi.agent.capture_permission.checkpoint_unsaved",
+        fallback: "Capture did not start because its checkpoint could not be saved.")
+      return
+    }
+    guard let dispatched = prepared.task.capturePermission else { return }
+    task = prepared.task
+    captureDispatches[task.taskId] = wait.token
+    recordCapturePermissionEvent(.runStarted, wait: wait, stage: "dispatched")
+    let journal = localPlanNodeJournal
     Task { @MainActor [weak self] in
       let result = await Task.detached(priority: .userInitiated) {
-        executor.execute(action: executionAction, screen: screen)
+        AgentSequentialPlanNodeDispatch.execute(prepared.node, journal: journal) {
+          executor.execute(action: executionAction, screen: screen)
+        }
       }.value
       guard let self, self.captureDispatches[wait.taskId] == wait.token else { return }
       self.captureDispatches.removeValue(forKey: wait.taskId)
