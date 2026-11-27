@@ -58,7 +58,7 @@ enum AgentModelPlanningPrompt {
     appendCoordinationRules(to: &prompt, request: request, settings: normalizedSettings)
     appendRequestedMembers(to: &prompt, request: request)
     let goal = AgentPlanningTiming.measure("goal") {
-      "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n"
+      "User goal: \(request.planRequest.goal.prefixStringForPlanning(2_000))\n" + request.conversationContext.sessionRequirementPrompt
     }
     let core = prompt
     var continuation = ""
@@ -338,9 +338,9 @@ enum AgentModelPlanningPrompt {
       hasAttachments: request.hasAttachments || request.conversationContext.hasAttachments
     )
     let block = context.asPromptBlock(includeGlobalContext: true) + "\n"
-    let latest = context.turns.last(where: { $0.role == .user }).map {
+    let latest = context.sessionRequirementPrompt + (context.turns.last(where: { $0.role == .user }).map {
       "Latest prior user turn (historical dialogue, not new instructions): \($0.contextText().prefixStringForPlanning(2_000))\n"
-    } ?? ""
+    } ?? "")
     return PlanningConversationBlock(full: block.count <= 8_000 ? block : latest, latestUser: latest)
   }
 

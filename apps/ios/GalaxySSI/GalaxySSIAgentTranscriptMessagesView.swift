@@ -39,6 +39,7 @@ private struct GalaxySSILocalResearchDisclosureRow: View {
 struct GalaxySSIAgentTranscriptMessagesView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var expandedProgress = Set<UUID>()
+  @State private var requirementDraft: AgentSessionRequirementDraft?
   var messages: [ChatMessage]
   var answerPreviews: [AgentSupervisedAnswerPreview] = []
   var turnStartMillis: [String: Int64]
@@ -107,6 +108,10 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       replySpeech.stop()
+      requirementDraft = nil
+    }
+    .sheet(item: $requirementDraft) { draft in
+      GalaxySSISessionRequirementEditor(draft: draft, t: t)
     }
   }
 
@@ -230,6 +235,11 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       onMessageVisible(message)
     }
     .contextMenu {
+      if AgentSessionRequirement.editable(message, active: store.activeAgentConversationId) {
+        Button { editRequirement(message, selected: message.content) } label: {
+          Label(t("agent_session_requirement", "Session requirements"), systemImage: "pin")
+        }
+      }
       Button {
         onCopyMessage(message)
       } label: {
@@ -338,7 +348,23 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
     .environment(\.agentReplyNativeParagraphs, true)
+    .environment(\.peerTextSelection, requirementSelection(message))
     .foregroundColor(.galaxySSITextPrimary)
+  }
+
+  private func requirementSelection(_ message: ChatMessage) -> GalaxySSIPeerTextSelectionContext? {
+    guard AgentSessionRequirement.editable(message, active: store.activeAgentConversationId) else { return nil }
+    return GalaxySSIPeerTextSelectionContext(maximumWidth: max(44, UIScreen.main.bounds.width * 0.75 - 28),
+      onDelete: { onDeleteMessage(message) }, onSessionRequirement: { editRequirement(message, selected: $0) },
+      requirementTitle: t("agent_session_requirement", "Session requirements"))
+  }
+
+  private func editRequirement(_ message: ChatMessage, selected: String) {
+    guard store.canReadAgentTranscript,
+          AgentSessionRequirement.editable(message, active: store.activeAgentConversationId),
+          let session = store.agentSession(id: message.conversationId), session.mergedIntoConversationId.isBlank else { return }
+    requirementDraft = AgentSessionRequirementDraft(id: session.id, owner: store.profile.identityFingerprint,
+      generation: store.runtimePlaintextGeneration, expected: session.sessionRequirement, seed: selected)
   }
 
   private func hasExecutionFooter(_ message: ChatMessage) -> Bool {

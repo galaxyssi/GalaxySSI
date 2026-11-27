@@ -4000,6 +4000,9 @@
 "galaxyssi.agent_task.status_queued" = "已排队";
 "galaxyssi.common.create" = "创建";
 "galaxyssi.common.ok" = "好";
+"agent_session_requirement" = "会话要求";
+"agent_session_requirement_remove" = "移除要求";
+"agent_session_requirement_unavailable" = "此会话已更改或不可用。";
 "galaxyssi.common.off" = "关闭";
 "galaxyssi.common.confirm" = "确认";
 "galaxyssi.common.manage" = "管理";
