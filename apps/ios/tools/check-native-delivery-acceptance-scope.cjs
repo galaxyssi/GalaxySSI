@@ -1,7 +1,7 @@
 // Source contracts only; not executed Swift, receipt delivery or persistence/fault acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
+const base = 'b580f85d6bd0a0a7323cf075dd9b6cd86bd75aa1';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -32,7 +32,7 @@ function retained(file, source) {
     return source.slice(0, source.indexOf(policyAnchor));
   if (file.endsWith('AgentConnectorTransportReceiptRecorderTests.swift') && source.includes(testAnchor))
     return source.replace(section(source, testAnchor, 'final class AgentConnectorTransportReceiptRecorderTests:'), '');
-  if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
+  if (file.endsWith('check-connector-acceptance-evidence-scope.cjs')) return source
     .replace("const read = file => require('./check-native-delivery-acceptance-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-native-delivery-acceptance-scope.cjs').retained(file, source);\n", '');
@@ -41,7 +41,7 @@ function retained(file, source) {
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'MqttDesktopConnectorProjection.swift',
     app + 'AgentConnectorTransportReceiptRecorder.swift', 'apps/ios/GalaxySSITests/AgentConnectorTransportReceiptRecorderTests.swift',
-    'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-connector-acceptance-evidence-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const source = read(app + 'GalaxySSIServices.swift');
   assert.equal(source.split(callback).length, 2);
   assert(read(app + 'MqttDesktopConnectorProjection.swift').includes(gate));

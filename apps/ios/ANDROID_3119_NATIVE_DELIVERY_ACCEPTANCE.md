@@ -1,7 +1,8 @@
 # Native journal delivery acceptance
 
 Android #3119 follow-up from main
-`8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
+`b580f85d6bd0a0a7323cf075dd9b6cd86bd75aa1`, synchronized during merge conflict
+resolution with #4593's acceptance evidence and both source guards retained.
 
 ## Actual missing producer
 
@@ -38,8 +39,8 @@ Transport receipts/outbox/cryptography, UUID/Codex/team presentation, timing
 thresholds and the managed-result settlement path remain unchanged. A removed,
 cancelled or no-longer-current native task is ignored rather than resurrected.
 This does not newly implement acceptance for all other numeric consumers or the
-legacy MQTT path. Merged #4592 is retained from main; unmerged #4593 remains a
-separate increment and its production delta is not included.
+legacy MQTT path. Merged #4592 and #4593 are retained from main; their production
+deltas are not part of this increment.
 
 ## Evidence and remaining work
 

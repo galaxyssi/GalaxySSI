@@ -123,6 +123,15 @@ clock or overwrite newer remote progress. Uncertainty, phase and original result
 ownership remain intact. Seven fixture methods are source only; active timeout and
 broader callback/native acceptance remain incomplete.
 
+### Native connector acceptance evidence follow-up
+
+See `ANDROID_3119_CONNECTOR_ACCEPTANCE_EVIDENCE.md`: new local queue receipts no
+longer fabricate remote queued status. The exact authenticated native status
+projection supplies a missing first-acceptance clock without resetting it on
+later progress. Existing timing policy and original owner/result semantics are
+retained. Four fixture methods are source only; active timeout scheduling and
+native acceptance remain incomplete.
+
 ### Exclusive Desktop probe ownership follow-up
 
 See `ANDROID_3119_DESKTOP_PROBE_OWNERSHIP.md`: the shared ordinary Desktop sweep
