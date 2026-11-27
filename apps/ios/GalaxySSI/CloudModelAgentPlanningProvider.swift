@@ -39,11 +39,17 @@ extension CloudModelClient: CloudModelStructuredSending {
       store.turnReceiptCloudCapture(conversation: request.conversationContext.conversationId,
         turn: request.executionTurnId, model: contact.selectedCloudModel?.modelId ?? "")
     }
+    let review = await MainActor.run { () -> AgentPinnedCloudTeamAdmission.Invitation? in
+      guard request.permitsAnswerOnlyResponse, !request.hasAttachments else { return nil }
+      return AgentPinnedCloudTeamAdmission.invitation(store: store, contact: contact,
+        conversation: request.conversationContext.conversationId, turn: request.executionTurnId, objective: request.planRequest.goal)
+    }
     do {
       return try await CloudSupervisedResearch.run(
         request: prepared,
         conversationId: request.conversationContext.conversationId, turnId: request.executionTurnId,
-        stream: AgentTurnReceiptStreamClient(base: URLSessionCloudModelStreamClient(), capture: capture), executor: CloudWebGroundingToolExecutor()
+        stream: AgentTurnReceiptStreamClient(base: URLSessionCloudModelStreamClient(), capture: capture), executor: CloudWebGroundingToolExecutor(),
+        review: review, reviewStore: store
       )
     } catch CloudSupervisedResearch.Error.streamingUnsupported {
       if let capture { _ = capture.store.cloudStarted(capture.key, model: capture.requestedModel) }
@@ -172,7 +178,8 @@ enum CloudSupervisedResearch {
 
   static func run(
     request: ModelStreamRequest, conversationId: String, turnId: String,
-    stream: CloudModelStreamClient, executor: CloudConversationToolExecuting
+    stream: CloudModelStreamClient, executor: CloudConversationToolExecuting,
+    review: AgentPinnedCloudTeamAdmission.Invitation? = nil, reviewStore: GalaxySSIStore? = nil
   ) async throws -> String {
     var scoped = request
     scoped.preserveProviderReasoning = request.isDirectDeepSeekChatEndpoint
@@ -186,8 +193,15 @@ enum CloudSupervisedResearch {
       try Task.checkCancellation()
       let final = round == 4 || toolRoundsClosed
       if final { prepared.supervisedFinalRound() }
-      let roundRequest = try prepared.requestForRound(roundId: "\(request.requestId):supervised:\(round)")
+      var roundRequest = try prepared.requestForRound(roundId: "\(request.requestId):supervised:\(round)")
+      var advertised = false
+      if round == 0, !final, let review, let reviewStore, await review.current(reviewStore) {
+        let offered = try AgentPinnedCloudTeamOffer.advertise(roundRequest)
+        advertised = offered.bodyJson != roundRequest.bodyJson; roundRequest = offered
+      }
       let assembler = ToolCallDeltaAssembler()
+      var reviewFrames = AgentPinnedCloudTeamOffer.Frames()
+      var finishReason: String?
       var raw = ""
       var completed = false
       var providerReasoning: String?
@@ -200,6 +214,7 @@ enum CloudSupervisedResearch {
           guard raw.utf8.count + value.text.utf8.count <= 64_000 else { throw Error.responseTooLarge }
           raw += value.text
         case .toolCallDelta(let value):
+          if value.requestId == roundRequest.requestId { reviewFrames.observe(value.payload) } else { reviewFrames.reject() }
           toolBytes += value.payload.nameDelta.utf8.count + value.payload.argumentsDelta.utf8.count
           toolIndexes.insert(value.payload.index)
           guard toolBytes <= 65_536, toolIndexes.count <= 4, value.payload.index >= 0 else {
@@ -207,6 +222,8 @@ enum CloudSupervisedResearch {
           }
           assembler.accept(value.payload)
         case .completed(let value):
+          finishReason = value.finishReason
+          if value.requestId != roundRequest.requestId { reviewFrames.reject() }
           guard !["length", "max_tokens", "content_filter"].contains(value.finishReason?.lowercased() ?? "") else {
             throw Error.incompleteResponse
           }
@@ -222,7 +239,15 @@ enum CloudSupervisedResearch {
         }
       }
       guard completed else { throw Error.incompleteResponse }
+      try Task.checkCancellation()
       let calls = assembler.completedCalls()
+      if calls.contains(where: { $0.name == AgentPinnedCloudTeamOffer.name }) {
+        guard advertised, round == 0, let review, let reviewStore,
+          let answer = AgentPinnedCloudTeamOffer.answer(calls, frames: reviewFrames, finish: finishReason, hasText: !raw.isBlank),
+          await review.accept(answer, store: reviewStore) else { throw Error.invalidToolBatch }
+        // The ordinary phone planner still validates and accepts this terminal response.
+        return AgentMcpJSONCodec.stringify(["disposition": .string("respond"), "final_response": .string(answer)])
+      }
       if calls.isEmpty, toolIndexes.isEmpty {
         guard !raw.isBlank else { throw Error.emptyResponse }
         return raw

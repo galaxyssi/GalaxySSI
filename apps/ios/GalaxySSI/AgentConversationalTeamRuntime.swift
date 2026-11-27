@@ -96,6 +96,8 @@ final class AgentConversationalTeamRuntime: ObservableObject {
       let actual = try? repository(store).read(original.conversation) else { return false }
     return actual.id == original.id && actual.state == .running &&
       actual.objective == original.objective && actual.route == original.route && actual.source == original.source &&
+      actual.pinnedCloud == original.pinnedCloud &&
+      (original.pinnedCloud != true || AgentPinnedCloudTeamAdmission.current(original.route, store: store, conversation: original.conversation)) &&
       (original.source == nil || original.source?.matches(store, conversation: original.conversation, objective: original.objective) == true)
   }
   private func ask(_ system: String, prompt: String, original: AgentConversationalTeamJob,
