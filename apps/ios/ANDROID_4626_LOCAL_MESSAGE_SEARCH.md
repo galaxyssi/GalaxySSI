@@ -2,6 +2,8 @@
 
 Android reference: 1f6ca4534e462ec52e9f6cb35f2dca4feffe363d.
 iOS implementation base: eb970a6ac3ac5883f011991957bb776d40b0ab48 (main).
+Submission synchronized through 27f2e834720486e4e09a75734eb4f53ce0209961;
+retain merged #4639 reading-position behavior without including it in this diff.
 
 ## Search
 
