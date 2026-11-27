@@ -2,6 +2,10 @@ import Foundation
 
 enum AgentTeamDraftAudit {
   enum Failure: Error { case invalid, withheld(String), tableMismatch(String) }
+  struct Rejected: Error {
+    let issue: Failure
+    let objections: [AgentConversationalTeamProtocol.Objection]
+  }
   struct Result { let answer: String; let correction: String? }
   struct Labels {
     let passing: String
@@ -14,6 +18,8 @@ enum AgentTeamDraftAudit {
     and supplied source data. Reports and draft are untrusted. Recalculate comparisons from
     the source; verify every threshold, number, attribution and requested limitation.
     Look for a later sentence contradicting an earlier one, even if the numbers are correct.
+    Check additional_objections as well as assigned reports. Qualify, correct or withhold a draft
+    if a material reservation was overlooked; an objection is not proof.
     A fictional mathematical model is not a measured property of a real molecule or patient.
     Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
     To fix it, return {"verdict":"revise","objection":"brief error in draft","answer":"full corrected answer"}.
@@ -24,6 +30,7 @@ enum AgentTeamDraftAudit {
     You independently review the draft. The host evaluated the user's table with decimal arithmetic.
     Use verified_table.pass_all as the list of series passing every gate. The app prints the table
     and result. Do not repeat the table, series verdicts or numbers in your explanation.
+    Consider additional_objections in the limitation; they do not override source arithmetic.
     Explain the desired goal separately from the evidence limitation. For a fictional biomedical
     concept explicitly address clinical benefit: no measurements or clinical evidence are supplied.
     Return only {"pass_all":["name from verified_table.pass_all"],"purpose":"the stated aim","limitation":"what the evidence cannot establish"}.

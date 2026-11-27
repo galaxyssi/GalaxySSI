@@ -1423,6 +1423,7 @@
     C46440000000000000000003 /* AgentTeamDraftAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46440000000000000000004 /* AgentTeamDraftAudit.swift */; };
     C46440000000000000000005 /* AgentTeamComparisonSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46440000000000000000006 /* AgentTeamComparisonSheetTests.swift */; };
     C46440000000000000000007 /* AgentTeamDraftAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46440000000000000000008 /* AgentTeamDraftAuditTests.swift */; };
+    C46470000000000000000001 /* AgentTeamPublicObjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */; };
     A10000000000000000000EA7 /* AgentConversationScheduleTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000EA7 /* AgentConversationScheduleTools.swift */; };
     A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */; };
     A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */; };
@@ -3836,6 +3837,7 @@
     C46440000000000000000004 /* AgentTeamDraftAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDraftAudit.swift; sourceTree = "<group>"; };
     C46440000000000000000006 /* AgentTeamComparisonSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamComparisonSheetTests.swift; sourceTree = "<group>"; };
     C46440000000000000000008 /* AgentTeamDraftAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDraftAuditTests.swift; sourceTree = "<group>"; };
+    C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamPublicObjectionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000EA7 /* AgentConversationScheduleTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationScheduleTools.swift; sourceTree = "<group>"; };
     A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechPlayback.swift; sourceTree = "<group>"; };
     A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSpeechControls.swift; sourceTree = "<group>"; };
@@ -7285,6 +7287,7 @@
         C46420000000000000000004 /* AgentLocalTeamReviewTests.swift */,
         C46440000000000000000006 /* AgentTeamComparisonSheetTests.swift */,
         C46440000000000000000008 /* AgentTeamDraftAuditTests.swift */,
+        C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
         C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */,
@@ -9862,6 +9865,7 @@
         C46420000000000000000003 /* AgentLocalTeamReviewTests.swift in Sources */,
         C46440000000000000000005 /* AgentTeamComparisonSheetTests.swift in Sources */,
         C46440000000000000000007 /* AgentTeamDraftAuditTests.swift in Sources */,
+        C46470000000000000000001 /* AgentTeamPublicObjectionTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
         C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */,
