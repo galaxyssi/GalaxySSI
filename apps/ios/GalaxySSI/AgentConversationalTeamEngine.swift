@@ -59,8 +59,11 @@ enum AgentConversationalTeamEngine {
       try reserveCall()
       let worksheet = AgentTeamComparisonSheet.evaluate(objective)
       let finalAuditRequired = AgentConversationalTeamCommand.requestsFinalAudit(objective)
-      let plan = try Contract.plan(await call(Contract.planner, input: input("plan", objective: worksheet?.plannerObjective ?? objective,
-        fields: finalAuditRequired ? ["final_review_required": true] : [:]), limit: 6_000, ask: ask))
+      let planReply = try await call(finalAuditRequired ? Contract.finalReviewPlanner : Contract.planner,
+        input: input("plan", objective: worksheet?.plannerObjective ?? objective,
+          fields: finalAuditRequired ? ["final_review_required": true] : [:]), limit: 6_000, ask: ask)
+      let canonical = finalAuditRequired ? try AgentTeamPlanWire(constrained: false, finalReview: true).decode(planReply) : planReply
+      let plan = try Contract.plan(canonical)
       let editor = plan.finalEditor, contributors = plan.roles.filter { $0 != editor }
       if finalAuditRequired && editor == nil { throw Contract.Failure.finalAuditMissing }
       onEvent(.planAccepted(plan.roles.count))

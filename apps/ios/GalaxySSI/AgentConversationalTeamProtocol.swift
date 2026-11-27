@@ -57,6 +57,17 @@ enum AgentConversationalTeamProtocol {
     Use your own assignments for the actual objective. Start directly with the first role or SYNTHESIS|.
     Stop immediately after the single SYNTHESIS|brief line. No prose, fences or blank lines.
     """ + "\n" + boundary
+  static let finalReviewPlanner = """
+    Plan, do not solve. Return only one JSON object with roles, synthesis, and final_review.
+    Example: {"roles":["Compare the schedules"],"synthesis":"Explain the tradeoff","final_review":"Check the draft against the original schedules"}.
+    Write your own briefs for this objective. Use zero to nine contributors. A string is an independent WORK assignment.
+    For dependencies or specialized contributors use {"kind":"WORK","parents":[],"task":"assignment"}.
+    WORK produces findings; REVIEW checks earlier findings; CRITIC considers a counterposition.
+    Parents are distinct one-based earlier role numbers; at most three parents or children per role. No other keys.
+    Write synthesis as the drafting instruction. Write final_review as a separate nonblank instruction for an
+    independent reviewer to check the actual draft against the objective. Do not list that reviewer as a contributor.
+    Each brief is a single nonblank line of at most 400 characters, without pipes.
+    """ + "\n" + boundary
   static let worker = """
     Perform only your assigned role on the objective. Do not delegate. Reports are from direct dependencies only.
     Reviewers check supplied findings; dissent roles consider an independent counterposition.
