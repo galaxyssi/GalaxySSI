@@ -5,6 +5,8 @@ const base = '43fa7602dad7ba6df27ac67c992421d5b25cf408';
 const clean = value => value.replace(/\r\n/g, '\n');
 const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
 const old = file => clean(cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
+const pairingFile = path.join(__dirname, 'check-pairing-history.cjs');
+const pairing = fs.existsSync(pairingFile) && fs.readFileSync(pairingFile, 'utf8').includes('function retainedPairingStore(') ? require(pairingFile) : null;
 function section(source) {
   const begin = source.indexOf('  private func dispatchApprovedCapture(\n');
   const end = source.indexOf('  private func recordCapturePermissionEvent(\n', begin);
@@ -14,6 +16,7 @@ function section(source) {
 }
 function retainedApprovedCaptureServices(source) {
   if (!source.includes('AgentApprovedCaptureDispatch.prepare(')) return source;
+  if (pairing) source = pairing.retainedPairingServices(source);
   return source.replace(section(source), section(old(app + 'GalaxySSIServices.swift')));
 }
 function retainedCaptureEnvelope(helper) {
@@ -59,7 +62,8 @@ if (require.main === module) {
   assert(!/URLSession|UIApplication|AVCapture|\.execute\(|grantedPermissions|grantedConsents/.test(helper), 'Preparation does not execute or grant OS permission');
   for (const file of ['AgentSequentialPlanNodeDispatch', 'AgentPlanNodeJournal', 'AgentIOSVisibleCaptureNativeTools',
     'AgentIOSForegroundVisibleCaptureProvider', 'AgentIOSVisibleCaptureUIKitSurfaces', 'AgentActionEffectExecutor', 'GalaxySSIStore'])
-    assert.equal(read(app + file + '.swift'), old(app + file + '.swift'), file + ' unchanged');
+    assert.equal(file === 'GalaxySSIStore' && pairing ? pairing.retainedPairingStore(read(app + file + '.swift')) : read(app + file + '.swift'),
+      old(app + file + '.swift'), file + ' unchanged outside the exact approved pairing version');
   const tests = read('apps/ios/GalaxySSITests/AgentApprovedCaptureDispatchTests.swift');
   assert.equal((tests.match(/func test/g) || []).length, 12);
   for (const token of ['legacy.activePlan = nil', 'AgentIOSVisibleCaptureKind.allCases', 'kind: .photo',

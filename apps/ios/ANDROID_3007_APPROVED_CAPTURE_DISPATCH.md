@@ -1,5 +1,10 @@
 # Approved Capture Dispatch Persistence (Android #3007 Follow-up)
 
+Integration follow-up: local combination with #4664 now uses its exact exported
+revocation/Store-version normalizers when available. All capture assertions and
+the complete non-pairing Store/coordinator comparisons are retained. No additional
+capture production code is changed by this source-check compatibility update.
+
 Reference: Android #3007 `65655f0c79c6ab04121150229a65b089180f82f2`,
 MobileNativeAgentExecution's checkpoint/audit/final-input persistence before
 external dispatch. Incremental base: main `43fa7602dad7ba6df27ac67c992421d5b25cf408`.
