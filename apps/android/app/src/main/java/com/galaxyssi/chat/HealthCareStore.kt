@@ -422,7 +422,7 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         before.copy(conversationId = conversationId, revision = before.revision + 1,
             updatedAt = maxOf(before.updatedAt, System.currentTimeMillis())).also { persist(it, "discussion_bound") }
     }
-    fun approveDiscussion(grant: HealthCareDiscussionGrant) = transaction {
+    fun approveDiscussion(grant: HealthCareDiscussionGrant, sources: List<HealthBasisSource> = emptyList()) = transaction {
         val current = concern(grant.concernId) ?: throw HealthCareConflict()
         grant.visitFollowUp?.let { HealthCareVisitFollowUpTool.selected(this, current.id, it) }
         if (discussion(grant.conversationId) != current.id || current.revision != grant.revision || current.profileLink != grant.profileLink ||
@@ -434,7 +434,9 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         }
         db.insertOrThrow("discussion_grants", null, ContentValues().apply {
             put("turn_id", grant.turnId)
-            put("payload", pack("discussion_grant", grant.turnId, grant.json()))
+            put("payload", pack("discussion_grant", grant.turnId, grant.json().apply {
+                if (sources.isNotEmpty()) put("answer_basis", org.json.JSONArray(sources.map { it.json() }))
+            }))
         })
         Unit
     }
@@ -442,6 +444,27 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
         "SELECT payload FROM discussion_grants WHERE turn_id=?", arrayOf(turnId)
     ).use { row -> if (!row.moveToFirst()) null else
         HealthCareDiscussionGrant.from(unpack("discussion_grant", turnId, row.getBlob(0))).also { check(it.turnId == turnId) } }
+    fun answerBasis(grant: HealthCareDiscussionGrant): List<HealthBasisSource> {
+        val approved = db.rawQuery("SELECT payload FROM discussion_grants WHERE turn_id=?", arrayOf(grant.turnId)).use { cursor ->
+            if (!cursor.moveToFirst()) return emptyList()
+            val json = unpack("discussion_grant", grant.turnId, cursor.getBlob(0))
+            if (HealthCareDiscussionGrant.from(json) != grant || discussion(grant.conversationId) != grant.concernId) return emptyList()
+            val rows = json.optJSONArray("answer_basis")
+            (0 until (rows?.length() ?: 0)).map { HealthBasisSource.from(rows!!.getJSONObject(it)) }
+        }
+        val retrieved = linkedMapOf<String, HealthBasisSource>()
+        db.rawQuery("SELECT id,payload FROM evidence_reads WHERE concern_id=? AND turn_id=? ORDER BY id",
+            arrayOf(grant.concernId, grant.turnId)).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0)
+                val source = HealthCareEvidence.from(unpack("evidence", id, c.getBlob(1)))
+                if (source.id == id && source.grant == grant && source.retrievedAt > (retrieved[source.url]?.at ?: 0L))
+                    retrieved[source.url] = HealthBasisSource(HealthBasisKind.RETRIEVED, source.retrievedAt, source.title.take(180) + " · " + java.net.URI(source.url).host.take(64))
+            }
+        }
+        return approved + retrieved.values
+    }
+
     fun researchAuthorization(concernId: String): HealthCareResearchAuthorization? = db.rawQuery(
         "SELECT id,payload FROM research_authorizations WHERE concern_id=?", arrayOf(concernId)).use { row ->
         if (!row.moveToFirst()) null else HealthCareResearchAuthorization.from(unpack("research_authorization", concernId, row.getBlob(1))).also {

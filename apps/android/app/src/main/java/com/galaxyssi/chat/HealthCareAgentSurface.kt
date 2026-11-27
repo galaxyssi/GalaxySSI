@@ -22,9 +22,11 @@ internal class HealthCareAgentSurface(
     private var dirty = false
     private var generation = 0
     private var visibleConversation = ""
+    private val basisRows = mutableSetOf<HealthAnswerBasisRow>()
     private val observer = object : ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
             generation++
+            basisRows.forEach { requestBasis(it, false) }
             reload()
         }
     }
@@ -33,10 +35,11 @@ internal class HealthCareAgentSurface(
         if (active) return
         active = true
         listOf(HealthCareStore.changes(activity, names.care), HealthPrivacyStore.changes(activity, names.privacy),
-            HealthRecordStore.changes(activity, names.records)).forEach {
+            HealthRecordStore.changes(activity, names.records), HealthProfileStore.changes(activity, names.profile)).forEach {
             activity.contentResolver.registerContentObserver(it, false, observer)
         }
         reload()
+        basisRows.forEach { requestBasis(it, false) }
     }
 
     fun pause() {
@@ -46,6 +49,7 @@ internal class HealthCareAgentSurface(
     }
 
     fun clear() {
+        basisRows.forEach { it.hide() }
         modelReviewVisibility(null)
         generation++
         host.removeAllViews()
@@ -61,6 +65,39 @@ internal class HealthCareAgentSurface(
     fun showForAgent(value: Boolean) {
         agentPage = value
         if (value) reload() else clear()
+    }
+
+    fun answerRow(conversation: String, turn: String): View? {
+        val current = activity.agentTranscriptStore.activeConversation()
+        if (turn.isBlank() || current.id != conversation || HealthCareAgentScope.concernId(current) == null) return null
+        return HealthAnswerBasisRow(activity, conversation, turn, { row, attach ->
+            if (attach) { basisRows.add(row); requestBasis(row, false) } else basisRows.remove(row)
+        }, ::requestBasis)
+    }
+
+    private fun requestBasis(row: HealthAnswerBasisRow, expand: Boolean) {
+        row.hide()
+        if (!active || !agentPage || !row.isAttachedToWindow ||
+            activity.agentTranscriptStore.activeConversation().id != row.conversation) return
+        val token = row.token
+        worker.execute {
+            val context = activity.applicationContext
+            val result = runCatching {
+                val current = AgentTranscriptStore(context).conversation(row.conversation)
+                val concern = current?.let(HealthCareAgentScope::concernId) ?: return@runCatching null
+                if (HealthCareDiscussion.rejection(context, row.conversation, row.turn, names = names) != null) return@runCatching null
+                HealthCareStore(context, names.care).use { store ->
+                    val grant = store.discussionGrant(row.turn)?.takeIf { it.conversationId == row.conversation && it.concernId == concern }
+                        ?: return@use null
+                    store.answerBasis(grant) to (grant.approvedAt + HealthCareDiscussionPolicy.MAX_APPROVAL_AGE)
+                }
+            }.getOrNull()
+            main.post {
+                if (active && agentPage && row.isAttachedToWindow && row.token == token && row in basisRows && result != null &&
+                    activity.agentTranscriptStore.activeConversation().id == row.conversation)
+                    row.display(result.first, result.second, expand)
+            }
+        }
     }
 
     fun destroy() {

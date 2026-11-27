@@ -167,7 +167,7 @@ internal object HealthCareDiscussion {
         HealthCareStore(context).use {
             grant.instruction?.let { scope -> HealthCareInstructionTool.selected(context, it, grant.concernId, scope) }
             grant.visitFollowUp?.let { scope -> HealthCareVisitFollowUpTool.selected(it, grant.concernId, scope) }
-            it.approveDiscussion(grant)
+            it.approveDiscussion(grant, HealthAnswerBasis.snapshot(preview.snapshot))
         }
     }
 
@@ -204,26 +204,27 @@ internal object HealthCareDiscussion {
         return desktopDestination(context, contact)
     }
 
-    fun rejection(context: Context, conversationId: String, turnId: String, actualDestination: String? = null): String? {
+    fun rejection(context: Context, conversationId: String, turnId: String, actualDestination: String? = null,
+        names: HealthOverviewDatabases = HealthOverviewDatabases()): String? {
         if (!bound(context, conversationId)) return null
         val allowed = runCatching {
             val conversation = AgentTranscriptStore(context).conversation(conversationId)
             if (conversation?.privateMode != true || !conversation.trackingPaused ||
                 conversation.status != AgentConversationStatus.ACTIVE) return@runCatching false
-            HealthCareStore(context).use { care ->
+            HealthCareStore(context, names.care).use { care ->
                 val grant = care.discussionGrant(turnId) ?: return@use false
                 val concern = care.discussion(conversationId)?.let(care::concern)
-                val privacy = HealthPrivacyStore(context).use { it.policy() }
+                val privacy = HealthPrivacyStore(context, names.privacy).use { it.policy() }
                 val settings = care.settings()
-                val sourceCurrent = concern?.let { issue -> HealthRecordStore(context).use {
+                val sourceCurrent = concern?.let { issue -> HealthRecordStore(context, names.records).use {
                     issue.inputVersion == HealthCareEngine.inputVersion(settings.version, privacy.version, it.metricVersion(issue.metric))
                 } } == true
-                grant.instruction?.let { HealthCareInstructionTool.selected(context, care, grant.concernId, it) }
+                grant.instruction?.let { HealthCareInstructionTool.selected(context, care, grant.concernId, it, names) }
                 grant.visitFollowUp?.let { HealthCareVisitFollowUpTool.selected(care, grant.concernId, it) }
                 HealthCareDiscussionPolicy.permitted(grant, conversationId, turnId, concern, settings, privacy,
                     actualDestination ?: destination(context, grant.targetId, grant.modelId), System.currentTimeMillis()) &&
-                    sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink) &&
-                    HealthCareRelatedContext.sourceCurrent(context, HealthOverviewDatabases(), grant) &&
+                    sourceCurrent && HealthCareProfileAccess.current(context, grant.profileLink, names) &&
+                    HealthCareRelatedContext.sourceCurrent(context, names, grant) &&
                     (grant.targetId == "local-llm" || privacy.online) && care.researchGrantCurrent(grant) &&
                     (grant.researchAuthorizationId.isEmpty() || care.researchAuthorization(grant.concernId)?.let {
                         it.configuration == configurationFingerprint(context, conversationId, grant.targetId)

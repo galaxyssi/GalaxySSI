@@ -166,7 +166,8 @@ internal object HealthCareDiscussionPolicy {
         that materially affect the next decision, and explain why. Reconfirm a known answer only for a
         specific conflict, changed circumstances or record mismatch, identifying that reason explicitly.
         A recorded fasting label does not provide exact fasting hours. If only the duration is missing,
-        acknowledge the saved fasting label and ask for the duration, not whether the record was fasting.
+        acknowledge the saved fasting label. Ask for the duration only if it changes the next decision,
+        not whether the record was fasting. Otherwise proceed without a follow-up question.
         NO is a saved negative answer, not missing data. Unknown is not NO; never infer pregnancy status
         from age, name or sex, or invent absent symptoms. Measurement-time answers are not proof of the
         user's current symptoms. Prior chat answers may resolve a gap, but do not claim they were saved

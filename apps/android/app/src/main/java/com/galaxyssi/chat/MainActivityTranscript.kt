@@ -1547,6 +1547,9 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         })
         addView(agentResearchTraceRow(entry, turnEntries.filter { it.role == AgentTranscriptRole.ASSISTANT }
             .joinToString("\n") { it.text }))
+        if (completed && turnEntries.any { it.conversationId == entry.conversationId && it.turnId == entry.turnId &&
+                AgentTurnReceipt.isReplyText(it) && !isAgentApprovalEntry(it) })
+            healthCareSurface?.answerRow(entry.conversationId, entry.turnId)?.let { addView(it) }
         if (progressPresentation.visible) {
             addView(agentPlanProgressSummaryRow(entry, groupKey, progressPresentation))
         }
