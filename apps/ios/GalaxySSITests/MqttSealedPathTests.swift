@@ -217,7 +217,7 @@ final class MqttSealedPathTests: XCTestCase {
   }
   private func rig() async -> (GalaxySSIMqttBrokerPool, [String: FakeMqttBrokerPath]) {
     var paths: [String: FakeMqttBrokerPath] = [:]
-    let pool = GalaxySSIMqttBrokerPool { endpoint in
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { endpoint in
       let path = FakeMqttBrokerPath(id: endpoint.id)
       path.currentSecretFingerprint = MqttRouteProtocol.digest(Data(secret.utf8))
       paths[endpoint.id] = path

@@ -37,6 +37,7 @@ final class MqttMultipathPolicy {
     let startedAt: Int64
     fileprivate var slotHeld = true
     fileprivate var peerAccepted = false
+    fileprivate var metricEpoch = ""
 
     init(peer: String, messageID: String, contentHash: String, brokerID: String, generation: Int64,
          wireBytes: Int, traffic: Traffic, startedAt: Int64) {
@@ -74,6 +75,7 @@ final class MqttMultipathPolicy {
   private var rtt: [PeerPath: [Sample]] = [:]
   private var samplesByBroker: [String: [Sample]] = [:]
   private var network = ""
+  private var metricEpoch = UUID().uuidString
   private let chunks = MqttChunkThroughput()
 
   init(tieSeed: Data = Data(UUID().uuidString.utf8)) { self.tieSeed = tieSeed }
@@ -107,6 +109,7 @@ final class MqttMultipathPolicy {
     locked {
       guard network != value else { return }
       network = value
+      metricEpoch = UUID().uuidString
       rtt.removeAll()
       samplesByBroker.removeAll()
       chunks.reset()
@@ -228,6 +231,7 @@ final class MqttMultipathPolicy {
       var clean = attempt
       clean.slotHeld = true
       clean.peerAccepted = false
+      clean.metricEpoch = metricEpoch
       attempts[attemptID] = clean
       return nil
     }
@@ -249,7 +253,7 @@ final class MqttMultipathPolicy {
     locked {
       guard let accepted = attempts[attemptID], !accepted.peerAccepted, accepted.peer == peer,
             accepted.messageID == messageID, accepted.contentHash == contentHash else { return [] }
-      if now >= accepted.startedAt {
+      if now >= accepted.startedAt, accepted.metricEpoch == metricEpoch {
         let sample = Sample(peer: peer, at: now, elapsed: now - accepted.startedAt)
         let key = PeerPath(peer: peer, broker: accepted.brokerID)
         var values = rtt[key, default: []]

@@ -337,3 +337,79 @@ final class MqttMultipathPolicyTests: XCTestCase {
           wireBytes: size, traffic: traffic, startedAt: 0)
   }
 }
+
+// Network-epoch sampling fixtures; authored only unless executed by XCTest.
+extension MqttMultipathPolicyTests {
+  func testOldNetworkReceiptCompletesMessageWithoutTrainingNewNetworkRTT() {
+    let policy = ready()
+    policy.setNetwork("first")
+    XCTAssertTrue(policy.reserve(attemptID: "old", attempt: attempt()))
+    policy.setNetwork("second")
+    XCTAssertTrue(policy.pending(peer: "peer", messageID: "m"))
+    XCTAssertEqual(policy.diagnostics(now: 50).inflightPackets, 1)
+    XCTAssertEqual(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "old", now: 100), ["old"])
+    XCTAssertEqual(policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+    XCTAssertEqual(policy.diagnostics(now: 100).inflightPackets, 1)
+    XCTAssertTrue(policy.brokerAck(attemptID: "old", broker: "emqx", generation: 1))
+    XCTAssertEqual(policy.diagnostics(now: 100).pendingAttempts, 0)
+  }
+
+  func testSameNetworkKeyKeepsSamplesAndPendingAttemptEligibility() {
+    let policy = ready()
+    policy.setNetwork("first")
+    XCTAssertTrue(policy.reserve(attemptID: "first", attempt: attempt(message: "first")))
+    policy.acceptVerifiedReceipt(peer: "peer", messageID: "first", contentHash: hash, attemptID: "first", now: 10)
+    policy.brokerAck(attemptID: "first", broker: "emqx", generation: 1)
+    XCTAssertTrue(policy.reserve(attemptID: "next", attempt: attempt(message: "next")))
+    policy.setNetwork("first")
+    XCTAssertEqual(policy.diagnostics(now: 20).verifiedDelivery["emqx"]?.samples, 1)
+    policy.acceptVerifiedReceipt(peer: "peer", messageID: "next", contentHash: hash, attemptID: "next", now: 20)
+    XCTAssertEqual(policy.diagnostics(now: 20).verifiedDelivery["emqx"]?.samples, 2)
+  }
+
+  func testReturningToAnEarlierNetworkKeyDoesNotReviveOldAttemptSamples() {
+    let policy = ready()
+    policy.setNetwork("first")
+    XCTAssertTrue(policy.reserve(attemptID: "old", attempt: attempt()))
+    policy.setNetwork("second"); policy.setNetwork("first")
+    XCTAssertEqual(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "old", now: 100), ["old"])
+    XCTAssertEqual(policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+  }
+
+  func testNewNetworkAttemptsStillTrainOnlyOnceAfterVerifiedReceipt() {
+    let policy = ready()
+    policy.setNetwork("first"); policy.setNetwork("second")
+    XCTAssertTrue(policy.reserve(attemptID: "new", attempt: attempt()))
+    XCTAssertTrue(policy.brokerAck(attemptID: "new", broker: "emqx", generation: 1))
+    XCTAssertEqual(policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+    XCTAssertEqual(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "new", now: 100), ["new"])
+    XCTAssertTrue(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "new", now: 200).isEmpty)
+    XCTAssertEqual(policy.diagnostics(now: 200).verifiedDelivery["emqx"], .init(samples: 1, p50: 100, p95: nil, latest: 100))
+  }
+
+  func testOldNetworkWinnerCompletesNewHedgeWithoutCreatingAnAttributedSample() {
+    let policy = ready()
+    policy.setNetwork("first")
+    XCTAssertTrue(policy.reserve(attemptID: "old", attempt: attempt()))
+    policy.setNetwork("second")
+    XCTAssertTrue(policy.reserve(attemptID: "new", attempt: attempt(broker: "hivemq")))
+    XCTAssertEqual(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "old", now: 100), ["old", "new"])
+    XCTAssertTrue(policy.acceptVerifiedReceipt(peer: "peer", messageID: "m", contentHash: hash, attemptID: "new", now: 110).isEmpty)
+    XCTAssertTrue(policy.diagnostics(now: 200).verifiedDelivery.values.allSatisfy { $0.samples == 0 })
+    XCTAssertTrue(policy.brokerAck(attemptID: "old", broker: "emqx", generation: 1))
+    XCTAssertTrue(policy.brokerAck(attemptID: "new", broker: "hivemq", generation: 1))
+    XCTAssertEqual(policy.diagnostics(now: 200).pendingAttempts, 0)
+  }
+
+  func testNetworkResetDiscardsOldChunkMetricFlightsWithoutChangingReadyRoutes() {
+    let policy = ready(), chunk = MqttChunkThroughput.Chunk(transfer: "transfer", request: "request", index: 0, sampleEligible: true)
+    policy.trackChunk(peer: "peer", chunk: chunk, broker: "emqx", generation: 1, bytes: 100, now: 0)
+    XCTAssertTrue(policy.chunkPending(peer: "peer", chunk: chunk, now: 0))
+    policy.setNetwork("next")
+    XCTAssertFalse(policy.chunkPending(peer: "peer", chunk: chunk, now: 1))
+    let before = plan(policy, traffic: .chunk)
+    policy.confirmChunkState(peer: "peer", transfer: "transfer", request: "request", indices: [0], now: 100)
+    XCTAssertEqual(plan(policy, traffic: .chunk), before)
+    XCTAssertEqual(policy.readyBrokers(receiveTopics: ["inbox"]), brokers)
+  }
+}

@@ -1,4 +1,24 @@
 import Foundation
+import Network
+
+protocol MqttPoolNetworkMonitoring: AnyObject {
+  func start(queue: DispatchQueue, changed: @escaping () -> Void)
+  func cancel()
+}
+
+final class MqttPoolNetworkMonitor: MqttPoolNetworkMonitoring {
+  private let monitor = NWPathMonitor()
+  private var previous: NWPath?
+  func start(queue: DispatchQueue, changed: @escaping () -> Void) {
+    monitor.pathUpdateHandler = { [weak self] path in
+      guard let self, self.previous != path else { return }
+      self.previous = path
+      changed()
+    }
+    monitor.start(queue: queue)
+  }
+  func cancel() { monitor.cancel() }
+}
 
 // Each path owns a TLS connection, packet IDs, SUBACKs and PUBACKs. All aggregate
 // state is confined to queue; an old path callback cannot authorize a new path.
@@ -9,12 +29,16 @@ final class GalaxySSIMqttBrokerPool {
   private var snapshots: [String: MqttBrokerPathSnapshot] = [:]
   private var configurationID = ""
   private var running = false
+  private let makeNetworkMonitor: () -> MqttPoolNetworkMonitoring?
+  private var networkMonitor: MqttPoolNetworkMonitoring?
   var onPathState: (([String: MqttBrokerPathSnapshot]) -> Void)?
   var onAuthenticatedIngress: ((MqttAuthenticatedIngress) -> Void)?
 
   init(policy: MqttMultipathPolicy = MqttMultipathPolicy(),
+       networkMonitorFactory: @escaping () -> MqttPoolNetworkMonitoring? = { MqttPoolNetworkMonitor() },
        factory: (MqttBrokerEndpoint) -> MqttBrokerPathTransport = { GalaxySSIMqttClient(endpoint: $0) }) {
     self.policy = policy
+    self.makeNetworkMonitor = networkMonitorFactory
     for endpoint in MqttBrokerEndpoint.catalog {
       let path = factory(endpoint)
       paths[endpoint.id] = path
@@ -54,6 +78,23 @@ final class GalaxySSIMqttBrokerPool {
         scoped.clientID = configuration.clientID + ":" + id
         scoped.configurationID = self.configurationID
         path.configurePath(scoped)
+      }
+      self.startNetworkMonitor()
+    }
+  }
+
+  private func startNetworkMonitor() {
+    networkMonitor?.cancel()
+    networkMonitor = nil
+    guard let monitor = makeNetworkMonitor() else { return }
+    networkMonitor = monitor
+    let configuration = configurationID
+    monitor.start(queue: queue) { [weak self, weak monitor] in
+      guard let self, let monitor else { return }
+      self.queue.async { [weak self, weak monitor] in
+        guard let self, let monitor, self.running, self.networkMonitor === monitor,
+              self.configurationID == configuration else { return }
+        self.policy.setNetwork(UUID().uuidString)
       }
     }
   }
@@ -201,6 +242,8 @@ final class GalaxySSIMqttBrokerPool {
   func disconnect() {
     queue.async {
       self.running = false
+      self.networkMonitor?.cancel()
+      self.networkMonitor = nil
       self.configurationID = UUID().uuidString
       self.snapshots.removeAll()
       self.policy.synchronize([:])
@@ -210,6 +253,7 @@ final class GalaxySSIMqttBrokerPool {
   }
 
   deinit {
+    networkMonitor?.cancel()
     policy.synchronize([:])
     paths.values.forEach {
       $0.onPathState = nil

@@ -2,10 +2,11 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '13917b93ccad3e3dd8511229dc0cac1a86c514df', app = 'apps/ios/GalaxySSI/';
 const syncedMain = '26259d6503ef4b60ce8eb2346a1bbb2b85bbf12d';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-mqtt-network-metrics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = (file, ref = base) => cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(file, s) {
+  s = require('./check-mqtt-network-metrics-scope.cjs').retained(file, s);
   if (file === app + 'GalaxySSIMqttClient.swift' && s.includes('  func diagnosticSnapshot()')) return s
     .replace('  private var connectionAttempts: Int64 = 0\n', '')
     .replace(section(s, '  func diagnosticSnapshot()', '  func disconnect()'), '')

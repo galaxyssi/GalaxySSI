@@ -36,9 +36,10 @@ cross-profile snapshot cache or new persisted diagnostic data is introduced.
 Verified delivery summaries come from the existing scheduling policy. Only
 authenticated committed peer receipt handling contributes samples there; PUBACKs
 are not promoted to delivery. Existing 32-sample retention, five-minute freshness,
-small-sample p95 suppression and peer/network reset API semantics are unchanged.
-This does not claim that every existing policy reset API is already wired to all
-OS radio/interface transitions; that wider integration still needs assessment.
+small-sample p95 suppression and peer reset semantics are retained. Production
+OS network invalidation and old-attempt metric epoch fencing are now connected
+by the same PR; see `ANDROID_3045_NETWORK_METRICS.md` for the exact scope and
+unverified radio/interface boundaries.
 
 ## Existing diagnostics page
 
@@ -63,8 +64,8 @@ Nine additional synthetic XCTest methods cover state precedence, a never-started
 native client, a stopped pool, exact fake-path counters with no publication or
 readiness side effects, unobserved paths, wrong broker/configuration, reconfigure
 and stop during read, and cancellation. They are added to the already registered
-broker-pool source. Together with the ten lifecycle additions, nineteen methods
-are authored by this PR; none compiled or executed. The native-client fixture
+broker-pool source. Together with the ten lifecycle and eleven metric-reset
+additions, thirty methods are authored by this PR; none compiled or executed. The native-client fixture
 does not call connect or exercise an actual socket/monitor.
 
 The source guard compares full retained client, path, pool, runtime, view and
@@ -73,8 +74,9 @@ new main `26259d650` including #4593/#4594/#4595 acceptance and observation work
 merged without changing those kernels. Older lifecycle and active-observation
 guards normalize only the declared observational additions; probe-owner checks
 keep the newer main chain through those guards. Their original assertions remain.
-Scheduling, Signal/journal/inbox/outbox,
-chunking, route/receipt and delivery kernels are unchanged.
+Signal/journal/inbox/outbox, chunking, route/receipt and delivery kernels are
+unchanged. The metric follow-up changes only the policy's sample eligibility and
+connects its existing reset; reservation limits and delivery effects are retained.
 
 No Swift compilation, XCTest/native tests, screenshots/UI rendering, real broker,
 device, background execution, power, latency benchmark, CI monitoring or IPA is

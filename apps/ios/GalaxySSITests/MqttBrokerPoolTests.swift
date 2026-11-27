@@ -12,7 +12,7 @@ final class MqttBrokerPoolTests: XCTestCase {
     let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
     let remote = GalaxySSISignalEngine(profileName: "remote", defaults: defaults, secrets: InMemorySecretStore())
     var paths: [String: FakeMqttBrokerPath] = [:]
-    let pool = GalaxySSIMqttBrokerPool { endpoint in
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { endpoint in
       let path = FakeMqttBrokerPath(id: endpoint.id)
       paths[endpoint.id] = path
       return path
@@ -143,7 +143,7 @@ final class MqttBrokerPoolTests: XCTestCase {
     defer { defaults.removePersistentDomain(forName: suite) }
     let journal = try MqttSignalStateJournal(fileURL: fixture.url, secrets: fixture.secrets)
     var paths: [String: FakeMqttBrokerPath] = [:]
-    let pool = GalaxySSIMqttBrokerPool { endpoint in
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { endpoint in
       let path = FakeMqttBrokerPath(id: endpoint.id)
       paths[endpoint.id] = path
       return path
@@ -518,7 +518,7 @@ final class MqttBrokerPoolTests: XCTestCase {
 
   private func rig() -> (GalaxySSIMqttBrokerPool, [String: FakeMqttBrokerPath]) {
     var paths: [String: FakeMqttBrokerPath] = [:]
-    let pool = GalaxySSIMqttBrokerPool { endpoint in
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { endpoint in
       let path = FakeMqttBrokerPath(id: endpoint.id)
       paths[endpoint.id] = path
       return path
@@ -854,5 +854,108 @@ extension MqttBrokerPoolTests {
     let snapshot = await task.value
     XCTAssertTrue(snapshot.paths.isEmpty)
     XCTAssertTrue(snapshot.verifiedDelivery.isEmpty)
+  }
+}
+
+// Owned network-observer fixtures; callbacks are synthetic and no OS monitor starts.
+private final class FakeMqttPoolNetworkMonitor: MqttPoolNetworkMonitoring {
+  private(set) var callbacks: [() -> Void] = []
+  private(set) var cancellations = 0
+  func start(queue: DispatchQueue, changed: @escaping () -> Void) { callbacks.append(changed) }
+  func cancel() { cancellations += 1 }
+  func emit(_ index: Int = 0) { callbacks[index]() }
+}
+
+extension MqttBrokerPoolTests {
+  private func metricRig(_ factory: @escaping () -> MqttPoolNetworkMonitoring?) async
+    -> (GalaxySSIMqttBrokerPool, [String: FakeMqttBrokerPath]) {
+    var paths: [String: FakeMqttBrokerPath] = [:]
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: factory) { endpoint in
+      let path = FakeMqttBrokerPath(id: endpoint.id); paths[endpoint.id] = path; return path
+    }
+    await start(pool)
+    paths["emqx"]?.emit(snapshot("emqx", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    return (pool, paths)
+  }
+
+  private func metricSample(_ policy: MqttMultipathPolicy, message: String) {
+    let hash = String(repeating: "a", count: 64)
+    XCTAssertTrue(policy.reserve(attemptID: message, attempt: .init(peer: "peer", messageID: message,
+      contentHash: hash, brokerID: "emqx", generation: 1, wireBytes: 100, traffic: .message, startedAt: 0)))
+    XCTAssertTrue(policy.brokerAck(attemptID: message, broker: "emqx", generation: 1))
+    XCTAssertEqual(policy.acceptVerifiedReceipt(peer: "peer", messageID: message, contentHash: hash,
+      attemptID: message, now: 100), [message])
+  }
+
+  func testCurrentNetworkObserverResetsSamplesWithoutChangingPathReadiness() async {
+    let monitor = FakeMqttPoolNetworkMonitor()
+    let (pool, _) = await metricRig { monitor }
+    metricSample(pool.policy, message: "before")
+    let ready = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
+    monitor.emit()
+    let after = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(ready, after)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+    metricSample(pool.policy, message: "after")
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
+  }
+
+  func testOldNetworkObserverAfterReconfigurationCannotResetNewSamples() async {
+    var monitors: [FakeMqttPoolNetworkMonitor] = []
+    let (pool, paths) = await metricRig {
+      let monitor = FakeMqttPoolNetworkMonitor(); monitors.append(monitor); return monitor
+    }
+    pool.connect(configuration())
+    _ = await pool.readyGenerations(for: topics)
+    paths["emqx"]?.emit(snapshot("emqx", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(monitors.count, 2)
+    XCTAssertEqual(monitors[0].cancellations, 1)
+    metricSample(pool.policy, message: "current")
+    monitors[0].emit()
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
+    monitors[1].emit()
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+  }
+
+  func testReusedObserverStillFencesOldConfigurationCallbacks() async {
+    let monitor = FakeMqttPoolNetworkMonitor()
+    let (pool, paths) = await metricRig { monitor }
+    pool.connect(configuration())
+    _ = await pool.readyGenerations(for: topics)
+    paths["emqx"]?.emit(snapshot("emqx", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(monitor.callbacks.count, 2)
+    metricSample(pool.policy, message: "current")
+    monitor.emit(0)
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
+    monitor.emit(1)
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 0)
+  }
+
+  func testDisconnectedPoolCancelsAndIgnoresOldNetworkObserver() async {
+    let monitor = FakeMqttPoolNetworkMonitor()
+    let (pool, _) = await metricRig { monitor }
+    metricSample(pool.policy, message: "before")
+    pool.disconnect()
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(monitor.cancellations, 1)
+    monitor.emit()
+    let ready = await pool.readyGenerations(for: topics)
+    XCTAssertTrue(ready.isEmpty)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
+  }
+
+  func testDisabledObserverKeepsInjectedFixtureMetricsDeterministic() async {
+    let (pool, _) = await metricRig { nil }
+    metricSample(pool.policy, message: "before")
+    _ = await pool.diagnostics(now: 100)
+    XCTAssertEqual(pool.policy.diagnostics(now: 100).verifiedDelivery["emqx"]?.samples, 1)
   }
 }

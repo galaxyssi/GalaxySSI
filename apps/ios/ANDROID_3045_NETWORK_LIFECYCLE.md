@@ -54,8 +54,9 @@ compile/XCTest, native tests, network probes, CI monitoring or IPA is requested
 here. No raw reports, private/device evidence or generated packages are committed.
 
 The same PR now also includes observed path diagnostics; see
-`ANDROID_3045_PATH_DIAGNOSTICS.md`. Its additional nine methods bring this PR's
-authored additions to nineteen, without native execution.
+`ANDROID_3045_PATH_DIAGNOSTICS.md`. Network sampling reset and epoch fencing are
+also connected; see `ANDROID_3045_NETWORK_METRICS.md`. Together these follow-ups
+bring the PR's authored additions to thirty, without native execution.
 
 The full Android #3045 includes lifecycle diagnostics, mixed-workload latency,
 background projection, interrupted result commit and wider release acceptance.
