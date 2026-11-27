@@ -8082,6 +8082,7 @@
 "galaxyssi.conversation_team.role_completed" = "角色 %lld / %lld 已完成";
 "galaxyssi.conversation_team.synthesizing" = "正在汇总公开报告";
 "galaxyssi.conversation_team.auditing" = "角色 %lld / %lld 正在审核最终草稿";
+"galaxyssi.agent.capture_permission.checkpoint_unsaved" = "未能保存执行检查点，采集尚未开始。";
 "galaxyssi.conversation_team.rewriting" = "正在改写有异议的草稿";
 "galaxyssi.conversation_team.rechecking" = "角色 %lld / %lld 正在复核修改稿";
 "galaxyssi.conversation_team.review_reason_missing" = "审核者未给出具体理由。";
