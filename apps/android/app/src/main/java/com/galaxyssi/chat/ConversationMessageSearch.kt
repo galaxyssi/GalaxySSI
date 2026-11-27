@@ -25,6 +25,7 @@ internal class ConversationMessageSearch(private val context: Context, private v
         private set
 
     fun reset(query: String, archived: Boolean) {
+        if (executor.isShutdown) return
         val id = epoch.incrementAndGet()
         delayed?.let(main::removeCallbacks)
         hits = emptyList(); busy = false; more = false; failed = false; active = query.isNotBlank()
@@ -39,26 +40,36 @@ internal class ConversationMessageSearch(private val context: Context, private v
         }.also { main.postDelayed(it, 220) }
     }
     fun next() {
-        if (busy || !more || !active) return
+        if (executor.isShutdown || busy || !more || !active) return
         val id = epoch.get()
         busy = true; more = false; changed()
         executor.execute { read(id) }
     }
     private fun read(id: Long) {
         val scan = iterator ?: return
+        val pending = mutableListOf<LocalMessageHit>()
+        fun publish() {
+            if (pending.isEmpty()) return
+            val batch = pending.toList()
+            pending.clear()
+            main.post { if (epoch.get() == id) { hits = hits + batch; changed() } }
+        }
         try {
             for (i in 0 until 24) {
                 if (epoch.get() != id) return
                 if (!scan.hasNext()) {
+                    publish()
                     iterator = null
                     main.post { if (epoch.get() == id) { busy = false; more = false; changed() } }
                     return
                 }
-                val hit = scan.next()
-                main.post { if (epoch.get() == id) { hits = hits + hit; changed() } }
+                pending += scan.next()
+                if (i == 0 || pending.size >= 6) publish()
             }
+            publish()
             main.post { if (epoch.get() == id) { busy = false; more = true; changed() } }
         } catch (_: Exception) {
+            publish()
             main.post { if (epoch.get() == id) { busy = false; failed = true; changed() } }
         }
     }

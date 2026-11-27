@@ -12,11 +12,15 @@ internal object LocalMessageSearch {
     fun ordinary(c: AgentConversation) = !c.privateMode && !c.trackingPaused && c.globalTopicKey.isBlank() &&
         c.mergedIntoConversationId.isBlank()
 
+    fun visiblePeer(context: Context, id: String, raw: org.json.JSONObject): Boolean =
+        id != CONTACT_SYSTEM.id && id != CONTACT_HERMES.id && ConversationHubContactHistoryPolicy.includes(raw) &&
+            (DesktopPairingLifecycle.isHistoryOnly(raw) || AppStore.isDirectPeerContact(context, id))
+
     fun excerpt(text: String, query: String): String? {
         if (query.isBlank()) return null
         val i = text.indexOf(query, ignoreCase = true)
         if (i < 0) return null
-        val start = (i - 38).coerceAtLeast(0)
+        val start = (i - 14).coerceAtLeast(0)
         val end = (i + query.length + 58).coerceAtMost(text.length)
         return (if (start > 0) "…" else "") + text.substring(start, end).replace('\n', ' ').replace('\r', ' ').trim() +
             (if (end < text.length) "…" else "")
@@ -79,7 +83,7 @@ internal object LocalMessageSearch {
             if (cancelled()) return@sequence
             if (id == CONTACT_SYSTEM.id || id == CONTACT_HERMES.id) continue
             val raw = AppStore.contactById(context, id) ?: continue
-            if (!ConversationHubContactHistoryPolicy.includes(raw) || DesktopPairingLifecycle.isHistoryOnly(raw) != archived) continue
+            if (!visiblePeer(context, id, raw) || DesktopPairingLifecycle.isHistoryOnly(raw) != archived) continue
             val title = raw.optString("name").ifBlank { id }
             var before: Long? = null
             do {

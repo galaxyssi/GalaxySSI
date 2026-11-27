@@ -8,7 +8,7 @@ internal data class LocalMessageContext(val lines: List<LocalHistoryLine>, val o
 internal fun LocalMessageHit.contextPage(ctx: Context, older: Long? = null, newer: Long? = null): LocalMessageContext? {
     if (kind == ConversationHubItemKind.CONTACT) {
         val raw = AppStore.contactById(ctx, owner) ?: return null
-        if (!ConversationHubContactHistoryPolicy.includes(raw) || owner in setOf(CONTACT_SYSTEM.id, CONTACT_HERMES.id)) return null
+        if (!LocalMessageSearch.visiblePeer(ctx, owner, raw)) return null
         val page = when {
             older != null -> ChatHistoryStore.page(ctx, owner, older, 24).let { ChatHistoryViewportPage(it.messages, it.hasMore, false, it.oldestSequence, it.newestSequence) }
             newer != null -> ChatHistoryStore.pageAfter(ctx, owner, newer, 24).let { ChatHistoryViewportPage(it.messages, false, it.hasMore, null, it.nextAfterSequence) }
@@ -29,7 +29,11 @@ internal fun LocalMessageHit.contextPage(ctx: Context, older: Long? = null, newe
     val entries = when {
         older != null -> store.page(owner, older, 24).let { before = it.nextBeforeSequence; after = null; it.entries }
         newer != null -> store.entriesAfter(owner, newer, 24).let { before = null; after = it.newestSequence.takeIf { _ -> it.hasMore }; it.entries }
-        else -> (store.messageSearchPage(owner, message) ?: return null).let { before = it.nextBeforeSequence; after = it.newestSequence; it.entries }
+        else -> (store.messageSearchPage(owner, message) ?: return null).let {
+            before = it.nextBeforeSequence
+            after = it.newestSequence?.takeIf { seq -> store.entriesAfter(owner, seq, 1).entries.isNotEmpty() }
+            it.entries
+        }
     }
     val lines = entries.filter { e -> e.conversationId == owner && e.sourceConversationId.isBlank() &&
         e.role != AgentTranscriptRole.PROCESS && !AgentReplyWaitingIndicatorPolicy.isIndicator(e) &&
