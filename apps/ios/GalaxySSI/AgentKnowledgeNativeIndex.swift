@@ -5,6 +5,8 @@ protocol AgentKnowledgeNativeSession: AnyObject {
   func begin(_ event: AgentKnowledgeNativeEvent, skip: Bool) throws -> AgentKnowledgeNativeCheckpoint
   func append(_ page: AgentKnowledgeVectorReplayPage) throws -> AgentKnowledgeNativeCheckpoint
   func search(_ query: [Float], count: Int, breadth: Int) throws -> [AgentKnowledgeNativeMatch]
+  func recordsPartitioned() throws -> Bool
+  func migrateRecords(limit: Int) throws -> Bool
   func cancel()
   func close()
 }
@@ -96,6 +98,23 @@ final class AgentKnowledgeNativeIndex {
       close()
       throw error
     }
+  }
+
+  // Explicit maintenance only. Foreground advance/search never rewrite layout.
+  // A ready graph can still have legacy provenance records requiring migration.
+  func maintainRecords(pageSize: Int = 64, token: UInt64) throws -> Bool {
+    guard backgroundLease != nil, (1...256).contains(pageSize) else { throw AgentKnowledgeNativeError.invalidRecord }
+    try active(token)
+    guard generation == token else { throw AgentKnowledgeDatabaseError.staleCursor }
+    guard let session else { return true }
+    do {
+      let partitioned = try session.recordsPartitioned()
+      try active(token)
+      if partitioned { return true }
+      let complete = try session.migrateRecords(limit: pageSize)
+      try active(token)
+      return complete
+    } catch { close(); throw error }
   }
 
   func search(_ vector: [Float], count: Int, token: UInt64) throws -> [AgentKnowledgeHit] {
