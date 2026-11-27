@@ -23,12 +23,23 @@ class LocalTeamAcceptance {
         用中文区分已知背景、设计目标和仍缺的证据。不要给序列、制备或实验步骤，不作诊疗或新颖性声明。
         """.strip();
 
-    static String admittedConcept() {
-        var command = AutoGoalTeamCommand.Companion.parse(CONCEPT_TURN);
+    static String admit(String turn) {
+        var command = AutoGoalTeamCommand.Companion.parse(turn);
         require(command instanceof AutoGoalTeamCommand.Start, "The ordinary Chinese turn did not request a team");
         String objective = ((AutoGoalTeamCommand.Start)command).getObjective();
-        require(CONCEPT_TURN.equals(objective), "Chat admission changed the objective");
+        require(turn.equals(objective), "Chat admission changed the objective");
         return objective;
+    }
+
+    static String challenge(String published) {
+        return admit("""
+            请自动组队复查上一轮的 PKU 体外报告蛋白构想，并独立审核最终答复。
+            上轮公开答复只是待质疑的材料。用功能定义假想的报告蛋白，不给它套用未经核实的已知蛋白名称。
+            用中文分别给出：它要报告的量、假设成立时应观察到的变化、真正与这一预测矛盾的观察，以及尚缺的证据。
+            逐句核对原答复的反证条件：它否定的是原假设，还是恰好符合预测？请给出修正后的构想。
+            只谈可检验的功能，不给序列、制备或实验步骤，不作新颖性、诊断或疗效声明。
+            上轮已公开答复：
+            """ + published);
     }
     static String task(boolean swapped) {
         return "Evaluate fictional Phe-Buffer, a hypothetical protein function for PKU. "
@@ -141,8 +152,9 @@ class LocalTeamAcceptance {
         return table.toString();
     }
 
-    void run(boolean swapped, boolean concept) throws Exception {
-        String objective = concept ? admittedConcept() : task(swapped);
+    String run(boolean swapped, String conceptTurn) throws Exception {
+        boolean concept = conceptTurn != null;
+        String objective = concept ? conceptTurn : task(swapped);
         String answer;
         boolean withheld = false;
         try {
@@ -201,7 +213,7 @@ class LocalTeamAcceptance {
                 "The open-ended fixture changed or received a precomputed answer");
             require(!withheld, "Collaboration verified, but no concept was released");
             System.out.println("Inspect the proposed readout, its falsifier and missing evidence. No molecule or clinical claim is validated.");
-            return;
+            return answer;
         }
         System.out.println("Numerical reference (fictional model only): " + reference(swapped));
         // A returned paragraph alone is not evidence of scientific or even arithmetic correctness.
@@ -215,6 +227,7 @@ class LocalTeamAcceptance {
         require(finalBody.contains(table(swapped)), "Source labels or values changed at publication");
         screenVerdict(finalBody, swapped);
         System.out.println("Basic numeric and contradiction checks passed. Interpretation still requires review.");
+        return answer;
     }
 
     static void screenVerdict(String answer, boolean swapped) {
@@ -233,7 +246,8 @@ class LocalTeamAcceptance {
 
     public static void main(String[] args) throws Exception {
         if (Arrays.equals(args, new String[]{"--check-rubric"})) {
-            admittedConcept();
+            admit(CONCEPT_TURN);
+            require(challenge("Public synthetic draft.").endsWith("Public synthetic draft."), "Lost follow-up evidence");
             String good = "B meets both toy gates. No clinical evidence.";
             screenVerdict(good, false);
             screenVerdict("A meets both toy gates. No clinical evidence.", true);
@@ -247,9 +261,17 @@ class LocalTeamAcceptance {
         if (args.length < 2) throw new IllegalArgumentException("Expected loopback port and local model ID");
         var extra = List.of(args).subList(2, args.length);
         var opts = Set.copyOf(extra);
-        require(opts.size() == extra.size() && Set.of("--swap", "--concept", "--schema-plan").containsAll(opts) &&
-            !(opts.contains("--swap") && opts.contains("--concept")), "Invalid fixture options");
-        new LocalTeamAcceptance(Integer.parseInt(args[0]), args[1], opts.contains("--schema-plan"))
-            .run(opts.contains("--swap"), opts.contains("--concept"));
+        require(opts.size() == extra.size() && Set.of("--swap", "--concept", "--schema-plan", "--review-concept").containsAll(opts) &&
+            !(opts.contains("--swap") && opts.contains("--concept")) && (!opts.contains("--review-concept") || opts.contains("--concept")),
+            "Invalid fixture options");
+        int port = Integer.parseInt(args[0]);
+        var initial = new LocalTeamAcceptance(port, args[1], opts.contains("--schema-plan"));
+        String published = initial.run(opts.contains("--swap"), opts.contains("--concept") ? admit(CONCEPT_TURN) : null);
+        if (opts.contains("--review-concept")) {
+            System.out.println("Independent follow-up on the previous public answer:");
+            var review = new LocalTeamAcceptance(port, args[1], opts.contains("--schema-plan"));
+            review.run(false, challenge(published));
+            require(Collections.disjoint(initial.ids, review.ids), "Repeated completion across independent turns");
+        }
     }
 }
