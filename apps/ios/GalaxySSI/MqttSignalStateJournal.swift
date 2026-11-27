@@ -222,6 +222,17 @@ final class MqttSignalStateJournal {
     }
   }
 
+  func expireFileRetry(identity: MqttBusinessIdentity, transfer: AgentPreparedOutboundAttachment) throws {
+    guard let source = transfer.scope.clientMessageId,
+      let bodyID = MqttAttachmentBodyIdentity.bodyID(source: source, taskID: transfer.scope.taskId) else { throw MqttRouteError.invalidPayload }
+    try database.withTransaction { token in
+      guard let entry = try outbox.entry(identity: identity, messageID: bodyID, transaction: token) else { return }
+      guard let body = entry.deferredRequest,
+        try MqttAttachmentBodyIdentity.matches(body, transfer: transfer, bodyID: bodyID) else { throw MqttRouteError.invalidPayload }
+      try outbox.discardDeferredBlobBody(identity: identity, messageID: bodyID, transferID: transfer.transferId, transaction: token)
+    }
+  }
+
   // Compare the exact last committed snapshot before invoking libsignal. A stale engine must reopen,
   // not overwrite another engine's ratchet. Neither the result nor its receipt escapes before COMMIT.
   func commit<T>(expected: Data?, _ operation: (MqttChunkDatabase.Transaction) throws -> (T, Data)) throws -> (T, Data) {

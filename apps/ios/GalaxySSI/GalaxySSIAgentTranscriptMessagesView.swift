@@ -351,6 +351,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
       [.delivered, .read, .local].contains(message.deliveryStatus))
     .environment(\.agentInlineRuntimeImages, AgentRuntimeArtifactUi.allowsInlineImages(for: message))
     .environment(\.agentReplyParagraphSpeechAction, paragraphSpeechAction(message))
+    .environment(\.agentFileReceiptSource, message.isMine && AgentFileReceipt.originals(message).count >= 2 ? message : nil)
     .environment(\.agentReplyNativeParagraphs, true)
     .environment(\.peerTextSelection, requirementSelection(message))
     .foregroundColor(.galaxySSITextPrimary)

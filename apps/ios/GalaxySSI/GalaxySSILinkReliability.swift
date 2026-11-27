@@ -28,7 +28,8 @@ struct LinkAttachmentDeclarationKey: Hashable {
 
 struct PendingLinkMessage: Codable, Equatable, Identifiable {
   static let heldUnclassified = "held_unclassified"
-  var isHeld: Bool { status == Self.heldUnclassified }
+  static let heldFile = "held_file"
+  var isHeld: Bool { status == Self.heldUnclassified || status == Self.heldFile }
   var id: String { messageId }
   var messageId: String
   var topic: String
@@ -49,6 +50,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var retryClassified: Bool?
   var attachmentDeclaration: String?
   var capabilitySnapshot: LinkCapabilitySnapshot? = nil
+  var fileReadScope: String? = nil
 
   var replaceableCapability: LinkCapabilitySnapshot? {
     guard status == "queued", attempts == 0, clientSourceMessageId.isEmpty,
@@ -83,7 +85,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     clientSourceMessageId: String = "",
     contactId: String = "",
     backgroundLearning: Bool = false,
-    attachmentDeclaration: String? = nil
+    attachmentDeclaration: String? = nil,
+    fileReadScope: String? = nil
   ) {
     self.messageId = messageId
     self.topic = topic
@@ -102,6 +105,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.backgroundLearning = backgroundLearning
     self.retryClassified = true
     self.attachmentDeclaration = attachmentDeclaration
+    self.fileReadScope = fileReadScope
   }
 
   enum CodingKeys: String, CodingKey {
@@ -124,11 +128,13 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case retryClassified = "retry_classified"
     case attachmentDeclaration = "attachment_declaration"
     case capabilitySnapshot = "capability_snapshot"
+    case fileReadScope = "file_read_scope"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     capabilitySnapshot = try container.decodeIfPresent(LinkCapabilitySnapshot.self, forKey: .capabilitySnapshot)
+    fileReadScope = try container.decodeIfPresent(String.self, forKey: .fileReadScope)
     messageId = try container.decode(String.self, forKey: .messageId)
     topic = try container.decode(String.self, forKey: .topic)
     wirePayload = try container.decodeIfPresent(String.self, forKey: .wirePayload) ?? ""
@@ -183,6 +189,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var attachmentTransferId: String = ""
   var backgroundLearning = false
   var attachmentDeclaration: String? = nil
+  var fileReadScope: String? = nil
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -482,7 +489,8 @@ final class GalaxySSILinkDeliveryStore {
     guard journal != nil, journalHealthy, !payload.isEmpty, payload.utf8.count <= 2 * 1024 * 1024,
           !dependencies.isEmpty, !attachments.isEmpty, task.wirePayload.isEmpty,
           ids.count == requests.count, !ids.contains(""),
-          requests.allSatisfy({ $0.topic == task.topic && $0.recoverableEnvelope.isEmpty }),
+          requests.allSatisfy({ $0.topic == task.topic && $0.recoverableEnvelope.isEmpty && $0.fileReadScope == task.fileReadScope }),
+          task.fileReadScope.map({ UUID(uuidString: $0) != nil }) ?? true,
           attachments.allSatisfy({ !$0.wirePayload.isEmpty && dependencies.contains($0.attachmentTransferId) }),
           Set(attachments.map(\.attachmentTransferId)) == Set(dependencies),
           !state.outbox.contains(where: { ids.contains($0.messageId) }) else { return false }
@@ -493,7 +501,7 @@ final class GalaxySSILinkDeliveryStore {
         createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: request.blockedByAttachmentTransferIds,
         attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
-        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration)
+        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration, fileReadScope: request.fileReadScope)
       if request.messageId == task.messageId { item.deferredTaskPayload = payload }
       state.outbox.append(item)
     }
@@ -822,6 +830,44 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   @discardableResult
+  func hasAttachmentDependency(source: String, transfer: String) -> Bool {
+    !source.isBlank && state.outbox.contains {
+      $0.clientSourceMessageId == source && $0.blockedByAttachmentTransferIds.contains(transfer)
+    }
+  }
+
+  func holdExhaustedAttachmentFiles(maxAttempts: Int, active: Set<String>,
+    eligible: (PendingLinkMessage) -> Bool, canHold: (String, String) -> Bool) -> [String] {
+    guard maxAttempts > 0 else { return [] }
+    let transfers = Set(state.outbox.filter { item in
+      !item.isHeld && !item.attachmentTransferId.isEmpty && item.attempts >= maxAttempts &&
+        item.nextAttemptAt <= Date() && !active.contains(item.messageId) && eligible(item) &&
+        hasAttachmentDependency(source: item.clientSourceMessageId, transfer: item.attachmentTransferId) &&
+        canHold(item.clientSourceMessageId, item.attachmentTransferId)
+    }.map(\.attachmentTransferId))
+    guard !transfers.isEmpty else { return [] }
+    let previous = state
+    for index in state.outbox.indices where transfers.contains(state.outbox[index].attachmentTransferId) {
+      state.outbox[index].status = PendingLinkMessage.heldFile
+    }
+    guard save() else { state = previous; return [] }
+    return transfers.sorted()
+  }
+
+  func resumeHeldFile(source: String, transfer: String, now: Date = Date()) -> Bool {
+    guard hasAttachmentDependency(source: source, transfer: transfer) else { return false }
+    let indexes = state.outbox.indices.filter { state.outbox[$0].clientSourceMessageId == source &&
+      state.outbox[$0].attachmentTransferId == transfer && state.outbox[$0].status == PendingLinkMessage.heldFile }
+    guard !indexes.isEmpty else { return false }
+    let previous = state
+    for index in indexes {
+      state.outbox[index].status = "queued"; state.outbox[index].attempts = 0
+      state.outbox[index].nextAttemptAt = now; state.outbox[index].updatedAt = now
+    }
+    guard save() else { state = previous; return false }
+    return true
+  }
+
   func discardExhausted(
     maxAttempts: Int,
     attachmentMaxAttempts: Int? = nil,

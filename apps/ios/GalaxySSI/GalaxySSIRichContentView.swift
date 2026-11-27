@@ -664,6 +664,7 @@ private struct GalaxySSIInlineRuntimeImage: View {
 }
 
 private struct GalaxySSIRichBlockView: View {
+  @Environment(\.agentFileReceiptSource) private var fileReceiptSource
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.agentRichHTMLPlaybackAllowed) private var allowsHTMLPlayback
@@ -717,7 +718,10 @@ private struct GalaxySSIRichBlockView: View {
       case .table:
         tableBlock
       case .image:
-        imageBlock
+        VStack(alignment: .leading, spacing: 4) {
+          imageBlock
+          fileReceiptCaption
+        }
       case .video:
         videoBlock
       case .audio:
@@ -754,9 +758,13 @@ private struct GalaxySSIRichBlockView: View {
           VStack(alignment: .leading, spacing: 8) {
             GalaxySSIInlineRuntimeImage(payload: image)
             resourceBlock
+            fileReceiptCaption
           }
         } else {
-          resourceBlock
+          VStack(alignment: .leading, spacing: 4) {
+            resourceBlock
+            fileReceiptCaption
+          }
         }
       case .link, .citation, .unknown:
         resourceBlock
@@ -794,6 +802,15 @@ private struct GalaxySSIRichBlockView: View {
         artifactDownloadRequested = false
         artifactDownloadTimedOut = false
       }
+    }
+  }
+
+  @ViewBuilder private var fileReceiptCaption: some View {
+    if isOutgoing, block.metadata["source"] == "user_attachment", let source = fileReceiptSource,
+      AgentFileReceipt.originals(source).contains(where: { $0.id == block.id }) {
+      GalaxySSIAgentFileReceiptsView(message: source, t: { key, fallback in
+        GalaxySSILocalization.string(key, fallback: fallback, language: interfaceLanguage)
+      }, onlyItemID: block.id)
     }
   }
 
