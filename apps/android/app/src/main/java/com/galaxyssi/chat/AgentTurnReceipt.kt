@@ -13,7 +13,7 @@ internal object AgentTurnReceipt {
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "turn-receipts").apply { isDaemon = true } }
     private val sequence = AtomicLong()
     private data class Key(val chat: String, val turn: String)
-    private data class Live(val start: Long, var painted: Boolean = false)
+    private data class Live(val start: Long, val voice: Boolean, var painted: Boolean = false)
     private val live = LinkedHashMap<Key, Live>()
     private val identifier = Regex("[A-Za-z0-9][A-Za-z0-9_./:+@-]{0,119}")
     private fun id(value: Any?) = (value as? String)?.takeIf(identifier::matches).orEmpty()
@@ -38,18 +38,27 @@ internal object AgentTurnReceipt {
         }
     }
 
-    fun begin(c: Context, chat: String, turn: String, choice: AgentModelSelection) {
+    fun begin(c: Context, chat: String, turn: String, choice: AgentModelSelection, voice: Boolean = false) {
         val key = Key(chat, turn)
         val wall = System.currentTimeMillis()
         synchronized(live) {
             if (key in live) return
             if (live.size >= 256) live.remove(live.keys.first())
-            live[key] = Live(SystemClock.elapsedRealtime())
+            live[key] = Live(SystemClock.elapsedRealtime(), voice)
         }
         change(c, chat, turn, create = true) { row ->
-            if (!row.has("sent")) row.put("sent", wall).put("mode", choice.mode.name)
+            if (!row.has("sent")) row.put("sent", wall).put("voice_input", voice).put("mode", choice.mode.name)
                 .put("request", id(choice.modelId)).put("effort", choice.reasoningEffort.wireValue)
         }
+    }
+
+    /** A restored speech task must not silently fall back to direct text-mode sending. Off the UI thread. */
+    fun voiceInput(c: Context, chat: String, turn: String): Boolean? {
+        synchronized(live) { live[Key(chat, turn)]?.let { return it.voice } }
+        return runCatching {
+            val row = JSONObject(database(c).readString(prefix(chat) + AgentNativeJsonCodec.sha256(turn), "{}"))
+            row.optBoolean("voice_input").takeIf { row.has("voice_input") }
+        }.getOrNull()
     }
 
     fun observeBody(chat: String, turn: String): Boolean =

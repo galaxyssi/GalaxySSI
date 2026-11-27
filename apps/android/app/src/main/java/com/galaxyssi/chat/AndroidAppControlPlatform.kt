@@ -2,7 +2,10 @@ package com.galaxyssi.chat
 
 import android.content.Context
 
-internal class AndroidAppControlPlatform(context: Context) : AgentAppControlPlatform {
+internal class AndroidAppControlPlatform(context: Context,
+    private val voiceRecipients: ((String) -> List<VoiceMessageDraft.Person>)? = null,
+    private val voiceSender: ((String, String, AgentNativeToolInvocation) -> AgentNativeJsonObject)? = null
+) : AgentAppControlPlatform {
     private val app = context.applicationContext
     override fun execute(operation: String, input: AgentNativeJsonObject, invocation: AgentNativeToolInvocation): AgentNativeJsonObject {
         fun arg(name: String) = input[name]?.toString().orEmpty().trim()
@@ -23,7 +26,18 @@ internal class AndroidAppControlPlatform(context: Context) : AgentAppControlPlat
                     mapOf("contact_id" to it.optString("id"), "name" to it.optString("display_name").ifBlank { it.optString("name") })
                 }, "has_more" to (matched.size > limit()))
             }
-            "send_message" -> send(arg("contact_id"), input["text"]?.toString().orEmpty(), invocation)
+            "send_message" -> when (AgentTurnReceipt.voiceInput(app, invocation.context.conversationId, invocation.context.turnId)) {
+                false -> send(arg("contact_id"), input["text"]?.toString().orEmpty(), invocation)
+                true -> {
+                    val contact = AppStore.contactById(app, arg("contact_id"))
+                        ?: throw AppControlFailure("not_a_peer", "Find the recipient before preparing a message.")
+                    if (!AppStore.isDirectPeerContact(app, arg("contact_id"))) throw AppControlFailure("not_a_peer", "Not a verified peer.")
+                    voiceMessage(input + mapOf("operation" to "prepare", "query" to contact.optString("display_name").ifBlank {
+                        contact.optString("name") }), invocation)
+                }
+                null -> throw AppControlFailure("unknown_turn_source", "Cannot verify the source of this turn. Ask for a fresh instruction; no message was sent.")
+            }
+            "voice_message" -> voiceMessage(input, invocation)
             "news" -> mapOf("articles" to AttentionArticleStore(app).voiceArticles(arg("query"),
                 (input["since_epoch_ms"] as? Number)?.toLong() ?: 0, limit()))
             "read_article" -> {
@@ -37,6 +51,41 @@ internal class AndroidAppControlPlatform(context: Context) : AgentAppControlPlat
             }
             "navigate", "playback" -> AppVoiceControlBridge.execute(operation, input, invocation)
             else -> throw AppControlFailure("unknown_app_action", operation)
+        }
+    }
+
+    private fun voiceMessage(input: AgentNativeJsonObject, invocation: AgentNativeToolInvocation): AgentNativeJsonObject {
+        val op = input["operation"]?.toString()
+        val rev = input["revision"]?.toString().orEmpty()
+        val candidates = if (op == "prepare" || op == "change_recipient") {
+            val query = input["query"]?.toString().orEmpty().trim()
+            if (query.isEmpty()) throw AppControlFailure("missing_recipient", "Ask for the recipient's name.")
+            voiceRecipients?.invoke(query) ?: run {
+            val rows = AppStore.contacts(app)
+            (0 until rows.length()).asSequence().mapNotNull(rows::optJSONObject).filter {
+                listOf(it.optString("name"), it.optString("display_name")).any { name -> name.equals(query, true) } &&
+                    AppStore.isDirectPeerContact(app, it.optString("id"))
+            }.map { VoiceMessageDraft.Person(it.optString("id"), it.optString("display_name").ifBlank { it.optString("name") }) }.toList()
+            }
+        } else emptyList()
+        if (op == "confirm") {
+            val claim = AppVoiceControlBridge.withDraft(invocation) { d, s, confirmed -> d.claim(s, rev, confirmed) }
+            val result = try { (voiceSender ?: ::send)(claim.recipient.id, claim.text, invocation) } catch (e: Exception) {
+                AppVoiceControlBridge.finishDraft(claim, "dispatch_uncertain", 0)
+                throw e
+            }
+            AppVoiceControlBridge.finishDraft(claim, result["state"].toString(), (result["message_id"] as Number).toLong())
+            return result
+        }
+        return AppVoiceControlBridge.withDraft(invocation) { d, s, _ ->
+            when (op) {
+                "status" -> d.status(s).ifEmpty { mapOf("state" to "no_active_draft") }
+                "prepare" -> d.begin(s, input["text"]?.toString().orEmpty(), candidates)
+                "change_recipient" -> d.change(s, rev, candidates)
+                "choose" -> d.choose(s, rev, input["contact_id"]?.toString().orEmpty(), AppVoiceControlBridge.choice(invocation))
+                "cancel" -> d.cancel(s, rev)
+                else -> throw AppControlFailure("bad_voice_action", "Unknown voice draft action.")
+            }
         }
     }
 

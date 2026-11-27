@@ -512,6 +512,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
     }
 
     fun end(preserveNews: Boolean = false) {
+        AppVoiceControlBridge.discardVoiceDraft(activity)
         pendingStart = null
         resumeAfterPageChange = false
         panel.transcript.text = ""
@@ -884,7 +885,7 @@ internal class AgentVoiceConversation(private val activity: MainActivity) {
         if (!session.acceptsTrace(traceId) || !visible()) return true
         if (activity.agentTranscriptStore.activeConversation().id != session.conversationId) { end(); return true }
         if (!session.claimInput(traceId)) return true
-        AppVoiceControlBridge.capture(activity, traceId)
+        AppVoiceControlBridge.capture(activity, traceId, text)
         panel.transcript.text = ""
         resumeDuplexListening()
         stopLevelTick()

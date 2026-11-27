@@ -1396,7 +1396,8 @@ internal fun MainActivity.submitAgentGoal(
     val turnId = healthCareSubmission?.grant?.turnId ?: UUID.randomUUID().toString()
     if (healthCareSubmission != null && (healthCareSubmission.grant.conversationId != conversation.id ||
             healthCareSubmission.question != goal)) return
-    AgentTurnReceipt.begin(this, conversation.id, turnId, AgentModelSelectionSettings.selection(this, conversation.id))
+    AgentTurnReceipt.begin(this, conversation.id, turnId, AgentModelSelectionSettings.selection(this, conversation.id),
+        voice = voiceTraceId.isNotBlank())
     onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)

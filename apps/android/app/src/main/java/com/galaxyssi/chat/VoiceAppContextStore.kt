@@ -35,6 +35,6 @@ internal class VoiceAppContextStore(private val now: () -> Long = { System.nanoT
     }
 
     companion object {
-        private val FIELDS = setOf("voice_active", "conversation_id", "contact_id", "article_id", "surface", "playback_state")
+        private val FIELDS = setOf("voice_active", "conversation_id", "contact_id", "article_id", "surface", "playback_state", "spoken_send_confirmation", "spoken_choice")
     }
 }
