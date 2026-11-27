@@ -103,6 +103,7 @@ struct AgentHomeView: View {
   @Environment(\.scenePhase) var scenePhase
   @State var homeVisible = false
   @StateObject var transcriptWindow = AgentTranscriptWindow()
+  @StateObject var homeNativeCatalog = AgentHomeNativeCatalogLoader()
   @State var transcriptRuntimeCleared = false
   @State var committedTurnProgress = AgentCommittedTurnProgress()
   @State private var homeWindowFocused = false
@@ -384,6 +385,7 @@ struct AgentHomeView: View {
         consumeHealthAtlasHandoff()
       }
       .onDisappear {
+        homeNativeCatalog.invalidate()
         modelTeamReview.invalidate()
         conversationalTeamLaunch = nil
         cancelScreenPagePDFImport()
@@ -397,6 +399,7 @@ struct AgentHomeView: View {
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
+        if phase != .active { homeNativeCatalog.invalidate() }
         if phase != .active { modelTeamReview.invalidate() }
         guard phase == .active else {
           clearAgentRuntimePlaintextPresentation()
@@ -419,6 +422,15 @@ struct AgentHomeView: View {
         guard let boundary = agentReplyReadBoundary else { return }
         await store.markLegacyAgentRepliesRead(through: boundary)
       }
+      .task(id: nativeCatalogRefreshKey) {
+        guard canPresentNativeCatalog else { homeNativeCatalog.invalidate(); return }
+        homeNativeCatalog.refresh(identity: store.profile.identityFingerprint)
+        while !Task.isCancelled, canPresentNativeCatalog {
+          do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+          guard !Task.isCancelled, canPresentNativeCatalog else { return }
+          homeNativeCatalog.refreshIfActive(identity: store.profile.identityFingerprint)
+        }
+      }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIWorkspaceDidPersist)
         .debounce(for: .milliseconds(75), scheduler: RunLoop.main)) { _ in
         guard homeVisible, scenePhase == .active else { return }
@@ -432,6 +444,7 @@ struct AgentHomeView: View {
         NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)
       ) { _ in
         transcriptRuntimeCleared = true
+        homeNativeCatalog.invalidate()
         clearAgentRuntimePlaintextPresentation()
       }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextDidRestore)) { _ in
@@ -490,6 +503,7 @@ struct AgentHomeView: View {
       .onReceive(
         NotificationCenter.default.publisher(for: .galaxySSIAgentRoutingDidUpdate)
       ) { _ in
+        if canPresentNativeCatalog { homeNativeCatalog.refreshIfActive(identity: store.profile.identityFingerprint) }
         refreshAgentRouteState()
         retryPendingScannedAgentSelection()
       }

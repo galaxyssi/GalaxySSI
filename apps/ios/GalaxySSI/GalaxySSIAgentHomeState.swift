@@ -54,7 +54,7 @@ extension AgentHomeView {
   }
 
   var automaticRouteWarning: (title: String, subtitle: String)? {
-    guard !hasManualSelection else { return nil }
+    guard !hasManualSelection, nativeCatalogIsCurrent else { return nil }
 
     let hasReadyLocalModel = LocalModelRuntimeSettings.activeProfiles().contains { profile in
       LocalModelRuntimeSettings.isProfileEnabled(profile) &&
@@ -208,12 +208,24 @@ extension AgentHomeView {
     }
   }
 
+  var canPresentNativeCatalog: Bool {
+    homeVisible && scenePhase == .active && store.canReadAgentTranscript && !transcriptRuntimeCleared
+  }
+
+  var nativeCatalogRefreshKey: String {
+    "\(store.profile.identityFingerprint)|\(canPresentNativeCatalog)"
+  }
+
+  var nativeCatalogIsCurrent: Bool {
+    canPresentNativeCatalog && homeNativeCatalog.isCurrent(identity: store.profile.identityFingerprint)
+  }
+
+  var nativeToolDescriptors: [AgentNativeToolDescriptor] {
+    nativeCatalogIsCurrent ? homeNativeCatalog.tools : []
+  }
+
   var nativeToolSummary: (total: Int, available: Int) {
-    let tools = AgentPhoneNativeToolCatalog.descriptors()
-    let available = tools.filter {
-      $0.risk != .blocked && $0.availability.status == .available
-    }.count
-    return (tools.count, available)
+    nativeCatalogIsCurrent ? (homeNativeCatalog.tools.count, homeNativeCatalog.availableCount) : (0, 0)
   }
 
   private var callableAgentTargets: [AgentCallableTarget] {

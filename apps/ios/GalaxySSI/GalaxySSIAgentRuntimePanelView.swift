@@ -16,6 +16,7 @@ struct GalaxySSIAgentRuntimePanelView: View {
   var knowledgeHitCount: Int
   var recentTasks: [AgentTaskRecord]
   var nativeTools: [AgentNativeToolDescriptor]
+  var nativeToolsLoading = false
   var auditRecords: [AgentNativeToolAuditRecord]
   var onCyclePermissionMode: () -> Void
   var onCycleTaskExecutionMode: () -> Void
@@ -77,10 +78,12 @@ struct GalaxySSIAgentRuntimePanelView: View {
       runtimeSection(
         id: "toolbox",
         title: t("agent_section_toolbox", "Toolbox"),
-        subtitle: String(format: t("galaxyssi.agent_runtime.toolbox_summary", "%d local tools"), availableTools.count),
+        subtitle: nativeToolsLoading ? t("cc_loading", "Loading...") :
+          String(format: t("galaxyssi.agent_runtime.toolbox_summary", "%d local tools"), availableTools.count),
         systemImage: "wrench.and.screwdriver",
         rows: toolboxRows,
-        emptyTitle: t("agent_toolbox_empty", "No local tools are available")
+        emptyTitle: nativeToolsLoading ? t("cc_loading", "Loading...") :
+          t("agent_toolbox_empty", "No local tools are available")
       )
       runtimeSection(
         id: "action_queue",
