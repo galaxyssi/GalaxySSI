@@ -15,6 +15,7 @@ enum AgentConversationalTeamProtocol {
   struct Plan: Equatable, Sendable {
     let roles: [Role]
     let synthesis: String
+    var finalEditor: Role? = nil
   }
   struct Report: Equatable, Sendable {
     let role: Role
@@ -112,7 +113,10 @@ enum AgentConversationalTeamProtocol {
     // Reuse only the existing topology validator; this does not run a Skill or expose a tool.
     do { _ = try AgentSkillManifestValidator.topologicalSteps(roles.map { .init(id: $0.id, toolId: "text_only_role", dependsOn: $0.parents) }) }
     catch { throw Failure.plan }
-    return Plan(roles: roles, synthesis: tail[1])
+    let editor = legacy ? nil : roles.last { candidate in
+      candidate.kind == .reviewer && !roles.contains { $0.parents.contains(candidate.id) }
+    }
+    return Plan(roles: roles, synthesis: tail[1], finalEditor: editor)
   }
   static func report(_ raw: String, role: Role) throws -> Report {
     guard raw.utf16.count <= 5_264 else { throw Failure.report }

@@ -138,7 +138,9 @@ final class AgentConversationalTeamRuntime: ObservableObject {
         claimed = running.id; claimedConversation = running.conversation
         let answer: String
         do {
-          let outcome = try await AgentConversationalTeamEngine.run(objective: running.objective, ask: { [weak self, weak store] system, prompt in
+          let labels = AgentTeamDraftAudit.Labels(passing: text("passing", "Pass all gates:", store),
+            none: text("none", "None", store), limitation: text("limitation", "Evidence limitation:", store))
+          let outcome = try await AgentConversationalTeamEngine.run(objective: running.objective, labels: labels, ask: { [weak self, weak store] system, prompt in
             guard let self, let store else { throw CancellationError() }
             return try await self.ask(system, prompt: prompt, original: running, store: store, epoch: epoch)
           }, onEvent: { event in
@@ -146,8 +148,16 @@ final class AgentConversationalTeamRuntime: ObservableObject {
             self.progress[running.id] = event
           })
           guard current(running, store: store, epoch: epoch) else { return }
-          answer = outcome.publicText(disagreementsTitle: text("disagreements", "Independent disagreements", store)) + "\n\n" +
-            String(format: text("receipt", "%lld roles / %lld model calls", store), Int64(outcome.reports.count), Int64(outcome.calls))
+          answer = outcome.publicText(disagreementsTitle: text("disagreements", "Independent disagreements", store),
+            correctionTitle: text("correction", "Reviewer correction:", store)) + "\n\n" +
+            String(format: text("receipt", "%lld roles / %lld model calls", store), Int64(outcome.roleCount), Int64(outcome.calls))
+        } catch let issue as AgentTeamDraftAudit.Failure {
+          guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
+          switch issue {
+          case .withheld(let objection): answer = text("withheld", "The reviewer withheld the draft:", store) + "\n" + objection
+          case .tableMismatch(let verified): answer = text("table_mismatch", "The reviewer did not confirm the source table. Only the deterministic comparison is shown:", store) + "\n\n" + verified
+          case .invalid: answer = text("failed", "The confirmed model could not complete this team. No requests will be retried automatically.", store)
+          }
         } catch {
           guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
           answer = text("failed", "The confirmed model could not complete this team. No requests will be retried automatically.", store)

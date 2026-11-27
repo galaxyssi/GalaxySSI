@@ -45,6 +45,9 @@ enum AgentConversationGoalInference {
       var config = body["generationConfig"] as? [String: Any] ?? [:]; config["maxOutputTokens"] = 3_000
       body["generationConfig"] = config
     case .openAICompatible:
+      if let format = AgentTeamDraftAudit.responseFormat(system: system, endpoint: request.endpoint) {
+        body["response_format"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(format))
+      }
       body.removeValue(forKey: "max_tokens"); body.removeValue(forKey: "max_completion_tokens")
       body[URLComponents(string: request.endpoint)?.host?.lowercased() == "api.openai.com" ? "max_completion_tokens" : "max_tokens"] = 3_000
       body["store"] = false

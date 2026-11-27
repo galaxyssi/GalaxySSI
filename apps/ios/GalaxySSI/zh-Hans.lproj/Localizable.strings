@@ -8081,3 +8081,12 @@
 "galaxyssi.conversation_team.role_started" = "角色 %lld / %lld 已开始";
 "galaxyssi.conversation_team.role_completed" = "角色 %lld / %lld 已完成";
 "galaxyssi.conversation_team.synthesizing" = "正在汇总公开报告";
+"galaxyssi.conversation_team.auditing" = "角色 %lld / %lld 正在审核最终草稿";
+"galaxyssi.conversation_team.correction" = "审核者修正：";
+"galaxyssi.conversation_team.passing" = "通过全部门槛：";
+"galaxyssi.conversation_team.none" = "无";
+"galaxyssi.conversation_team.limitation" = "证据限制：";
+"galaxyssi.conversation_team.withheld" = "审核者已拒绝发布草稿：";
+"galaxyssi.conversation_team.table_mismatch" = "审核者未确认来源表格，仅显示确定性比较结果：";
+"galaxyssi.conversation_team.table_input" = "输入";
+"galaxyssi.conversation_team.table_gate" = "门槛";
