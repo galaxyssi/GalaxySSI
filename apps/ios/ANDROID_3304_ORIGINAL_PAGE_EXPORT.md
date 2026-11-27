@@ -160,3 +160,31 @@ The selective background increment passed the cold-owner retained-source guard,
 both older archive/export guards, all three guard syntax checks and the same
 project/localization/whitespace checks. The combined PR has twelve authored-only
 Swift fixture methods; none have been compiled or executed.
+
+## Main integration and merge-conflict repair
+
+PR #4599 was merged while its main synchronization was being reviewed. Its
+remote head `e245beb88` merged main `6aa0411b7449a6042da15addef4faa4ed126aad6`
+and landed as `4114f7ae7`. Conflicts were concurrent additions to Xcode source registrations, the Debug and
+Release BGTask permitted identifiers, and AppDelegate background registration.
+Both original-page archive and main's knowledge-storage registration/identifiers
+are retained, with all source IDs, build phases and groups intact. The original
+archive owner, runtime, builder, transport hook and twelve authored fixtures are
+unchanged from `d05a9a53c`. This follow-up changes only checks and this document,
+not production code or project ordering. No approval or merge was performed by
+this session, and merged status is not native acceptance. The checks-only follow-up
+retains newer main `e95979579`, including #4600 durability source registrations;
+it does not move, remove or reintroduce any production/project changes.
+
+The new main-sync source guard verifies exact main coordinator/startup/project
+content after only the declared archive hooks, and exact archive registrations
+and hook placement. It then supplies the pinned old feature/checkpoint views to
+the earlier source guards; their privacy/cold-owner/network assertions remain.
+Raw production files must actually contain main changes, not just the old feature
+tree. Equal, already-normalized historical views are accepted only as exact
+checkpoint bytes for repeated guard composition.
+
+Main-sync, cold-owner, queue and export source checks pass, alongside check:ios,
+changed JavaScript syntax, localization placement and whitespace. These are not
+Swift compilation, XCTest execution, actual OS background grants, Files rendering
+or CI approval. No full repository pass, IPA or raw/private evidence upload.

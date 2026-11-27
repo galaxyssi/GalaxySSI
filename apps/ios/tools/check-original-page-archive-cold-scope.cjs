@@ -2,12 +2,13 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = 'a16f12311fa4ed70f576c347680a173f8f356fea';
 const app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-original-page-main-sync-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const runtimeFile = app + 'AgentIOSOriginalPageArchiveRuntime.swift', storeFile = app + 'AgentIOSOriginalPageArchiveStore.swift';
 const project = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
 function section(source, start, end) { const a = source.indexOf(start), b = source.indexOf(end, a + start.length); assert(a >= 0 && b > a, start); return source.slice(a, b); }
 function retained(file, source) {
+  source = require('./check-original-page-main-sync-scope.cjs').retained(file, source);
   if (file === project) return source.split('\n').filter(l => !/AgentIOSOriginalPageArchiveOwner(?:Tests)?\.swift/.test(l)).join('\n');
   if (file === storeFile) return source
     .replace('  private let cipher: GalaxySSIAttachmentAtRestCipher\n', '  private let cipher: GalaxySSILocalAttachmentStoring\n')
