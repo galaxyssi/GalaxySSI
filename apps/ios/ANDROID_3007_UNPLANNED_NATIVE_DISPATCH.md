@@ -48,5 +48,11 @@ helper before comparing with this PR's baseline. Without the follow-up, comparis
 remains exact. The capture guard separately freezes permission/checkpoint/ticket logic
 outside its declared envelope block; no journal, Store or effect assertion is removed.
 
+Independent browser-view lifetime PR #4674 exports coordinator-hook and optional-task-
+lease normalizers. When available, only those declared browser deltas are normalized
+before this PR's exact baseline comparison. Without #4674, the original comparison is
+unchanged. No browser production code is included in this PR, and the browser guard
+separately checks view admission, save-before-load and unverified interruption behavior.
+
 Only JS/source/project checks and whitespace checks are run. No Swift/native build,
 XCTest execution, device/restart/fault acceptance, full check, CI monitoring or IPA.
