@@ -96,7 +96,10 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
         "runtime": runtimeProvider.implementationId,
         "scope": "conversation_project",
         "credential_transport": "signed_guest_secret_environment"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        runtimeProvider.availability(operation: .execute)
+      }
     )
   }
 

@@ -87,7 +87,10 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
         "runtime": runtimeProvider.implementationId,
         "scope": "conversation_project",
         "mutation": "none"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        runtimeProvider.availability(operation: .execute)
+      }
     )
   }
 

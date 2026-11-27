@@ -174,7 +174,10 @@ enum AgentIOSSelfEvolutionNativeToolCatalog {
         "isolation": "ios_disposable_candidate_workspace",
         "production_mutation": "disabled",
         "patch_content_retained": "false"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(operation: operation)
+      }
     )
   }
 

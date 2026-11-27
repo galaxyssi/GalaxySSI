@@ -232,7 +232,10 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
       executorId: executorId(operation),
-      provenanceMetadata: metadata
+      provenanceMetadata: metadata,
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(operation: operation)
+      }
     )
   }
 
