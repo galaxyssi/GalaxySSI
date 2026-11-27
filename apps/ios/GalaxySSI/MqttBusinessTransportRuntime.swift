@@ -43,6 +43,7 @@ final class MqttBusinessTransportRuntime {
   private var directConfiguration: MqttBrokerPathConfiguration?
   private var incomingAttachments: AgentIncomingAttachmentTransferStore?
   private var outgoingAttachments: AgentOutboundAttachmentTransferStore?
+  private var outgoingBlobs: AgentBlobOutgoingCoordinator?
   private var desktopArtifacts: AgentDesktopArtifactStore?
   private var lastArtifactRecoveryScan: Int64?
   private var desktopConnector: MqttDesktopConnectorProjection?
@@ -152,6 +153,7 @@ final class MqttBusinessTransportRuntime {
                    pool: GalaxySSIMqttBrokerPool = .init(),
                    incomingAttachments: AgentIncomingAttachmentTransferStore = .init(),
                    outgoingAttachments: AgentOutboundAttachmentTransferStore = .init(),
+                   outgoingBlobs: AgentBlobOutgoingCoordinator? = nil,
                    desktopArtifacts: AgentDesktopArtifactStore? = nil,
                    desktopConnector: MqttDesktopConnectorProjection? = nil,
                    receiveDesktopBlobControl: (@MainActor ([String: Any], MqttPeerChatProjection.Destination, MqttBusinessIdentity) async throws -> Void)? = nil,
@@ -182,6 +184,7 @@ final class MqttBusinessTransportRuntime {
     peerChatProjection = projection
     self.incomingAttachments = incomingAttachments
     self.outgoingAttachments = outgoingAttachments
+    self.outgoingBlobs = outgoingBlobs
     self.desktopArtifacts = desktopArtifacts
     self.desktopConnector = desktopConnector
     self.receiveDesktopBlobControl = receiveDesktopBlobControl
@@ -317,6 +320,12 @@ final class MqttBusinessTransportRuntime {
       else { return .retire }
       return .upload
     }
+  }
+
+  func expireFileRetry(_ file: AgentPreparedOutboundAttachment) throws {
+    let target = try desktopBlobDestination(file)
+    let identity = try MqttBusinessIdentity(target.peer.binding)
+    try routes.withIdentity(identity) { try journal.expireFileRetry(identity: identity, transfer: file) }
   }
 
   func enqueueDesktopBlobOffer(_ payload: [String: Any], attachment: AgentPreparedOutboundAttachment) throws {
@@ -997,7 +1006,7 @@ final class MqttBusinessTransportRuntime {
       }
     }
     guard try awaitingAttachment() != nil else { try complete(); return }
-    let transfer = try await onAttachmentQueue {
+    let preparedTransfer = try await onAttachmentQueue {
       guard let value = attachments.find(transferID) else { throw AgentAttachmentTransferError.contentUnavailable }
       return value
     }
@@ -1006,6 +1015,16 @@ final class MqttBusinessTransportRuntime {
     try refreshDirectPeerBindings()
     guard let body = try awaitingAttachment() else { try complete(); return }
     let blob = body.blobAttachmentDependencies?.contains(transferID) == true
+    var attempt = preparedTransfer
+    if blob, let outgoingBlobs, let currentGeneration = await outgoingBlobs.generation(transferID) {
+      attempt.fileRetryGeneration = currentGeneration
+      guard let incomingGeneration = AgentFileRetryPolicy.generation(payload) else { throw MqttRouteError.invalidPayload }
+      if incomingGeneration < currentGeneration { try complete(); return }
+    }
+    guard !stopped else { throw CancellationError() }
+    try refreshDirectPeerBindings()
+    try routes.withIdentity(item.identity) {}
+    let transfer = attempt
     var proof = payload
     proof["status"] = "stored"
     guard transfer.matchesStoredReceipt(proof) else {
@@ -1027,6 +1046,27 @@ final class MqttBusinessTransportRuntime {
     else { try complete(); return }
     if payload.string("status") == "failed" {
       guard blob else { throw MqttRouteError.invalidPayload }
+      if owner.maySend, let outgoingBlobs,
+        let key = projection.store.fileReceiptKey(transfer),
+        let saved = projection.store.turnReceiptStore.read(key)?.files?[AgentTurnReceiptEvidence.hash(transfer.attachmentId)],
+        saved.transfer == transferID,
+        saved.peer == GalaxySSITransportReceiptJournal.binding(peerId: transfer.scope.desktopId, routes: target.routes),
+        let link = projection.store.serverLinks.first(where: { $0.paired && $0.desktopId == transfer.scope.desktopId && $0.routes == target.routes }),
+        AgentFileRetryPolicy.recoverable(payload, file: transfer),
+        try await outgoingBlobs.holdRecoverable(payload, attachment: transfer, link: link) {
+        guard !stopped, projection.store.profile.identityFingerprint == key.owner else { throw CancellationError() }
+        try routes.withIdentity(item.identity) {}
+        guard projection.store.turnReceiptStore.changeFile(key, item: transfer.attachmentId, {
+          $0.fold(transfer: transferID, state: .failed, generation: transfer.fileRetryGeneration)
+        }) else { throw AgentAttachmentTransferError.commitFailed }
+        try complete()
+        return
+      }
+      if let key = projection.store.fileReceiptKey(transfer) {
+        _ = projection.store.turnReceiptStore.changeFile(key, item: transfer.attachmentId) {
+          $0.fold(transfer: transferID, state: .closed, generation: transfer.fileRetryGeneration)
+        }
+      }
       try routes.withIdentity(item.identity) {
         if let team = owner.team {
           guard let record = desktopConnector?.recordTeamAttachmentFailure else { throw MqttRouteError.identityChanged }
@@ -1042,6 +1082,11 @@ final class MqttBusinessTransportRuntime {
     }
     guard owner.maySend else { try complete(); return }
     if payload.string("status") == "stored" {
+      if let key = projection.store.fileReceiptKey(transfer), projection.store.turnReceiptStore.read(key)?.files != nil {
+        guard projection.store.turnReceiptStore.changeFile(key, item: transfer.attachmentId, {
+          $0.fold(transfer: transferID, state: .stored, generation: transfer.fileRetryGeneration)
+        }) else { throw AgentAttachmentTransferError.commitFailed }
+      }
       try routes.withIdentity(item.identity) {
         if owner.projectsAttachmentToTranscript {
           try projection.store.projectPeerAttachmentReceipt(transfer, sourceID: owner.message.id,

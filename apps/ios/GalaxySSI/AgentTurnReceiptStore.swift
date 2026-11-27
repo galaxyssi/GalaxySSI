@@ -37,6 +37,29 @@ final class AgentTurnReceiptStore {
       if row != previous { _ = write(row, key) }
     }
   }
+  @discardableResult
+  func changeFile(_ key: Key, item: String, _ body: (inout AgentFileReceipt) -> Bool) -> Bool {
+    locked {
+      guard key.valid, !item.isBlank, item.utf8.count <= 512, var row = read(key) else { return false }
+      let digest = AgentTurnReceiptEvidence.hash(item)
+      var entries = row.files ?? [:]
+      guard entries[digest] != nil || entries.count < 10 else { return false }
+      var receipt = entries[digest] ?? AgentFileReceipt()
+      guard body(&receipt) else { return false }
+      entries[digest] = receipt; row.files = entries
+      guard write(row, key) else { return false }
+      DispatchQueue.main.async { NotificationCenter.default.post(name: .galaxySSIAgentFileReceiptChanged, object: nil) }
+      return true
+    }
+  }
+  func bindFileRead(_ child: Key, source: AgentFileReadSource) -> Bool {
+    locked {
+      guard child.valid, !source.turn.isBlank, source.turn.utf8.count <= 512,
+        MqttRouteProtocol.hex(source.digest, count: 64), var row = read(child), row.fileReadSource == nil else { return false }
+      row.fileReadSource = source
+      return write(row, child)
+    }
+  }
   func begin(_ key: Key, choice: AgentModelSelection, wall: Int64 = AgentControlPlaneClock.nowMillis(),
              uptime: UInt64 = DispatchTime.now().uptimeNanoseconds) {
     locked {

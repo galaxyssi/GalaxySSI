@@ -283,8 +283,10 @@ extension MessageCoordinator {
   ) {
     guard attachmentTransferStore.acknowledgeStored(
       payload: payload,
-      deliveryStore: deliveryStore
+      deliveryStore: deliveryStore,
+      generation: transfer.fileRetryGeneration
     ) != nil else { return }
+    updateFileReceipt(transfer, state: .stored)
     if let contact = store.visibleContacts.first(where: {
       $0.isDesktopDeviceContact && $0.desktopId == transfer.scope.desktopId
     }) {
@@ -309,6 +311,7 @@ extension MessageCoordinator {
       receipt: payload,
       attachment: transfer
     ) else { return }
+    updateFileReceipt(transfer, state: .closed)
     _ = deliveryStore.discardAttachmentTransferMessages(transfer.transferId)
     attachmentTransferStore.discard([transfer.transferId], deliveryStore: deliveryStore)
     if let contact = store.visibleContacts.first(where: {

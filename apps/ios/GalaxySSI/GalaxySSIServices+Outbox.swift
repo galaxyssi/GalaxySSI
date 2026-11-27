@@ -97,6 +97,14 @@ extension MessageCoordinator {
     reconcileOutboxReceiptWindow()
     deliveryStore.holdStaleUnclassified(activeMessageIds: activeMessageIds.union(outboxReceiptWindow.messageIds))
     let eligible = learningOutboxEligibility()
+    let heldFiles = deliveryStore.holdExhaustedAttachmentFiles(maxAttempts: Self.maximumAttachmentOutboxDeliveryAttempts,
+      active: activeMessageIds.union(outboxReceiptWindow.messageIds), eligible: eligible, canHold: { source, transfer in
+        guard let file = attachmentTransferStore.find(transfer), file.scope.clientMessageId == source else { return false }
+        return fileReceiptIsBound(file)
+      })
+    for id in heldFiles {
+      if let file = attachmentTransferStore.find(id) { updateFileReceipt(file, state: .failed) }
+    }
     handleExhaustedDeliveries(
       deliveryStore.discardExhausted(
         maxAttempts: Self.maximumOutboxDeliveryAttempts,

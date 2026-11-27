@@ -22,6 +22,9 @@ private struct AgentBlobOutgoingJob: Codable, Equatable {
   var attempts: Int
   var nextAttemptAt: Date
   var journalBinding: String? = nil
+  var fileRetryGeneration: Int? = nil
+  var heldUntil: Date? = nil
+  var retryReserved: Bool? = nil
 }
 
 final class AgentBlobStaging {
@@ -335,6 +338,7 @@ actor AgentBlobOutgoingCoordinator {
   private let fileManager: FileManager
   private let publishOffer: OfferPublisher
   private let journalAuthorization: JournalAuthorization
+  private let onExpiredRetry: (AgentPreparedOutboundAttachment) async throws -> Void
   private var running = false
   private var scheduledWake: Task<Void, Never>?
 
@@ -345,6 +349,7 @@ actor AgentBlobOutgoingCoordinator {
     cipher: GalaxySSIAttachmentAtRestCipher = .shared,
     fileManager: FileManager = .default,
     journalAuthorization: @escaping JournalAuthorization = { _, _ in .wait },
+    onExpiredRetry: @escaping (AgentPreparedOutboundAttachment) async throws -> Void = { _ in },
     publishOffer: @escaping OfferPublisher
   ) {
     let support = applicationSupportDirectory ?? fileManager.urls(
@@ -359,6 +364,7 @@ actor AgentBlobOutgoingCoordinator {
     self.fileManager = fileManager
     self.publishOffer = publishOffer
     self.journalAuthorization = journalAuthorization
+    self.onExpiredRetry = onExpiredRetry
   }
 
   func register(_ attachment: AgentPreparedOutboundAttachment, link: ServerLink) throws -> Bool {
@@ -474,6 +480,67 @@ actor AgentBlobOutgoingCoordinator {
     (try? loadJobs().contains { $0.transferId == transferId }) == true
   }
 
+  func generation(_ transferID: String) -> Int? {
+    (try? loadJobs().first { $0.transferId == transferID }).map { $0.fileRetryGeneration ?? 0 }
+  }
+
+  func holdRecoverable(_ payload: [String: Any], attachment: AgentPreparedOutboundAttachment, link: ServerLink) throws -> Bool {
+    var jobs = try loadJobs()
+    guard let index = jobs.firstIndex(where: { $0.transferId == attachment.transferId }),
+      jobs[index].desktopId == link.desktopId, jobs[index].desktopFingerprint == link.routes.remoteFingerprint,
+      jobs[index].clientRouteId == link.routes.clientRouteId, jobs[index].retryReserved != true,
+      (jobs[index].fileRetryGeneration ?? 0) == attachment.fileRetryGeneration,
+      AgentFileRetryPolicy.recoverable(payload, file: attachment) else { return false }
+    if let expires = jobs[index].heldUntil { return expires > Date() }
+    jobs[index].active = false; jobs[index].heldUntil = Date().addingTimeInterval(600)
+    jobs[index].nextAttemptAt = jobs[index].heldUntil ?? .distantPast
+    try saveJobs(jobs)
+    wake()
+    return true
+  }
+
+  func reserveFileRetry(_ attachment: AgentPreparedOutboundAttachment, link: ServerLink) throws -> Int {
+    var jobs = try loadJobs()
+    guard let index = jobs.firstIndex(where: { $0.transferId == attachment.transferId }),
+      let expires = jobs[index].heldUntil, expires > Date(), jobs[index].retryReserved != true,
+      jobs[index].desktopId == link.desktopId, jobs[index].desktopFingerprint == link.routes.remoteFingerprint,
+      jobs[index].clientRouteId == link.routes.clientRouteId,
+      configurationStore.configuration(for: link)?.origin == jobs[index].origin,
+      (jobs[index].fileRetryGeneration ?? 0) == attachment.fileRetryGeneration, attachment.fileRetryGeneration < 3 else {
+      throw AgentBlobFailure.invalid("file_retry_unavailable")
+    }
+    try attachment.verifyOriginalChunks()
+    let generation = attachment.fileRetryGeneration + 1
+    jobs[index].fileRetryGeneration = generation; jobs[index].retryReserved = true
+    jobs[index].active = false
+    try saveJobs(jobs)
+    return generation
+  }
+
+  func activateFileRetry(_ transferID: String, generation: Int) async throws {
+    guard var jobs = try? loadJobs(), let index = jobs.firstIndex(where: { $0.transferId == transferID }),
+      jobs[index].retryReserved == true, jobs[index].fileRetryGeneration == generation,
+      let expires = jobs[index].heldUntil, expires > Date(), let attachment = attachmentStore.find(transferID) else {
+      throw AgentBlobFailure.invalid("file_retry_unavailable")
+    }
+    let reserved = jobs[index]
+    let directory = stagingURL(transferID)
+    let staged = try AgentBlobStaging.openOrPrepare(attachment: attachment, directoryURL: directory, cipher: cipher, fileManager: fileManager)
+    if staged.checkpoint.remoteCreated, let origin = URL(string: reserved.origin) {
+      do {
+        _ = try await AgentBlobHTTPClient(origin: origin).binary(method: "DELETE",
+          path: "/v1/blobs/\(staged.checkpoint.descriptor.blobId)", token: staged.checkpoint.writeToken)
+      } catch AgentBlobFailure.http(_, let status) where status == 404 || status == 410 { }
+    }
+    jobs = try loadJobs()
+    guard let current = jobs.firstIndex(of: reserved), expires > Date() else { throw CancellationError() }
+    try fileManager.removeItem(at: directory)
+    jobs[current].heldUntil = nil; jobs[current].retryReserved = nil; jobs[current].active = true
+    jobs[current].awaitingReceipt = false; jobs[current].attempts = 0; jobs[current].nextAttemptAt = .distantPast
+    try saveJobs(jobs)
+    wake()
+  }
+
   func acceptStored(
     _ payload: [String: Any],
     link: ServerLink,
@@ -484,6 +551,7 @@ actor AgentBlobOutgoingCoordinator {
           jobs[index].desktopId == link.desktopId,
           jobs[index].desktopFingerprint == link.routes.remoteFingerprint,
           jobs[index].clientRouteId == link.routes.clientRouteId,
+          AgentFileRetryPolicy.generation(payload) == (jobs[index].fileRetryGeneration ?? 0),
           AgentBlobProtocol.receiptMatches(attachment: attachment, receipt: payload) else {
       return false
     }
@@ -524,8 +592,22 @@ actor AgentBlobOutgoingCoordinator {
     defer { running = false }
     while true {
       guard let jobs = try? loadJobs(),
-            let due = jobs.filter(\.active).min(by: { $0.nextAttemptAt < $1.nextAttemptAt }) else { return }
+            let due = jobs.filter({ $0.active || $0.heldUntil != nil }).min(by: { $0.nextAttemptAt < $1.nextAttemptAt }) else { return }
       if due.nextAttemptAt > Date() { scheduleWake(at: due.nextAttemptAt); return }
+      if due.heldUntil != nil {
+        do {
+          if var file = attachmentStore.find(due.transferId) {
+            file.fileRetryGeneration = due.fileRetryGeneration ?? 0
+            try await onExpiredRetry(file)
+          }
+          try cancel([due.transferId])
+        } catch {
+          guard var pending = try? loadJobs(), let index = pending.firstIndex(of: due) else { continue }
+          pending[index].nextAttemptAt = Date().addingTimeInterval(30)
+          try? saveJobs(pending)
+        }
+        continue
+      }
       var job = due
       do {
         try await process(job)
@@ -632,10 +714,10 @@ actor AgentBlobOutgoingCoordinator {
       descriptor: staged.checkpoint.descriptor
     )
     try await checkCurrent(job, attachment: attachment)
-    try await publishOffer(
-      try AgentBlobProtocol.offerPayload(attachment: attachment, offer: offer),
-      attachment
-    )
+    var attempt = attachment
+    attempt.fileRetryGeneration = job.fileRetryGeneration ?? 0
+    let offerPayload = try AgentBlobProtocol.offerPayload(attachment: attempt, offer: offer)
+    try await publishOffer(offerPayload, attempt)
     for index in missing {
       try await checkCurrent(job, attachment: attachment)
       let response = try await client.binary(
@@ -666,6 +748,8 @@ actor AgentBlobOutgoingCoordinator {
   }
 
   private func checkCurrent(_ job: AgentBlobOutgoingJob, attachment: AgentPreparedOutboundAttachment) async throws {
+    guard job.active, job.heldUntil == nil, job.retryReserved != true,
+      try loadJobs().contains(job) else { throw CancellationError() }
     guard let binding = job.journalBinding else { return }
     let disposition = await journalAuthorization(attachment, binding)
     guard try loadJobs().contains(job) else { throw CancellationError() }

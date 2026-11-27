@@ -23,6 +23,7 @@ final class MessageCoordinator: ObservableObject {
   var contactReminderExpiryTask: Task<Void, Never>?
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
+  private var fileRecoveriesInFlight: Set<String> = []
   private var pendingCollaborationFollowups: Set<String> = []
   private var privateHealthJournalRounds: [String: (binding: GalaxySSIHealthDesktopResearch.Binding, valid: () -> Bool)] = [:]
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
@@ -143,6 +144,10 @@ final class MessageCoordinator: ObservableObject {
     attachmentStore: attachmentTransferStore,
     journalAuthorization: { [weak self] attachment, binding in
       await self?.authorizeJournalBlobUpload(attachment, binding: binding) ?? .wait
+    },
+    onExpiredRetry: { [weak self] file in
+      guard let self else { throw CancellationError() }
+      try await self.expireFileRetry(file)
     }
   ) { [weak self] payload, attachment in
     guard let self else { throw GalaxySSIError.transportUnavailable }
@@ -285,6 +290,14 @@ final class MessageCoordinator: ObservableObject {
     ) else { return nil }
     let receiptStore = settingsStore.turnReceiptStore
     let receiptOwner = settingsStore.profile.identityFingerprint
+    if let readingTool = try? AgentAttachmentReadingTool.executable(invoke: { [weak settingsStore] invocation in
+      let execute: @MainActor () -> AgentNativeToolExecutionResult = {
+        guard let settingsStore else { return .failure(code: "attachment_reading_unavailable", message: "The local receipt store is unavailable.") }
+        return settingsStore.reportAttachmentReading(invocation)
+      }
+      if Thread.isMainThread { return MainActor.assumeIsolated { execute() } }
+      return DispatchQueue.main.sync { execute() }
+    }) { _ = try? runtime.registry.registerExecutables([readingTool]) }
     runtime.registry.resultObserver = { tool, context, result in
       receiptStore.toolFinished(.init(owner: receiptOwner, conversation: context.conversationId, turn: context.turnId),
         context: context, tool: tool, result: result)
@@ -18176,6 +18189,7 @@ final class MessageCoordinator: ObservableObject {
           _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId, attachments: outboundAttachments,
             blobTransfers: blobTransfers, ownerContactID: outgoing.contactId)
         }
+        queuedFileReceipts(outboundAttachments)
         if !blobTransfers.isEmpty { await blobOutgoingCoordinator.wake() }
         return .queued
       }
@@ -18218,6 +18232,7 @@ final class MessageCoordinator: ObservableObject {
         detail: "Queued attachment transfer manifests and chunks.",
         status: .queued
       )
+      queuedFileReceipts(outboundAttachments)
       scheduleOutboxFlush(after: 0)
       return .queued
     }
@@ -18276,6 +18291,65 @@ final class MessageCoordinator: ObservableObject {
       return .queued
     case .failed:
       throw GalaxySSIError.transportUnavailable
+    }
+  }
+
+  func resumeAgentFile(messageID: UUID, itemID: String) async -> Bool {
+    guard UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
+      let original = store.persistedMessage(id: messageID, contactId: "hermes"),
+      store.activeAgentConversationId == original.conversationId,
+      let session = store.agentSession(id: original.conversationId), session.status == .active,
+      !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+      AgentFileReceipt.originals(original).contains(where: { $0.id == itemID }),
+      let key = store.turnReceiptKey(conversation: original.conversationId, turn: original.turnId),
+      let receipt = store.turnReceiptStore.read(key)?.files?[AgentTurnReceiptEvidence.hash(itemID)], receipt.wire == .failed,
+      let id = receipt.transfer, var file = attachmentTransferStore.find(id),
+      file.attachmentId == itemID, file.scope.clientMessageId == messageID.uuidString,
+      fileReceiptIsBound(file), let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == file.scope.desktopId &&
+        $0.routes.clientRouteId == file.scope.clientRouteId }), fileRecoveriesInFlight.insert(id).inserted else { return false }
+    defer { fileRecoveriesInFlight.remove(id) }
+    let owner = store.profile.identityFingerprint
+    file.fileRetryGeneration = receipt.generation
+    do {
+      if await blobOutgoingCoordinator.owns(id) {
+        guard let runtime = journalMqttRuntime,
+          let generation = await blobOutgoingCoordinator.generation(id), generation == receipt.generation else { return false }
+        let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
+        guard let target = projection.currentDestinations().first(where: { $0.desktop && $0.routes == link.routes }),
+          try runtime.journalBlobDisposition(file, binding: MqttBusinessIdentity(target.peer.binding).binding) == .upload else { return false }
+        let next = try await blobOutgoingCoordinator.reserveFileRetry(file, link: link)
+        guard !Task.isCancelled, store.profile.identityFingerprint == owner,
+          store.activeAgentConversationId == original.conversationId, fileReceiptIsBound(file),
+          store.turnReceiptStore.changeFile(key, item: itemID, { $0.restart(transfer: id, fingerprint: receipt.peer ?? "", generation: next) }) else { return false }
+        try await blobOutgoingCoordinator.activateFileRetry(id, generation: next)
+      } else {
+        try file.verifyOriginalChunks()
+        guard store.profile.identityFingerprint == owner,
+          deliveryStore.resumeHeldFile(source: messageID.uuidString, transfer: id),
+          updateFileReceipt(file, state: .retrying) else { return false }
+        scheduleOutboxFlush(after: 0)
+      }
+      return true
+    } catch { return false }
+  }
+
+  func expireFileRetry(_ file: AgentPreparedOutboundAttachment) throws {
+    guard let key = fileReceiptKey(file), let binding = fileReceiptBinding(file),
+      let receipt = store.turnReceiptStore.read(key)?.files?[AgentTurnReceiptEvidence.hash(file.attachmentId)],
+      receipt.transfer == file.transferId, receipt.peer == binding,
+      receipt.generation <= file.fileRetryGeneration else { throw AgentAttachmentTransferError.commitFailed }
+    if receipt.wire == .stored { return }
+    guard store.turnReceiptStore.changeFile(key, item: file.attachmentId, {
+      let generation = $0.generation
+      guard generation <= file.fileRetryGeneration else { return false }
+      return $0.fold(transfer: file.transferId, state: .closed, generation: generation)
+    }) else { throw AgentAttachmentTransferError.commitFailed }
+    if let runtime = journalMqttRuntime { try runtime.expireFileRetry(file) }
+    _ = deliveryStore.discardAttachmentTransferMessages(file.transferId)
+    attachmentTransferStore.discard([file.transferId], deliveryStore: deliveryStore)
+    if let id = file.scope.clientMessageId.flatMap(UUID.init(uuidString:)) {
+      store.appendDeliveryTrace(id, contactId: "hermes", stage: "attachment_file_retry_closed",
+        detail: "The single-file retry window closed without verified delivery.", status: .failed)
     }
   }
 
@@ -18454,7 +18528,7 @@ final class MessageCoordinator: ObservableObject {
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
-      outgoingAttachments: attachmentTransferStore, desktopArtifacts: desktopArtifactStore,
+      outgoingAttachments: attachmentTransferStore, outgoingBlobs: blobOutgoingCoordinator, desktopArtifacts: desktopArtifactStore,
       desktopConnector: connector, receiveDesktopBlobControl: { [weak self] payload, target, identity in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         let links = self.store.serverLinks.filter {

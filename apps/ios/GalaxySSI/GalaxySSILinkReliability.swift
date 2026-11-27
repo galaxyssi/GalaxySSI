@@ -28,7 +28,8 @@ struct LinkAttachmentDeclarationKey: Hashable {
 
 struct PendingLinkMessage: Codable, Equatable, Identifiable {
   static let heldUnclassified = "held_unclassified"
-  var isHeld: Bool { status == Self.heldUnclassified }
+  static let heldFile = "held_file"
+  var isHeld: Bool { status == Self.heldUnclassified || status == Self.heldFile }
   var id: String { messageId }
   var messageId: String
   var topic: String
@@ -822,6 +823,44 @@ final class GalaxySSILinkDeliveryStore {
   }
 
   @discardableResult
+  func hasAttachmentDependency(source: String, transfer: String) -> Bool {
+    !source.isBlank && state.outbox.contains {
+      $0.clientSourceMessageId == source && $0.blockedByAttachmentTransferIds.contains(transfer)
+    }
+  }
+
+  func holdExhaustedAttachmentFiles(maxAttempts: Int, active: Set<String>,
+    eligible: (PendingLinkMessage) -> Bool, canHold: (String, String) -> Bool) -> [String] {
+    guard maxAttempts > 0 else { return [] }
+    let transfers = Set(state.outbox.filter { item in
+      !item.isHeld && !item.attachmentTransferId.isEmpty && item.attempts >= maxAttempts &&
+        item.nextAttemptAt <= Date() && !active.contains(item.messageId) && eligible(item) &&
+        hasAttachmentDependency(source: item.clientSourceMessageId, transfer: item.attachmentTransferId) &&
+        canHold(item.clientSourceMessageId, item.attachmentTransferId)
+    }.map(\.attachmentTransferId))
+    guard !transfers.isEmpty else { return [] }
+    let previous = state
+    for index in state.outbox.indices where transfers.contains(state.outbox[index].attachmentTransferId) {
+      state.outbox[index].status = PendingLinkMessage.heldFile
+    }
+    guard save() else { state = previous; return [] }
+    return transfers.sorted()
+  }
+
+  func resumeHeldFile(source: String, transfer: String, now: Date = Date()) -> Bool {
+    guard hasAttachmentDependency(source: source, transfer: transfer) else { return false }
+    let indexes = state.outbox.indices.filter { state.outbox[$0].clientSourceMessageId == source &&
+      state.outbox[$0].attachmentTransferId == transfer && state.outbox[$0].status == PendingLinkMessage.heldFile }
+    guard !indexes.isEmpty else { return false }
+    let previous = state
+    for index in indexes {
+      state.outbox[index].status = "queued"; state.outbox[index].attempts = 0
+      state.outbox[index].nextAttemptAt = now; state.outbox[index].updatedAt = now
+    }
+    guard save() else { state = previous; return false }
+    return true
+  }
+
   func discardExhausted(
     maxAttempts: Int,
     attachmentMaxAttempts: Int? = nil,
