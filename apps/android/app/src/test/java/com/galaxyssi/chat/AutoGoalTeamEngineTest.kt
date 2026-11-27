@@ -15,6 +15,46 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutoGoalTeamEngineTest {
+    @Test fun completeJsonFindingsAllowUnreportedReservationsButNotPartialOrMixedObjects() = runBlocking {
+        for (text in listOf("""{"finding":"Reported."}""", """{"finding":"Reported.","dissent":null}""",
+            """{"finding":"Reported.","dissent":"Unresolved."}""")) {
+            val fake = Fake(plan(role("author"))) { if (it.getString("stage") == "role") text else "Summary.\nEND" }
+            assertEquals("Unresolved." in text, "Unresolved." in fake.run())
+        }
+        for (bad in listOf("""{"finding":"partial"""", """{"dissent":"missing result"}""", """{"finding":7}""",
+            """{"finding":"ok","dissent":false}""", """{"finding":"ok","tools":[]}""", """{"finding":"ok"}{}""")) {
+            val fake = Fake(plan(role("author"))) { bad }
+            assertTrue(runCatching { fake.run() }.isFailure)
+            assertEquals(listOf("plan", "author"), fake.calls)
+        }
+    }
+
+    @Test fun jsonSynthesisMustBeOneCompletePublicAnswer() = runBlocking {
+        assertEquals("Combined.", Fake(plan()) { """{"answer":"Combined."}""" }.run())
+        for (bad in listOf("{\"answer\":\"cut", """{"answer":false}""", """{"answer":" "}""",
+            """{"answer":"ok","tool_calls":[]}""", """{"answer":"ok"} trailing""")) {
+            assertTrue(runCatching { Fake(plan()) { bad }.run() }.isFailure)
+        }
+    }
+
+    @Test fun positionalRolesUseHostIdsAndKeepDistinctDependencies() = runBlocking {
+        val fake = Fake(plan("WORK|-|Summarize counts.", "CRITIC|-|Consider omissions.", "REVIEW|1, 2|Audit both.")) {
+            if (it.getString("stage") == "synthesis") "Done.\nEND" else {
+                if (it.getString("id") == "role3") {
+                    val inputs = it.getJSONArray("reports")
+                    assertEquals(listOf("role1", "role2"), (0 until inputs.length()).map { i -> inputs.getJSONObject(i).getString("id") })
+                }
+                report(it.getString("id"))
+            }
+        }
+        assertEquals("Done.", fake.run())
+        for (bad in listOf("REVIEW|2|self", "CRITIC|0|zero", "WORK|1,1|duplicate", "ROLE|x|worker|-|mixed")) {
+            val rejected = Fake(plan("WORK|-|first", bad))
+            assertTrue(runCatching { rejected.run() }.isFailure)
+            assertEquals(listOf("plan"), rejected.calls)
+        }
+    }
+
     private fun role(id: String, parents: String = "-", kind: String = "worker") =
         "ROLE|$id|$kind|$parents|private-assignment-$id"
 

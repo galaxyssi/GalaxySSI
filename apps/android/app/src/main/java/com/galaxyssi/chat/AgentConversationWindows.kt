@@ -50,6 +50,10 @@ internal object AgentConversationWindows {
     }
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
+    fun localTeamReview(chat: String, turn: String): (() -> Unit)? {
+        val owner = windows.values.firstOrNull { it.get()?.teamReview?.modelTurn == (chat to turn) } ?: return null
+        return { main.post { owner.get()?.activity?.offerModelTeamReview(chat, turn) }; Unit }
+    }
     fun screenAssistantForeground(controller: AgentConversationWindowController) {
         if (controller.activity is ScreenAssistantChatActivity) return
         lastForegroundWindowKey = controller.key
@@ -173,6 +177,7 @@ internal object AgentConversationWindows {
 }
 
 internal class AgentConversationWindowController(val activity: MainActivity) {
+    val teamReview = TeamReviewDraft()
     val key: String = activity.intent?.getStringExtra(AgentConversationWindows.WINDOW_KEY)
         ?.takeIf { it.isNotBlank() } ?: "main"
     var conversationId = ""
@@ -196,6 +201,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
         activity.agentGoalInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                teamReview.invalidate()
                 if (!restoring) {
                     activity.handler.removeCallbacks(saveRunnable)
                     activity.handler.postDelayed(saveRunnable, 250L)
@@ -324,7 +330,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
         AgentConversationWindows.readyWindow(this)
     }
 
-    fun pause() { save(); visible = false }
+    fun pause() { teamReview.invalidate(); save(); visible = false }
 
     fun onDataChanged() {
         if (!visible || activity.isDestroyed || activity.isFinishing || activity.initialAgentHydrationPending) return
@@ -340,6 +346,7 @@ internal class AgentConversationWindowController(val activity: MainActivity) {
     }
 
     fun destroy() {
+        teamReview.invalidate()
         activity.handler.removeCallbacks(saveRunnable)
         AgentConversationWindows.unregister(this)
         refreshList = null
