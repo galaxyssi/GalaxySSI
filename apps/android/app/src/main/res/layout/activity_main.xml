@@ -274,6 +274,8 @@
                         android:scrollbars="none"
                         android:visibility="gone" />
 
+                    <include android:id="@+id/agentReadingLatest" layout="@layout/reading_latest" />
+
                     <LinearLayout
                         android:id="@+id/agentLegacyControls"
                         android:layout_width="0dp"
@@ -1590,17 +1592,20 @@
             android:layout_height="0.5dp"
             android:background="@color/separator" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/messageList"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:overScrollMode="never"
-            android:paddingStart="0dp"
-            android:paddingTop="14dp"
-            android:paddingEnd="0dp"
-            android:paddingBottom="8dp" />
+            android:layout_weight="1">
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/messageList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:overScrollMode="never"
+                android:paddingTop="14dp"
+                android:paddingBottom="8dp" />
+            <include android:id="@+id/peerReadingLatest" layout="@layout/reading_latest" />
+        </FrameLayout>
 
         <LinearLayout
             android:id="@+id/chatInputBar"

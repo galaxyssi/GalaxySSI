@@ -733,17 +733,18 @@ internal fun MainActivity.captureAgentTranscriptScrollAnchor(): AgentTranscriptS
     val position = agentOutputLayout.findFirstVisibleItemPosition()
     if (position == RecyclerView.NO_POSITION) return null
     val entryId = agentTranscriptAdapter.entryIdAt(position) ?: return null
-    val topOffset = agentOutputLayout.findViewByPosition(position)?.top
-        ?: agentOutputList.paddingTop
+    val view = agentOutputLayout.findViewByPosition(position) ?: return null
+    val topOffset = agentOutputLayout.getDecoratedTop(view) - agentOutputList.paddingTop
     return AgentTranscriptScrollAnchor(entryId, topOffset)
 }
 
 internal fun MainActivity.restoreAgentTranscriptScrollAnchor(anchor: AgentTranscriptScrollAnchor?) {
     if (anchor == null) return
     val position = agentTranscriptAdapter.indexOfEntry(anchor.entryId)
-    if (position >= 0) {
-        agentOutputLayout.scrollToPositionWithOffset(position, anchor.topOffset)
-    }
+    if (position < 0) return
+    val current = agentOutputLayout.findViewByPosition(position)
+    if (current != null && agentOutputLayout.getDecoratedTop(current) - agentOutputList.paddingTop == anchor.topOffset) return
+    agentOutputLayout.scrollToPositionWithOffset(position, anchor.topOffset)
 }
 
 internal fun MainActivity.scrollAgentTranscriptToBottom() {
@@ -755,7 +756,7 @@ internal fun MainActivity.scrollAgentTranscriptToBottom() {
     agentOutputList.post {
         if (generation == agentTranscriptScrollGeneration &&
             conversationId == agentRenderedConversationId.ifBlank { agentTranscriptWindow.conversationId } &&
-            agentTranscriptAutoFollow && !isFinishing && !isDestroyed) {
+            agentTranscriptAutoFollow && !agentTranscriptUserScrollActive && !isFinishing && !isDestroyed) {
             agentOutputList.scrollBy(0, agentOutputList.computeVerticalScrollRange())
         }
     }
@@ -785,6 +786,11 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
         leakedControlPayload || staleApproval
     }
     scheduleAgentTranscriptCleanup(cleanupEntryIds)
+    if (agentTranscriptAutoFollow) readingArrow(R.id.agentReadingLatest, false)
+    else if (!initialAgentHydrationPending &&
+        ReadingPosition.newAnswer(renderedAgentTranscriptSourceEntries, filteredEntries, ::isAgentApprovalEntry)) {
+        readingArrow(R.id.agentReadingLatest, true)
+    }
     val previousProcessGroupSignatures = AgentTranscriptRenderPolicy.processGroupSignatures(
         renderedAgentTranscriptSourceEntries
     )
@@ -857,7 +863,7 @@ internal fun MainActivity.renderAgentTranscript(entries: List<AgentTranscriptEnt
     }
     val scrollGeneration = ++agentTranscriptScrollGeneration
     agentOutputList.post {
-        if (scrollGeneration != agentTranscriptScrollGeneration || isFinishing || isDestroyed ||
+        if (scrollGeneration != agentTranscriptScrollGeneration || agentTranscriptUserScrollActive || isFinishing || isDestroyed ||
             activeConversationId != agentRenderedConversationId.ifBlank { agentTranscriptWindow.conversationId }) return@post
         if (shouldFollow) {
             if (agentTranscriptAutoFollow) scrollAgentTranscriptToBottom()

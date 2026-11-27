@@ -1,0 +1,4 @@
+<resources>
+    <string name="reading_latest">Jump to new messages</string>
+    <item name="healthReadingKey" type="id" />
+</resources>

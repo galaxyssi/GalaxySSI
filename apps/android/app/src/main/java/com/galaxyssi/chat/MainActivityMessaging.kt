@@ -300,6 +300,11 @@ internal fun MainActivity.applyAgentBrandLogoTextScale() {
 }
 
 internal fun MainActivity.configureMessages() {
+    findViewById<View>(R.id.peerReadingLatest).setOnClickListener {
+        val id = selectedContact?.id ?: return@setOnClickListener
+        readingArrow(R.id.peerReadingLatest, false)
+        followPeerChatLatest(id)
+    }
     messageAdapter = MessageAdapter(currentMessages,
         onPlayVoiceMessage = { msgId -> playVoiceMessage(msgId) },
         onMessageActions = { position -> showMessageActions(position) },
@@ -320,7 +325,7 @@ internal fun MainActivity.configureMessages() {
                     peerChatViewport.beginUserScroll()
                 }
                 if (userScrolling) {
-                    peerChatViewport.userScroll(isMessageListNearBottom(), selectedContact?.id == CONTACT_SYSTEM.id)
+                    peerChatViewport.userScroll(!recyclerView.canScrollVertically(1) && isMessageListNearBottom(), selectedContact?.id == CONTACT_SYSTEM.id)
                 }
                 if (newState == RecyclerView.SCROLL_STATE_IDLE) userScrolling = false
             }
@@ -329,7 +334,8 @@ internal fun MainActivity.configureMessages() {
                 if (!userScrolling) return
                 val layout = recyclerView.layoutManager as? LinearLayoutManager ?: return
                 val contactId = selectedContact?.id ?: return
-                peerChatViewport.userScroll(isMessageListNearBottom(), contactId == CONTACT_SYSTEM.id)
+                peerChatViewport.userScroll(!recyclerView.canScrollVertically(1) && isMessageListNearBottom(), contactId == CONTACT_SYSTEM.id)
+                if (peerChatViewport.followLatest) readingArrow(R.id.peerReadingLatest, false)
                 if (
                     dy < 0 &&
                     layout.findFirstVisibleItemPosition() <= CHAT_HISTORY_PREFETCH_POSITION

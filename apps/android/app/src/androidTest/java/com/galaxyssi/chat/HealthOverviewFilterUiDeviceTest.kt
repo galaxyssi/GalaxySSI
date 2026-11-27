@@ -98,6 +98,46 @@ class HealthOverviewFilterUiDeviceTest {
         }
     }
 
+    @Test fun filteringFarDownKeepsTheSameSurvivingReadingAtTheSameOffset() = fixture { names ->
+        val now = System.currentTimeMillis()
+        val labs = HealthMetric.entries.filter { it.form == HealthResultForm.LABORATORY }.take(36)
+        val outside = mutableSetOf<String>()
+        HealthRecordStore(context, names.records).use { records ->
+            labs.forEachIndexed { index, metric ->
+                val abnormal = index % 3 != 0
+                if (abnormal) outside.add(metric.name)
+                assertTrue(records.save(HealthDraft(metric, mapOf(metric.fields.single() to if (abnormal) "7" else "5"),
+                    metric.units.first(), now - index * 1000L, reference = "4-6")) is HealthSaveResult.Saved)
+            }
+        }
+        ActivityScenario.launch<HealthCenterActivity>(Intent(context, HealthCenterActivity::class.java).putHealthNavigationFixture(names)).use { screen ->
+            await(screen) { find(it, "health-overview-all-records") != null }
+            screen.onActivity { find(it, "health-overview-all-records")!!.performClick() }
+            instrumentation.waitForIdleSync()
+            var key = ""
+            screen.onActivity { activity ->
+                val metrics = find(activity, "health-overview-metrics") as ViewGroup
+                val rows = (0 until metrics.childCount).map(metrics::getChildAt).filter { it.getTag(R.id.healthReadingKey) != null }
+                fun abnormal(v: View) = v.tag.toString().removePrefix("health-overview-").substringBefore('-') in outside
+                val index = rows.indices.first { i -> i >= 4 && abnormal(rows[i]) }
+                val row = rows[index]; key = row.getTag(R.id.healthReadingKey) as String
+                val scroller = activity.body.getChildAt(0) as ScrollView
+                val bounds = android.graphics.Rect()
+                scroller.offsetDescendantRectToMyCoords(row, bounds)
+                scroller.scrollTo(0, bounds.top + 7)
+                assertEquals(bounds.top + 7, scroller.scrollY)
+                (find(activity, "health-measurement-abnormal-filter") as CheckBox).isChecked = true
+            }
+            await(screen) { activity ->
+                val scroll = activity.body.getChildAt(0) as ScrollView
+                val row = views(scroll).firstOrNull { it.getTag(R.id.healthReadingKey) == key }
+                val rect = android.graphics.Rect()
+                if (row == null || scroll.isLayoutRequested) false
+                else { scroll.offsetDescendantRectToMyCoords(row, rect); rect.top - scroll.scrollY == -7 }
+            }
+        }
+    }
+
     @Test fun newMeasurementsReplaceTheLocalFilterSnapshot() = fixture { names ->
         val now = System.currentTimeMillis()
         HealthRecordStore(context, names.records).use { it.save(HealthDraft(HealthMetric.GLUCOSE, mapOf("glucose" to "5.1"),

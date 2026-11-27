@@ -1061,7 +1061,6 @@ internal fun MainActivity.showAgentVoiceTranscriptionPending(
         agentInputAttachments.removeAll { it.id in attachmentIds }
         renderAgentInputAttachments()
     }
-    agentTranscriptAutoFollow = true
     agentTranscriptStore.append(
         AgentTranscriptRole.USER,
         getString(R.string.voice_status_recognizing),

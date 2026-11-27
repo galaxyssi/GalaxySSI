@@ -242,6 +242,7 @@ internal fun MainActivity.showChatPage(contact: Contact) {
     }
     selectedContact = contact
     peerChatViewport.select(contact.id, systemNotifications = contact.id == CONTACT_SYSTEM.id)
+    readingArrow(R.id.peerReadingLatest, false)
     loadPeerComposerAttachments(contact.id)
     setChatActionTrayRequested(false)
     AppForegroundTracker.onConversationVisible(this, contact.id)
@@ -413,6 +414,7 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
                 when (newState) {
                     RecyclerView.SCROLL_STATE_DRAGGING -> {
                         agentTranscriptUserScrollActive = true
+                        agentTranscriptScrollGeneration++
                         conversationWindow.cancelPendingScroll()
                     }
                     RecyclerView.SCROLL_STATE_IDLE -> {
@@ -438,8 +440,9 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
                     itemCount = itemCount,
                     lastVisiblePosition = lastPosition,
                     remainingPx = remaining,
-                    thresholdPx = dp(56)
+                    thresholdPx = 1
                 )
+                if (agentTranscriptAutoFollow) readingArrow(R.id.agentReadingLatest, false)
                 if (AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
                         dy = dy,
                         firstVisiblePosition = agentOutputLayout.findFirstVisibleItemPosition(),
@@ -452,7 +455,15 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
             }
         })
     }
+    ReadingParagraphAnchor(list) { list === agentOutputList && !agentTranscriptAutoFollow &&
+        !runtimePlaintextCleared && !agentTranscriptUserScrollActive }.install()
     attachAgentReplySpeechStopGesture()
+    findViewById<View>(R.id.agentReadingLatest).setOnClickListener {
+        conversationWindow.cancelPendingScroll()
+        agentTranscriptAutoFollow = true
+        readingArrow(R.id.agentReadingLatest, false)
+        scrollAgentTranscriptToBottom()
+    }
 }
 
 private fun MainActivity.configureAgentPageControls() {
@@ -732,6 +743,8 @@ internal fun MainActivity.loadOlderAgentTranscriptEntries() {
 }
 
 internal fun MainActivity.clearAgentTranscriptRows() {
+    readingArrow(R.id.agentReadingLatest, false)
+    agentTranscriptScrollGeneration++
     if (isAgentTranscriptAdapterInitialized()) {
         singleAgentTranscriptAdapter.clear()
         collaborationTranscriptAdapter.clear()
@@ -1419,7 +1432,7 @@ internal fun MainActivity.submitAgentGoal(
     voiceCoordinatorSession(voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
         voiceCoordinatorIdsByTurn[turnId] = sessionId
     }
-    if (agentTranscriptStore.activeConversation().id == conversation.id) {
+    if (agentTranscriptStore.activeConversation().id == conversation.id && (voiceTraceId.isBlank() || agentTranscriptAutoFollow)) {
         conversationWindow.followLatestForSubmission(conversation.id)
         agentTranscriptAutoFollow = true
     }

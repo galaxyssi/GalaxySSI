@@ -61,7 +61,7 @@ internal fun MainActivity.restorePeerChatScrollAnchor(anchor: ChatMessageScrollA
     }
 }
 
-internal fun MainActivity.onPeerChatMessageSent(contactId: String) {
+internal fun MainActivity.followPeerChatLatest(contactId: String) {
     if (chatPage.visibility != View.VISIBLE || selectedContact?.id != contactId ||
         contactId == CONTACT_SYSTEM.id) return
     val needsReload = peerChatViewport.pendingAnchor != null || historyHasNewer[contactId] == true ||

@@ -18,6 +18,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AgentReplySpeechScrollDeviceTest {
+    @get:org.junit.Rule val noPermissions = ViewportNoPermissionPromptRule()
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
 
     @Test fun mediaReplyKeepsItsViewportThroughTapsPlaybackAndCompletion() = checkViewport(media = true, merged = false)
