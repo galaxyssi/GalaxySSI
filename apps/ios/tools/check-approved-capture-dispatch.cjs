@@ -16,7 +16,6 @@ function section(source) {
 }
 function retainedApprovedCaptureServices(source) {
   if (!source.includes('AgentApprovedCaptureDispatch.prepare(')) return source;
-  if (pairing) source = pairing.retainedPairingServices(source);
   return source.replace(section(source), section(old(app + 'GalaxySSIServices.swift')));
 }
 function retainedCaptureEnvelope(helper) {
@@ -29,7 +28,8 @@ function retainedCaptureEnvelope(helper) {
 module.exports = {retainedApprovedCaptureServices, retainedCaptureEnvelope};
 if (require.main === module) {
   const services = read(app + 'GalaxySSIServices.swift'), capture = section(services);
-  assert.equal(retainedApprovedCaptureServices(services), old(app + 'GalaxySSIServices.swift'), 'Only approved capture dispatch changes');
+  const retained = retainedApprovedCaptureServices(services);
+  assert.equal(pairing ? pairing.retainedPairingServices(retained) : retained, old(app + 'GalaxySSIServices.swift'), 'Only approved capture dispatch and exact approved pairing changes');
   for (const token of ['wait.acceptsCallback(in: task, outgoing: outgoing)', 'PhoneExecutionAuthority.isCancelled',
     'UIApplication.shared.applicationState == .active', 'AgentIOSCaptureSystemPermission.state(for: wait.kind) == .granted',
     '!store.agentSafetySettings.executionPaused', 'store.agentSafetySettings.taskExecutionMode != .planOnly',
