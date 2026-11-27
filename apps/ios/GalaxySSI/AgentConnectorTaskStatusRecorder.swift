@@ -71,6 +71,10 @@ enum AgentNativeConnectorStatusObservation {
       statusSeq: observation.sequence, conversationId: managed.conversationId, turnId: managed.turnId,
       nowMillis: observation.lastResponseAt)
     guard var result = AgentConnectorTaskStatusRecorder.record(pending: pending, envelope: envelope)?.result else { return nil }
+    // Authenticated remote status proves acceptance; later progress must not restart that clock.
+    if result.metadata["transport_accepted_at"] == nil {
+      result.metadata["transport_accepted_at"] = String(observation.lastResponseAt)
+    }
     // A known remote status is not a delivered result and never authorizes another execution.
     for key in ["native_connector_observation_overdue", "native_connector_observation_timeout_stage",
       "native_connector_observation_started_at", "native_connector_observation_elapsed_ms",

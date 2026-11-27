@@ -2,6 +2,10 @@
 
 Pinned Android merge: `7b8b6d2a840e8db70deca680233603113d53f36b`.
 Incremental main base: `8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
+Synchronized through main `26259d6503ef4b60ce8eb2346a1bbb2b85bbf12d` during
+merge conflict resolution. Existing connector acceptance/observation hooks remain
+intact; the primary guard normalizes those declared increments only when comparing
+its independent retained knowledge baseline.
 The eight changed Android production files are individually pinned and
 dispositioned in `ANDROID_3037_SOURCE_INVENTORY.json`. Android version changes,
 instrumentation infrastructure and device measurements are not copied or claimed

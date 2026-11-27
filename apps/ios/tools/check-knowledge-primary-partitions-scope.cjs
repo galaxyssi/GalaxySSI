@@ -4,7 +4,9 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 // Exact retained baseline now includes the independently reviewed #3031/#3033-36
 // chain. Only declared primary hooks may differ from that pinned source.
 const base = 'bf3933c65b5963a5b0c5cbe7d826a8eea8366919';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+// Retain the already merged connector increments when comparing the independent knowledge baseline.
+const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -104,6 +106,9 @@ function retained(file, source) {
     return source.replace(block, block.replace('try fixture { database, url, secrets in', 'try fixture { database, url, _ in'));
   }
   if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
+    .replace("const read = file => require('./check-knowledge-primary-partitions-scope.cjs').retained(file,\n  require('./check-connector-acceptance-evidence-scope.cjs').retained(file,\n    fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')));",
+      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
+    .replace("  source = require('./check-knowledge-primary-partitions-scope.cjs').retained(file,\n    require('./check-connector-acceptance-evidence-scope.cjs').retained(file, source));\n", '')
     .replace("const read = file => require('./check-knowledge-primary-partitions-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-knowledge-primary-partitions-scope.cjs').retained(file, source);\n", '');
