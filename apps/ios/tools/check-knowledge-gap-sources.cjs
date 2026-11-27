@@ -5,7 +5,8 @@ const base = 'ca36efb28c5e2e72c620e20c4e88ccfe30e1549a';
 const isolationBase = 'bb1b6b938450781de6b0580d839cb7ffb16617c7';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-autonomous-source-scope.cjs').retained(f,
-  require('./check-research-context-provenance.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
+  require('./check-research-context-provenance.cjs').retained(f,
+    require('./check-governance-persistence-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8')))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {
@@ -13,6 +14,7 @@ function section(s, first, last) {
   assert(a >= 0 && b > a, first); assert.equal(s.split(first).length, 2, first); return s.slice(a, b);
 }
 function retained(file, s) {
+  s = require('./check-governance-persistence-scope.cjs').retained(file, s);
   if (file.endsWith('AgentCognitiveGovernance.swift') && s.includes('  var sourceConversationIds: Set<String>?')) {
     s = once(s, '  var sourceConversationIds: Set<String>?\n', '');
     s = once(s, ',\n    sourceConversationIds: Set<String>? = nil', '');
