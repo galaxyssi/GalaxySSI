@@ -8043,6 +8043,19 @@ final class MessageCoordinator: ObservableObject {
     outgoing: ChatMessage,
     executionMode: AgentTaskExecutionMode
   ) async throws {
+    try await AgentPinnedCloudTeamDelivery.$runtime.withValue(UUID()) {
+      try await receivePhoneOwnedProviderReplyInScope(snapshot: snapshot, targetTitle: targetTitle,
+        requestText: requestText, outgoing: outgoing, executionMode: executionMode)
+    }
+  }
+
+  private func receivePhoneOwnedProviderReplyInScope(
+    snapshot: AgentPlannerModelSnapshot,
+    targetTitle: String,
+    requestText: String,
+    outgoing: ChatMessage,
+    executionMode: AgentTaskExecutionMode
+  ) async throws {
     try Task.checkCancellation()
     let turnId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
     let createdAt = Int64(Date().timeIntervalSince1970 * 1_000)
@@ -13700,7 +13713,7 @@ final class MessageCoordinator: ObservableObject {
       detail: task.executionRuntimeId,
       status: .delivered
     )
-    _ = store.appendIncoming(
+    let directIncoming = store.appendIncoming(
       result,
       from: outgoing.contactId,
       remoteMessageId: outgoing.turnId,
@@ -13713,6 +13726,7 @@ final class MessageCoordinator: ObservableObject {
     )
     AgentLocalTeamReviewWindow.delivered(owner: store.profile.identityFingerprint,
       conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+    AgentLocalTeamReviewWindow.cloudDelivered(directIncoming, store: store)
     return true
   }
 
@@ -16873,9 +16887,11 @@ final class MessageCoordinator: ObservableObject {
     store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "cloud_request",
                               detail: requestDetail, status: .sent)
     let scopedTurns = outgoing.conversationId.isBlank ? turns : turns.filter { $0.conversationId == outgoing.conversationId }
-    try await receiveCloudStreamReply(contact: contact, turns: scopedTurns, images: images, outgoing: outgoing,
-      modelDetail: modelDetail, displayContactId: outgoing.contactId, dispatchLease: lease,
-      researchRetrySource: researchRetrySource, retainResearch: !hadAttachments)
+    _ = try await AgentPinnedCloudTeamDelivery.$runtime.withValue(UUID()) {
+      try await receiveCloudStreamReply(contact: contact, turns: scopedTurns, images: images, outgoing: outgoing,
+        modelDetail: modelDetail, displayContactId: outgoing.contactId, dispatchLease: lease,
+        researchRetrySource: researchRetrySource, retainResearch: !hadAttachments)
+    }
     if recoverable,
        let source = store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
        [.delivered, .read].contains(source.deliveryStatus),
@@ -17117,6 +17133,7 @@ final class MessageCoordinator: ObservableObject {
           outgoing.id, contactId: destinationId, stage: "cloud_reply", detail: modelDetail, status: .delivered
         )
         onIncomingMessage?(final)
+        AgentLocalTeamReviewWindow.cloudDelivered(final, store: store)
 
       case .failed(let failure):
         if let current = incoming {
