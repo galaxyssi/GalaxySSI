@@ -7,12 +7,15 @@ struct GalaxySSIPublicNewsHighlightsView: View {
   @AppStorage("publicNews.highlightInterests") private var interestMask = PublicNewsInterest.allMask
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
   @State private var selected: PublicNewsArticle?
+  @State private var selectedEvent: PublicNewsEvent?
+  @State private var events: [String: PublicNewsEvent] = [:]
   @State private var articleIDs: [String] = []
   @State private var loading = true
 
   private struct SelectionRequest: Equatable {
     var mask: Int
     var refreshing: Bool
+    var articles: [PublicNewsArticle]
   }
 
   private var articles: [PublicNewsArticle] {
@@ -69,6 +72,10 @@ struct GalaxySSIPublicNewsHighlightsView: View {
               }
               .padding(.leading, 12)
               .background(Color.galaxySSISurface)
+              if let event = events[article.id] {
+                GalaxySSIPublicNewsEventButton(event: event) { selectedEvent = event }
+                  .padding(.horizontal, 12)
+              }
               Divider()
             }
           }
@@ -79,10 +86,11 @@ struct GalaxySSIPublicNewsHighlightsView: View {
     }
     .background(Color.galaxySSIPageBackground.ignoresSafeArea())
     .navigationBarHidden(true)
-    .task(id: SelectionRequest(mask: interestMask, refreshing: archive.refreshing)) {
+    .task(id: SelectionRequest(mask: interestMask, refreshing: archive.refreshing, articles: archive.eligibleArticles)) {
       if !archive.refreshing { await curate(mask: interestMask) }
     }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
+    .sheet(item: $selectedEvent) { GalaxySSIPublicNewsEventView(archive: archive, event: $0) }
   }
 
   private func curate(mask: Int) async {
@@ -92,13 +100,16 @@ struct GalaxySSIPublicNewsHighlightsView: View {
     let archiveSnapshot = archive.eligibleArticles
     let enabled = Set(PublicNewsInterest.allCases.filter { mask & $0.bit != 0 })
     let worker = Task.detached(priority: .userInitiated) {
-      let metadata = archiveSnapshot.map(PublicNewsHighlights.metadata)
-      return try PublicNewsHighlights.select(metadata, enabled: enabled, now: Date())
+      let grouped = try PublicNewsEvents.group(archiveSnapshot, enabled: enabled)
+      let metadata = PublicNewsEvents.representatives(archiveSnapshot, events: grouped).map(PublicNewsHighlights.metadata)
+      let ids = try PublicNewsHighlights.select(metadata, enabled: enabled, now: Date(), deduplicateHeadlines: false)
+      return (ids, grouped)
     }
     do {
-      let ids = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+      let (ids, grouped) = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
       guard !Task.isCancelled, interestMask == mask else { return }
       articleIDs = ids
+      events = grouped
       loading = false
     } catch {
       if !Task.isCancelled, interestMask == mask { loading = false }

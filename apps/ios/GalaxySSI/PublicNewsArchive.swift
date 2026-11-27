@@ -306,16 +306,17 @@ final class PublicNewsArchive: ObservableObject {
   }
 
   func markRead(_ id: String) {
-    newsBudget.noteRead()
-    update(id) { $0.read = true }
+    markRead(Set([id]))
   }
 
   func markRead(_ ids: Set<String>) {
     if !ids.isEmpty { newsBudget.noteRead() }
     var next = articles
     var changed = false
+    let now = Date()
     for index in next.indices where !next[index].read && ids.contains(next[index].id) {
       next[index].read = true
+      next[index].readAt = now
       changed = true
     }
     if changed { save(next, refreshedAt: refreshedAt) }
@@ -562,6 +563,7 @@ final class PublicNewsArchive: ObservableObject {
       }
       if let previous = byID[article.id] {
         article.read = previous.read
+        article.readAt = previous.readAt
         article.saved = previous.saved
         article.discoveredAt = previous.discoveredAt
         article.publishedAt = article.publishedAt ?? previous.publishedAt

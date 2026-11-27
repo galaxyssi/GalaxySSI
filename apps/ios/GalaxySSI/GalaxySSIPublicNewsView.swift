@@ -83,6 +83,7 @@ struct GalaxySSIPublicNewsView: View {
   @EnvironmentObject private var coordinator: MessageCoordinator
   @AppStorage("publicNews.liveEnabled") private var liveNewsEnabled = false
   @AppStorage("publicNews.publisherDiscovery") private var publisherDiscovery = false
+  @AppStorage("publicNews.highlightInterests") private var interestMask = PublicNewsInterest.allMask
   @AppStorage("publicNews.automaticHeadlineTranslation") private var automaticHeadlineTranslation = false
   @AppStorage(PublicNewsSourceReviewWorker.preferenceKey) private var reviewOriginalSources = false
   @AppStorage("publicNews.headlineTranslationRoute") private var headlineTranslationRoute = ""
@@ -109,6 +110,8 @@ struct GalaxySSIPublicNewsView: View {
   @ScaledMetric(relativeTo: .body) private var menuRowHeight = 48.0
   @ScaledMetric(relativeTo: .body) private var collapsedHeadlineSize = 19.36
   @State private var selected: PublicNewsArticle?
+  @State private var selectedEvent: PublicNewsEvent?
+  @State private var events: [String: PublicNewsEvent] = [:]
   @State private var didOpenInitialArticle = false
   @SceneStorage("publicNews.showSearch") private var showSearch = false
   @SceneStorage("publicNews.timelineFilter") private var savedFilter = "all"
@@ -164,7 +167,7 @@ struct GalaxySSIPublicNewsView: View {
   private var timelineIsInteractive: Bool {
     scenePhase == .active && didRestoreTimeline && archive.loaded && scrollRequest == nil &&
       !showFeedMenu && !showNewsSettings && !showSearch && !showHighlights &&
-      !showBacklog && !showScience && !showHeadlineTranslation && selected == nil
+      !showBacklog && !showScience && !showHeadlineTranslation && selected == nil && selectedEvent == nil
   }
 
   private var canTrackReading: Bool { timelineIsInteractive && (archive.reminderUnreadCount ?? 0) > 0 }
@@ -287,6 +290,18 @@ struct GalaxySSIPublicNewsView: View {
     }
     .sheet(isPresented: $showNewsSettings, onDismiss: performNewsSettingsAction) { newsSettings }
     .sheet(item: $selected) { GalaxySSIPublicNewsReader(archive: archive, original: $0) }
+    .sheet(item: $selectedEvent) { GalaxySSIPublicNewsEventView(archive: archive, event: $0) }
+    .task(id: PublicNewsEvents.Request(articles: archive.eligibleArticles, mask: interestMask)) {
+      let request = PublicNewsEvents.Request(articles: archive.eligibleArticles, mask: interestMask)
+      let worker = Task.detached(priority: .utility) {
+        try PublicNewsEvents.group(request.articles, enabled: request.enabled)
+      }
+      do {
+        let grouped = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+        guard !Task.isCancelled else { return }
+        events = grouped
+      } catch {}
+    }
     .sheet(isPresented: $showBacklog) {
       NavigationView { GalaxySSIPublicNewsBacklogView(archive: archive) }
         .navigationViewStyle(.stack)
@@ -590,6 +605,10 @@ struct GalaxySSIPublicNewsView: View {
           .disabled(!archive.loaded)
         }
         .padding(.horizontal, 12)
+      }
+      if let event = events[article.id] {
+        GalaxySSIPublicNewsEventButton(event: event, showsExcerpt: !expanded) { selectedEvent = event }
+          .padding(.horizontal, 12)
       }
       Divider().padding(.leading, 12)
     }
