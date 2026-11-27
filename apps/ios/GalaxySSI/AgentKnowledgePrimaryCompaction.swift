@@ -16,8 +16,14 @@ enum AgentKnowledgePrimaryCompaction {
 
   @discardableResult
   static func advance(_ db: OpaquePointer, checkActive: () throws -> Void,
-                      relocate: (String, String) throws -> Void) throws -> Int {
+                      resumeCopy: () throws -> Int = { throw AgentKnowledgeDatabaseError.corruptRecord },
+                      relocate: (String, String) throws -> Bool) throws -> Int {
     guard sqlite3_get_autocommit(db) == 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    if try AgentKnowledgePrimaryCopyStore.pending(db) {
+      let moved = try resumeCopy()
+      try finishSource(db)
+      return moved
+    }
     try discover(db, checkActive: checkActive)
     var source = try strings(db, "SELECT source FROM knowledge_primary_compaction WHERE id=1").first
     guard source != nil else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -28,19 +34,32 @@ enum AgentKnowledgePrimaryCompaction {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     let keys = try strings(db, "SELECT item_hash FROM knowledge_primary_refs WHERE partition_id=? ORDER BY item_hash LIMIT 8", [source])
+    var moved = 0
     for key in keys {
-      try Task.checkCancellation(); try checkActive()
-      try relocate(key, source)
+      do {
+        try Task.checkCancellation(); try checkActive()
+        if try !relocate(key, source) { break }
+        moved += 1
+      } catch let yield as AgentKnowledgeStorageYield {
+        if moved == 0 { throw yield }
+        break
+      }
     }
+    try finishSource(db)
+    return moved
+  }
+  private static func finishSource(_ db: OpaquePointer) throws {
+    if try AgentKnowledgePrimaryCopyStore.pending(db) { return }
+    guard let source = try strings(db, "SELECT source FROM knowledge_primary_compaction WHERE id=1").first else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    if source.isEmpty { return }
     if try strings(db, "SELECT item_hash FROM knowledge_primary_refs WHERE partition_id=? LIMIT 1", [source]).isEmpty {
       try retire(db, source)
       try run(db, "UPDATE knowledge_primary_compaction SET source='' WHERE id=1")
     }
-    return keys.count
   }
 
   static func pending(_ db: OpaquePointer) throws -> Bool {
-    try !strings(db, "SELECT '1' FROM knowledge_primary_dirty UNION ALL SELECT '1' FROM knowledge_primary_retired UNION ALL SELECT '1' FROM knowledge_primary_compaction WHERE discovered=0 OR source<>'' LIMIT 1").isEmpty
+    try !strings(db, "SELECT '1' FROM knowledge_primary_dirty UNION ALL SELECT '1' FROM knowledge_primary_retired UNION ALL SELECT '1' FROM knowledge_primary_copy UNION ALL SELECT '1' FROM knowledge_primary_compaction WHERE discovered=0 OR source<>'' LIMIT 1").isEmpty
   }
 
   private static func discover(_ db: OpaquePointer, checkActive: () throws -> Void) throws {
@@ -73,7 +92,8 @@ enum AgentKnowledgePrimaryCompaction {
     }
     return nil
   }
-  private static func retire(_ db: OpaquePointer, _ key: String) throws {
+  static func retire(_ db: OpaquePointer, _ key: String) throws {
+    guard try !AgentKnowledgePrimaryCopyStore.references(db, key) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     guard try strings(db, "SELECT item_hash FROM knowledge_primary_refs WHERE partition_id=? LIMIT 1", [key]).isEmpty else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }

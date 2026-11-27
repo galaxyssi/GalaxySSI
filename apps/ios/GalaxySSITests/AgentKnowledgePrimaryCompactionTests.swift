@@ -130,6 +130,7 @@ final class AgentKnowledgePrimaryCompactionTests: XCTestCase {
     let f = try Fixture(), body = Data(repeating: 65, count: 64 * 1_024 * 30)
     try mixed(f, body: body)
     let source = try f.partitionID(key: key(0))
+    _ = try f.store.reclaim(catalog: f.catalog) // Register the paged copy before cancelling its first frame page.
     var checks = 0
     XCTAssertThrowsError(try f.store.reclaim(catalog: f.catalog) {
       checks += 1; if checks == 20 { throw CancellationError() }
@@ -195,7 +196,7 @@ final class AgentKnowledgePrimaryCompactionTests: XCTestCase {
     try AgentKnowledgePrimaryCompaction.setup(f.catalog)
     XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_dirty"), 0)
     try f.sql("BEGIN IMMEDIATE")
-    let moved = try AgentKnowledgePrimaryCompaction.advance(f.catalog, checkActive: {}) { _, _ in XCTFail("No live records") }
+    let moved = try AgentKnowledgePrimaryCompaction.advance(f.catalog, checkActive: {}) { _, _ in XCTFail("No live records"); return true }
     XCTAssertEqual(moved, 0)
     XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_retired"), 8)
     XCTAssertEqual(try f.scalar("SELECT COUNT(*) FROM knowledge_primary_dirty"), 24)

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), cp = requ
 const root = path.resolve(__dirname, '../../..'), base = '2931b3745de15e95f917d306f7adb15ac54cafdd';
 const integrated = 'b3fb18e58c2fea7e31a4e02862f11691323111b3';
 const app = 'apps/ios/GalaxySSI/', primaryFile = app + 'AgentKnowledgePrimaryPartitions.swift';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-primary-copy-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const integratedSource = f => cp.execFileSync('git', ['show', integrated + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) { const a = source.indexOf(start), b = source.indexOf(end, a + start.length); assert(a >= 0 && b > a, start); return source.slice(a, b); }
@@ -20,6 +20,7 @@ const wrapper = `    var result = Data()
 `;
 let pinnedPrimary;
 function retained(f, source) {
+  source = require('./check-knowledge-primary-copy-scope.cjs').retained(f, source);
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryCompaction(?:Integration)?(?:Tests)?\.swift/.test(l)).join('\n');
   if (f !== primaryFile || !source.includes('  private func compactExclusively(')) return source;
   pinnedPrimary ??= old(primaryFile);

@@ -22,7 +22,8 @@ struct AgentKnowledgeStorageMaintenanceBudget {
   func check() throws {
     try Task.checkCancellation()
     let now = clock()
-    guard started.isFinite, deadline.isFinite, now.isFinite, now >= started, now < deadline else { throw CancellationError() }
+    guard started.isFinite, deadline.isFinite, now.isFinite, now >= started else { throw CancellationError() }
+    if now >= deadline { throw AgentKnowledgeStorageYield.exhausted }
   }
 }
 
