@@ -1039,6 +1039,7 @@ extension GalaxySSIStore {
     let removedConversations = agentConversationDatabase.delete(ids)
     for id in ids where agentConversationDatabase.read(id) == nil {
       researchCheckpointStore.remove(conversation: id)
+      turnReceiptStore.delete(owner: profile.identityFingerprint, conversation: id)
     }
     for session in knownConversations where session.collaborationRoster != nil &&
       agentConversationDatabase.read(session.id) == nil {

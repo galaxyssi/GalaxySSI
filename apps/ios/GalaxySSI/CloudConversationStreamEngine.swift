@@ -442,7 +442,11 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           do {
             let transportMillis = min(roundMillis, research.modelRoundMillis(finalizing: finalRound))
             guard transportMillis > 0 else { throw URLError(.timedOut) }
-            for try await event in CloudResearchRoundDeadline.stream(streamClient.stream(roundRequest),
+            let receiptCapture = await MainActor.run {
+              store.turnReceiptCloudCapture(conversation: conversationId, turn: turnId, model: contact.selectedCloudModel?.modelId ?? "")
+            }
+            let observedClient = AgentTurnReceiptStreamClient(base: streamClient, capture: receiptCapture)
+            for try await event in CloudResearchRoundDeadline.stream(observedClient.stream(roundRequest),
               millis: transportMillis) {
               try Task.checkCancellation()
               switch event {

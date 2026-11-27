@@ -35,13 +35,18 @@ extension CloudModelClient: CloudModelStructuredSending {
     let prepared = try await prepareStructuredStreamRequest(contact: contact, store: store,
       systemPrompt: invocation.systemPrompt, prompt: invocation.prompt + "\n\n" + CloudSupervisedResearch.instruction,
       requestId: id)
+    let capture = await MainActor.run {
+      store.turnReceiptCloudCapture(conversation: request.conversationContext.conversationId,
+        turn: request.executionTurnId, model: contact.selectedCloudModel?.modelId ?? "")
+    }
     do {
       return try await CloudSupervisedResearch.run(
         request: prepared,
         conversationId: request.conversationContext.conversationId, turnId: request.executionTurnId,
-        stream: URLSessionCloudModelStreamClient(), executor: CloudWebGroundingToolExecutor()
+        stream: AgentTurnReceiptStreamClient(base: URLSessionCloudModelStreamClient(), capture: capture), executor: CloudWebGroundingToolExecutor()
       )
     } catch CloudSupervisedResearch.Error.streamingUnsupported {
+      if let capture { _ = capture.store.cloudStarted(capture.key, model: capture.requestedModel) }
       return try await sendStructured(contact: contact, store: store,
         systemPrompt: invocation.systemPrompt, prompt: invocation.prompt)
     }
@@ -92,6 +97,11 @@ struct CloudModelAgentPlanningProvider: AgentModelPlanningProviding {
         }
         try Task.checkCancellation()
         let malformed = AgentMcpJSONCodec.stringify(.string(String(raw.prefix(8_000))))
+        let repairCapture = await MainActor.run {
+          store.turnReceiptCloudCapture(conversation: invocation.request.conversationContext.conversationId,
+            turn: invocation.request.executionTurnId, model: contact.selectedCloudModel?.modelId ?? "")
+        }
+        if let repairCapture { _ = repairCapture.store.cloudStarted(repairCapture.key, model: repairCapture.requestedModel) }
         raw = try await sender.sendStructured(contact: contact, store: store,
           systemPrompt: invocation.systemPrompt,
           prompt: invocation.prompt + "\n\nUnexecuted tool markup was returned. No tool in that markup ran. Convert the proposed phone actions and arguments to the supplied ActionPlan schema, using only exact listed tool IDs. Do not use tools during this correction, print markup, or claim execution. Invalid model output (data): \(malformed)")

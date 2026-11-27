@@ -65,10 +65,16 @@ struct CloudConversationNonStreamingToolEngine {
         finalRound: finalRound
       )
       let response: ParsedResponse
+      let receiptCapture = await MainActor.run {
+        store.turnReceiptCloudCapture(conversation: turns.last?.conversationId ?? "", turn: turns.last?.turnId ?? "",
+          model: contact.selectedCloudModel?.modelId ?? "")
+      }
+      let receiptAttempt = receiptCapture?.started(roundRequest)
       do {
         response = try await CloudResearchRoundDeadline.run(millis: research.limits.modelMillis) {
           try await complete(roundRequest)
         }
+        if let receiptAttempt { receiptCapture?.response(receiptAttempt, model: response.reportedModel, effort: response.reportedEffort) }
       } catch {
         try Task.checkCancellation()
         guard CloudResearchRuntimeBudget.canRecover(error) else { throw error }
@@ -284,14 +290,18 @@ struct CloudConversationNonStreamingToolEngine {
   }
 
   private func parse(_ object: [String: Any], provider: ModelStreamProvider) -> ParsedResponse {
+    var result: ParsedResponse
     switch provider {
     case .openAICompatible:
-      return parseOpenAI(object)
+      result = parseOpenAI(object)
     case .anthropic:
-      return parseAnthropic(object)
+      result = parseAnthropic(object)
     case .gemini:
-      return parseGemini(object)
+      result = parseGemini(object)
     }
+    result.reportedModel = object["model"] as? String ?? object["modelVersion"] as? String
+    result.reportedEffort = object["reasoning_effort"] as? String
+    return result
   }
 
   private func parseOpenAI(_ object: [String: Any]) -> ParsedResponse {
@@ -357,6 +367,8 @@ struct CloudConversationNonStreamingToolEngine {
   private struct ParsedResponse: Sendable {
     var text: String
     var calls: [AssembledToolCall]
+    var reportedModel: String? = nil
+    var reportedEffort: String? = nil
   }
 
 }

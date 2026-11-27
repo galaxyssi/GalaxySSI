@@ -283,6 +283,12 @@ final class MessageCoordinator: ObservableObject {
       webMediaProvider: AgentIOSURLSessionWebMediaToolProvider(browserSessions: self.localBrowserSessions),
       voiceReminderTool: reminderTool
     ) else { return nil }
+    let receiptStore = settingsStore.turnReceiptStore
+    let receiptOwner = settingsStore.profile.identityFingerprint
+    runtime.registry.resultObserver = { tool, context, result in
+      receiptStore.toolFinished(.init(owner: receiptOwner, conversation: context.conversationId, turn: context.turnId),
+        context: context, tool: tool, result: result)
+    }
     if let appTools = try? VoiceAppNativeTools.executables(invoke: { [weak self, weak settingsStore] operation, invocation in
       let execute: @MainActor () -> AgentNativeToolExecutionResult = {
         guard let self, let settingsStore else {
@@ -8397,6 +8403,9 @@ final class MessageCoordinator: ObservableObject {
       guard let result = completion.inference else {
         throw AgentIOSLocalModelWebToolError.incomplete("The local model web loop returned no inference receipt")
       }
+      if let key = store.turnReceiptKey(conversation: outgoing.conversationId, turn: outgoing.turnId) {
+        store.turnReceiptStore.localModel(key, profile: result.profileId)
+      }
       guard store.agentTask(id: task.taskId)?.phase == .executing else { return }
       let actualProfile = LocalModelRuntimeCatalog.find(result.profileId)
       let actualModelLabel = actualProfile.displayName.ifBlank(result.profileId)
@@ -11874,6 +11883,9 @@ final class MessageCoordinator: ObservableObject {
             throw AgentManagedBrowserContinuationStore.Failure.unavailable
           }
           guard managedBrowserControl(binding) == .run else { throw AgentManagedBrowserContinuationStore.Failure.notReady }
+          if let actual = completion.inference?.profileId, let key = store.turnReceiptKey(conversation: owner.conversationId, turn: owner.turnId) {
+            store.turnReceiptStore.localModel(key, profile: actual)
+          }
           receipt = try managedBrowserContinuations.commit(.completed, text: completion.text, lease: lease, binding: binding)
         }
         guard managedBrowserControl(binding) != .unavailable,
@@ -12091,6 +12103,9 @@ final class MessageCoordinator: ObservableObject {
       desktopEvidenceRefresh: { [weak self] input, scope in await self?.refreshLiveDesktopEvidence(input, scope: scope) }
     )
     store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
+    if let actual = completion.inference?.profileId, let key = store.turnReceiptKey(conversation: outgoing.conversationId, turn: outgoing.turnId) {
+      store.turnReceiptStore.localModel(key, profile: actual)
+    }
     let text = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { throw LocalModelInferenceError.emptyResponse }
     return text
@@ -17977,6 +17992,11 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
+    if !peerChat, let key = store.turnReceiptKey(conversation: conversationId, turn: turnId) {
+      let invocation = payload["agent_invocation"] as? [String: Any] ?? [:]
+      store.turnReceiptStore.outbound(key, task: taskIdentity.taskId, model: invocation.string("model_id"),
+        effort: invocation.string("reasoning_effort"))
+    }
     if !peerChat && !voiceTraceId.isEmpty {
       payload["voice_session_id"] = voiceTraceId
       if let runId = voiceRun?.runId.trimmingCharacters(in: .whitespacesAndNewlines), !runId.isEmpty {
@@ -19898,6 +19918,10 @@ final class MessageCoordinator: ObservableObject {
       guard object.string("scheme") == "signal" else { return }
       handleAttachmentRecoveryRequest(appPayload, link: link, messageId: messageId)
       return
+    }
+    if object.string("scheme") == "signal", taskIdentityStore.matchesRegistered(payload: appPayload),
+       let key = store.turnReceiptKey(conversation: appPayload.string("conversation_id"), turn: appPayload.string("turn_id")) {
+      store.turnReceiptStore.authenticated(key, payload: appPayload)
     }
     if let response = AgentConnectorResponse.fromPayload(appPayload) {
       if let pending = try? managedDesktopReplyLedger.recoveryRecord(matching: response),

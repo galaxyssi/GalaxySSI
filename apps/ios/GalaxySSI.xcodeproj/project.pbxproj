@@ -1869,6 +1869,12 @@
     A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */; };
     A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
+    C46180000000000000000001 /* AgentTurnReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46180000000000000000002 /* AgentTurnReceipt.swift */; };
+    C46180000000000000000003 /* AgentTurnReceiptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46180000000000000000004 /* AgentTurnReceiptStore.swift */; };
+    C46180000000000000000005 /* AgentTurnReceiptModelObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46180000000000000000006 /* AgentTurnReceiptModelObservation.swift */; };
+    C46180000000000000000007 /* AgentTurnReceiptVisibilityProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46180000000000000000008 /* AgentTurnReceiptVisibilityProbe.swift */; };
+    C46180000000000000000009 /* GalaxySSITurnReceiptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4618000000000000000000A /* GalaxySSITurnReceiptView.swift */; };
+    C4618000000000000000000B /* AgentTurnReceiptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4618000000000000000000C /* AgentTurnReceiptTests.swift */; };
     A10000000000000000000B02 /* AgentVoiceDraftPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */; };
     A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
     A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
@@ -4129,6 +4135,12 @@
     A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggerCommandRouter.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
+    C46180000000000000000002 /* AgentTurnReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnReceipt.swift; sourceTree = "<group>"; };
+    C46180000000000000000004 /* AgentTurnReceiptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnReceiptStore.swift; sourceTree = "<group>"; };
+    C46180000000000000000006 /* AgentTurnReceiptModelObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnReceiptModelObservation.swift; sourceTree = "<group>"; };
+    C46180000000000000000008 /* AgentTurnReceiptVisibilityProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnReceiptVisibilityProbe.swift; sourceTree = "<group>"; };
+    C4618000000000000000000A /* GalaxySSITurnReceiptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSITurnReceiptView.swift; sourceTree = "<group>"; };
+    C4618000000000000000000C /* AgentTurnReceiptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTurnReceiptTests.swift; sourceTree = "<group>"; };
     A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentVoiceDraftPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
     A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
@@ -5839,6 +5851,11 @@
         A20000000000000000002013 /* AgentWorkflowCommandRouter.swift */,
         A20000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
+        C46180000000000000000002 /* AgentTurnReceipt.swift */,
+        C46180000000000000000004 /* AgentTurnReceiptStore.swift */,
+        C46180000000000000000006 /* AgentTurnReceiptModelObservation.swift */,
+        C46180000000000000000008 /* AgentTurnReceiptVisibilityProbe.swift */,
+        C4618000000000000000000A /* GalaxySSITurnReceiptView.swift */,
         C46150000000000000000002 /* AgentSessionRequirement.swift */,
         C46150000000000000000004 /* GalaxySSISessionRequirementEditor.swift */,
         A20000000000000000000B02 /* AgentVoiceDraftPolicy.swift */,
@@ -7085,6 +7102,7 @@
         C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */,
         C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */,
         82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */,
+        C4618000000000000000000C /* AgentTurnReceiptTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
         C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */,
@@ -8201,6 +8219,11 @@
         A10000000000000000002013 /* AgentWorkflowCommandRouter.swift in Sources */,
         A10000000000000000002012 /* AgentWorkflowTriggerCommandRouter.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
+        C46180000000000000000001 /* AgentTurnReceipt.swift in Sources */,
+        C46180000000000000000003 /* AgentTurnReceiptStore.swift in Sources */,
+        C46180000000000000000005 /* AgentTurnReceiptModelObservation.swift in Sources */,
+        C46180000000000000000007 /* AgentTurnReceiptVisibilityProbe.swift in Sources */,
+        C46180000000000000000009 /* GalaxySSITurnReceiptView.swift in Sources */,
         C46150000000000000000001 /* AgentSessionRequirement.swift in Sources */,
         C46150000000000000000003 /* GalaxySSISessionRequirementEditor.swift in Sources */,
         A10000000000000000000B02 /* AgentVoiceDraftPolicy.swift in Sources */,
@@ -9595,6 +9618,7 @@
         C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */,
         C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */,
         E05B7B1440408F5D1480CDE3 /* GalaxySSIHealthAtlasAgentContextTests.swift in Sources */,
+        C4618000000000000000000B /* AgentTurnReceiptTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
         C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */,
