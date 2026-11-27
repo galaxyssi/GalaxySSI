@@ -22,8 +22,10 @@ enum AgentConversationGoalInference {
     return String(decoding: try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]), as: UTF8.self)
   }
   static func fingerprint(contact: GalaxySSIContact, model: CloudModelConfig) -> String {
-    AgentModelLoopRecoveryIdentity.sha256(["contact": contact.id, "provider": contact.cloudProvider,
-      "model": model.modelId, "endpoint": model.endpoint, "api_style": model.apiStyle.rawValue])
+    var fields = ["contact": contact.id, "provider": contact.cloudProvider,
+      "model": model.modelId, "endpoint": model.endpoint, "api_style": model.apiStyle.rawValue]
+    if model.teamPlanConstrainedDecoding == true { fields["team_plan_schema"] = "true" }
+    return AgentModelLoopRecoveryIdentity.sha256(fields)
   }
   static func fingerprint(profile: LocalModelRuntimeProfile) -> String {
     let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
@@ -127,22 +129,26 @@ enum AgentConversationGoalInference {
     guard let contact = store.contact(id: route.target), contact.deliveryMode == .cloudAPI, !contact.deleted,
       let model = contact.cloudModels.first(where: { $0.modelId == route.model && fingerprint(contact: contact, model: $0) == route.endpointSHA }),
       let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key) else { throw AgentConversationGoal.Failure.unavailable }
+    let wire = AgentTeamPlanWire.select(system: system, endpoint: model.endpoint, apiStyle: model.apiStyle,
+      constrained: model.teamPlanConstrainedDecoding == true)
+    let actualSystem = wire?.system ?? system
     let probe = AgentMediaNetworkDetector.shared.currentProbe
     let budget = AgentTaskBudgetPolicy.evaluate(budget: store.agentTaskBudget,
-      usage: .init(networkBytes: Int64(system.utf8.count + prompt.utf8.count), usageEstimated: true),
+      usage: .init(networkBytes: Int64(actualSystem.utf8.count + prompt.utf8.count), usageEstimated: true),
       environment: .init(networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
         networkValidated: probe.validated, networkMetered: probe.metered), networkRequired: true, trustedNetworkTarget: true)
     guard budget.allowed else { throw AgentConversationGoal.Failure.unavailable }
     let disclosure = FileAgentDataDisclosureStore(fileURL: AgentDataDisclosureStorePaths.ledgerURL())
     var selected = contact; selected.cloudModels = [model]; selected.selectedCloudModelId = model.modelId
     let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: disclosure, destination: .init(contact: selected),
-      text: system + "\n" + prompt, historyCount: historyCount, systemInstructions: true,
+      text: actualSystem + "\n" + prompt, historyCount: historyCount, systemInstructions: true,
       purpose: purpose, conversationId: conversation, taskId: taskID, turnId: requestID)
     guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: contact.displayName) }
     let only = ChatMessage(contactId: "hermes", content: prompt, isMine: true, conversationId: conversation, turnId: requestID)
     let prepared = try CloudModelClient().conversationStreamingRequest(model: model, apiKey: key, turns: [only],
-      systemPrompt: system, requestId: requestID, images: [])
-    let request = try isolatedRequest(prepared, system: system, prompt: prompt)
+      systemPrompt: actualSystem, requestId: requestID, images: [])
+    let isolated = try isolatedRequest(prepared, system: actualSystem, prompt: prompt)
+    let request = try wire?.apply(to: isolated) ?? isolated
     let client = URLSessionCloudModelStreamClient()
     return try await withTaskCancellationHandler(operation: {
       var body = "", completed = false
@@ -165,8 +171,9 @@ enum AgentConversationGoalInference {
           }
         }
         guard valid(), completed, !Task.isCancelled else { throw CancellationError() }
+        let decoded = try wire?.decode(body) ?? body
         AgentDataDisclosureLedger.update(store: disclosure, ticket: ticket, status: .sent)
-        return body
+        return decoded
       } catch {
         await client.cancel(requestId: requestID, reason: .userStop)
         AgentDataDisclosureLedger.update(store: disclosure, ticket: ticket, status: .failed)
