@@ -69,7 +69,7 @@ struct AgentModelPlannerContactResolver {
   ) -> GuardedModelAgentPlanner? {
     if let localProfile = localProfile(for: settings) {
       return GuardedModelAgentPlanner(
-        provider: LocalModelAgentPlanningProvider(profile: localProfile),
+        provider: LocalModelAgentPlanningProvider(profile: localProfile, receiptStore: store.turnReceiptStore, receiptOwner: store.profile.identityFingerprint),
         modelProfile: localProfile.id,
         voiceCorrectionJournal: voiceCorrectionJournal
       )
@@ -149,7 +149,7 @@ struct AgentModelPlannerContactResolver {
         throw AgentModelLoopRecoveryError(code: "planner_local_model_unavailable")
       }
       return GuardedModelAgentPlanner(
-        provider: LocalModelAgentPlanningProvider(profile: profile),
+        provider: LocalModelAgentPlanningProvider(profile: profile, receiptStore: store.turnReceiptStore, receiptOwner: store.profile.identityFingerprint),
         modelProfile: profile.id,
         voiceCorrectionJournal: voiceCorrectionJournal
       )
@@ -179,7 +179,7 @@ struct AgentModelPlannerContactResolver {
   ) -> GuardedModelAgentPlanner? {
     if let localProfile = localProfile(for: settings) {
       return GuardedModelAgentPlanner(
-        provider: LocalModelAgentPlanningProvider(profile: localProfile),
+        provider: LocalModelAgentPlanningProvider(profile: localProfile, receiptStore: store.turnReceiptStore, receiptOwner: store.profile.identityFingerprint),
         modelProfile: localProfile.id,
         voiceCorrectionJournal: voiceCorrectionJournal
       )
@@ -206,7 +206,7 @@ struct AgentModelPlannerContactResolver {
     settings: AgentModelPlannerSettings
   ) -> LocalModelAgentPlanningProvider? {
     guard let profile = localProfile(for: settings) else { return nil }
-    return LocalModelAgentPlanningProvider(profile: profile)
+    return LocalModelAgentPlanningProvider(profile: profile, receiptStore: store.turnReceiptStore, receiptOwner: store.profile.identityFingerprint)
   }
 
   private func localProfile(for settings: AgentModelPlannerSettings) -> LocalModelRuntimeProfile? {

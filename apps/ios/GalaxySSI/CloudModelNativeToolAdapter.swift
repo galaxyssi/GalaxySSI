@@ -115,7 +115,15 @@ extension CloudModelClient: CloudModelNativeToolSending {
       catalog: catalog,
       adapter: adapter
     )
+    let capture = await MainActor.run {
+      store.turnReceiptCloudCapture(conversation: modelRequest.conversationId, turn: modelRequest.turnId, model: model.modelId)
+    }
+    let attempt = capture.map { $0.store.cloudStarted($0.key, model: model.modelId) }
     let object = try await responseObject(for: request)
+    if let attempt {
+      capture?.response(attempt, model: object["model"] as? String ?? object["modelVersion"] as? String,
+        effort: object["reasoning_effort"] as? String)
+    }
     let json = try CloudModelNativeToolJSON.responseString(object)
     var response = try adapter.decodeResponse(json, catalog: catalog)
     response.providerRoute = route

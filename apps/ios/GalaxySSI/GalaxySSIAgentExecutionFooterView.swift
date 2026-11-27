@@ -19,10 +19,11 @@ struct GalaxySSIAgentExecutionFooterView: View {
   var onCancel: () -> Void = {}
   var liveStartedAt: Int64 = 0
   var liveDuration: ((Int64) -> String)? = nil
+  var onReceipt: (() -> Void)? = nil
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      processingLabel
+      receiptLabel
         .font(.system(size: 13))
         .foregroundColor(.galaxySSITextPrimary)
         .lineLimit(1)
@@ -63,6 +64,14 @@ struct GalaxySSIAgentExecutionFooterView: View {
       Divider()
     }
     .accessibilityElement(children: .contain)
+  }
+
+  @ViewBuilder
+  private var receiptLabel: some View {
+    if let onReceipt {
+      Button(action: onReceipt) { processingLabel }.buttonStyle(.plain)
+        .accessibilityIdentifier("ios.agent.turn-receipt.open")
+    } else { processingLabel }
   }
 
   @ViewBuilder
