@@ -13,6 +13,7 @@ struct PublicNewsArticle: Codable, Equatable, Identifiable {
   var headlineTranslation: PublicNewsHeadlineTranslation?
   var coverURL: URL?
   var sourceReview: PublicNewsSourceReview?
+  var readAt: Date?
 
   var id: String { url.absoluteString }
   var sortDate: Date { publishedAt ?? discoveredAt }

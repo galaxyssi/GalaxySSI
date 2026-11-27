@@ -7902,3 +7902,9 @@
 "galaxyssi.health.answer_basis.guideline" = "指南参考";
 "galaxyssi.health.answer_basis.target" = "已确认的个人目标";
 "galaxyssi.health.answer_basis.retrieved" = "本机检索的公开来源";
+"public_news_event_reports" = "%d 个来源";
+"public_news_event_new_count" = "上次阅读后新增 %d 篇";
+"public_news_event_new" = "新增";
+"public_news_event_sources" = "同一事件的报道";
+"public_news_event_removed" = "这篇报道已不在本机存档中。";
+"public_news_event_no_body" = "本机尚未下载这篇报道的原文。";
