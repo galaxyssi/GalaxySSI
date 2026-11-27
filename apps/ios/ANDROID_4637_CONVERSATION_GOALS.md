@@ -51,7 +51,7 @@ sensitive state on profile/conversation changes, backgrounding and privacy lock.
 ## Verification Boundary
 
 Focused JS contracts check source wiring, scope fences, registration and resource
-placement; `npm run check:ios` checks project structure. Nineteen synthetic XCTest
+placement; `npm run check:ios` checks project structure. Twenty synthetic XCTest
 methods are authored but unexecuted. No Swift/native compilation, live provider,
 device/background execution, full repository check, CI monitoring or IPA build
 is claimed. Those remain release verification requirements, including inspecting

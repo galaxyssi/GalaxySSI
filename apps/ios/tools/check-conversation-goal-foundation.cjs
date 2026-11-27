@@ -72,5 +72,5 @@ for (const match of strings.matchAll(/^"galaxyssi\.conversation_goal\.([^"\n]+)"
   assert(!keys.has(match[1]), 'Duplicate localization key: ' + match[1]); keys.add(match[1]); JSON.parse(match[2]);
 }
 for (const match of ui.matchAll(/\b(?:t|get)\("([a-z_]+)",/g)) assert(keys.has(match[1]), 'Localized UI: ' + match[1]);
-assert.equal((read('GalaxySSITests/AgentConversationGoalInferenceTests.swift').match(/func test/g) || []).length, 5);
+assert.equal((read('GalaxySSITests/AgentConversationGoalInferenceTests.swift').match(/func test/g) || []).length, 6);
 console.log('Conversation goal state, inference, UI and background source contracts passed; no Swift compilation, XCTest or system execution.');

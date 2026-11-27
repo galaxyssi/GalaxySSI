@@ -1403,6 +1403,20 @@
     C46360000000000000000005 /* GalaxySSIHealthAgentLabIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46360000000000000000006 /* GalaxySSIHealthAgentLabIntent.swift */; };
     C46360000000000000000007 /* GalaxySSIHealthAgentLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46360000000000000000008 /* GalaxySSIHealthAgentLabView.swift */; };
     C46360000000000000000009 /* GalaxySSIHealthAgentLabIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4636000000000000000000A /* GalaxySSIHealthAgentLabIntentTests.swift */; };
+    C46400000000000000000001 /* AgentConversationalTeamProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000002 /* AgentConversationalTeamProtocol.swift */; };
+    C46400000000000000000003 /* AgentConversationalTeamEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000004 /* AgentConversationalTeamEngine.swift */; };
+    C46400000000000000000005 /* AgentConversationalTeamProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000006 /* AgentConversationalTeamProtocolTests.swift */; };
+    C46400000000000000000007 /* AgentConversationalTeamEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000008 /* AgentConversationalTeamEngineTests.swift */; };
+    C46400000000000000000009 /* AgentConversationalTeamCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4640000000000000000000A /* AgentConversationalTeamCommand.swift */; };
+    C4640000000000000000000B /* AgentConversationalTeamCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4640000000000000000000C /* AgentConversationalTeamCommandTests.swift */; };
+    C4640000000000000000000D /* AgentConversationalTeamJob.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4640000000000000000000E /* AgentConversationalTeamJob.swift */; };
+    C4640000000000000000000F /* AgentConversationalTeamStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000010 /* AgentConversationalTeamStore.swift */; };
+    C46400000000000000000011 /* AgentConversationalTeamJobTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000012 /* AgentConversationalTeamJobTests.swift */; };
+    C46400000000000000000013 /* AgentConversationalTeamRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000014 /* AgentConversationalTeamRuntime.swift */; };
+    C46400000000000000000015 /* AgentConversationalTeamBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000016 /* AgentConversationalTeamBackground.swift */; };
+    C46400000000000000000017 /* AgentConversationalTeamLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46400000000000000000018 /* AgentConversationalTeamLifecycle.swift */; };
+    C46400000000000000000019 /* GalaxySSIConversationalTeamView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4640000000000000000001A /* GalaxySSIConversationalTeamView.swift */; };
+    C4640000000000000000001B /* AgentConversationalTeamStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4640000000000000000001C /* AgentConversationalTeamStoreTests.swift */; };
     A10000000000000000000EA7 /* AgentConversationScheduleTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000EA7 /* AgentConversationScheduleTools.swift */; };
     A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */; };
     A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */; };
@@ -3796,6 +3810,20 @@
     C46360000000000000000006 /* GalaxySSIHealthAgentLabIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAgentLabIntent.swift; sourceTree = "<group>"; };
     C46360000000000000000008 /* GalaxySSIHealthAgentLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAgentLabView.swift; sourceTree = "<group>"; };
     C4636000000000000000000A /* GalaxySSIHealthAgentLabIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAgentLabIntentTests.swift; sourceTree = "<group>"; };
+    C46400000000000000000002 /* AgentConversationalTeamProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamProtocol.swift; sourceTree = "<group>"; };
+    C46400000000000000000004 /* AgentConversationalTeamEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamEngine.swift; sourceTree = "<group>"; };
+    C46400000000000000000006 /* AgentConversationalTeamProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamProtocolTests.swift; sourceTree = "<group>"; };
+    C46400000000000000000008 /* AgentConversationalTeamEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamEngineTests.swift; sourceTree = "<group>"; };
+    C4640000000000000000000A /* AgentConversationalTeamCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamCommand.swift; sourceTree = "<group>"; };
+    C4640000000000000000000C /* AgentConversationalTeamCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamCommandTests.swift; sourceTree = "<group>"; };
+    C4640000000000000000000E /* AgentConversationalTeamJob.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamJob.swift; sourceTree = "<group>"; };
+    C46400000000000000000010 /* AgentConversationalTeamStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamStore.swift; sourceTree = "<group>"; };
+    C46400000000000000000012 /* AgentConversationalTeamJobTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamJobTests.swift; sourceTree = "<group>"; };
+    C46400000000000000000014 /* AgentConversationalTeamRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamRuntime.swift; sourceTree = "<group>"; };
+    C46400000000000000000016 /* AgentConversationalTeamBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamBackground.swift; sourceTree = "<group>"; };
+    C46400000000000000000018 /* AgentConversationalTeamLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamLifecycle.swift; sourceTree = "<group>"; };
+    C4640000000000000000001A /* GalaxySSIConversationalTeamView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationalTeamView.swift; sourceTree = "<group>"; };
+    C4640000000000000000001C /* AgentConversationalTeamStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationalTeamStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000EA7 /* AgentConversationScheduleTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationScheduleTools.swift; sourceTree = "<group>"; };
     A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsSpeechPlayback.swift; sourceTree = "<group>"; };
     A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPublicNewsSpeechControls.swift; sourceTree = "<group>"; };
@@ -6444,6 +6472,15 @@
         C46360000000000000000002 /* GalaxySSIHealthAgentLab.swift */,
         C46360000000000000000006 /* GalaxySSIHealthAgentLabIntent.swift */,
         C46360000000000000000008 /* GalaxySSIHealthAgentLabView.swift */,
+        C46400000000000000000002 /* AgentConversationalTeamProtocol.swift */,
+        C46400000000000000000004 /* AgentConversationalTeamEngine.swift */,
+        C4640000000000000000000A /* AgentConversationalTeamCommand.swift */,
+        C4640000000000000000000E /* AgentConversationalTeamJob.swift */,
+        C46400000000000000000010 /* AgentConversationalTeamStore.swift */,
+        C46400000000000000000014 /* AgentConversationalTeamRuntime.swift */,
+        C46400000000000000000016 /* AgentConversationalTeamBackground.swift */,
+        C46400000000000000000018 /* AgentConversationalTeamLifecycle.swift */,
+        C4640000000000000000001A /* GalaxySSIConversationalTeamView.swift */,
         A20000000000000000000EA7 /* AgentConversationScheduleTools.swift */,
         A200000000000000000009F7 /* PublicNewsSpeechPlayback.swift */,
         A200000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift */,
@@ -7225,6 +7262,11 @@
         C46270000000000000000008 /* VoiceMessageDraftTests.swift */,
         C46360000000000000000004 /* GalaxySSIHealthAgentLabTests.swift */,
         C4636000000000000000000A /* GalaxySSIHealthAgentLabIntentTests.swift */,
+        C46400000000000000000006 /* AgentConversationalTeamProtocolTests.swift */,
+        C46400000000000000000008 /* AgentConversationalTeamEngineTests.swift */,
+        C4640000000000000000000C /* AgentConversationalTeamCommandTests.swift */,
+        C46400000000000000000012 /* AgentConversationalTeamJobTests.swift */,
+        C4640000000000000000001C /* AgentConversationalTeamStoreTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
         C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */,
@@ -9007,6 +9049,15 @@
         C46360000000000000000001 /* GalaxySSIHealthAgentLab.swift in Sources */,
         C46360000000000000000005 /* GalaxySSIHealthAgentLabIntent.swift in Sources */,
         C46360000000000000000007 /* GalaxySSIHealthAgentLabView.swift in Sources */,
+        C46400000000000000000001 /* AgentConversationalTeamProtocol.swift in Sources */,
+        C46400000000000000000003 /* AgentConversationalTeamEngine.swift in Sources */,
+        C46400000000000000000009 /* AgentConversationalTeamCommand.swift in Sources */,
+        C4640000000000000000000D /* AgentConversationalTeamJob.swift in Sources */,
+        C4640000000000000000000F /* AgentConversationalTeamStore.swift in Sources */,
+        C46400000000000000000013 /* AgentConversationalTeamRuntime.swift in Sources */,
+        C46400000000000000000015 /* AgentConversationalTeamBackground.swift in Sources */,
+        C46400000000000000000017 /* AgentConversationalTeamLifecycle.swift in Sources */,
+        C46400000000000000000019 /* GalaxySSIConversationalTeamView.swift in Sources */,
         A10000000000000000000EA7 /* AgentConversationScheduleTools.swift in Sources */,
         A100000000000000000009F7 /* PublicNewsSpeechPlayback.swift in Sources */,
         A100000000000000000009F8 /* GalaxySSIPublicNewsSpeechControls.swift in Sources */,
@@ -9782,6 +9833,11 @@
         C46270000000000000000007 /* VoiceMessageDraftTests.swift in Sources */,
         C46360000000000000000003 /* GalaxySSIHealthAgentLabTests.swift in Sources */,
         C46360000000000000000009 /* GalaxySSIHealthAgentLabIntentTests.swift in Sources */,
+        C46400000000000000000005 /* AgentConversationalTeamProtocolTests.swift in Sources */,
+        C46400000000000000000007 /* AgentConversationalTeamEngineTests.swift in Sources */,
+        C4640000000000000000000B /* AgentConversationalTeamCommandTests.swift in Sources */,
+        C46400000000000000000011 /* AgentConversationalTeamJobTests.swift in Sources */,
+        C4640000000000000000001B /* AgentConversationalTeamStoreTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
         C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */,

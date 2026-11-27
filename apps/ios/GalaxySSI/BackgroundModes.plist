@@ -14,6 +14,7 @@
     <string>com.galaxyssi.chat.ios.knowledge-storage</string>
     <string>com.galaxyssi.chat.ios.original-page-archive</string>
     <string>com.galaxyssi.chat.ios.conversation-goal</string>
+    <string>com.galaxyssi.chat.ios.conversation-team</string>
   </array>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Find and configure your AR glasses on the same Wi-Fi network.</string>

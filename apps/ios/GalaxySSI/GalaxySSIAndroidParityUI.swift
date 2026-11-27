@@ -113,7 +113,15 @@ struct AgentHomeView: View {
   @EnvironmentObject var coordinator: MessageCoordinator
   @ObservedObject var voiceAgentRunRecovery = VoiceAgentRunRecoveryCoordinator.shared
   @StateObject var agentReplySpeechRuntime = AgentReplySpeechRuntime()
-  @SceneStorage("galaxyssi.agent.draft") var draft = ""
+  @SceneStorage("galaxyssi.agent.draft") private var storedDraft = ""
+  @State var teamDraftRevision = UUID()
+  var draft: String {
+    get { storedDraft }
+    nonmutating set {
+      if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil }
+      storedDraft = newValue
+    }
+  }
   @State var attachments: [GalaxySSIDraftAttachment] = []
   @State var actionTrayPresented = false
   @State var voiceTranscriptionPending = false
@@ -154,6 +162,7 @@ struct AgentHomeView: View {
   @State var composerSubmissionID: UUID?
   @State var healthCareSubmission: GalaxySSIHealthCareComposerSubmission?
   @State var conversationGoalLaunch: AgentConversationGoalLaunch?
+  @State var conversationalTeamLaunch: AgentConversationalTeamLaunch?
   @State var localLabLaunch: GalaxySSIHealthAgentLab.Launch?
   @State var localLabGroupRequest: GalaxySSIHealthAgentLab.Launch?
   @State var screenAssistantStopping = false
@@ -506,6 +515,10 @@ struct AgentHomeView: View {
         GalaxySSIDoorAccessView(launch: launch)
       }
       .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
+      .modifier(GalaxySSIConversationalTeamSheet(launch: $conversationalTeamLaunch, valid: teamLaunchIsCurrent) { launch in
+        if teamLaunchIsCurrent(launch) { draft = "" }
+      })
+      .onChange(of: attachments.map(\.id)) { _ in conversationalTeamLaunch = nil }
       .modifier(GalaxySSIConversationGoalSheet(launch: $conversationGoalLaunch) { launch in
         if store.profile.identityFingerprint == launch.owner, store.activeAgentConversationId == launch.conversation,
           AgentTurnReceiptEvidence.hash(draft.trimmingCharacters(in: .whitespacesAndNewlines)) == launch.draftSHA { draft = "" }
@@ -898,7 +911,7 @@ struct AgentHomeView: View {
 
   private var agentComposer: some View {
     GalaxySSIAgentComposerView(
-      draft: $draft,
+      draft: Binding(get: { draft }, set: { draft = $0 }),
       actionTrayPresented: $actionTrayPresented,
       voiceTranscriptionPending: $voiceTranscriptionPending,
       attachments: attachments,

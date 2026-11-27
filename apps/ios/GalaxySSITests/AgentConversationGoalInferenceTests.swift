@@ -50,4 +50,13 @@ final class AgentConversationGoalInferenceTests: XCTestCase {
     XCTAssertTrue(AgentConversationGoalInference.system(review: true, language: "en").contains("FINAL REVIEW"))
     XCTAssertTrue(AgentConversationGoalInference.system(review: true, language: "en").contains("unsupported external claims do not pass"))
   }
+  func testExplicitJSONPayloadIsNotReplacedByChatContextCompaction() throws {
+    let prompt = "{\"objective\":\"synthetic\",\"reports\":[\"complete direct report\"]}"
+    let prepared = try request(.openAICompatible, ["messages": [["role": "system", "content": "inherited"],
+      ["role": "user", "content": "compacted placeholder"]]])
+    let output = try AgentConversationGoalInference.isolatedRequest(prepared, system: "fixed", prompt: prompt)
+    let body = try object(output)
+    XCTAssertEqual((body["messages"] as? [[String: String]])?.last?["content"], prompt)
+    XCTAssertNil(body["tools"])
+  }
 }

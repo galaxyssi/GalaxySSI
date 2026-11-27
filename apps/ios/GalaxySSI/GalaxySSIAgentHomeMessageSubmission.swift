@@ -17,6 +17,7 @@ extension AgentHomeView {
       composerAttachments: attachments,
       attachmentSnapshot: voiceAttachmentSnapshot
     )
+    if offerConversationalTeam(cleanDraft, hasAttachments: !outgoingAttachments.isEmpty) { return }
     if offerConversationGoal(cleanDraft, hasAttachments: !outgoingAttachments.isEmpty) { return }
     if let session = store.agentSession(id: store.activeAgentConversationId),
        GalaxySSIHealthCareAgentScope.requiresScopedSubmission(session) {
