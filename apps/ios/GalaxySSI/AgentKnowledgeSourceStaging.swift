@@ -17,6 +17,10 @@ final class AgentKnowledgeSourceStaging {
   private var database: OpaquePointer?
   private var phase = Phase.incoming
   private var previousBegun = false
+  private var collationFailed = false
+  private var activeStatements = 0, closing = false
+  private var allowedCount = 0
+  private struct OrderKey: Codable { var id: String; var chunk: Int; var record: Bool }
   private(set) var incomingCount: Int64 = 0
   private var previousCount: Int64 = 0
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -34,14 +38,21 @@ final class AgentKnowledgeSourceStaging {
       guard sqlite3_open_v2(fileURL.path, &database, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
+      guard sqlite3_create_collation_v2(database, "SOURCE_ORDER", SQLITE_UTF8, Unmanaged.passUnretained(self).toOpaque(), { context, ac, a, bc, b in
+        guard let context else { return 0 }
+        return Unmanaged<AgentKnowledgeSourceStaging>.fromOpaque(context).takeUnretainedValue().compare(a, ac, b, bc)
+      }, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
       try execute("PRAGMA journal_mode=DELETE"); try execute("PRAGMA synchronous=FULL")
       try execute("PRAGMA cache_size=-2048"); try execute("PRAGMA mmap_size=0"); try execute("PRAGMA temp_store=FILE")
       try execute("CREATE TABLE records(token TEXT PRIMARY KEY,incoming BLOB,previous BLOB) WITHOUT ROWID")
+      try execute("CREATE TABLE ordering(side TEXT,sort_key TEXT COLLATE SOURCE_ORDER,token TEXT,PRIMARY KEY(side,sort_key)) WITHOUT ROWID")
+      try execute("CREATE TABLE allowed_keys(token TEXT PRIMARY KEY,sort_key TEXT COLLATE SOURCE_ORDER UNIQUE) WITHOUT ROWID")
       try execute("BEGIN IMMEDIATE")
     } catch { close(); throw error }
   }
   deinit { close() }
   func close() {
+    if activeStatements > 0 { closing = true; return }
     guard phase != .closed else { return }; phase = .closed
     if let database { sqlite3_close_v2(database); self.database = nil }
     cipherKey = nil; tokenKey = nil
@@ -97,6 +108,109 @@ final class AgentKnowledgeSourceStaging {
     try scan(.incoming) { _ in }
   }
   func item(_ id: String, side: Side) throws -> AgentKnowledgeItem? { try itemAt(token(id), side: side) }
+  // SQLite sorts only encrypted metadata. Bodies remain in the authenticated
+  // staging table and are resolved one at a time after verifying their sort key.
+  func orderedVisit(_ side: Side, consume: (AgentKnowledgeItem) throws -> Void) throws {
+    guard phase == .finished, !collationFailed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    try execute("BEGIN IMMEDIATE")
+    do {
+      try statement("DELETE FROM ordering WHERE side=?") { row in
+        try bind(side.rawValue, at: 1, to: row)
+        guard sqlite3_step(row) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+      }
+      try scan(side) { item in
+        let key = try encodedOrderKey(OrderKey(id: item.id, chunk: item.chunkIndex, record: true))
+        try statement("INSERT INTO ordering VALUES(?,?,?)") { row in
+          try bind(side.rawValue, at: 1, to: row); try bind(key, at: 2, to: row); try bind(token(item.id), at: 3, to: row)
+          guard sqlite3_step(row) == SQLITE_DONE, !collationFailed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        }
+      }
+      try execute("COMMIT")
+    } catch { try? execute("ROLLBACK"); throw error }
+    try execute("BEGIN IMMEDIATE")
+    do {
+      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE SOURCE_ORDER") { row in
+        try bind(side.rawValue, at: 1, to: row)
+        var seen: Int64 = 0, previous: OrderKey?
+        while true {
+          try Task.checkCancellation()
+          guard !closing else { throw AgentKnowledgeDatabaseError.unavailable }
+          let status = sqlite3_step(row)
+          if status == SQLITE_DONE { break }
+          guard status == SQLITE_ROW, !collationFailed, let tokenText = sqlite3_column_text(row, 1) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+          let key = try orderKey(sqlite3_column_text(row, 0), sqlite3_column_bytes(row, 0))
+          if let previous, !less(previous, key) { throw AgentKnowledgeDatabaseError.corruptRecord }
+          guard key.record, let item = try itemAt(String(cString: tokenText), side: side),
+            item.id.utf8.elementsEqual(key.id.utf8), item.chunkIndex == key.chunk else { throw AgentKnowledgeDatabaseError.corruptRecord }
+          try consume(item); previous = key; seen += 1
+        }
+        guard seen == (side == .incoming ? incomingCount : previousCount), !collationFailed,
+          sqlite3_stmt_status(row, SQLITE_STMTSTATUS_SORT, 0) == 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      }
+      try execute("COMMIT")
+    } catch { try? execute("ROLLBACK"); throw error }
+  }
+  func clearAllowed() throws {
+    guard phase == .finished else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    try execute("DELETE FROM allowed_keys"); allowedCount = 0
+  }
+  func rememberAllowed(_ id: String) throws {
+    guard phase == .finished else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    let key = try encodedOrderKey(OrderKey(id: id, chunk: 0, record: false))
+    try statement("INSERT OR IGNORE INTO allowed_keys VALUES(?,?)") { row in
+      try bind(token(id), at: 1, to: row); try bind(key, at: 2, to: row)
+      guard sqlite3_step(row) == SQLITE_DONE, !collationFailed, let database else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      allowedCount += Int(sqlite3_changes(database))
+    }
+  }
+  func visitAllowed(_ consume: (String) throws -> Void) throws -> Int {
+    try statement("SELECT sort_key,token FROM allowed_keys ORDER BY sort_key COLLATE SOURCE_ORDER") { row in
+      var seen = 0, previous: OrderKey?
+      while true {
+        try Task.checkCancellation()
+        let status = sqlite3_step(row)
+        if status == SQLITE_DONE { break }
+        guard status == SQLITE_ROW, !collationFailed, !closing, let tokenText = sqlite3_column_text(row, 1) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        let key = try orderKey(sqlite3_column_text(row, 0), sqlite3_column_bytes(row, 0))
+        guard !key.record, key.chunk == 0, try token(key.id) == String(cString: tokenText) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        if let previous, !less(previous, key) { throw AgentKnowledgeDatabaseError.corruptRecord }
+        try consume(key.id); previous = key; seen += 1
+      }
+      guard seen == allowedCount, !collationFailed, sqlite3_stmt_status(row, SQLITE_STMTSTATUS_SORT, 0) == 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return seen
+    }
+  }
+  private func less(_ a: OrderKey, _ b: OrderKey) -> Bool {
+    if a.record != b.record { return !a.record }
+    if a.chunk != b.chunk { return a.chunk < b.chunk }
+    return a.record ? a.id.utf16.lexicographicallyPrecedes(b.id.utf16) : a.id < b.id
+  }
+  private func encodedOrderKey(_ value: OrderKey) throws -> String {
+    guard let cipherKey, let bytes = try AES.GCM.seal(JSONEncoder().encode(value), using: cipherKey,
+      authenticating: Data("source-order:\(job)".utf8)).combined else { throw AgentKnowledgeDatabaseError.unavailable }
+    let result = bytes.base64EncodedString()
+    guard result.utf8.count <= 65_536 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return result
+  }
+  private func orderKey(_ bytes: UnsafeRawPointer?, _ count: Int32) throws -> OrderKey {
+    guard let cipherKey, let bytes, (1...65_536).contains(count),
+      let sealed = Data(base64Encoded: Data(bytes: bytes, count: Int(count))) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return try JSONDecoder().decode(OrderKey.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: sealed),
+      using: cipherKey, authenticating: Data("source-order:\(job)".utf8)))
+  }
+  private func compare(_ a: UnsafeRawPointer?, _ ac: Int32, _ b: UnsafeRawPointer?, _ bc: Int32) -> Int32 {
+    let left = try? orderKey(a, ac), right = try? orderKey(b, bc)
+    if let left, let right { return less(left, right) ? -1 : (less(right, left) ? 1 : 0) }
+    collationFailed = true
+    // Keep a deterministic total ordering even after failure; consumers reject
+    // the whole scan instead of exposing SQLite's partial corrupt ordering.
+    if left != nil { return -1 }; if right != nil { return 1 }
+    if ac != bc { return ac < bc ? -1 : 1 }
+    guard ac > 0, let a, let b else { return 0 }
+    let aa = UnsafeRawBufferPointer(start: a, count: min(Int(ac), 65_536))
+    let bb = UnsafeRawBufferPointer(start: b, count: min(Int(bc), 65_536))
+    return aa.elementsEqual(bb) ? 0 : (aa.lexicographicallyPrecedes(bb) ? -1 : 1)
+  }
   func scan(_ side: Side, consume: (AgentKnowledgeItem) throws -> Void) throws {
     guard phase != .incoming, phase != .closed else { throw AgentKnowledgeDatabaseError.corruptRecord }
     var after = "", seen: Int64 = 0
@@ -160,12 +274,13 @@ final class AgentKnowledgeSourceStaging {
     guard let database, sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
   }
   private func statement<T>(_ sql: String, _ work: (OpaquePointer) throws -> T) throws -> T {
-    guard let database else { throw AgentKnowledgeDatabaseError.unavailable }
+    guard let database, !closing else { throw AgentKnowledgeDatabaseError.unavailable }
     var raw: OpaquePointer?
     guard sqlite3_prepare_v2(database, sql, -1, &raw, nil) == SQLITE_OK, let row = raw else {
       if let raw { sqlite3_finalize(raw) }; throw AgentKnowledgeDatabaseError.unavailable
     }
-    defer { sqlite3_finalize(row) }
+    activeStatements += 1
+    defer { sqlite3_finalize(row); activeStatements -= 1; if closing { close() } }
     return try work(row)
   }
 }

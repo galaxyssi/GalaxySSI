@@ -3,6 +3,14 @@ import Foundation
 typealias AgentKnowledgeSemanticQuery = @MainActor (String, [AgentKnowledgeHit], Int) async throws -> [AgentKnowledgeHit]
 
 extension GalaxySSIStore {
+  func pendingAgentKnowledgeObservations(limit: Int = 64) throws -> [AgentKnowledgeSourceObservation] {
+    try agentKnowledgeDatabase.pendingSourceObservations(limit: limit)
+  }
+
+  func acknowledgeAgentKnowledgeObservations(receipts: [String]) throws {
+    try agentKnowledgeDatabase.acknowledgeSourceObservations(receipts: receipts)
+  }
+
   var agentKnowledgeStats: AgentKnowledgeStats {
     if let indexed = try? agentKnowledgeDatabase.knowledgeStats() {
       return indexed
@@ -109,12 +117,25 @@ extension GalaxySSIStore {
     kind: AgentKnowledgeKind = .document,
     tags: [String] = []
   ) -> [AgentKnowledgeItem] {
+    replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).items
+  }
+
+  // The document importer needs only the count; the legacy UI cache is still
+  // materialized once at the precommit boundary, not separately for its caller.
+  func replaceAgentKnowledgeSourceCount(title: String, content: String, source: String,
+    kind: AgentKnowledgeKind = .document, tags: [String] = []) -> Int {
+    replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).count
+  }
+
+  private func replaceAgentKnowledgeSourceResult(title: String, content: String, source: String,
+    kind: AgentKnowledgeKind, tags: [String]) -> (items: [AgentKnowledgeItem], count: Int) {
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
     let assessment = AgentKnowledgeImportPolicy.assess(cleanContent)
-    guard !sourceKey.isEmpty, assessment.isAllowed, !assessment.indexedContent.isEmpty else { return [] }
+    guard !sourceKey.isEmpty, assessment.isAllowed, !assessment.indexedContent.isEmpty else { return ([], 0) }
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Private knowledge")
-    let chunks = chunkKnowledgeContent(assessment.indexedContent)
+    let chunks = AgentKnowledgeChunkSequence(assessment.indexedContent)
+    let chunkCount = chunks.reduce(0) { count, _ in count + 1 }
     let existingItems = agentKnowledgeItems
       .filter { $0.source.utf8.elementsEqual(sourceKey.utf8) }
       .sorted { $0.chunkIndex < $1.chunkIndex }
@@ -128,7 +149,7 @@ extension GalaxySSIStore {
         return AgentKnowledgeItem(
           id: existing?.id ?? UUID().uuidString,
           kind: kind,
-          title: chunks.count > 1 ? "\(cleanTitle) [\(index + 1)/\(chunks.count)]" : cleanTitle,
+          title: chunkCount > 1 ? "\(cleanTitle) [\(index + 1)/\(chunkCount)]" : cleanTitle,
           content: chunk,
           source: sourceKey,
           tags: tags,
@@ -136,7 +157,7 @@ extension GalaxySSIStore {
           cloudAccess: .summaryOnly,
           agentAccess: .localOnly,
           chunkIndex: index,
-          chunkCount: chunks.count,
+          chunkCount: chunkCount,
           updatedAtMillis: now
         )
       }, beforeCommit: { stage in
@@ -146,14 +167,14 @@ extension GalaxySSIStore {
       })
       defer { mutation.stage.close() }
       imported.sort { $0.chunkIndex == $1.chunkIndex ? $0.id < $1.id : $0.chunkIndex < $1.chunkIndex }
-      guard mutation.changed > 0 else { return imported }
+      guard mutation.changed > 0 else { return (imported, imported.count) }
       publishingCommittedKnowledgeCache = true
       agentKnowledgeItems = agentKnowledgeItems.filter { !$0.source.utf8.elementsEqual(sourceKey.utf8) } + imported
       publishingCommittedKnowledgeCache = false
       AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
       save()
-      return imported
-    } catch { return [] }
+      return (imported, imported.count)
+    } catch { return ([], 0) }
   }
 
   @discardableResult

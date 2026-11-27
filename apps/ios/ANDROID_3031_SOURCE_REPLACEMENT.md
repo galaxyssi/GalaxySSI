@@ -33,6 +33,26 @@ the later #3035 preparation-outside-writer implementation.
   now calls this transaction. Its compatibility array is decoded before COMMIT,
   so failure cannot commit a catalog with an unpublished stale cache. Publishing
   that committed cache bypasses the legacy `didSet` whole-database replacement.
+- Attachment import uses a count-oriented entry and a reiterable chunk sequence:
+  one count pass, then a one-shot incoming record producer, without a paragraph
+  or chunk body array. The legacy array-returning entry remains compatible.
+- Previous/current source observations now fold records in encrypted external
+  SQLite order (chunk, raw UTF-16 ID). Only two small metadata keys are decrypted
+  during collation. Reads authenticate key/body identity, chunk, counts and strict
+  order; collation errors fail closed. Encoded metadata keys over 64 KiB fail
+  closed instead of allocating an unbounded sort-key buffer.
+- Content SHA-256 is incremental. Tags retain only the smallest twelve; allowed
+  Agent ID union/deduplication/order uses an encrypted scratch index. Only the
+  bounded normalized prefix consumed by the existing access fingerprint is kept.
+  Allowed-ID comparison preserves existing Swift string equality/ordering; raw
+  source IDs use Android UTF-16 order, also applied to the legacy snapshot oracle.
+  This deliberately corrects the previous non-ASCII source-ID ordering.
+- A source-level event (not one event per chunk) is encrypted into a durable
+  outbox in the same canonical transaction. Store exposes pages of at most 64
+  envelopes and receipt-based acknowledgement. Random receipt identity is
+  authenticated with the event hash: A-to-B-to-A retains distinct deliveries,
+  and acknowledging the first A cannot delete the later A. Replay/no-op does not
+  enqueue another event. Precommit failure rolls the outbox back with the source.
 
 ## Remaining Parity Work
 
@@ -40,15 +60,24 @@ This is the transaction and production-adapter portion of #3031, not completed
 corpus-scale memory or observation parity:
 
 - Startup, other legacy mutations and the UI still retain the complete knowledge
-  array. Document extraction and chunk splitting still materialize their bounded
-  input/chunk arrays; the adapter also materializes this source's returned array.
-- Source observations still use the existing grouped in-memory snapshot path.
-  An encrypted externally ordered streaming observation fold and direct
-  sequence/count document-import API remain follow-ups on the same iOS PR.
+  array. Document extraction still materializes its bounded text input. The
+  precommit UI adapter still materializes this source's decoded cache array;
+  the count API does not remove that existing UI requirement.
+- The prior extractor had no production publisher. The replacement path now
+  durably produces source observations, but automatic global-runtime consumption
+  is not wired: its current runtime has no matching event ingestion boundary.
+  Pending/acknowledgement APIs are a durable handoff, not a claim that global
+  model processing, lifecycle sanitization or projections have consumed events.
+  Outbox storage grows until a consumer acknowledges receipts.
+- Legacy `replaceAll` writers (including restore/reset and access-policy edits)
+  atomically invalidate pending source observations. They do not yet produce
+  equivalent durable lifecycle events. This prevents stale summaries from being
+  consumed after policy changes, but is not a continuity/retraction guarantee
+  across legacy bulk mutations or already-acknowledged global projections.
 - Old-source preparation still holds the writer transaction, matching the pinned
   #3031 boundary. There is no separate prepare/revalidate protocol yet.
-- There is no durable postcommit observation outbox, process-death scratch orphan
-  sweeper, hard key zeroization guarantee, or hostile same-container filesystem
+- There is no process-death scratch orphan sweeper, hard key zeroization
+  guarantee, or hostile same-container filesystem
   actor guarantee. Existing external-payload physical reclamation is unchanged;
   a rolled-back write may leave an encrypted orphan for existing maintenance.
 - Android capacity, latency, power-loss and physical-device measurements do not
@@ -56,10 +85,13 @@ corpus-scale memory or observation parity:
 
 ## Verification Scope
 
-Sixteen synthetic XCTest methods are authored for encryption, duplicate handling,
+Twenty-four synthetic XCTest methods are authored for encryption, duplicate handling,
 corruption, blank identity, multi-page replacement, ownership preflight, two rollback
 boundaries, ACL ordering/ties, no-op preservation, targeted vector invalidation,
-empty replacement, producer failure, normalization, cancellation and Store wiring.
+empty replacement, producer failure, normalization, cancellation, Store wiring,
+stream/array observation equivalence, UTF-16 ordering, close-during-visit safety,
+outbox reopen/exact receipt acknowledgement/rollback/corruption, bulk invalidation
+and count import.
 They have not been compiled or executed. Source guards and the iOS project
 structure check are separate static checks, not native acceptance. No IPA,
 real-device evidence or reports are included.

@@ -48,6 +48,140 @@ final class AgentKnowledgeSourceReplacementTests: XCTestCase {
       sourceStartUTF16: 0, sourceEndUTF16: item.content.utf16.count)
   }
 
+  private func staged(before: [AgentKnowledgeItem], after: [AgentKnowledgeItem],
+    _ body: (AgentKnowledgeSourceStaging) throws -> Void) throws {
+    let stage = try AgentKnowledgeSourceStaging(source: "source")
+    defer { stage.close() }
+    for item in after { try stage.accept(item) }
+    try stage.finishIncoming()
+    for item in before { try stage.rememberPrevious(item) }
+    try stage.finishPrevious(); try stage.finishMutation()
+    try body(stage)
+  }
+
+  func testStreamingObservationMatchesArraySnapshotAcrossPagesAndPolicyUnions() throws {
+    let items = (0..<130).map { index -> AgentKnowledgeItem in
+      var value = item("id-\(130 - index)", body: "Synthetic body \(index)")
+      value.chunkIndex = index % 7; value.chunkCount = 130
+      value.summary = index % 3 == 0 ? " " : "Summary \(index)"
+      value.tags = ["tag-\(index)", " shared ", "alpha"]
+      value.cloudAccess = index % 4 == 0 ? .deny : .full
+      value.agentAccess = index % 4 == 0 ? .selectedAgents : .anyPairedAgent
+      value.allowedAgentIds = (0..<12).map { " peer-\(index)-\($0) " } + ["shared", "shared"]
+      return value
+    }
+    for (before, after) in [([], items), (items, []), (items, items), (items, Array(items.dropFirst()))] {
+      try staged(before: before, after: after) { stage in
+        let stream = try GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(stage: stage, timestampMillis: 123)
+        let reference = GlobalPersistentContextObservationExtractor.knowledgeMutations(before: before, after: after, timestampMillis: 123)
+        XCTAssertEqual(stream, reference)
+      }
+    }
+  }
+
+  func testOrderedVisitUsesRawUTF16IdentityAndCloseInsideConsumerFailsSafely() throws {
+    let ids = ["z", "\u{1f600}", "\u{e000}", "\u{e9}", "e\u{301}"]
+    try staged(before: [], after: ids.map { item($0) }) { stage in
+      var visited: [String] = []
+      try stage.orderedVisit(.incoming) { visited.append($0.id) }
+      XCTAssertEqual(visited.map { Array($0.utf16) }, ids.sorted { $0.utf16.lexicographicallyPrecedes($1.utf16) }.map { Array($0.utf16) })
+      XCTAssertEqual(try GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(stage: stage, timestampMillis: 1),
+        GlobalPersistentContextObservationExtractor.knowledgeMutations(before: [], after: ids.map { item($0) }, timestampMillis: 1))
+      XCTAssertThrowsError(try stage.orderedVisit(.incoming) { _ in stage.close() })
+      XCTAssertFalse(FileManager.default.fileExists(atPath: stage.directory.path))
+    }
+  }
+
+  func testSourceOutboxSurvivesReopenAndAcknowledgesOnlyExactReceipts() throws {
+    try fixture { database, url, secrets in
+      _ = try replace(database, [item("stable", body: "State A")])
+      _ = try replace(database, [item("stable", body: "State B")])
+      _ = try replace(database, [item("stable", body: "State A")])
+      let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
+      let events = try reopened.pendingSourceObservations()
+      XCTAssertEqual(events.count, 3)
+      XCTAssertEqual(events[0].event.id, events[2].event.id)
+      XCTAssertNotEqual(events[0].receipt, events[2].receipt)
+      XCTAssertEqual(events.map(\.event.type), [.knowledgeImported, .knowledgeUpdated, .knowledgeUpdated])
+      try reopened.acknowledgeSourceObservations(receipts: [events[0].receipt])
+      XCTAssertEqual(try reopened.pendingSourceObservations().map(\.receipt), [events[1].receipt, events[2].receipt])
+      XCTAssertThrowsError(try reopened.pendingSourceObservations(limit: 65))
+      XCTAssertThrowsError(try reopened.acknowledgeSourceObservations(receipts: Array(repeating: events[1].receipt, count: 65)))
+      XCTAssertEqual(try reopened.pendingSourceObservations().count, 2)
+      _ = try replace(database, [item("stable", body: "State A", time: 999)])
+      XCTAssertEqual(try reopened.pendingSourceObservations().count, 2)
+    }
+  }
+
+  func testOutboxAndCanonicalMutationRollbackTogetherOnPrecommitFailure() throws {
+    try fixture { database, _, _ in
+      XCTAssertTrue(database.replaceAll([item("old")]))
+      var next: AgentKnowledgeItem? = item("new")
+      XCTAssertThrowsError(try database.replaceSource("source", next: { defer { next = nil }; return next }, beforeCommit: { _ in throw Fault.injected }))
+      XCTAssertTrue(try database.pendingSourceObservations().isEmpty)
+      XCTAssertEqual(try database.all().map(\.id), ["old"])
+    }
+  }
+
+  func testLegacyBulkRestoreInvalidatesPendingObservationsAtomically() throws {
+    try fixture { database, _, _ in
+      _ = try replace(database, [item("one")])
+      let before = try database.pendingSourceObservations()
+      XCTAssertEqual(before.count, 1)
+      XCTAssertFalse(database.replaceAll([item("duplicate"), item("duplicate")]))
+      XCTAssertEqual(try database.pendingSourceObservations(), before)
+      XCTAssertTrue(database.replaceAll([]))
+      XCTAssertTrue(try database.pendingSourceObservations().isEmpty)
+    }
+  }
+
+  func testOutboxPersistsOnlyCiphertextAndDetectsPayloadCorruption() throws {
+    try fixture { database, url, _ in
+      _ = try replace(database, [item("private-stable-id", body: "private-source-marker")])
+      let persisted = try rows(url, sql: "SELECT receipt,event_hash,encrypted_payload FROM knowledge_source_observations").flatMap { $0 }.reduce(Data(), +)
+      XCTAssertNil(persisted.range(of: Data("private-source-marker".utf8)))
+      XCTAssertNil(persisted.range(of: Data("private-stable-id".utf8)))
+      var raw: OpaquePointer?
+      XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
+      defer { sqlite3_close(raw) }
+      XCTAssertEqual(sqlite3_exec(raw, "UPDATE knowledge_source_observations SET encrypted_payload=zeroblob(64)", nil, nil, nil), SQLITE_OK)
+      XCTAssertThrowsError(try database.pendingSourceObservations())
+    }
+  }
+
+  func testChunkIteratorPreservesParagraphsLongSplitsUnicodeAndRepeatability() {
+    let inputs: [(String, Int, [String])] = [
+      (" a\r\n\r\nb ", 20, ["a\n\nb"]),
+      ("abc\n\ndef\n\nghi", 8, ["abc\n\ndef", "ghi"]),
+      ("ab\n\ncdefghijkl\n\nxy", 4, ["ab", "cdef", "ghij", "kl", "xy"]),
+      (String(repeating: "e\u{301}", count: 9), 4, [String(repeating: "e\u{301}", count: 4), String(repeating: "e\u{301}", count: 4), "e\u{301}"]),
+      ("\n \n", 4, [])
+    ]
+    for (input, limit, expected) in inputs {
+      let sequence = AgentKnowledgeChunkSequence(input, limit: limit)
+      XCTAssertEqual(Array(sequence), expected)
+      XCTAssertEqual(sequence.reduce(0) { count, _ in count + 1 }, expected.count)
+      XCTAssertEqual(Array(sequence), expected)
+    }
+    XCTAssertEqual(Array(AgentKnowledgeChunkSequence(String(repeating: "x", count: 24_001))).map(\.count), [12_000, 12_000, 1])
+  }
+
+  @MainActor
+  func testCountImportUsesSameDurablePipelineAndDoesNotEmitPerChunkEvents() throws {
+    let suite = "CountSourceReplacement-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let content = String(repeating: "x", count: 24_001)
+    XCTAssertEqual(store.replaceAgentKnowledgeSourceCount(title: "Long", content: content, source: "source"), 3)
+    let events = try store.pendingAgentKnowledgeObservations()
+    XCTAssertEqual(events.count, 1); XCTAssertEqual(events.first?.event.metadata["item_count"], "3")
+    XCTAssertEqual(store.replaceAgentKnowledgeSourceCount(title: "Long", content: content, source: "source"), 3)
+    XCTAssertEqual(try store.pendingAgentKnowledgeObservations().count, 1)
+    try store.acknowledgeAgentKnowledgeObservations(receipts: events.map(\.receipt))
+    XCTAssertTrue(try store.pendingAgentKnowledgeObservations().isEmpty)
+  }
+
   func testStagingDeduplicatesFirstValidIdentityAndEncryptsAllBodyFiles() throws {
     let stage = try AgentKnowledgeSourceStaging(source: "source")
     defer { stage.close() }
