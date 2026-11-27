@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, SQLite, MQTT or connector execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '794c0a11c9ec0d309f3c6a938511a6c574fd294d';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '5a56704e593dbd94c4aa41dce3bc3dd69ec24f21';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -21,8 +21,7 @@ function retainedServices(s) {
   const block = section(s, first, last);
   assert.equal(block, section(show(approved, file), first, last), 'Only exact native query authorization normalizes');
   s = once(s, block);
-  s = once(s, '    guard managedNativeRecoveryMayQuery(source),\n          mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,',
-    '    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,');
+  s = once(s, '    guard managedNativeRecoveryMayQuery(source) else { return false }\n');
   return once(s, '      if record.binding.managedSource != nil {\n        guard let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),\n              managedNativeRecoveryMayQuery(managed) else { continue }\n      }\n');
 }
 function retained(f, s) {
@@ -72,6 +71,8 @@ if (require.main === module) {
   assert(!/\.publish\(|\.retire\(|\.release\(|\.execute\(|\.cancel\(|commitOwnedAgentTaskState/.test(gate));
   const legacy = section(services, '  private func sweepManagedDesktopReply(', '  private func persistRecoveredManagedDesktopResult(');
   const journal = section(services, '  private func journalBackedDesktopRecoveryQueries(', '  private func commitJournalBackedDesktopResult(');
+  assert(legacy.indexOf('managedNativeRecoveryMayQuery(source)') < legacy.indexOf('record.expiryReason(now: now)'),
+    'Unauthorized native waits cannot be converted to synthetic failures by the legacy expiry branch');
   for (const [block, local, query] of [[legacy, 'persistRecoveredManagedDesktopResult(', 'desktopReplyRecovery.request('],
     [journal, 'commitJournalBackedDesktopResult(', 'let request = terminal']]) {
     assert(block.indexOf(local) < block.indexOf('managedNativeRecoveryMayQuery('));
