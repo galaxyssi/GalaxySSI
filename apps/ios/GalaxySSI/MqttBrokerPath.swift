@@ -122,6 +122,24 @@ enum MqttBrokerPathPolicy {
   }
 }
 
+// Unknown is permitted while the first monitor callback is pending. Once offline,
+// all connection entry points stay closed until a current monitor reports recovery.
+struct MqttNetworkAvailability {
+  enum Transition: Equatable { case none, lost, restored }
+  private(set) var available: Bool?
+  var permitsConnection: Bool { available != false }
+
+  mutating func update(_ value: Bool) -> Transition {
+    let previous = available
+    available = value
+    guard previous != value else { return .none }
+    if !value { return .lost }
+    return previous == false ? .restored : .none
+  }
+
+  mutating func reset() { available = nil }
+}
+
 struct MqttConnectionLiveness {
   enum Action: Equatable { case none, ping, reconnect }
   private(set) var lastOutbound: Int64 = 0

@@ -583,3 +583,136 @@ final class FakeMqttBrokerPath: MqttBrokerPathTransport {
     pending.forEach { $0.completed(false) }
   }
 }
+
+// Synthetic policy/pool fixtures; no NWConnection or live broker is exercised.
+extension MqttBrokerPoolTests {
+  func testNetworkUnknownAllowsInitialConnectionWithoutInventingRecovery() {
+    var state = MqttNetworkAvailability()
+    XCTAssertNil(state.available)
+    XCTAssertTrue(state.permitsConnection)
+    XCTAssertEqual(state.update(true), .none)
+    XCTAssertTrue(state.permitsConnection)
+  }
+
+  func testInitialOfflineObservationWithdrawsAndBlocksConnection() {
+    var state = MqttNetworkAvailability()
+    XCTAssertEqual(state.update(false), .lost)
+    XCTAssertEqual(state.available, false)
+    XCTAssertFalse(state.permitsConnection)
+  }
+
+  func testRepeatedNetworkCallbacksDoNotRepeatRecoveryOrWithdrawal() {
+    var state = MqttNetworkAvailability()
+    XCTAssertEqual(state.update(false), .lost)
+    for _ in 0..<100 { XCTAssertEqual(state.update(false), .none); XCTAssertFalse(state.permitsConnection) }
+    XCTAssertEqual(state.update(true), .restored)
+    for _ in 0..<100 { XCTAssertEqual(state.update(true), .none); XCTAssertTrue(state.permitsConnection) }
+  }
+
+  func testEachOfflineIntervalRequiresANewRestoration() {
+    var state = MqttNetworkAvailability()
+    _ = state.update(true)
+    for _ in 0..<5 {
+      XCTAssertEqual(state.update(false), .lost)
+      XCTAssertFalse(state.permitsConnection)
+      XCTAssertEqual(state.update(true), .restored)
+      XCTAssertTrue(state.permitsConnection)
+    }
+  }
+
+  func testStoppedMonitorStateDoesNotLeakIntoItsReplacement() {
+    var state = MqttNetworkAvailability()
+    _ = state.update(false)
+    state.reset()
+    XCTAssertNil(state.available)
+    XCTAssertTrue(state.permitsConnection)
+    XCTAssertEqual(state.update(true), .none)
+    state.reset()
+    XCTAssertEqual(state.update(false), .lost)
+  }
+
+  func testNetworkObservationsRemainPathLocal() {
+    var first = MqttNetworkAvailability(), second = MqttNetworkAvailability()
+    _ = first.update(false); _ = second.update(true)
+    XCTAssertFalse(first.permitsConnection)
+    XCTAssertTrue(second.permitsConnection)
+    XCTAssertEqual(first.update(true), .restored)
+    XCTAssertEqual(second.update(true), .none)
+  }
+
+  func testOfflineSnapshotWithdrawsReadyGenerationAndRefusesOldPublication() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"])
+    path.emit(snapshot("emqx", topics: topics))
+    let before = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(before, ["emqx": 1])
+    path.outstanding = ["synthetic-durable-message"]
+    path.emit(.init(brokerID: "emqx", generation: 1, connected: false, subscriptions: []))
+    let offline = await pool.readyGenerations(for: topics)
+    XCTAssertTrue(offline.isEmpty)
+    let result = await pool.publish(publication(), brokerID: "emqx")
+    XCTAssertEqual(result, .failed)
+    XCTAssertTrue(path.publications.isEmpty)
+    let outstanding = await pool.outstandingDurableMessageIds()
+    XCTAssertEqual(outstanding, ["synthetic-durable-message"])
+  }
+
+  func testRestorationRequiresFreshGenerationAndAllSubscriptionAcknowledgements() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"])
+    path.emit(snapshot("emqx", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    path.emit(.init(brokerID: "emqx", generation: 1, connected: false, subscriptions: []))
+    path.emit(snapshot("emqx", generation: 2, topics: []))
+    let beforeAck = await pool.readyGenerations(for: topics)
+    XCTAssertTrue(beforeAck.isEmpty)
+    path.emit(snapshot("emqx", generation: 2, topics: ["incoming"]))
+    let partial = await pool.readyGenerations(for: topics)
+    XCTAssertTrue(partial.isEmpty)
+    path.emit(snapshot("emqx", generation: 2, topics: topics))
+    let ready = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(ready, ["emqx": 2])
+    let stale = await pool.publish(publication(), brokerID: "emqx")
+    XCTAssertEqual(stale, .failed)
+    var current = publication(); current.generation = 2
+    let accepted = await pool.publish(current, brokerID: "emqx")
+    XCTAssertEqual(accepted, .queued)
+  }
+
+  func testOfflineAndOldGenerationIngressAreNotDeliveredAfterRecovery() async throws {
+    let (pool, paths) = rig()
+    let recorder = IngressRecorder()
+    pool.onAuthenticatedIngress = { recorder.append($0) }
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"])
+    path.emit(snapshot("emqx", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    path.emit(.init(brokerID: "emqx", generation: 1, connected: false, subscriptions: []))
+    let old = MqttAuthenticatedIngress(brokerID: "emqx", generation: 1, topic: "incoming",
+      secretFingerprint: "secret-hash", payload: Data("synthetic".utf8))
+    path.emitIngress(old)
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(recorder.count, 0)
+    path.emit(snapshot("emqx", generation: 2, topics: topics))
+    path.emitIngress(old)
+    var current = old; current.generation = 2
+    path.emitIngress(current)
+    _ = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(recorder.count, 1)
+  }
+
+  func testOneOfflineBrokerDoesNotWithdrawAnotherReadyPath() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let emqx = try XCTUnwrap(paths["emqx"]), hive = try XCTUnwrap(paths["hivemq"])
+    emqx.emit(snapshot("emqx", topics: topics)); hive.emit(snapshot("hivemq", topics: topics))
+    _ = await pool.readyGenerations(for: topics)
+    emqx.emit(.init(brokerID: "emqx", generation: 1, connected: false, subscriptions: []))
+    let remaining = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(remaining, ["hivemq": 1])
+    let result = await pool.publish(publication(), brokerID: "hivemq")
+    XCTAssertEqual(result, .queued)
+  }
+}

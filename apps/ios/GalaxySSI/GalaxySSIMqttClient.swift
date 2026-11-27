@@ -151,7 +151,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private var subscriptionWatchdog: DispatchWorkItem?
   private var connectStartedAt: Int64?
   private var networkMonitor: NWPathMonitor?
-  private var networkWasAvailable: Bool?
+  private var networkAvailability = MqttNetworkAvailability()
   private var lastReconnectWake: Int64?
   private var brokerAckWorkItem: DispatchWorkItem?
   private var reconnectWorkItem: DispatchWorkItem?
@@ -284,7 +284,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     intentionallyDisconnected = true
     networkMonitor?.cancel()
     networkMonitor = nil
-    networkWasAvailable = nil
+    networkAvailability.reset()
     lastReconnectWake = nil
     reconnectWorkItem?.cancel()
     reconnectWorkItem = nil
@@ -682,7 +682,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func start() {
-    guard connection == nil, !intentionallyDisconnected else { return }
+    guard connection == nil, !intentionallyDisconnected, networkAvailability.permitsConnection else { return }
     let parameters = NWParameters.tls
     let mqttConnection = NWConnection(host: host, port: port, using: parameters)
     connection = mqttConnection
@@ -1178,7 +1178,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private static func uptimeMillis() -> Int64 { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
 
   private func hasLiveTransport() -> Bool {
-    guard connected else { return false }
+    guard networkAvailability.permitsConnection, connected else { return false }
     guard let connection else {
       recoverStalledTransport()
       return false
@@ -1200,16 +1200,30 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     networkMonitor = monitor
     monitor.pathUpdateHandler = { [weak self, weak monitor] path in
       guard let self, let monitor, self.networkMonitor === monitor else { return }
-      let available = path.status == .satisfied
-      let recovered = available && self.networkWasAvailable == false
-      self.networkWasAvailable = available
-      if recovered { self.checkTransportOnDemand(networkRecovered: true) }
+      self.applyNetworkAvailability(path.status == .satisfied)
     }
     monitor.start(queue: queue)
   }
 
+  private func applyNetworkAvailability(_ available: Bool) {
+    switch networkAvailability.update(available) {
+    case .none:
+      break
+    case .lost:
+      // Withdraw subscriptions and fail physical attempts now, not after a socket
+      // watchdog. Durable Signal/inbox/outbox ownership stays with the runtime.
+      reconnectWorkItem?.cancel()
+      reconnectWorkItem = nil
+      if let connection { handleTransportFailure(for: connection) }
+      else { setConnected(false) }
+    case .restored:
+      checkTransportOnDemand(networkRecovered: true)
+    }
+  }
+
   private func checkTransportOnDemand(networkRecovered: Bool = false) {
-    guard !intentionallyDisconnected, !transportRecoveryInProgress, networkMonitor != nil else { return }
+    guard !intentionallyDisconnected, !transportRecoveryInProgress, networkMonitor != nil,
+          networkAvailability.permitsConnection else { return }
     let now = Self.uptimeMillis()
     if let connection {
       if connected {
@@ -1230,7 +1244,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         handleTransportFailure(for: connection)
       }
     }
-    guard connection == nil, networkWasAvailable != false,
+    guard connection == nil, networkAvailability.permitsConnection,
           networkRecovered || lastReconnectWake.map({ now - $0 >= 2_000 }) != false else { return }
     lastReconnectWake = now
     reconnectWorkItem?.cancel()
@@ -1470,7 +1484,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func scheduleReconnect() {
-    guard connection == nil, !intentionallyDisconnected, !transportRecoveryInProgress, reconnectWorkItem == nil else { return }
+    guard connection == nil, !intentionallyDisconnected, !transportRecoveryInProgress,
+          networkAvailability.permitsConnection, reconnectWorkItem == nil else { return }
     let index = min(reconnectAttempt, Self.reconnectDelays.count - 1)
     let delay = Self.reconnectDelays[index]
     reconnectAttempt += 1
