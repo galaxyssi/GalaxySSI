@@ -108,6 +108,16 @@ final class AgentKnowledgeSourceStaging {
     try scan(.incoming) { _ in }
   }
   func item(_ id: String, side: Side) throws -> AgentKnowledgeItem? { try itemAt(token(id), side: side) }
+  func hasPreparedIdentity(_ id: String) throws -> Bool {
+    guard phase == .prepared else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return try statement("SELECT previous IS NOT NULL FROM records WHERE token=?") { row in
+      try bind(token(id), at: 1, to: row)
+      let status = sqlite3_step(row)
+      if status == SQLITE_DONE { return false }
+      guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return sqlite3_column_int(row, 0) == 1
+    }
+  }
   // SQLite sorts only encrypted metadata. Bodies remain in the authenticated
   // staging table and are resolved one at a time after verifying their sort key.
   func orderedVisit(_ side: Side, consume: (AgentKnowledgeItem) throws -> Void) throws {

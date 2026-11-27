@@ -9,7 +9,7 @@ assert.ok(replacement.length > 1000);
 assert.doesNotMatch(replacement, /replaceAll\(|\.all\(|sourceGroups\(|orphanedVectorDocuments\(/);
 for (const text of ['while let item = try next()', 'try stage.finishIncoming()', 'BEGIN IMMEDIATE',
   'ORDER BY item_hash LIMIT 64', 'try stage.rememberPrevious(old)', 'old.updatedAtMillis < policy!',
-  'key < keyedHash(policy!.id)', 'try stage.finishPrevious()', 'comparable == old',
+  'key < policy!.itemKey', 'try stage.finishPrevious()', 'comparable == old',
   'try stage.normalized(item)', 'try stage.finishMutation()', 'try beforeCommit(stage)',
   'if !committed', 'ROLLBACK', 'if changed > 0', 'knowledge_browse_revision',
   'WHERE item_hash=?', 'SELECT model_hash,? FROM knowledge_vector_enrollment', 'operation: .removal']) {

@@ -395,7 +395,7 @@ struct GalaxySSIAgentKnowledgeView: View {
             "Import blocked because the source appears to contain secrets"
           ))
         }
-        let imported = store.replaceAgentKnowledgeSource(
+        let imported = try store.replaceAgentKnowledgeSourceChecked(
           title: String(title.prefix(180)),
           content: assessment.indexedContent,
           source: url.absoluteString,
@@ -416,6 +416,8 @@ struct GalaxySSIAgentKnowledgeView: View {
         if !activeQuery.isEmpty {
           runSearch(activeQuery)
         }
+      } catch AgentKnowledgeDatabaseError.sourceReplacementChanged {
+        statusText = t("galaxyssi.agent_knowledge.source_changed", "Source changed during preparation. Import again using the current source.")
       } catch {
         statusText = String(
           format: t("galaxyssi.agent_knowledge.import_failed", "Import failed: %@"),

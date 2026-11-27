@@ -117,18 +117,28 @@ extension GalaxySSIStore {
     kind: AgentKnowledgeKind = .document,
     tags: [String] = []
   ) -> [AgentKnowledgeItem] {
-    replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).items
+    (try? replaceAgentKnowledgeSourceChecked(title: title, content: content, source: source, kind: kind, tags: tags)) ?? []
   }
 
   // The document importer needs only the count; the legacy UI cache is still
   // materialized once at the precommit boundary, not separately for its caller.
   func replaceAgentKnowledgeSourceCount(title: String, content: String, source: String,
     kind: AgentKnowledgeKind = .document, tags: [String] = []) -> Int {
-    replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).count
+    (try? replaceAgentKnowledgeSourceCountChecked(title: title, content: content, source: source, kind: kind, tags: tags)) ?? 0
+  }
+
+  func replaceAgentKnowledgeSourceChecked(title: String, content: String, source: String,
+    kind: AgentKnowledgeKind = .document, tags: [String] = []) throws -> [AgentKnowledgeItem] {
+    try replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).items
+  }
+
+  func replaceAgentKnowledgeSourceCountChecked(title: String, content: String, source: String,
+    kind: AgentKnowledgeKind = .document, tags: [String] = []) throws -> Int {
+    try replaceAgentKnowledgeSourceResult(title: title, content: content, source: source, kind: kind, tags: tags).count
   }
 
   private func replaceAgentKnowledgeSourceResult(title: String, content: String, source: String,
-    kind: AgentKnowledgeKind, tags: [String]) -> (items: [AgentKnowledgeItem], count: Int) {
+    kind: AgentKnowledgeKind, tags: [String]) throws -> (items: [AgentKnowledgeItem], count: Int) {
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
     let assessment = AgentKnowledgeImportPolicy.assess(cleanContent)
@@ -142,39 +152,37 @@ extension GalaxySSIStore {
     let now = Int64(Date().timeIntervalSince1970 * 1_000)
     var chunksIterator = chunks.enumerated().makeIterator()
     var imported: [AgentKnowledgeItem] = []
-    do {
-      let mutation = try agentKnowledgeDatabase.replaceSource(sourceKey, next: {
-        guard let (index, chunk) = chunksIterator.next() else { return nil }
-        let existing = existingItems.first { $0.chunkIndex == index }
-        return AgentKnowledgeItem(
-          id: existing?.id ?? UUID().uuidString,
-          kind: kind,
-          title: chunkCount > 1 ? "\(cleanTitle) [\(index + 1)/\(chunkCount)]" : cleanTitle,
-          content: chunk,
-          source: sourceKey,
-          tags: tags,
-          summary: String(chunk.prefix(700)),
-          cloudAccess: .summaryOnly,
-          agentAccess: .localOnly,
-          chunkIndex: index,
-          chunkCount: chunkCount,
-          updatedAtMillis: now
-        )
-      }, beforeCommit: { stage in
-        // This legacy UI adapter still needs an array. Read it before commit so
-        // decode/cancellation failure cannot leave a committed catalog and stale UI.
-        try stage.scan(.incoming) { imported.append($0) }
-      })
-      defer { mutation.stage.close() }
-      imported.sort { $0.chunkIndex == $1.chunkIndex ? $0.id < $1.id : $0.chunkIndex < $1.chunkIndex }
-      guard mutation.changed > 0 else { return (imported, imported.count) }
-      publishingCommittedKnowledgeCache = true
-      agentKnowledgeItems = agentKnowledgeItems.filter { !$0.source.utf8.elementsEqual(sourceKey.utf8) } + imported
-      publishingCommittedKnowledgeCache = false
-      AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
-      save()
-      return (imported, imported.count)
-    } catch { return ([], 0) }
+    let mutation = try agentKnowledgeDatabase.replaceSource(sourceKey, next: {
+      guard let (index, chunk) = chunksIterator.next() else { return nil }
+      let existing = existingItems.first { $0.chunkIndex == index }
+      return AgentKnowledgeItem(
+        id: existing?.id ?? UUID().uuidString,
+        kind: kind,
+        title: chunkCount > 1 ? "\(cleanTitle) [\(index + 1)/\(chunkCount)]" : cleanTitle,
+        content: chunk,
+        source: sourceKey,
+        tags: tags,
+        summary: String(chunk.prefix(700)),
+        cloudAccess: .summaryOnly,
+        agentAccess: .localOnly,
+        chunkIndex: index,
+        chunkCount: chunkCount,
+        updatedAtMillis: now
+      )
+    }, beforeCommit: { stage in
+      // This legacy UI adapter still needs an array. Read it before commit so
+      // decode/cancellation failure cannot leave a committed catalog and stale UI.
+      try stage.scan(.incoming) { imported.append($0) }
+    })
+    defer { mutation.stage.close() }
+    imported.sort { $0.chunkIndex == $1.chunkIndex ? $0.id < $1.id : $0.chunkIndex < $1.chunkIndex }
+    guard mutation.changed > 0 else { return (imported, imported.count) }
+    publishingCommittedKnowledgeCache = true
+    agentKnowledgeItems = agentKnowledgeItems.filter { !$0.source.utf8.elementsEqual(sourceKey.utf8) } + imported
+    publishingCommittedKnowledgeCache = false
+    AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
+    save()
+    return (imported, imported.count)
   }
 
   @discardableResult

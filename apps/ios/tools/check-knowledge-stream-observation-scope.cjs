@@ -32,7 +32,8 @@ for (const text of ['try stage.orderedVisit(side)', 'try stage.rememberAllowed(i
   assert.ok(streaming.includes(text), text);
 }
 const importer = read('AgentAttachmentKnowledgeImporter.swift');
-assert.match(importer, /store\.replaceAgentKnowledgeSourceCount\(/);
+assert.match(importer, /try store\.replaceAgentKnowledgeSourceCountChecked\(/);
+assert.match(importer, /static func importDocumentsChecked/);
 const store = read('GalaxySSIStoreKnowledge.swift');
 const adapter = store.slice(store.indexOf('  private func replaceAgentKnowledgeSourceResult('), store.indexOf('  func upsertAgentKnowledge('));
 assert.match(adapter, /AgentKnowledgeChunkSequence\(assessment.indexedContent\)/);

@@ -34,20 +34,26 @@ enum AgentAttachmentKnowledgeImporter {
     conversationId: String,
     store: GalaxySSIStore
   ) -> Int {
+    (try? importDocumentsChecked(attachments, conversationId: conversationId, store: store)) ?? 0
+  }
+
+  @MainActor
+  static func importDocumentsChecked(_ attachments: [AgentAttachmentKnowledgeInput],
+    conversationId: String, store: GalaxySSIStore) throws -> Int {
     guard let session = store.agentSession(id: conversationId),
           !session.privateMode,
           !session.trackingPaused else {
       return 0
     }
 
-    return attachments.reduce(into: 0) { importedCount, attachment in
+    return try attachments.reduce(into: 0) { importedCount, attachment in
       guard attachment.data.count <= AgentKnowledgeImportPolicy.maxSourceBytes,
             let content = extractText(from: attachment),
             !content.isEmpty else {
         return
       }
       let source = "agent-attachment:\(conversationId):\(attachment.id)"
-      importedCount += store.replaceAgentKnowledgeSourceCount(
+      importedCount += try store.replaceAgentKnowledgeSourceCountChecked(
         title: attachment.displayName,
         content: content,
         source: source,

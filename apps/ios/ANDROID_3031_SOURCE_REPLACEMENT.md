@@ -74,8 +74,9 @@ corpus-scale memory or observation parity:
   equivalent durable lifecycle events. This prevents stale summaries from being
   consumed after policy changes, but is not a continuity/retraction guarantee
   across legacy bulk mutations or already-acknowledged global projections.
-- Old-source preparation still holds the writer transaction, matching the pinned
-  #3031 boundary. There is no separate prepare/revalidate protocol yet.
+- The original #3031 increment prepared old sources inside the writer. The
+  dependent #3035 increment moves preparation to a committed view and adds a
+  source-generation revalidation protocol; see `ANDROID_3035_SOURCE_PREPARATION.md`.
 - There is no process-death scratch orphan sweeper, hard key zeroization
   guarantee, or hostile same-container filesystem
   actor guarantee. Existing external-payload physical reclamation is unchanged;
