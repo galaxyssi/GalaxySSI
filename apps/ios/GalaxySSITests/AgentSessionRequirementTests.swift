@@ -43,7 +43,7 @@ final class AgentSessionRequirementTests: XCTestCase {
     }
     let reopened = AgentConversationDatabase(fileURL: url, secrets: secrets)
     XCTAssertEqual(reopened.read("owner")?.sessionRequirement, "Concise synthetic preference")
-    XCTAssertNil(String(data: try Data(contentsOf: url), encoding: .isoLatin1)?.range(of: "Concise synthetic preference"))
+    XCTAssertNil(try Data(contentsOf: url).range(of: Data("Concise synthetic preference".utf8)))
     XCTAssertTrue(reopened.setSessionRequirement(id: "owner", expected: "Concise synthetic preference", text: ""))
     XCTAssertEqual(reopened.read("owner"), original)
   }
