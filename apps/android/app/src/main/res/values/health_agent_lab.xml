@@ -1,0 +1,37 @@
+<resources>
+    <string name="health_agent_group_notice">This is a group. Your question was not sent to its members. View your local records in a personal chat?</string>
+    <string name="health_agent_open_private">View in personal chat</string>
+    <string name="health_agent_older">Earlier sample</string>
+    <string name="health_agent_newer">Later sample</string>
+    <string name="health_agent_once">Allow this local query once</string>
+    <string name="health_agent_title">Health records · On device</string>
+    <string name="health_agent_open_results">View local health results</string>
+    <string name="health_agent_question">My abnormal checkup results</string>
+    <string name="health_agent_question_all">My latest checkup results</string>
+    <string name="health_agent_self_note">Self-reported: %1$s</string>
+    <string name="health_agent_recheck">Recheck: %1$s</string>
+    <string name="health_agent_loading">Checking saved measurements…</string>
+    <string name="health_agent_blocked">Access to confirmed measurements is off. No reports have been sent.</string>
+    <string name="health_agent_privacy">Privacy and data</string>
+    <string name="health_agent_empty">No saved laboratory measurements were found for your profile.</string>
+    <string name="health_agent_report_day">Report measurements · %1$s</string>
+    <string name="health_agent_manual_day">Saved measurements · %1$s</string>
+    <string name="health_agent_counts">%1$d results · %2$d outside reference · %3$d not comparable</string>
+    <string name="health_agent_choose">Choose the measurement for this follow-up.</string>
+    <string name="health_agent_no_flag">No comparable result on this date is outside its recorded reference.</string>
+    <string name="health_agent_high">Above reference</string>
+    <string name="health_agent_low">Below reference</string>
+    <string name="health_agent_within">Within reference</string>
+    <string name="health_agent_unknown">Unknown</string>
+    <string name="health_agent_range">%1$s · Reference: %2$s</string>
+    <string name="health_agent_source">View source record</string>
+    <string name="health_agent_note">Add a personal note</string>
+    <string name="health_agent_remind">Schedule recheck reminder</string>
+    <string name="health_agent_note_for">Personal note · %1$s</string>
+    <string name="health_agent_keep_condition">Keep current sampling condition</string>
+    <string name="health_agent_confirm">Schedule a recheck reminder for %1$s at %2$s?</string>
+    <string name="health_agent_note_saved">Personal note saved to this measurement</string>
+    <string name="health_agent_reminder_saved">Saved to health follow-ups. Notifications follow your reminder settings.</string>
+    <string name="health_agent_changed">Not saved. The record or its permissions may have changed.</string>
+    <string name="health_agent_not_tracked">Not scheduled. Check that proactive care is enabled and this is the current measurement of an active concern.</string>
+</resources>

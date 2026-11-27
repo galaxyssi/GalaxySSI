@@ -1,0 +1,37 @@
+<resources>
+    <string name="health_agent_group_notice">这是协作群。体检问题未发给群成员，要在个人会话查看本机记录吗？</string>
+    <string name="health_agent_open_private">在个人会话查看</string>
+    <string name="health_agent_older">前一次采样</string>
+    <string name="health_agent_newer">后一次采样</string>
+    <string name="health_agent_once">仅允许本次在手机上查看</string>
+    <string name="health_agent_title">健康记录 · 仅本机</string>
+    <string name="health_agent_open_results">查看本机体检结果</string>
+    <string name="health_agent_question">我的体检异常的指标</string>
+    <string name="health_agent_question_all">我最近的体检结果</string>
+    <string name="health_agent_self_note">本人补充：%1$s</string>
+    <string name="health_agent_recheck">复查：%1$s</string>
+    <string name="health_agent_loading">正在读取已有测量记录…</string>
+    <string name="health_agent_blocked">未允许使用已确认的测量记录。无需重新上传报告。</string>
+    <string name="health_agent_privacy">隐私与数据</string>
+    <string name="health_agent_empty">本机还没有找到本人的体检化验测量记录。</string>
+    <string name="health_agent_report_day">报告记录 · 采样日期 %1$s</string>
+    <string name="health_agent_manual_day">已存测量 · 测量日期 %1$s</string>
+    <string name="health_agent_counts">共 %1$d 项 · 超出参考 %2$d 项 · 无法比较 %3$d 项</string>
+    <string name="health_agent_choose">请选择这次补充或复查对应的记录。</string>
+    <string name="health_agent_no_flag">该日可比较的结果中，没有超出记录参考范围的项目。</string>
+    <string name="health_agent_high">高于参考</string>
+    <string name="health_agent_low">低于参考</string>
+    <string name="health_agent_within">参考范围内</string>
+    <string name="health_agent_unknown">无法判断</string>
+    <string name="health_agent_range">%1$s · 参考：%2$s</string>
+    <string name="health_agent_source">查看来源记录</string>
+    <string name="health_agent_note">补充测量信息</string>
+    <string name="health_agent_remind">安排复查提醒</string>
+    <string name="health_agent_note_for">本人补充 · %1$s</string>
+    <string name="health_agent_keep_condition">保留原采样条件</string>
+    <string name="health_agent_confirm">为「%1$s」安排 %2$s 的复查提醒？</string>
+    <string name="health_agent_note_saved">已将本人补充保存到这条测量记录</string>
+    <string name="health_agent_reminder_saved">已关联到健康随访，通知遵循现有提醒设置。</string>
+    <string name="health_agent_changed">没有保存。请检查记录、备注长度和访问权限后重试。</string>
+    <string name="health_agent_not_tracked">没有安排提醒。请确认已开启主动健康，且所选记录是该关注事项的当前测量。</string>
+</resources>

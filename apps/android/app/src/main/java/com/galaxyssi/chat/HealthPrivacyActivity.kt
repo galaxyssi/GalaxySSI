@@ -164,6 +164,7 @@ private fun HealthAccessPurpose.title() = when (this) {
     HealthAccessPurpose.WEEKLY_REPORT -> R.string.health_weekly_title
     HealthAccessPurpose.SAVE_WEEKLY_REPORT -> R.string.health_weekly_save
     HealthAccessPurpose.HEALTH_ANALYSIS -> R.string.health_assistant_title
+    HealthAccessPurpose.LOCAL_LAB_READ_ONCE -> R.string.health_agent_once
     HealthAccessPurpose.PROACTIVE_CARE -> R.string.health_care_title
     HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE -> R.string.health_assistant_online_audit
     HealthAccessPurpose.HEALTH_REPORT_VISION -> R.string.health_vision_action

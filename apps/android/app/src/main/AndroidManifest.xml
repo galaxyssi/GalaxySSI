@@ -124,6 +124,7 @@
         <activity android:name=".DoorAccessActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".ProactiveAttentionActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Main" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCenterActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".HealthAgentLabActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthCaptureActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".HealthTableActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" />
         <activity android:name=".HealthCatalogActivity" android:exported="false" android:theme="@style/Theme.GalaxySSI.Health" android:windowSoftInputMode="adjustResize" />

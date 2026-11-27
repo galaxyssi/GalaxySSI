@@ -52,9 +52,10 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         }
         return next
     }
-    private fun begin(scope: HealthAccessScope, expected: String? = null): HealthAccessEvent = transaction {
+    private fun begin(scope: HealthAccessScope, expected: String? = null, once: Boolean = false): HealthAccessEvent = transaction {
         val policy = policy()
-        val allowed = scope.purpose.permission?.let(policy::enabled) != false &&
+        val allowed = (scope.purpose.permission?.let(policy::enabled) != false ||
+            (once && expected != null && scope.purpose == HealthAccessPurpose.LOCAL_LAB_READ_ONCE)) &&
             (scope.purpose !in setOf(HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.HEALTH_REPORT_VISION) || policy.metrics) &&
             (expected == null || expected == policy.version)
         val event = HealthAccessEvent(UUID.randomUUID().toString(), System.currentTimeMillis(), scope,
@@ -71,8 +72,13 @@ internal class HealthPrivacyStore(private val context: Context, private val name
         check(db.update("access_log", ContentValues().apply { put("payload", pack("event:${event.id}:${event.time}", updated.json())) }, "id=?", arrayOf(event.id)) == 1)
         effective
     }
-    fun <T> track(scope: HealthAccessScope, operation: () -> T): T {
-        val event = begin(scope)
+    fun <T> track(scope: HealthAccessScope, operation: () -> T): T = tracked(begin(scope), operation)
+    fun <T> trackOneLocalLabRead(permit: HealthAgentLab.Once, scope: HealthAccessScope, operation: () -> T): T {
+        require(scope.purpose == HealthAccessPurpose.LOCAL_LAB_READ_ONCE && scope.metrics == HealthAgentLab.metrics &&
+            scope.until == permit.until + 1 && permit.claim())
+        return tracked(begin(scope, permit.version, once = true), operation)
+    }
+    private fun <T> tracked(event: HealthAccessEvent, operation: () -> T): T {
         if (event.outcome == HealthAccessOutcome.BLOCKED) throw HealthAccessBlocked()
         val result = try { operation() } catch (failure: Exception) {
             finishFailure(event, failure)
