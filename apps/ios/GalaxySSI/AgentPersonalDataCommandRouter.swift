@@ -5,6 +5,7 @@ enum AgentPersonalDataCommandRouter {
   struct Result {
     let text: String
     let actionId: String
+    var parameters: [String: String] = [:]
   }
 
   static func handle(_ input: String, store: GalaxySSIStore,
@@ -139,20 +140,24 @@ enum AgentPersonalDataCommandRouter {
 
   private static func knowledgeOverview(store: GalaxySSIStore) -> Result {
     let stats = store.agentKnowledgeStats
-    let groups = store.agentKnowledgeSourceGroups().prefix(10)
-    var lines = [localized(
-      store: store,
-      english: "Knowledge base: \(stats.itemCount) items; sources=\(stats.sourceCount)",
-      chinese: "\u{77e5}\u{8bc6}\u{5e93}\u{ff1a}\(stats.itemCount) \u{6761}\u{ff1b}\u{6765}\u{6e90}=\(stats.sourceCount)"
-    )]
+    let page = store.agentKnowledgeSourcePage(limit: 10), groups = page.groups
+    let language = store.languagePolicy.responseLanguage
+    var lines = [AgentKnowledgeStatisticsContext.summary(stats, language: language)]
     if groups.isEmpty {
-      lines.append(localized(store: store, english: "No knowledge items", chinese: "\u{6ca1}\u{6709}\u{77e5}\u{8bc6}\u{6761}\u{76ee}"))
+      if stats.countsUnavailable || !page.preparationError.isEmpty {
+        lines.append(AgentKnowledgeStatisticsContext.text("knowledge_stats_sources_unavailable", fallback: "Recent sources are unavailable", language: language))
+      } else if !stats.countsComplete || page.preparing || stats.itemCount > 0 {
+        lines.append(AgentKnowledgeStatisticsContext.text("knowledge_stats_sources_pending", fallback: "Recent sources are still indexing", language: language))
+      } else {
+        lines.append(localized(store: store, english: "No knowledge items", chinese: "\u{6ca1}\u{6709}\u{77e5}\u{8bc6}\u{6761}\u{76ee}"))
+      }
     } else {
       lines.append(contentsOf: groups.map { group in
         "\(group.title) [\(compact(group.source, limit: 48))]"
       })
     }
-    return Result(text: lines.joined(separator: "\n"), actionId: "knowledge_overview")
+    return Result(text: lines.joined(separator: "\n"), actionId: "knowledge_overview",
+      parameters: AgentKnowledgeStatisticsContext.parameters(stats))
   }
 
   private static func saveMemory(_ value: String, store: GalaxySSIStore) -> Result {

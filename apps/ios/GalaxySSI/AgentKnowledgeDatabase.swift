@@ -1380,29 +1380,38 @@ final class AgentKnowledgeDatabase {
   }
 
   func knowledgeStats() throws -> AgentKnowledgeStats {
-    try locked {
+    // Metadata must not request the lexical repair worker or decode bodies.
+    let view = try committedReadView()
+    defer { view.close() }
+    return try view.read { connection in
       guard let statement = prepare("""
         SELECT i.items, d.groups, i.complete,
-          COALESCE((SELECT updated_at FROM knowledge_items ORDER BY updated_at DESC, item_hash ASC LIMIT 1), 0)
+          COALESCE((SELECT updated_at FROM knowledge_items ORDER BY updated_at DESC, item_hash ASC LIMIT 1), 0),
+          d.complete
         FROM knowledge_item_count_state i
         JOIN knowledge_source_directory_state d ON d.id = i.id
         WHERE i.id = 1 LIMIT 1
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
-      guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      guard sqlite3_step(statement) == SQLITE_ROW,
+        (0..<5).allSatisfy({ sqlite3_column_type(statement, Int32($0)) == SQLITE_INTEGER }) else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
       let items = sqlite3_column_int64(statement, 0)
       let sources = sqlite3_column_int64(statement, 1)
-      let itemComplete = sqlite3_column_int(statement, 2)
+      let itemComplete = sqlite3_column_int64(statement, 2)
       let updatedAt = sqlite3_column_int64(statement, 3)
-      let directory = try sourceDirectoryState()
-      guard items >= 0, sources >= 0, (0...1).contains(itemComplete), updatedAt >= 0 else {
+      let directoryComplete = sqlite3_column_int64(statement, 4)
+      guard items >= 0, sources >= 0, (0...1).contains(itemComplete), updatedAt >= 0,
+        (0...1).contains(directoryComplete), let itemCount = Int(exactly: items), let sourceCount = Int(exactly: sources),
+        sqlite3_step(statement) == SQLITE_DONE else {
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       return AgentKnowledgeStats(
-        itemCount: Int(clamping: items),
-        sourceCount: Int(clamping: sources),
+        itemCount: itemCount,
+        sourceCount: sourceCount,
         lastUpdatedAtMillis: updatedAt,
-        countsComplete: itemComplete == 1 && directory.complete
+        countsComplete: itemComplete == 1 && directoryComplete == 1
       )
     }
   }

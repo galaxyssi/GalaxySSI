@@ -6120,7 +6120,8 @@ final class MessageCoordinator: ObservableObject {
           outgoing.id,
           contactId: contact.id,
           stage: commandResult.actionId,
-          detail: "Local personal data command",
+          detail: commandResult.parameters.isEmpty ? "Local personal data command" :
+            commandResult.parameters.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "; "),
           status: .delivered
         )
         let response = store.appendIncoming(
@@ -13418,6 +13419,7 @@ final class MessageCoordinator: ObservableObject {
       phoneOwnsExecution: true,
       timerCheckpoint: timerCheckpoint
     )
+    planningRequest.knowledgeStats = AgentKnowledgeStatisticsContext.capture(for: planningRequest, read: { store.agentKnowledgeStats })
     let snapshots = planningRequest.executionHistory
     let scopedHistory = snapshots.filter { !AgentDurablePlanHistoryPolicy.isPlannerControl($0) }
     planningRequest.executionHistory = AgentDurablePlanHistoryPolicy.plannerProjection(snapshots)

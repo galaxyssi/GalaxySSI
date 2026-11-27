@@ -1,7 +1,7 @@
 // Source contracts only; not Swift/native SQLite/device/recovery acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = '3b8340ced4f3779daaaa2e8ec9ae3cca5e84c983', app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-statistics-context-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 const headerEncoding = `    let sealedHeader: Data, encrypted: Data
@@ -22,6 +22,7 @@ const finalMetadata = `      if old.headerHash != nil {
       }
 `;
 function retained(f, source) {
+  source = require('./check-knowledge-statistics-context-scope.cjs').retained(f, source);
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryMetadata(?:Integration)?(?:Tests)?\.swift/.test(l)).join('\n');
   if (f === app + 'AgentKnowledgePrimaryCopyStore.swift' && source.includes('  static func accountMetadata(')) return source.replace(section(source, '  static func accountMetadata(', '  static func checkpoint('), '');
   if (f === app + 'AgentKnowledgeDatabase.swift' && source.includes('  private func validatePrimaryHeader(')) return source
