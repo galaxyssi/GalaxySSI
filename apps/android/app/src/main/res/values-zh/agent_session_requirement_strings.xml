@@ -1,0 +1,5 @@
+<resources>
+    <string name="agent_session_requirement">本会话要求</string>
+    <string name="agent_session_requirement_remove">移除要求</string>
+    <string name="agent_session_requirement_unavailable">当前会话已变更，未保存。</string>
+</resources>

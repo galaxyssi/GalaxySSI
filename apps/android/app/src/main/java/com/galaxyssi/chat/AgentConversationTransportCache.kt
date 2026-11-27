@@ -34,6 +34,7 @@ internal object AgentConversationTransportCache {
         val value = if (
             transportContext.turns.isEmpty() &&
             transportContext.summary.isBlank() &&
+            transportContext.sessionRequirement.isBlank() &&
             !hasGlobalContext
         ) {
             ""

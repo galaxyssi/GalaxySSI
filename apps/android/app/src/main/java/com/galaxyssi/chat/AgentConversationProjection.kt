@@ -75,7 +75,8 @@ internal object AgentConversationProjection {
         val block = encode(conversation, AgentFinalResponseIdentity.coalesce(rows),
             budget, boundary, cursor != null, globalContext,
             minOf(AgentConversationBudget.MAX_HISTORY_CHARACTERS,
-                AgentConversationBudget.MAX_PROMPT_CHARACTERS - fixed.length))
+                AgentConversationBudget.MAX_PROMPT_CHARACTERS - fixed.length),
+            previous?.optString("user_session_requirement").orEmpty())
         return if (end != null) prompt.replaceRange(start, end, block) else "$prompt\n\n$block"
     }
 
@@ -94,13 +95,16 @@ internal object AgentConversationProjection {
 
     internal fun encode(conversationId: String, rows: List<AgentTranscriptEntry>, budget: Int,
                         boundary: Long, olderPages: Boolean, globalContext: String = "",
-                        maximumCharacters: Int = AgentConversationBudget.MAX_HISTORY_CHARACTERS): String {
+                        maximumCharacters: Int = AgentConversationBudget.MAX_HISTORY_CHARACTERS,
+                        sessionRequirement: String = ""): String {
         val source = rows.filter { it.conversationId == conversationId && it.role != AgentTranscriptRole.PROCESS }
             .distinctBy { it.id }
         val selected = linkedMapOf<String, JSONObject>()
         fun document(): String {
             val payload = JSONObject().put("version", 1).put("conversation_id", conversationId)
                 .put("summary", "")
+                .apply { if (sessionRequirement.isNotBlank()) put("user_session_requirement",
+                    ConversationContextCompactor.sanitizeReference(sessionRequirement.take(MAX_SESSION_REQUIREMENT))) }
                 .apply { if (globalContext.isNotBlank()) put("global_context", globalContext) }
                 .put("history_scope", JSONObject().put("before_sequence", boundary)
                     .put("coverage", "bounded_source_records_not_a_complete_summary")

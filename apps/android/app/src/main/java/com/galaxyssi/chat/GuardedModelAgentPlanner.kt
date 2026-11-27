@@ -345,6 +345,7 @@ internal object AgentModelPlanningPrompt {
         }
         if (
             request.conversationContext.turns.isNotEmpty() ||
+            request.conversationContext.sessionRequirement.isNotBlank() ||
             request.conversationContext.summary.isNotBlank() ||
             (request.conversationContext.allowsGlobalContext &&
                 request.conversationContext.globalContext.isNotBlank())

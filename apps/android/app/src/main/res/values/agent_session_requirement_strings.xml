@@ -1,0 +1,5 @@
+<resources>
+    <string name="agent_session_requirement">Session requirements</string>
+    <string name="agent_session_requirement_remove">Remove requirement</string>
+    <string name="agent_session_requirement_unavailable">This conversation is no longer available.</string>
+</resources>

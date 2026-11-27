@@ -74,6 +74,7 @@ internal class AgentPlanningJournal(context: Context,
         .put("conversation", JSONObject().put("id", input.conversation.conversationId)
             .put("summary", input.conversation.summary).put("private", input.conversation.privateMode)
             .put("global", input.conversation.globalContext).put("tracking_paused", input.conversation.trackingPaused)
+            .put("user_session_requirement", input.conversation.sessionRequirement)
             .put("turns", JSONArray().apply { input.conversation.turns.forEach { put(encodeEntry(it)) } })).toString()
 
     private fun decode(encoded: String): AgentPlanningInput = try {
@@ -83,7 +84,8 @@ internal class AgentPlanningJournal(context: Context,
         val planner = json.getJSONObject("planner")
         AgentPlanningInput(json.getString("goal"), AgentConversationContext(conversation.getString("id"),
             conversation.getString("summary"), conversation.getJSONArray("turns").objects().map(::decodeEntry),
-            conversation.getBoolean("private"), conversation.getString("global"), conversation.getBoolean("tracking_paused")),
+            conversation.getBoolean("private"), conversation.getString("global"), conversation.getBoolean("tracking_paused"),
+            conversation.optString("user_session_requirement").take(MAX_SESSION_REQUIREMENT)),
             json.getString("turn"), json.getJSONArray("members").objects().map {
                 AgentRequestedMember(it.getString("id"), it.getString("name"), it.getInt("occurrence"), it.getString("role"))
             }, AgentTaskExecutionMode.valueOf(json.getString("mode")),

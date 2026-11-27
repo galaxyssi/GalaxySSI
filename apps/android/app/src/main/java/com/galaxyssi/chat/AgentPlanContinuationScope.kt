@@ -15,7 +15,8 @@ internal data class AgentPlanContinuationScope(val conversationId: String, val t
     ))
 
     fun context(source: AgentConversationContext) = AgentConversationContext(
-        conversationId, "", emptyList(), source.privateMode, trackingPaused = source.trackingPaused
+        conversationId, "", emptyList(), source.privateMode, trackingPaused = source.trackingPaused,
+        sessionRequirement = if (conversationId == source.conversationId) source.sessionRequirement else ""
     )
 
     companion object {

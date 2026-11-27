@@ -34,7 +34,8 @@ internal fun MobileNativeAgent.resumeBrowserActionPlan(record: AgentBrowserUserR
     if (activeConversationContext.conversationId != record.conversationId) {
         val conversation = AgentTranscriptStore(appContext).conversation(record.conversationId)
         activeConversationContext = AgentConversationContext(record.conversationId, "", emptyList(),
-            conversation?.privateMode ?: true, trackingPaused = conversation?.trackingPaused ?: true)
+            conversation?.privateMode ?: true, trackingPaused = conversation?.trackingPaused ?: true,
+            sessionRequirement = conversation?.takeIf { it.id == record.conversationId }?.sessionRequirement.orEmpty())
     }
     if (!AgentBrowserActionPlanPolicy.observed(latest, original)) {
         val observed = AgentBrowserActionPlanPolicy.observe(latest, original)
