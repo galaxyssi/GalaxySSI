@@ -38,9 +38,10 @@ reads. It is not a lock held across result consumption. Full body authentication
 is intentionally retained; Android's metadata-only validation and iOS's open
 primary-storage changes are separate work.
 
-This PR changes lexical candidate admission. Vector feed/catalog/replay, native
-setup, hybrid final vector validation and maintenance can still wait for the
-writer. Android #3034 targets those separate APIs. Background repair can still be
+The original #3033 increment changes lexical candidate admission. The dependent
+#3034 increment now updates vector feed/catalog/replay and hybrid final read
+validation; see `ANDROID_3034_COMMITTED_VECTOR_READS.md` for that scope and its
+remaining cold/maintenance boundaries. Background repair can still be
 large and uses the existing legacy full-snapshot path; it is not an incremental
 or guaranteed successful recovery for missing/corrupt schema.
 

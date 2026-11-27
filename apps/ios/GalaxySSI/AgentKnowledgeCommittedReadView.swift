@@ -18,7 +18,7 @@ final class AgentKnowledgeCommittedReadView {
       guard sqlite3_open_v2(fileURL.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
         let database else { throw AgentKnowledgeDatabaseError.unavailable }
       sqlite3_busy_timeout(database, 5_000)
-      for sql in ["PRAGMA query_only=ON", "PRAGMA cache_size=-2048", "PRAGMA mmap_size=0", "BEGIN"] {
+      for sql in ["PRAGMA query_only=ON", "PRAGMA cache_size=-2048", "PRAGMA mmap_size=0", "BEGIN DEFERRED TRANSACTION"] {
         guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
       }
       var row: OpaquePointer?

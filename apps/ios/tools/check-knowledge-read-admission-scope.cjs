@@ -11,11 +11,11 @@ for (const value of ['try view.read', 'try committed.read', 'return try snapshot
   'try decode(row, hashColumn: 0, payloadColumn: 1) == candidate', 'status == SQLITE_DONE',
   'status == SQLITE_ROW', 'try Task.checkCancellation()', 'return try view.read { _ in validated }',
   'try beforeValidation()', 'indexRetry.markFailure(); requestIndexRetry()']) assert.ok(search.includes(value), value);
-const admission = database.slice(database.indexOf('  private func committedReadView('), database.indexOf('  private func requestIndexRetry('));
+const admission = database.slice(database.indexOf('  private func committedReadView('), database.indexOf('  private func readCommitted<T>'));
 assert.match(admission, /if lock\.try\(\)/);
 assert.doesNotMatch(admission, /lock\.lock\(\)|locked \{/);
 assert.match(admission, /sqlite3_get_autocommit\(database\) != 0/);
-assert.match(admission, /nativeFiles\.activeToken\(\) == token/);
+assert.match(admission, /nativeFiles\.readToken\(backgroundLease: backgroundLease\) == token/);
 const view = read('AgentKnowledgeCommittedReadView.swift');
 for (const value of ['SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX', 'PRAGMA query_only=ON',
   'PRAGMA cache_size=-2048', 'PRAGMA mmap_size=0', 'SELECT revision FROM knowledge_browse_revision WHERE id=1',

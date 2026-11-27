@@ -1893,6 +1893,7 @@
     A10000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift */; };
     A10000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift */; };
     A10000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */; };
+    A10000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */; };
     F30050000000000000000015 /* AgentKnowledgeNativeIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */; };
     A10000000000000000000885 /* AgentKnowledgeHybridSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */; };
     A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */; };
@@ -4157,6 +4158,7 @@
     A20000000000000000003E64 /* AgentKnowledgeCommittedReadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeCommittedReadView.swift; sourceTree = "<group>"; };
     A20000000000000000003E65 /* AgentKnowledgeIndexRetryGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeIndexRetryGate.swift; sourceTree = "<group>"; };
     A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeReadAdmissionTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeVectorReadAdmissionTests.swift; sourceTree = "<group>"; };
     F30050000000000000000025 /* AgentKnowledgeNativeIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeNativeIndex.swift; sourceTree = "<group>"; };
     A20000000000000000000885 /* AgentKnowledgeHybridSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearch.swift; sourceTree = "<group>"; };
     A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeHybridSearchTests.swift; sourceTree = "<group>"; };
@@ -6674,6 +6676,7 @@
         F30050000000000000000024 /* AgentKnowledgeNativePublicationTests.swift */,
         F30050000000000000000026 /* AgentKnowledgeNativeIndexTests.swift */,
         A20000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift */,
+        A20000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift */,
         F30050000000000000000027 /* AgentKnowledgeAsyncRAGTests.swift */,
         F30050000000000000000029 /* AgentKnowledgeBackgroundTests.swift */,
         A20000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift */,
@@ -9107,6 +9110,7 @@
         F30050000000000000000014 /* AgentKnowledgeNativePublicationTests.swift in Sources */,
         F30050000000000000000016 /* AgentKnowledgeNativeIndexTests.swift in Sources */,
         A10000000000000000003E66 /* AgentKnowledgeReadAdmissionTests.swift in Sources */,
+        A10000000000000000003E67 /* AgentKnowledgeVectorReadAdmissionTests.swift in Sources */,
         F30050000000000000000017 /* AgentKnowledgeAsyncRAGTests.swift in Sources */,
         F30050000000000000000019 /* AgentKnowledgeBackgroundTests.swift in Sources */,
         A10000000000000000000886 /* AgentKnowledgeHybridSearchTests.swift in Sources */,

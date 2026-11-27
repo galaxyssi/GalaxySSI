@@ -78,9 +78,10 @@ final class AgentKnowledgeDatabase {
   private var database: OpaquePointer?
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
-    indexRetryGate: AgentKnowledgeIndexRetryGate = AgentKnowledgeIndexRetryGate()) {
+    indexRetryGate: AgentKnowledgeIndexRetryGate = AgentKnowledgeIndexRetryGate(),
+    nativeNotifications: NotificationCenter = .default) {
     indexRetry = indexRetryGate
-    nativeFiles = AgentKnowledgeNativeFiles(databaseURL: fileURL, secrets: secrets)
+    nativeFiles = AgentKnowledgeNativeFiles(databaseURL: fileURL, secrets: secrets, notifications: nativeNotifications)
     self.fileURL = fileURL
     self.secrets = secrets
     cipher = GalaxySSIAttachmentAtRestCipher(
@@ -216,9 +217,9 @@ final class AgentKnowledgeDatabase {
     return try view.read { _ in validated }
   }
 
-  private func committedReadView() throws -> AgentKnowledgeCommittedReadView {
+  private func committedReadView(backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil) throws -> AgentKnowledgeCommittedReadView {
     try Task.checkCancellation()
-    guard let token = nativeFiles.activeToken() else { throw CancellationError() }
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
     // A try-lock never waits for a different writer. On this thread it can
     // inspect autocommit safely and reject reads of our own uncommitted write.
     if lock.try() {
@@ -226,8 +227,49 @@ final class AgentKnowledgeDatabase {
       guard let database, sqlite3_get_autocommit(database) != 0 else { throw AgentKnowledgeDatabaseError.unavailable }
     }
     return try AgentKnowledgeCommittedReadView(fileURL: fileURL) { [nativeFiles = self.nativeFiles] in
-      guard nativeFiles.activeToken() == token else { throw CancellationError() }
+      guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
     }
+  }
+
+  private func readCommitted<T>(backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil,
+    _ body: (OpaquePointer) throws -> T) throws -> T {
+    let view = try committedReadView(backgroundLease: backgroundLease)
+    defer { view.close() }
+    requestIndexRetry()
+    return try view.read(body)
+  }
+
+  // Legacy callers can still register a model on its first access. The normal
+  // registered path is read-only; only a missing model enters the cold writer.
+  private func registeredVectorRead<T>(modelHash: String,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil,
+    _ body: (OpaquePointer) throws -> T) throws -> T {
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
+    func checked(_ value: T) throws -> T {
+      try Task.checkCancellation()
+      guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+      return value
+    }
+    func attempt() throws -> T? {
+      try readCommitted(backgroundLease: backgroundLease) { connection in
+        guard let row = prepare("SELECT 1 FROM knowledge_vector_feed_models WHERE model_hash=?", on: connection) else {
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+        defer { sqlite3_finalize(row) }; bind(modelHash, at: 1, to: row)
+        let status = sqlite3_step(row)
+        if status == SQLITE_DONE { return nil }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+        return .some(try body(connection))
+      }
+    }
+    if let value = try attempt() { return try checked(value) }
+    try locked {
+      try Task.checkCancellation()
+      guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+      _ = try ensureVectorFeedModel(modelHash: modelHash)
+    }
+    guard let value = try attempt() else { throw AgentKnowledgeDatabaseError.unavailable }
+    return try checked(value)
   }
 
   private func requestIndexRetry() {
@@ -287,10 +329,11 @@ final class AgentKnowledgeDatabase {
         _ = execute("ROLLBACK")
         return false
       }
-      let checkpoints = (try? vectorCheckpoints(
-        itemId: checkpoint.itemId,
-        modelSHA256: checkpoint.provenance.modelSHA256
-      )) ?? []
+      let checkpoints: [AgentKnowledgeVectorCheckpoint]
+      do {
+        checkpoints = try readVectorCheckpoints(itemId: checkpoint.itemId,
+          modelSHA256: checkpoint.provenance.modelSHA256, on: database)
+      } catch { _ = execute("ROLLBACK"); return false }
       let complete = checkpoints.count == checkpoint.chunkCount &&
         Set(checkpoints.map(\.chunkIndex)) == Set(0..<checkpoint.chunkCount) &&
         checkpoints.allSatisfy { $0.sourceRevision == checkpoint.sourceRevision }
@@ -321,36 +364,45 @@ final class AgentKnowledgeDatabase {
   }
 
   func vectorCheckpoints(itemId: String, modelSHA256: String) throws -> [AgentKnowledgeVectorCheckpoint] {
-    try locked {
+    try readCommitted { connection in
+      try readVectorCheckpoints(itemId: itemId, modelSHA256: modelSHA256, on: connection)
+    }
+  }
+
+  private func readVectorCheckpoints(itemId: String, modelSHA256: String,
+    on connection: OpaquePointer?) throws -> [AgentKnowledgeVectorCheckpoint] {
       guard let statement = prepare("""
         SELECT vector_key, encrypted_payload FROM knowledge_vectors
         WHERE item_hash = ? AND model_hash = ?
         ORDER BY vector_key ASC
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(keyedHash(itemId), at: 1, to: statement)
       bind(keyedHash(modelSHA256.lowercased()), at: 2, to: statement)
       var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
-      while sqlite3_step(statement) == SQLITE_ROW {
+      while true {
+        try Task.checkCancellation()
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return checkpoints.sorted { $0.chunkIndex < $1.chunkIndex } }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
         guard let keyText = sqlite3_column_text(statement, 0),
               let encrypted = blob(statement, column: 1) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         let key = String(cString: keyText)
         guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else {
+              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext), keyedHash(checkpoint.id) == key,
+              checkpoint.itemId.utf8.elementsEqual(itemId.utf8), checkpoint.provenance.modelSHA256 == modelSHA256.lowercased() else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         checkpoints.append(checkpoint)
       }
-      return checkpoints.sorted { $0.chunkIndex < $1.chunkIndex }
-    }
   }
 
   @discardableResult
   func clearVectorCheckpoints(itemId: String, modelSHA256: String) -> Bool {
     locked {
-      let existing = (try? vectorCheckpoints(itemId: itemId, modelSHA256: modelSHA256)) ?? []
+      guard let existing = try? readVectorCheckpoints(itemId: itemId, modelSHA256: modelSHA256, on: database) else { return false }
       guard execute("BEGIN IMMEDIATE TRANSACTION") else { return false }
       guard let statement = prepare(
         "DELETE FROM knowledge_vectors WHERE item_hash = ? AND model_hash = ?"
@@ -396,11 +448,18 @@ final class AgentKnowledgeDatabase {
     modelSHA256: String,
     epoch expectedEpoch: String? = nil,
     afterSequence: Int64 = 0,
-    limit: Int = 128
+    limit: Int = 128,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil
   ) throws -> AgentKnowledgeVectorChangePage {
-    try locked {
-      let modelHash = keyedHash(modelSHA256.lowercased())
-      let state = try ensureVectorFeedModel(modelHash: modelHash)
+    let modelHash = keyedHash(modelSHA256.lowercased())
+    return try registeredVectorRead(modelHash: modelHash, backgroundLease: backgroundLease) { connection in
+      try readVectorChangePage(modelHash: modelHash, epoch: expectedEpoch, afterSequence: afterSequence, limit: limit, on: connection)
+    }
+  }
+
+  private func readVectorChangePage(modelHash: String, epoch expectedEpoch: String?, afterSequence: Int64,
+    limit: Int, on connection: OpaquePointer) throws -> AgentKnowledgeVectorChangePage {
+      let state = try readVectorFeedStamp(modelHash: modelHash, on: connection)
       if let expectedEpoch, expectedEpoch != state.epoch {
         throw AgentKnowledgeDatabaseError.staleCursor
       }
@@ -411,7 +470,7 @@ final class AgentKnowledgeDatabase {
               FROM knowledge_vector_changes
               WHERE model_hash = ? AND sequence > ?
               ORDER BY sequence ASC LIMIT ?
-              """) else { throw AgentKnowledgeDatabaseError.unavailable }
+              """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(modelHash, at: 1, to: statement)
       sqlite3_bind_int64(statement, 2, afterSequence)
@@ -420,6 +479,7 @@ final class AgentKnowledgeDatabase {
       var events: [AgentKnowledgeVectorChange] = []
       var status = sqlite3_step(statement)
       while status == SQLITE_ROW {
+        try Task.checkCancellation()
         let event = try decodeVectorChange(statement)
         guard event.epoch == state.epoch, event.previousSequence == expectedPrevious,
           event.sequence > expectedPrevious, event.sequence <= state.head else {
@@ -431,22 +491,19 @@ final class AgentKnowledgeDatabase {
       }
       guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       return AgentKnowledgeVectorChangePage(epoch: state.epoch, headSequence: state.head, events: events)
-    }
   }
 
-  func vectorFeedStamp(modelSHA256: String) throws -> AgentKnowledgeVectorFeedStamp {
-    try locked {
-      let modelHash = keyedHash(modelSHA256.lowercased())
-      _ = try ensureVectorFeedModel(modelHash: modelHash)
-      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { _ = execute("ROLLBACK") }
-      return try readVectorFeedStamp(modelHash: modelHash)
+  func vectorFeedStamp(modelSHA256: String,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil) throws -> AgentKnowledgeVectorFeedStamp {
+    let modelHash = keyedHash(modelSHA256.lowercased())
+    return try registeredVectorRead(modelHash: modelHash, backgroundLease: backgroundLease) { connection in
+      try readVectorFeedStamp(modelHash: modelHash, on: connection)
     }
   }
 
   func nativePublicationPage(modelSHA256: String, afterItemHash: String? = nil,
-    limit: Int = 64) throws -> AgentKnowledgeNativePublicationPage {
-    try locked {
+    limit: Int = 64, backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil) throws -> AgentKnowledgeNativePublicationPage {
+    try readCommitted(backgroundLease: backgroundLease) { connection in
       if let afterItemHash, !isOpaqueHash(afterItemHash) { throw AgentKnowledgeDatabaseError.staleCursor }
       let size = min(max(limit, 1), 64)
       guard let statement = prepare("""
@@ -460,7 +517,7 @@ final class AgentKnowledgeDatabase {
           AND p.sequence = (SELECT latest.sequence FROM knowledge_vector_changes latest
             WHERE latest.model_hash = p.model_hash AND latest.item_hash = p.item_hash ORDER BY latest.sequence DESC LIMIT 1)
         ORDER BY p.item_hash ASC LIMIT ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       bind(afterItemHash ?? "", at: 2, to: statement)
@@ -468,6 +525,7 @@ final class AgentKnowledgeDatabase {
       var events: [AgentKnowledgeVectorChange] = []
       var status = sqlite3_step(statement)
       while status == SQLITE_ROW {
+        try Task.checkCancellation()
         let event = try decodeVectorChange(statement)
         guard event.operation == .ready, event.itemHash > (events.last?.itemHash ?? afterItemHash ?? "") else {
           throw AgentKnowledgeDatabaseError.corruptRecord
@@ -483,84 +541,101 @@ final class AgentKnowledgeDatabase {
   // The seed scan also resumes after process death; it never scans the whole
   // catalog in one query or substitutes invented vectors for a real source.
   func nativeRootSeed(provenance: AgentKnowledgeVectorProvenance,
-    stamp: AgentKnowledgeVectorFeedStamp) throws -> AgentKnowledgeNativeRootSeed {
-    try locked {
-      let modelHash = keyedHash(provenance.modelSHA256.lowercased())
-      let contractHash = try vectorProvenanceHash(provenance)
-      guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
-      guard let update = prepare("""
-        INSERT INTO knowledge_vector_native_root_seek(model_hash, contract_hash, epoch, head, source_revision)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(model_hash) DO UPDATE SET contract_hash = excluded.contract_hash,
-          epoch = excluded.epoch, head = excluded.head, source_revision = excluded.source_revision, after_item_hash = ''
-        WHERE contract_hash != excluded.contract_hash OR epoch != excluded.epoch OR head != excluded.head
-          OR source_revision != excluded.source_revision
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
-      bind(modelHash, at: 1, to: update)
-      bind(contractHash, at: 2, to: update)
-      bind(stamp.epoch, at: 3, to: update)
-      sqlite3_bind_int64(update, 4, stamp.head)
-      sqlite3_bind_int64(update, 5, stamp.sourceRevision)
-      let updated = sqlite3_step(update) == SQLITE_DONE
-      sqlite3_finalize(update)
-      guard updated, let cursor = prepare("SELECT after_item_hash FROM knowledge_vector_native_root_seek WHERE model_hash = ?") else {
-        throw AgentKnowledgeDatabaseError.unavailable
-      }
+    stamp: AgentKnowledgeVectorFeedStamp, backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil) throws -> AgentKnowledgeNativeRootSeed {
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
+    let modelHash = keyedHash(provenance.modelSHA256.lowercased())
+    let contractHash = try vectorProvenanceHash(provenance)
+    let after = try readCommitted(backgroundLease: backgroundLease) { connection -> String in
+      guard try readVectorFeedStamp(modelHash: modelHash, on: connection) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+      guard let cursor = prepare("SELECT contract_hash,epoch,head,source_revision,after_item_hash FROM knowledge_vector_native_root_seek WHERE model_hash=?", on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(cursor) }
       bind(modelHash, at: 1, to: cursor)
-      guard sqlite3_step(cursor) == SQLITE_ROW, let text = sqlite3_column_text(cursor, 0) else {
-        sqlite3_finalize(cursor)
-        throw AgentKnowledgeDatabaseError.corruptRecord
-      }
+      let status = sqlite3_step(cursor)
+      if status == SQLITE_DONE { return "" }
+      guard status == SQLITE_ROW, let contract = sqlite3_column_text(cursor, 0), let epoch = sqlite3_column_text(cursor, 1),
+        let text = sqlite3_column_text(cursor, 4) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       let after = String(cString: text)
-      sqlite3_finalize(cursor)
-      let page = try nativePublicationPage(modelSHA256: provenance.modelSHA256, afterItemHash: after.isEmpty ? nil : after)
-      for event in page.events {
-        if let vector = try vectorReplayPage(event: event, provenance: provenance, limit: 1)?.checkpoints.first?.vector {
-          guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
-          return AgentKnowledgeNativeRootSeed(vector: vector, pending: false)
-        }
-      }
-      guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp,
-        let advance = prepare("""
-          UPDATE knowledge_vector_native_root_seek SET after_item_hash = ?
-          WHERE model_hash = ? AND contract_hash = ? AND epoch = ? AND head = ? AND source_revision = ?
-          """) else { throw AgentKnowledgeDatabaseError.staleCursor }
-      defer { sqlite3_finalize(advance) }
-      bind(page.nextItemHash ?? "", at: 1, to: advance)
-      bind(modelHash, at: 2, to: advance)
-      bind(contractHash, at: 3, to: advance)
-      bind(stamp.epoch, at: 4, to: advance)
-      sqlite3_bind_int64(advance, 5, stamp.head)
-      sqlite3_bind_int64(advance, 6, stamp.sourceRevision)
-      guard sqlite3_step(advance) == SQLITE_DONE, sqlite3_changes(database) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
-      return AgentKnowledgeNativeRootSeed(vector: nil, pending: page.nextItemHash != nil)
+      guard after.isEmpty || isOpaqueHash(after) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return String(cString: contract) == contractHash && String(cString: epoch) == stamp.epoch &&
+        sqlite3_column_int64(cursor, 2) == stamp.head && sqlite3_column_int64(cursor, 3) == stamp.sourceRevision ? after : ""
     }
+    let page = try nativePublicationPage(modelSHA256: provenance.modelSHA256, afterItemHash: after.isEmpty ? nil : after, backgroundLease: backgroundLease)
+    for event in page.events {
+      if let vector = try vectorReplayPage(event: event, provenance: provenance, limit: 1, backgroundLease: backgroundLease)?.checkpoints.first?.vector {
+        guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+        guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+        return AgentKnowledgeNativeRootSeed(vector: vector, pending: false)
+      }
+    }
+    guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+    guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+    try saveRootSeekWithoutWaiting(modelHash: modelHash, contractHash: contractHash, stamp: stamp, after: page.nextItemHash ?? "")
+    try Task.checkCancellation()
+    guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+    return AgentKnowledgeNativeRootSeed(vector: nil, pending: page.nextItemHash != nil)
+  }
+
+  // Seek progress is resumable but not evidence. When a writer owns the catalog,
+  // leave the old cursor intact and retry its bounded page on a later call.
+  private func saveRootSeekWithoutWaiting(modelHash: String, contractHash: String,
+    stamp: AgentKnowledgeVectorFeedStamp, after: String) throws {
+    guard lock.try() else { return }
+    defer { lock.unlock() }
+    guard let database, sqlite3_get_autocommit(database) != 0 else { return }
+    guard sqlite3_busy_timeout(database, 0) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+    defer { sqlite3_busy_timeout(database, 5_000) }
+    guard let row = prepare("""
+      INSERT INTO knowledge_vector_native_root_seek(model_hash,contract_hash,epoch,head,source_revision,after_item_hash)
+      VALUES(?,?,?,?,?,?) ON CONFLICT(model_hash) DO UPDATE SET contract_hash=excluded.contract_hash,
+      epoch=excluded.epoch,head=excluded.head,source_revision=excluded.source_revision,after_item_hash=excluded.after_item_hash
+      """) else {
+      if [SQLITE_BUSY, SQLITE_LOCKED].contains(sqlite3_errcode(database) & 255) { return }
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { sqlite3_finalize(row) }
+    bind(modelHash, at: 1, to: row); bind(contractHash, at: 2, to: row); bind(stamp.epoch, at: 3, to: row)
+    sqlite3_bind_int64(row, 4, stamp.head); sqlite3_bind_int64(row, 5, stamp.sourceRevision); bind(after, at: 6, to: row)
+    let status = sqlite3_step(row)
+    guard status == SQLITE_DONE || [SQLITE_BUSY, SQLITE_LOCKED].contains(status & 255) else { throw AgentKnowledgeDatabaseError.unavailable }
   }
 
   func validatedLexicalHits(_ hits: [AgentKnowledgeHit], stamp: AgentKnowledgeVectorFeedStamp,
-    modelSHA256: String) throws -> [AgentKnowledgeHit] {
+    modelSHA256: String, beforeValidation: () throws -> Void = {}) throws -> [AgentKnowledgeHit] {
     guard hits.count <= 256 else { throw AgentKnowledgeNativeError.invalidRecord }
-    return try locked {
-      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { _ = execute("ROLLBACK") }
-      guard try readVectorFeedStamp(modelHash: keyedHash(modelSHA256.lowercased())) == stamp else {
+    guard let token = nativeFiles.readToken() else { throw CancellationError() }
+    let result = try readCommitted { connection in
+      guard try readVectorFeedStamp(modelHash: keyedHash(modelSHA256.lowercased()), on: connection) == stamp else {
         throw AgentKnowledgeDatabaseError.staleCursor
       }
-      let current = Dictionary(uniqueKeysWithValues: try items(ids: hits.map(\.item.id)).map { ($0.id, $0) })
-      return hits.filter { current[$0.item.id] == $0.item }
+      guard let row = prepare("SELECT item_hash,encrypted_payload FROM knowledge_items WHERE item_hash=?", on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
+      defer { sqlite3_finalize(row) }
+      return try hits.filter { hit in
+        try Task.checkCancellation()
+        guard sqlite3_reset(row) == SQLITE_OK, sqlite3_clear_bindings(row) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+        bind(keyedHash(hit.item.id), at: 1, to: row)
+        let status = sqlite3_step(row)
+        if status == SQLITE_DONE { return false }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+        return try decode(row, hashColumn: 0, payloadColumn: 1) == hit.item
+      }
     }
+    try beforeValidation()
+    guard try vectorFeedStamp(modelSHA256: modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+    try Task.checkCancellation()
+    guard nativeFiles.readToken() == token else { throw CancellationError() }
+    return result
   }
 
   // A native node is not an authority to release text. Re-resolve publication,
   // encrypted vector provenance and the current encrypted source in one snapshot.
   func resolveNativeMatches(_ matches: [AgentKnowledgeNativeMatch], provenance: AgentKnowledgeVectorProvenance,
-    stamp: AgentKnowledgeVectorFeedStamp) throws -> [AgentKnowledgeHit] {
+    stamp: AgentKnowledgeVectorFeedStamp, backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil,
+    beforeValidation: () throws -> Void = {}) throws -> [AgentKnowledgeHit] {
     guard matches.count <= 256 else { throw AgentKnowledgeNativeError.invalidRecord }
-    let hits: [AgentKnowledgeHit] = try locked {
-      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { _ = execute("ROLLBACK") }
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
+    let hits: [AgentKnowledgeHit] = try readCommitted(backgroundLease: backgroundLease) { connection in
       let modelHash = keyedHash(provenance.modelSHA256.lowercased())
-      guard try readVectorFeedStamp(modelHash: modelHash) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+      guard try readVectorFeedStamp(modelHash: modelHash, on: connection) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
       guard let row = prepare("""
         SELECT i.item_hash, i.encrypted_payload, v.vector_key, v.encrypted_payload, p.chunk_count
         FROM knowledge_vector_publications p
@@ -570,21 +645,22 @@ final class AgentKnowledgeDatabase {
         JOIN knowledge_items i ON i.item_hash = p.item_hash
         JOIN knowledge_vector_replay_rows r ON r.model_hash = p.model_hash AND r.item_hash = p.item_hash
           AND r.source_revision_hash = p.source_revision_hash
-        JOIN knowledge_vectors v ON v.vector_key = r.vector_key
+        JOIN knowledge_vectors v ON v.vector_key = r.vector_key AND v.model_hash = r.model_hash
+          AND v.item_hash = r.item_hash AND v.source_revision_hash = r.source_revision_hash
         WHERE p.model_hash = ? AND p.item_hash = ? AND p.source_revision_hash = ?
           AND p.epoch = ? AND p.sequence = ? AND p.operation = 'ready' AND r.chunk_index = ?
           AND p.sequence = (SELECT latest.sequence FROM knowledge_vector_changes latest
             WHERE latest.model_hash = p.model_hash AND latest.item_hash = p.item_hash ORDER BY latest.sequence DESC LIMIT 1) LIMIT 1
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(row) }
       var output: [AgentKnowledgeHit] = [], seen = Set<String>()
       for match in matches {
+        try Task.checkCancellation()
         guard isOpaqueHash(match.key), isOpaqueHash(match.revision), match.sequence > 0, match.ordinal >= 0,
           match.startUTF16 >= 0, match.startUTF16 < match.endUTF16,
           match.similarity.isFinite, (-1...1).contains(match.similarity) else { throw AgentKnowledgeNativeError.invalidRecord }
         if seen.contains(match.key) { continue }
-        sqlite3_reset(row)
-        sqlite3_clear_bindings(row)
+        guard sqlite3_reset(row) == SQLITE_OK, sqlite3_clear_bindings(row) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
         bind(modelHash, at: 1, to: row)
         bind(match.key, at: 2, to: row)
         bind(match.revision, at: 3, to: row)
@@ -613,7 +689,10 @@ final class AgentKnowledgeDatabase {
     }
     // A feed append or source/policy mutation racing native search invalidates
     // the entire old result batch, even if the graph's checkpoint had caught up.
-    guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+    try beforeValidation()
+    guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease) == stamp else { throw AgentKnowledgeDatabaseError.staleCursor }
+    try Task.checkCancellation()
+    guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
     return hits
   }
 
@@ -622,24 +701,40 @@ final class AgentKnowledgeDatabase {
     event: AgentKnowledgeVectorChange,
     provenance: AgentKnowledgeVectorProvenance,
     afterChunkIndex: Int = 0,
-    limit: Int = 64
+    limit: Int = 64,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease? = nil,
+    beforeValidation: () throws -> Void = {}
   ) throws -> AgentKnowledgeVectorReplayPage? {
-    try locked {
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
+    let result: (page: AgentKnowledgeVectorReplayPage?, stamp: AgentKnowledgeVectorFeedStamp) = try readCommitted(backgroundLease: backgroundLease) { connection in
+      let modelHash = keyedHash(provenance.modelSHA256.lowercased())
+      let stamp = try readVectorFeedStamp(modelHash: modelHash, on: connection)
+      let page = try readVectorReplayPage(event: event, provenance: provenance, afterChunkIndex: afterChunkIndex, limit: limit, on: connection)
+      return (page, stamp)
+    }
+    guard let page = result.page else { return nil }
+    try beforeValidation()
+    guard try vectorFeedStamp(modelSHA256: provenance.modelSHA256, backgroundLease: backgroundLease) == result.stamp else { return nil }
+    try Task.checkCancellation()
+    guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+    return page
+  }
+
+  private func readVectorReplayPage(event: AgentKnowledgeVectorChange, provenance: AgentKnowledgeVectorProvenance,
+    afterChunkIndex: Int, limit: Int, on connection: OpaquePointer) throws -> AgentKnowledgeVectorReplayPage? {
       guard event.operation == .ready, event.sequence > 0, event.chunkCount > 0,
         afterChunkIndex >= 0, afterChunkIndex < event.chunkCount,
         isOpaqueHash(event.itemHash), isOpaqueHash(event.sourceRevisionHash) else {
         throw AgentKnowledgeDatabaseError.staleCursor
       }
-      guard execute("BEGIN DEFERRED TRANSACTION") else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { _ = execute("ROLLBACK") }
-      let page = try vectorChangePage(modelSHA256: provenance.modelSHA256,
-        epoch: event.epoch, afterSequence: event.previousSequence, limit: 1)
+      let modelHash = keyedHash(provenance.modelSHA256.lowercased())
+      let page = try readVectorChangePage(modelHash: modelHash,
+        epoch: event.epoch, afterSequence: event.previousSequence, limit: 1, on: connection)
       guard page.events.first == event else { return nil }
-      let modelHash = keyedHash(provenance.modelSHA256)
       guard let latest = prepare("""
         SELECT sequence FROM knowledge_vector_changes
         WHERE model_hash = ? AND item_hash = ? ORDER BY sequence DESC LIMIT 1
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       bind(modelHash, at: 1, to: latest)
       bind(event.itemHash, at: 2, to: latest)
       let latestStatus = sqlite3_step(latest)
@@ -648,8 +743,8 @@ final class AgentKnowledgeDatabase {
       guard latestStatus == SQLITE_ROW || latestStatus == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
       guard latestStatus == SQLITE_ROW, latestSequence == event.sequence else { return nil }
       guard try hasNativePublication(modelHash: modelHash, itemHash: event.itemHash,
-        revisionHash: event.sourceRevisionHash, chunkCount: event.chunkCount) else { return nil }
-      guard let source = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1") else {
+        revisionHash: event.sourceRevisionHash, chunkCount: event.chunkCount, on: connection) else { return nil }
+      guard let source = prepare("SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1", on: connection) else {
         throw AgentKnowledgeDatabaseError.unavailable
       }
       bind(event.itemHash, at: 1, to: source)
@@ -664,7 +759,7 @@ final class AgentKnowledgeDatabase {
       guard let count = prepare("""
         SELECT COUNT(*) FROM knowledge_vector_replay_rows
         WHERE model_hash = ? AND item_hash = ? AND source_revision_hash = ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       bind(modelHash, at: 1, to: count)
       bind(event.itemHash, at: 2, to: count)
       bind(event.sourceRevisionHash, at: 3, to: count)
@@ -676,9 +771,10 @@ final class AgentKnowledgeDatabase {
       guard let statement = prepare("""
         SELECT v.vector_key, v.encrypted_payload, r.chunk_index
         FROM knowledge_vector_replay_rows r JOIN knowledge_vectors v ON v.vector_key = r.vector_key
+          AND v.model_hash = r.model_hash AND v.item_hash = r.item_hash AND v.source_revision_hash = r.source_revision_hash
         WHERE r.model_hash = ? AND r.item_hash = ? AND r.source_revision_hash = ? AND r.chunk_index >= ?
         ORDER BY r.chunk_index ASC LIMIT ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(modelHash, at: 1, to: statement)
       bind(event.itemHash, at: 2, to: statement)
@@ -689,6 +785,7 @@ final class AgentKnowledgeDatabase {
       var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
       var status = sqlite3_step(statement)
       while status == SQLITE_ROW {
+        try Task.checkCancellation()
         guard let keyText = sqlite3_column_text(statement, 0), let encrypted = blob(statement, column: 1) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
@@ -708,7 +805,6 @@ final class AgentKnowledgeDatabase {
       let next = afterChunkIndex + checkpoints.count
       return AgentKnowledgeVectorReplayPage(event: event, checkpoints: checkpoints,
         nextChunkIndex: next < event.chunkCount ? next : nil)
-    }
   }
 
   func pendingVectorItems(modelSHA256: String, limit: Int = 32) throws -> [AgentKnowledgeItem] {
@@ -756,7 +852,7 @@ final class AgentKnowledgeDatabase {
         }
         let itemHash = String(cString: hashText)
         let revision = AgentKnowledgeVectorCheckpoint.sourceRevision(for: item)
-        let checkpoints = try vectorCheckpoints(itemId: item.id, modelSHA256: modelSHA256)
+        let checkpoints = try readVectorCheckpoints(itemId: item.id, modelSHA256: modelSHA256, on: database)
         let expectedCount = checkpoints.first?.chunkCount ?? 0
         let completeIndices = expectedCount > 0 && checkpoints.count == expectedCount &&
           Set(checkpoints.map(\.chunkIndex)) == Set(0..<expectedCount)
@@ -894,17 +990,24 @@ final class AgentKnowledgeDatabase {
   }
 
   func vectorCountSnapshot(modelSHA256: String) throws -> AgentKnowledgeVectorCountSnapshot {
-    try locked {
-      let modelHash = keyedHash(modelSHA256.lowercased())
-      guard ensureVectorEnrollment(modelHash: modelHash),
-            let statement = prepare(
-              "SELECT chunks, pending, legacy FROM knowledge_vector_counts WHERE model_hash = ? LIMIT 1"
-            ) else { throw AgentKnowledgeDatabaseError.unavailable }
+    try vectorCountSnapshot(modelSHA256: modelSHA256, backgroundLease: nil)
+  }
+
+  func vectorCountSnapshot(modelSHA256: String,
+    backgroundLease: AgentKnowledgeNativeFiles.BackgroundLease?) throws -> AgentKnowledgeVectorCountSnapshot {
+    let modelHash = keyedHash(modelSHA256.lowercased())
+    guard let token = nativeFiles.readToken(backgroundLease: backgroundLease) else { throw CancellationError() }
+    func attempt() throws -> AgentKnowledgeVectorCountSnapshot? {
+      try readCommitted(backgroundLease: backgroundLease) { connection in
+      guard let statement = prepare("""
+        SELECT chunks,pending,legacy FROM knowledge_vector_counts c WHERE model_hash=?
+        AND EXISTS(SELECT 1 FROM knowledge_vector_enrollment e WHERE e.model_hash=c.model_hash) LIMIT 1
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(modelHash, at: 1, to: statement)
-      guard sqlite3_step(statement) == SQLITE_ROW else {
-        throw AgentKnowledgeDatabaseError.corruptRecord
-      }
+      let status = sqlite3_step(statement)
+      if status == SQLITE_DONE { return nil }
+      guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
       let chunks = sqlite3_column_int64(statement, 0)
       let pending = sqlite3_column_int64(statement, 1)
       let legacy = sqlite3_column_int(statement, 2)
@@ -914,9 +1017,23 @@ final class AgentKnowledgeDatabase {
       return AgentKnowledgeVectorCountSnapshot(
         chunks: chunks,
         pending: pending,
-        complete: legacy == 0 && !countMaintenancePending()
+        complete: legacy == 0 && !countMaintenancePending(on: connection)
       )
+      }
     }
+    if let value = try attempt() {
+      guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+      return value
+    }
+    try locked {
+      try Task.checkCancellation()
+      guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+      guard ensureVectorEnrollment(modelHash: modelHash) else { throw AgentKnowledgeDatabaseError.unavailable }
+    }
+    guard let value = try attempt() else { throw AgentKnowledgeDatabaseError.unavailable }
+    try Task.checkCancellation()
+    guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
+    return value
   }
 
   @discardableResult
@@ -946,43 +1063,48 @@ final class AgentKnowledgeDatabase {
     offset: Int = 0,
     limit: Int = 256
   ) throws -> [AgentKnowledgeVectorCheckpoint] {
-    try locked {
+    try readCommitted { connection in
+      guard offset <= Int(Int32.max) else { throw AgentKnowledgeDatabaseError.unavailable }
       guard let statement = prepare("""
         SELECT vector_key, encrypted_payload FROM knowledge_vectors
         WHERE model_hash = ?
         ORDER BY vector_key ASC
         LIMIT ? OFFSET ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 512)))
       sqlite3_bind_int(statement, 3, Int32(max(offset, 0)))
       var checkpoints: [AgentKnowledgeVectorCheckpoint] = []
-      while sqlite3_step(statement) == SQLITE_ROW {
+      while true {
+        try Task.checkCancellation()
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return checkpoints }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
         guard let keyText = sqlite3_column_text(statement, 0),
               let encrypted = blob(statement, column: 1) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         let key = String(cString: keyText)
         guard let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else {
+              let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext), keyedHash(checkpoint.id) == key,
+              checkpoint.provenance.modelSHA256 == modelSHA256.lowercased() else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         checkpoints.append(checkpoint)
       }
-      return checkpoints
     }
   }
 
   func vectorCatalogPage(modelSHA256: String, afterVectorKey: String? = nil, limit: Int = 256) throws -> AgentKnowledgeVectorCatalogPage {
-    try locked {
+    try readCommitted { connection in
       if let afterVectorKey, !isOpaqueHash(afterVectorKey) { throw AgentKnowledgeDatabaseError.staleCursor }
       let pageSize = min(max(limit, 1), 256)
       guard let statement = prepare("""
         SELECT vector_key, encrypted_payload FROM knowledge_vectors
         WHERE model_hash = ? AND vector_key > ?
         ORDER BY vector_key ASC LIMIT ?
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       bind(keyedHash(modelSHA256.lowercased()), at: 1, to: statement)
       bind(afterVectorKey ?? "", at: 2, to: statement)
@@ -990,13 +1112,15 @@ final class AgentKnowledgeDatabase {
       var checkpoints: [AgentKnowledgeVectorCheckpoint] = [], lastKey: String?
       var status = sqlite3_step(statement)
       while status == SQLITE_ROW {
+        try Task.checkCancellation()
         guard let text = sqlite3_column_text(statement, 0), let encrypted = blob(statement, column: 1) else {
           throw AgentKnowledgeDatabaseError.corruptRecord
         }
         let key = String(cString: text)
         guard isOpaqueHash(key), key > (lastKey ?? afterVectorKey ?? ""),
           let plaintext = try? vectorCipher.decrypt(encrypted, expectedPurpose: vectorPurpose(key)),
-          let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+          let checkpoint = try? AgentKnowledgeVectorStorage.decode(plaintext), keyedHash(checkpoint.id) == key,
+          checkpoint.provenance.modelSHA256 == modelSHA256.lowercased() else { throw AgentKnowledgeDatabaseError.corruptRecord }
         checkpoints.append(checkpoint)
         lastKey = key
         status = sqlite3_step(statement)
@@ -2052,12 +2176,12 @@ final class AgentKnowledgeDatabase {
     return false
   }
 
-  private func countMaintenancePending() -> Bool {
-    guard let statement = prepare("SELECT 1 FROM knowledge_count_scan WHERE complete = 0 LIMIT 1") else {
+  private func countMaintenancePending(on connection: OpaquePointer? = nil) -> Bool {
+    guard let statement = prepare("SELECT 1 FROM knowledge_count_scan WHERE complete = 0 LIMIT 1", on: connection) else {
       return true
     }
     defer { sqlite3_finalize(statement) }
-    return sqlite3_step(statement) == SQLITE_ROW
+    return sqlite3_step(statement) != SQLITE_DONE
   }
 
   private func advanceVectorCountScan(kind: String, pageSize: Int) throws -> Bool {
@@ -2451,15 +2575,16 @@ final class AgentKnowledgeDatabase {
     return event
   }
 
-  private func readVectorFeedStamp(modelHash: String) throws -> AgentKnowledgeVectorFeedStamp {
+  private func readVectorFeedStamp(modelHash: String, on connection: OpaquePointer? = nil) throws -> AgentKnowledgeVectorFeedStamp {
     guard let statement = prepare("""
       SELECT m.epoch, m.head_sequence, r.revision FROM knowledge_vector_feed_models m
       CROSS JOIN knowledge_browse_revision r WHERE m.model_hash = ? AND r.id = 1
         AND (SELECT value FROM knowledge_metadata WHERE key = 'native_publications_schema') = 1 LIMIT 1
-      """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
     defer { sqlite3_finalize(statement) }
     bind(modelHash, at: 1, to: statement)
-    guard sqlite3_step(statement) == SQLITE_ROW, let epoch = sqlite3_column_text(statement, 0) else {
+    guard sqlite3_step(statement) == SQLITE_ROW, let epoch = sqlite3_column_text(statement, 0),
+      sqlite3_column_type(statement, 1) == SQLITE_INTEGER, sqlite3_column_type(statement, 2) == SQLITE_INTEGER else {
       throw AgentKnowledgeDatabaseError.unavailable
     }
     let stamp = AgentKnowledgeVectorFeedStamp(epoch: String(cString: epoch), head: sqlite3_column_int64(statement, 1),
@@ -2470,13 +2595,14 @@ final class AgentKnowledgeDatabase {
     return stamp
   }
 
-  private func hasNativePublication(modelHash: String, itemHash: String, revisionHash: String, chunkCount: Int) throws -> Bool {
+  private func hasNativePublication(modelHash: String, itemHash: String, revisionHash: String, chunkCount: Int,
+    on connection: OpaquePointer? = nil) throws -> Bool {
     guard let statement = prepare("""
       SELECT 1 FROM knowledge_vector_publications p WHERE p.model_hash = ? AND p.item_hash = ?
         AND p.source_revision_hash = ? AND p.chunk_count = ? AND p.operation = 'ready'
         AND p.sequence = (SELECT c.sequence FROM knowledge_vector_changes c
           WHERE c.model_hash = p.model_hash AND c.item_hash = p.item_hash ORDER BY c.sequence DESC LIMIT 1)
-      """) else { throw AgentKnowledgeDatabaseError.unavailable }
+      """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
     defer { sqlite3_finalize(statement) }
     bind(modelHash, at: 1, to: statement)
     bind(itemHash, at: 2, to: statement)
@@ -2731,10 +2857,14 @@ final class AgentKnowledgeDatabase {
     return sqlite3_step(statement) == SQLITE_ROW ? sqlite3_column_int64(statement, 0) : -1
   }
 
-  private func prepare(_ sql: String) -> OpaquePointer? {
-    guard let database else { return nil }
+  private func prepare(_ sql: String, on connection: OpaquePointer? = nil) -> OpaquePointer? {
+    guard let database = connection ?? self.database else { return nil }
     var statement: OpaquePointer?
-    return sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK ? statement : nil
+    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else {
+      if let statement { sqlite3_finalize(statement) }
+      return nil
+    }
+    return statement
   }
 
   private func execute(_ sql: String) -> Bool {
