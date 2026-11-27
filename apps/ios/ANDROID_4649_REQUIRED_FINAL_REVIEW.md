@@ -1,9 +1,9 @@
 # Required Final Review and Local Plan Wire (Android #4649)
 
 Baseline: Android PR #4649, merge `2ec1d7d3353c46443303612f895ffce33ef953f5`.
-This iOS increment depends only on the already merged temporary-team/final-audit
-foundations, not on the pending cloud-invitation or public-objection PRs. Later
-model-authored final-editor behavior is separate.
+This increment was developed independently of the cloud-invitation and public-
+objection PRs. Merging their main updates preserves both alongside this change.
+Later model-authored final-editor behavior is separate.
 
 ## Explicit Final Review
 

@@ -8068,7 +8068,7 @@
 "galaxyssi.conversation_team.queued" = "团队已按确认模型排队。";
 "galaxyssi.conversation_team.calls" = "已预留 %lld / 12 次模型调用";
 "galaxyssi.conversation_team.receipt" = "%lld 个角色 / %lld 次模型调用";
-"galaxyssi.conversation_team.disagreements" = "独立分歧意见";
+"galaxyssi.conversation_team.disagreements" = "公开异议（模型保留意见，不是计算结论）：";
 "galaxyssi.conversation_team.interrupted" = "团队已中断，结果不确定的请求没有重新执行。";
 "galaxyssi.conversation_team.failed" = "已确认的模型未能完成此团队任务，不会自动重试请求。";
 "galaxyssi.conversation_team.stopped" = "团队已停止，之后到达的结果不会发布。";
@@ -8087,7 +8087,7 @@
 "galaxyssi.conversation_team.none" = "无";
 "galaxyssi.conversation_team.limitation" = "证据限制：";
 "galaxyssi.conversation_team.withheld" = "审核者已拒绝发布草稿：";
-"galaxyssi.conversation_team.table_mismatch" = "审核者未确认来源表格，仅显示确定性比较结果：";
+"galaxyssi.conversation_team.table_mismatch" = "审核未确认来源表格，下方将宿主计算值与模型保留意见分开列出：";
 "galaxyssi.conversation_team.table_input" = "输入";
 "galaxyssi.conversation_team.table_gate" = "门槛";
 "galaxyssi.conversation_team.pattern_final_audit" = "(?:^|请|并|再|然后|需要)(?:安排|进行|做一次)?独立(?:审核|复核|审查|评审)(?:一下)?(?:最后|最终)(?:的)?(?:答复|答案|回复|结论|报告|草稿)";

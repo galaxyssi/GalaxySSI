@@ -15,6 +15,92 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutoGoalTeamEngineTest {
+    @Test fun rewriteMustReachTheSameIndependentEditorAndCanStillBeVetoed() = runBlocking {
+        for (mode in listOf("approve", "reject", "ambiguous", "duplicate", "cut-review", "cut-rewrite", "unchanged", "cancel", "offline", "blank", "oversized")) {
+            val draft = "Confirmed on Friday."
+            val changed = "Friday is provisional."
+            val objection = "No confirmation."
+            val fake = Fake(plan("WORK|-|Check availability", "REVIEW|-|Audit booking")) { p ->
+                when (p.getString("stage")) {
+                    "role" -> """{"finding":"A private-to-the-writer finding.","dissent":"Still unresolved."}"""
+                    "synthesis" -> JSONObject().put("answer", draft).toString()
+                    "audit" -> JSONObject().put("verdict", "revise").put("objection", objection).put("answer", draft).toString()
+                    "rewrite" -> {
+                        assertEquals(draft, p.getString("draft"))
+                        assertEquals(objection, p.getString("objection"))
+                        assertEquals("A private-to-the-writer finding.", p.getJSONArray("reports").getJSONObject(0).getString("finding"))
+                        if (mode == "cancel") throw CancellationException()
+                        if (mode == "cut-rewrite") """{"answer":"""
+                        else JSONObject().put("answer", if (mode == "unchanged") "Confirmed  on Friday." else changed).toString()
+                    }
+                    "recheck" -> {
+                        assertEquals("role2", p.getString("id"))
+                        assertEquals(draft, p.getString("rejected_draft"))
+                        assertEquals(changed, p.getString("draft"))
+                        assertEquals(objection, p.getString("objection"))
+                        assertEquals(0, p.getJSONArray("reports").length())
+                        assertEquals("Still unresolved.", p.getJSONArray("additional_objections").getJSONObject(0).getString("dissent"))
+                        when (mode) {
+                            "approve" -> """{"verdict":"accept"}"""
+                            "reject" -> """{"verdict":"withhold","objection":"No support for Friday."}"""
+                            "duplicate" -> """{"verdict":"withhold","verdict":"accept"}"""
+                            "cut-review" -> """{"verdict":"accept""""
+                            "offline" -> throw IOException("fixture offline")
+                            "blank" -> ""
+                            "oversized" -> "x".repeat(1500)
+                            else -> """{"verdict":"accept","objection":"But maybe not."}"""
+                        }
+                    }
+                    else -> error("unexpected stage")
+                }
+            }
+            val run = runCatching { fake.run() }
+            assertEquals(mode, if (mode in listOf("unchanged", "cut-rewrite", "cancel")) 5 else 6, fake.calls.size)
+            if (mode == "approve") {
+                assertTrue(changed in run.getOrThrow() && objection in run.getOrThrow() && draft !in run.getOrThrow())
+            } else if (mode == "cancel") {
+                assertTrue(run.exceptionOrNull() is CancellationException)
+            } else {
+                val held = run.exceptionOrNull() as TeamAnswerWithheld
+                assertEquals(if (mode == "reject") "No support for Friday." else objection, held.reservation)
+                assertFalse("Team completed." in fake.events)
+            }
+        }
+    }
+
+    @Test fun handbackFundsBothTurnsOrNeither() = runBlocking {
+        for (roles in 8..10) {
+            val jobs = (1 until roles).map { "WORK|-|Check item $it" } + "REVIEW|-|Final check"
+            val fake = Fake(plan(*jobs.toTypedArray())) { p ->
+                when (p.getString("stage")) {
+                    "role" -> report("Found.")
+                    "synthesis" -> """{"answer":"Initial"}"""
+                    "audit" -> """{"verdict":"revise","objection":"Disputed","answer":"Initial"}"""
+                    "rewrite" -> """{"answer":"Changed"}"""
+                    "recheck" -> """{"verdict":"accept"}"""
+                    else -> error("unexpected stage")
+                }
+            }
+            val run = runCatching { fake.run() }
+            assertEquals(if (roles == 8) 12 else roles + 2, fake.calls.size)
+            if (roles == 8) assertTrue(run.getOrThrow().startsWith("Changed"))
+            else assertEquals("Disputed", (run.exceptionOrNull() as TeamAnswerWithheld).reservation)
+        }
+    }
+
+    @Test fun trimmingLegacyDraftIsNotAnEditorialCorrection() = runBlocking {
+        val fake = Fake(plan("REVIEW|-|Final check")) { p ->
+            when (p.getString("stage")) {
+                "synthesis" -> "  Initial response\nEND"
+                "audit" -> """{"verdict":"revise","objection":"Not supported","answer":"Initial response"}"""
+                "rewrite" -> """{"answer":"Initial response"}"""
+                else -> error("unexpected stage")
+            }
+        }
+        assertEquals("Not supported", (runCatching { fake.run() }.exceptionOrNull() as TeamAnswerWithheld).reservation)
+        assertEquals(listOf("plan", "synthesis", "audit", "rewrite"), fake.calls)
+    }
+
     @Test fun finalEditorIsAnAllocatedRoleAndItsDecisionIsNotAnotherSynthesis() = runBlocking {
         val jobs = (1..9).map { "WORK|-|Evaluate item $it" } + "REVIEW|2,5|Audit edge cases"
         val fake = Fake(plan(*jobs.toTypedArray())) { request ->

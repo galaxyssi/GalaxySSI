@@ -17,9 +17,8 @@ enum AgentConversationalTeamEngine {
     let roleCount: Int
     let correction: String?
     func publicText(disagreementsTitle: String, correctionTitle: String = "Reviewer correction:") -> String {
-      let dissent = reports.compactMap { report in report.dissent.map { "- [\(report.role.id)] \($0)" } }
       return answer + (correction.map { "\n\n" + correctionTitle + "\n" + $0 } ?? "") +
-        (dissent.isEmpty ? "" : "\n\n" + disagreementsTitle + "\n" + dissent.joined(separator: "\n"))
+        Contract.renderObjections(reports.compactMap(\.objection), title: disagreementsTitle)
     }
   }
   nonisolated private static func input(_ stage: String, objective: String, fields: [String: Any] = [:]) throws -> String {
@@ -97,6 +96,7 @@ enum AgentConversationalTeamEngine {
         guard let report = reports[role.id] else { throw Contract.Failure.stalled }
         return report
       }
+      let objections = ordered.compactMap(\.objection)
       try Task.checkCancellation()
       onEvent(.synthesizing); try reserveCall()
       var fields: [String: Any] = ["brief": plan.synthesis, "reports": ordered.map(\.json)]
@@ -111,12 +111,21 @@ enum AgentConversationalTeamEngine {
         }
         var auditFields: [String: Any] = ["id": editor.id, "kind": editor.kind.rawValue, "assignment": editor.assignment,
           "reports": parents, "draft": draft]
+        let additional = objections.filter { !editor.parents.contains($0.id) }
+        if !additional.isEmpty { auditFields["additional_objections"] = additional.map(\.json) }
         if let worksheet { auditFields["verified_table"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(worksheet.evidence)) }
         let index = (plan.roles.firstIndex(of: editor) ?? 0) + 1
         onEvent(.auditing(index, plan.roles.count)); try reserveCall()
         let raw = try await call(worksheet == nil ? AgentTeamDraftAudit.system : AgentTeamDraftAudit.tableSystem,
           input: input("audit", objective: objective, fields: auditFields), limit: 17_300, ask: ask)
-        let reviewed = try AgentTeamDraftAudit.parse(raw, draft: draft, sheet: worksheet, labels: labels)
+        let reviewed: AgentTeamDraftAudit.Result
+        do { reviewed = try AgentTeamDraftAudit.parse(raw, draft: draft, sheet: worksheet, labels: labels) }
+        catch let issue as AgentTeamDraftAudit.Failure {
+          switch issue {
+          case .withheld, .tableMismatch: throw AgentTeamDraftAudit.Rejected(issue: issue, objections: objections)
+          case .invalid: throw issue
+          }
+        }
         answer = reviewed.answer; correction = reviewed.correction
         onEvent(.roleCompleted(index, plan.roles.count, editor.kind))
       }

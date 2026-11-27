@@ -57,7 +57,7 @@ final class CloudModelStreamProviderAdaptersTests: XCTestCase {
     XCTAssertEqual(frame.textDeltas, ["hello"])
     XCTAssertEqual(
       frame.toolDeltas,
-      [ToolCallPayload(callId: "call-1", index: 0, nameDelta: "search", argumentsDelta: #"{"q":"sig"}"#)]
+      [ToolCallPayload(callId: "call-1", index: 0, nameDelta: "search", argumentsDelta: #"{"q":"sig"}"#, singleNativeFunction: true)]
     )
     XCTAssertEqual(frame.usage, ModelUsage(inputTokens: 7, outputTokens: 3, cachedInputTokens: 2))
     XCTAssertEqual(frame.finishReason, "tool_calls")

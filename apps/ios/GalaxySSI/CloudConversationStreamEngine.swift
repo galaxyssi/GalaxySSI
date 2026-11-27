@@ -375,6 +375,12 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
       if let recovery {
         evidenceResults = await recovery.restore(into: &prepared, progress: progress, budget: research, ledger: evidencePromptLedger)
       }
+      let review = await MainActor.run { () -> AgentPinnedCloudTeamAdmission.Invitation? in
+        guard images.isEmpty, collaborationRecallScope == nil, !isolatedWork, !goalAssessmentOnly,
+          trial == nil, researchRetrySource == nil, evidenceResults.isEmpty,
+          turns.last?.isMine == true, turns.last?.readOnlyAnalysis == false else { return nil }
+        return AgentPinnedCloudTeamAdmission.invitation(store: store, contact: contact, conversation: conversationId, turn: turnId)
+      }
       var round = 0
       var useCompleteJSON = trial != nil
 
@@ -401,12 +407,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           finalInstruction: goalAssessmentOnly ? CloudModelStreamMutableConversation.goalAssessmentFinalInstruction : nil)
         var roundRequest = useCompleteJSON
           ? try CloudConversationNonStreamingToolEngine.compatibilityRequest(preparedRound) : preparedRound
+        var reviewAdvertised = false
+        if currentRound == 0, let review, await review.current(store) {
+          let offered = try AgentPinnedCloudTeamOffer.advertise(roundRequest)
+          reviewAdvertised = offered.bodyJson != roundRequest.bodyJson; roundRequest = offered
+        }
         if trial != nil {
           roundRequest.singleHTTPAdmissionSHA256 = try CloudTrialHTTPTransport.WireRequest(
             URLSessionCloudModelStreamClient.urlRequest(for: roundRequest)).sha256
         }
         roundTiming.request(inputCharacters: roundRequest.bodyJson.utf16.count)
         let assembler = ToolCallDeltaAssembler()
+        var reviewFrames = AgentPinnedCloudTeamOffer.Frames()
         let inlineProtocolGuard = InlineToolProtocolStreamGuard()
         var roundCompleted = false
         var roundFailure: ModelStreamFailed?
@@ -490,6 +502,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
               case .toolCallDelta(let value):
                 roundTiming.activity(.tool)
+                if value.requestId == roundRequest.requestId { reviewFrames.observe(value.payload) } else { reviewFrames.reject() }
                 assembler.accept(value.payload)
                 emittedSequence += 1
                 continuation.yield(
@@ -511,6 +524,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
 
               case .completed(let value):
+                if value.requestId != roundRequest.requestId { reviewFrames.reject() }
                 roundCompleted = true
                 reportedModel = value.reportedModel
                 lastFinishReason = value.finishReason
@@ -646,7 +660,31 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         let rawRoundText = inlineProtocolGuard.rawText()
         let structuredCalls = assembler.completedCalls()
+        if structuredCalls.contains(where: { $0.name == AgentPinnedCloudTeamOffer.name }) {
+          try Task.checkCancellation()
+          guard reviewAdvertised, currentRound == 0, let review,
+            let answer = AgentPinnedCloudTeamOffer.answer(structuredCalls, frames: reviewFrames,
+              finish: lastFinishReason, hasText: !rawRoundText.isBlank),
+            await review.accept(answer, store: store) else {
+            AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)
+            continuation.yield(.failed(.init(requestId: requestId,
+              error: .init(code: AgentPinnedCloudTeamOffer.invalidCode, message: "Invalid structured final answer"))))
+            continuation.finish(); return
+          }
+          emittedSequence += 1
+          continuation.yield(.textDelta(.init(requestId: requestId, sequence: emittedSequence, text: answer, receivedAtElapsedMs: elapsedMillis())))
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+          continuation.yield(.completed(.init(requestId: requestId, finishReason: lastFinishReason, completedAtElapsedMs: elapsedMillis())))
+          continuation.finish(); return
+        }
         let inlineCalls = CloudWebGrounding.parseInlineToolCalls(rawRoundText)
+        if inlineCalls.contains(where: { $0.name == AgentPinnedCloudTeamOffer.name }) {
+          // This response encoding is never callable through the inline tool protocol.
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)
+          continuation.yield(.failed(.init(requestId: requestId,
+            error: .init(code: AgentPinnedCloudTeamOffer.invalidCode, message: "No native final-answer frame"))))
+          continuation.finish(); return
+        }
         let usesInlineProtocol = structuredCalls.isEmpty && !inlineCalls.isEmpty
         let calls = usesInlineProtocol
           ? inlineCalls.enumerated().map { index, call in
