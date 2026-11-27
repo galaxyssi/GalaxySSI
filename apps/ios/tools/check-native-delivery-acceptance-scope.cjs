@@ -2,7 +2,8 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'b580f85d6bd0a0a7323cf075dd9b6cd86bd75aa1';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-active-native-observation-scope.cjs').retained(file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -23,6 +24,7 @@ const callback = `      }, recordManagedTransportAccepted: { [weak self] event, 
 const policyAnchor = '\n// Only the authenticated, durably journaled message-delivery completion may call this policy.\n';
 const testAnchor = '// Journal native-delivery acceptance fixtures; source only unless executed by XCTest.\n';
 function retained(file, source) {
+  source = require('./check-active-native-observation-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSIServices.swift') && source.includes('  private func recordNativeConnectorTransportAccepted(')) return source
     .replace(section(source, '  private func recordNativeConnectorTransportAccepted(', '  private func preserveNativeConnectorObservation('), '')
     .replace(callback, '');
