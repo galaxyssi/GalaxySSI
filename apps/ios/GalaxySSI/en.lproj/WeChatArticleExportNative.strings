@@ -3,3 +3,6 @@
 "ios_wechat_already_saving" = "A WeChat article is already being saved. Finish or cancel that export before trying again.";
 "ios_wechat_archive_notice" = "GalaxySSI static web archive. Text and image order is preserved; scripts and interactions are disabled. Unsaved images: %1$lld. Fonts and decorations may be missing. Source: %2$@";
 "ios_wechat_load_failed" = "The article could not be loaded. No PDF was saved.";
+"original_page_archive_image" = "[Image not saved offline]";
+"original_page_archive_media" = "[Dynamic media not saved offline]";
+"original_page_archive_notice" = "GalaxySSI static web archive. Original text and image order is retained; scripts and interactions are disabled. Missing assets: %1$lld. Fonts, decorations and unloaded content may be incomplete. Source: %2$@";

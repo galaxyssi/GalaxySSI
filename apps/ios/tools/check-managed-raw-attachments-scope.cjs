@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/', base = '4f4406c3bc2e8a58c0ef0e9be2ad2de9f214447e';
 const read = file => require('./check-native-rich-reply-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+  require('./check-mqtt-inbound-timing-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')));
 const originals = new Map();
 const old = file => {
   if (!originals.has(file)) originals.set(file, cp.execFileSync('git', ['show', `${base}:${file}`],
@@ -20,6 +20,7 @@ const fields = [
   '  var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil\n'
 ];
 function retained(file, source) {
+  source = require('./check-mqtt-inbound-timing-scope.cjs').retained(file, source);
   source = require('./check-native-rich-reply-scope.cjs').retained(file, source);
   if (file.endsWith('check-native-status-observation-scope.cjs') || file.endsWith('check-connector-document-input-scope.cjs')) return source
     .replace("const read = file => require('./check-managed-raw-attachments-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",

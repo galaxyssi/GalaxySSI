@@ -2674,7 +2674,7 @@ object GalaxySSIMqttClient {
                     val removed = DesktopPairingLifecycle.remove(context, desktopId)
                     json.put("revoked_contact_ids", JSONArray(removed.contactIds))
                 } else {
-                    AppStore.deleteContact(context, "hermes", deleteMessages = true)
+                    AppStore.deleteContact(context, "hermes", deleteMessages = false)
                 }
                 setSecureReady(GalaxySSILinkProtocol.allServerLinks(context).any { it.paired })
                 true

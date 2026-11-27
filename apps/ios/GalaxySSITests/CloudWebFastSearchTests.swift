@@ -40,7 +40,7 @@ final class CloudWebFastSearchTests: XCTestCase {
     XCTAssertEqual(native["profile"], .string("balanced"))
     XCTAssertNil(native["engine_fanout"])
     let image = CloudWebGrounding.normalizeArguments(name: "web_image_search", arguments: ["query": .string("photo"), "max_results": .int(1)])
-    XCTAssertEqual(image["limit"], .int(6))
+    XCTAssertEqual(image["limit"], .int(1))
     XCTAssertEqual(image["profile"], .string("fast"))
     XCTAssertEqual(image["engine_fanout"], .int(3))
     XCTAssertEqual(image["verticals"], .array([.string("image")]))

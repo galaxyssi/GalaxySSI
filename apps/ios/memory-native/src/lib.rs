@@ -159,6 +159,33 @@ pub unsafe extern "C" fn gs_memory_node_count(handle: i64, count: *mut u64) -> i
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn gs_memory_records_partitioned(handle: i64, complete: *mut u8) -> i32 {
+    boundary(|| {
+        if !aligned(complete) { return Err("Invalid layout output".into()); }
+        unsafe { complete.write(0); }
+        owner::access(handle, |engine| {
+            let value = engine.index.records_partitioned().checked()?;
+            unsafe { complete.write(u8::from(value)); }
+            Ok(())
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn gs_memory_migrate_records(handle: i64, limit: u32, complete: *mut u8) -> i32 {
+    boundary(|| {
+        if !aligned(complete) { return Err("Invalid migration output".into()); }
+        unsafe { complete.write(0); }
+        if !(1..=256).contains(&limit) { return Err("Invalid migration page size".into()); }
+        owner::access(handle, |engine| {
+            let value = engine.index.migrate_records(limit as usize).checked()?;
+            unsafe { complete.write(u8::from(value)); }
+            Ok(())
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn gs_memory_cancel(handle: i64) -> i32 { boundary(|| owner::cancel(handle)) }
 
 #[unsafe(no_mangle)]

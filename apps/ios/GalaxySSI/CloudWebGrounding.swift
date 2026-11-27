@@ -274,6 +274,8 @@ enum CloudWebGrounding {
       "if the requested day is unavailable, never substitute today's data. For pictures, make one exact-subject " +
       "image search, preserve the requested visual medium such as drawing or photo, pass the requested count as " +
       "max_results, and only search again when relevant evidence is missing. " +
+      "Finding or showing existing pictures is retrieval, not a request to generate new artwork. Generate or edit " +
+      "images only when the user requests creation or transformation; do not substitute fan art for existing images. " +
       "For image-only replies, put a short neutral caption only in each Markdown image alt text; do not repeat captions " +
       "as a list or claim visual details that were not verified. Never infer an unknown update time from today's date. " +
       "Return a normal final answer after tool use. Never invent links or print tool-call markup." +
@@ -867,7 +869,7 @@ enum CloudWebGrounding {
     var result = arguments
     if name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "web_image_search" {
       return ["query": result["query"] ?? .string(""),
-        "limit": .int(min(max(result["max_results"]?.intValue ?? 12, 6), 12)),
+        "limit": .int(min(max(result["max_results"]?.intValue ?? 3, 1), 12)),
         "profile": .string("fast"), "verticals": .array([.string("image")]), "engine_fanout": .int(3)]
     }
     if operation(forToolName: name) == .search {

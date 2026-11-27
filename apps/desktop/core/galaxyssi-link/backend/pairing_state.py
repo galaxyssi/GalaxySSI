@@ -1,6 +1,7 @@
 """One-time rendezvous sessions and opaque relationship registry."""
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import secrets
@@ -77,6 +78,36 @@ def _empty_state() -> dict:
         "clients": {},
         "updated_at": time.time(),
     }
+
+
+def _history_owner(local: str, remote: str) -> str:
+    return hashlib.sha256(f"{local.lower()}:{remote.lower()}".encode("utf-8")).hexdigest()
+
+
+def _remember_history_owner(state: dict, route: str, client: dict) -> None:
+    local, remote = client.get("local_identity_fingerprint"), client.get("identity_fingerprint")
+    if local and remote:
+        state.setdefault("history_owners", {})[route] = _history_owner(local, remote)
+
+
+def accepts_history_owner(route: str, local: str, remote: str) -> bool:
+    owner = _read_state().get("history_owners", {}).get(route)
+    return not owner or owner == _history_owner(local, remote)
+
+
+def history_routes(route: str) -> list[str]:
+    """Local display scope only. Never use archived routes to deliver messages."""
+    return _history_routes(_read_state(), route)
+
+
+def _history_routes(state: dict, route: str) -> list[str]:
+    active = state["clients"].get(route)
+    if not active or active.get("revoked"):
+        return [route]
+    owner = _history_owner(active["local_identity_fingerprint"], active["identity_fingerprint"])
+    return [route] + [old for old, value in state.get("history_owners", {}).items()
+                      if old != route and value == owner and
+                      (old not in state["clients"] or state["clients"][old].get("revoked"))]
 
 
 def _backup_path() -> Path:
@@ -352,6 +383,15 @@ def record_pairing_success(
     with _registry_lock:
         state = _read_state()
         previous = state["clients"].get(route_id, {})
+        owner = state.get("history_owners", {}).get(route_id)
+        if owner and owner != _history_owner(local_identity_fingerprint, fingerprint):
+            raise ValueError("route belongs to another archived identity")
+        if previous and any(
+            not secrets.compare_digest(str(previous.get(key) or "").lower(), value.lower())
+            for key, value in (("identity_fingerprint", fingerprint),
+                               ("local_identity_fingerprint", local_identity_fingerprint))
+        ):
+            raise ValueError("route belongs to another paired identity")
         now = time.time()
         access = normalize_grant(access_grant or grant_for_executor(False))
         retained_user_alias = bool(user_renamed or previous.get("user_renamed"))
@@ -503,6 +543,7 @@ def revoke_client(client_route_id: str, reason: str = "forgotten_by_desktop") ->
         if not isinstance(client, dict):
             return None
         client["revoked"] = True
+        _remember_history_owner(state, client_route_id, client)
         client["revoked_at"] = time.time()
         client["revoke_reason"] = reason
         client["updated_at"] = client["revoked_at"]
@@ -524,6 +565,7 @@ def forget_client(client_route_id: str) -> bool:
         state = _read_state()
         present = route_id in state["clients"]
         if present:
+            _remember_history_owner(state, route_id, state["clients"][route_id])
             state["clients"].pop(route_id, None)
             state["updated_at"] = time.time()
             _write_state(state)
@@ -540,6 +582,8 @@ def clear_pairing_state(client_route_id: str = "") -> dict:
         with _registry_lock:
             state = _read_state()
             routes = list(state["clients"])
+            for route, client in state["clients"].items():
+                _remember_history_owner(state, route, client)
             state["clients"] = {}
             state["updated_at"] = time.time()
             _write_state(state)
@@ -554,7 +598,10 @@ def is_paired(client_route_id: str = "") -> bool:
 
 
 def pairing_status() -> dict:
-    clients = [public_client_status(client) for client in list_clients()]
+    state = _read_state()
+    clients = [dict(public_client_status(client_status(value)), history_route_ids=_history_routes(state, route))
+               for route, value in state["clients"].items() if not value.get("revoked")]
+    clients.sort(key=lambda item: float(item.get("paired_at") or 0))
     return {
         "paired": bool(clients),
         "state": "paired" if clients else ("waiting_for_scan" if token_status()["active"] else "not_paired"),

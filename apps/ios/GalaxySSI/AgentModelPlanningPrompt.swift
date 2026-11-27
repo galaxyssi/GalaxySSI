@@ -93,6 +93,11 @@ enum AgentModelPlanningPrompt {
     }
     var context = ""
     AgentPlanningTiming.measure("context") {
+      if let snapshot = request.knowledgeStats,
+         let stats = AgentKnowledgeStatisticsContext.capture(for: request, read: { snapshot }) {
+        let metadata = AgentKnowledgeStatisticsContext.parameters(stats).mapValues { AgentMcpJSONValue.string($0) }
+        append(&context, "Knowledge statistics (metadata only; not retrieval evidence): " + AgentMcpJSONCodec.stringify(metadata) + "\n")
+      }
       appendGlobalRealtimeContext(to: &context, request: request)
     }
     appendScreenSummary(to: &context, request: request)

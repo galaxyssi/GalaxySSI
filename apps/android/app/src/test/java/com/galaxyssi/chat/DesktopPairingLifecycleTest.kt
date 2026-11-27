@@ -9,6 +9,17 @@ import org.junit.Test
 
 class DesktopPairingLifecycleTest {
     @Test
+    fun archivedConversationOnlyReopensForItsVerifiedFingerprint() {
+        val contact = JSONObject().put("id", "desktop-a").put("desktop_name", "Home")
+        assertTrue(DesktopPairingLifecycle.preserveAsHistory(contact, "desktop-a"))
+        assertFalse(DesktopPairingLifecycle.canRestoreHistory(contact, "Home"))
+        contact.put("desktop_fingerprint", "aa".repeat(32))
+        assertFalse(DesktopPairingLifecycle.canRestoreHistory(contact, null))
+        assertFalse(DesktopPairingLifecycle.canRestoreHistory(contact, "ab".repeat(32)))
+        assertTrue(DesktopPairingLifecycle.canRestoreHistory(contact, "AA".repeat(32)))
+    }
+
+    @Test
     fun matchesDeviceAndAgentContactsOwnedByOneDesktop() {
         val desktopId = "desktop-t14"
 

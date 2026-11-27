@@ -42,6 +42,7 @@ struct MqttDesktopConnectorProjection {
   var managedAttachmentSourceIsCurrent: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) -> Bool)? = nil
   var resolveCodexReplayOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
   var receiveAnswerPreview: (([String: Any], String, String) -> Void)? = nil
+  var recordManagedTransportAccepted: ((MqttDeliveryCompletions.Event, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> Void)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&
@@ -377,7 +378,12 @@ struct MqttDesktopConnectorProjection {
           event.traffic == MqttMultipathPolicy.Traffic.message.rawValue, event.attachmentTransferID.isEmpty,
           let identity = identities.identity(contactId: contact.id, sourceMessageId: event.sourceMessageID),
           identity.clientRouteId == target.routeId else { throw MqttRouteError.identityChanged }
-    guard let id = UUID(uuidString: event.sourceMessageID) else { return }
+    guard let id = UUID(uuidString: event.sourceMessageID) else {
+      guard let source = Int64(event.sourceMessageID), source > 0, String(source) == event.sourceMessageID,
+            let recordManagedTransportAccepted else { throw MqttDeliveryDispatch.Failure.unavailable }
+      try recordManagedTransportAccepted(event, identity, target)
+      return
+    }
     guard let owner = try taskOwner(source: event.sourceMessageID, id: id, contact: contact, target: target),
           owner.team == nil
     else { return }

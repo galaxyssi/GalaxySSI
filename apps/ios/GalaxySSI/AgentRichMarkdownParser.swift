@@ -342,6 +342,15 @@ enum AgentMarkdownArtifactReferences {
     return nil
   }
 
+  fileprivate static func imageWrapper(_ text: String, from start: String.Index,
+                                       imageEnd: String.Index) -> (destination: String, end: String.Index)? {
+    let characters = Array(text[start...])
+    guard characters.first == "[", let labelEnd = markdownLabelEnd(characters, at: 0),
+          labelEnd == text.distance(from: start, to: imageEnd),
+          let link = markdownLink(characters, at: 0) else { return nil }
+    return (link.destination, text.index(start, offsetBy: link.end))
+  }
+
   private static func citationReferenceEnd(_ value: [Character], at start: Int) -> Int? {
     let label = value[start] == "!" ? start + 1 : start
     guard label < value.count, value[label] == "[",
@@ -578,27 +587,13 @@ extension AgentRichContentCodec {
       var sourceURL: String?
       if marker.lowerBound > text.startIndex {
         let opening = text.index(before: marker.lowerBound)
-        if text[opening] == "[", imageEnd < text.endIndex, text[imageEnd] == "]" {
-          let sourceOpen = text.index(after: imageEnd)
-          if sourceOpen < text.endIndex, text[sourceOpen] == "(" {
-            let sourceStart = text.index(after: sourceOpen)
-            var sourceCursor = sourceStart
-            let sourceAngled = sourceCursor < text.endIndex && text[sourceCursor] == "<"
-            if sourceAngled { sourceCursor = text.index(after: sourceCursor) }
-            let valueStart = sourceCursor
-            while sourceCursor < text.endIndex,
-                  text[sourceCursor] != (sourceAngled ? ">" : ")") {
-              sourceCursor = text.index(after: sourceCursor)
-            }
-            let value = String(text[valueStart..<sourceCursor]).replacingOccurrences(of: "&amp;", with: "&")
-            if sourceCursor < text.endIndex, sourceAngled {
-              sourceCursor = text.index(after: sourceCursor)
-            }
-            if sourceCursor < text.endIndex, text[sourceCursor] == ")", isSafeMarkdownImageURL(value) {
-              promotedStart = opening
-              promotedEnd = text.index(after: sourceCursor)
-              sourceURL = value
-            }
+        if text[opening] == "[",
+           let wrapper = AgentMarkdownArtifactReferences.imageWrapper(text, from: opening, imageEnd: imageEnd) {
+          let value = wrapper.destination.replacingOccurrences(of: "&amp;", with: "&")
+          if isSafeMarkdownImageURL(value) {
+            promotedStart = opening
+            promotedEnd = wrapper.end
+            sourceURL = value
           }
         }
       }

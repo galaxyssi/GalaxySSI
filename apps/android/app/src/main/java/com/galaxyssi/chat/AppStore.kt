@@ -533,15 +533,35 @@ object AppStore {
         ensureInitialized(appContext)
         val link = GalaxySSILinkProtocol.serverLink(appContext, desktopId) ?: return false
         if (fingerprint.isBlank() || !link.desktopFingerprint.equals(fingerprint, ignoreCase = true)) return false
-        val contacts = contacts(appContext)
-        var changed = false
-        for (index in 0 until contacts.length()) {
-            val contact = contacts.optJSONObject(index) ?: continue
-            if (DesktopPairingLifecycle.preserveAsHistory(contact, link.desktopId)) changed = true
+        DesktopPairingLifecycle.remove(appContext, link.desktopId)
+        return true
+    }
+
+    @Synchronized
+    internal fun archiveDesktopContacts(context: Context, desktopId: String): Set<String> {
+        val entries = contacts(context)
+        val archived = linkedSetOf<String>()
+        for (index in 0 until entries.length()) {
+            val contact = entries.optJSONObject(index) ?: continue
+            if (DesktopPairingLifecycle.preserveAsHistory(contact, desktopId)) {
+                archived.add(contact.optString("id").ifBlank { galaxyssiIdOf(contact) })
+            }
         }
-        if (changed) writeArray(appContext, KEY_CONTACTS, contacts)
-        // The standard client_revoked packet deletes the Desktop's message history.
-        DesktopPairingLifecycle.disconnectTransport(appContext, link.desktopId)
+        if (archived.isNotEmpty()) writeArray(context, KEY_CONTACTS, entries)
+        return archived
+    }
+
+    @Synchronized
+    internal fun clearPairedDesktopLocalHistory(context: Context, desktopId: String, fingerprint: String): Boolean {
+        val link = GalaxySSILinkProtocol.serverLink(context, desktopId) ?: return false
+        if (!link.paired || fingerprint.isBlank() || !link.desktopFingerprint.equals(fingerprint, ignoreCase = true)) return false
+        val entries = contacts(context)
+        for (index in 0 until entries.length()) {
+            val contact = entries.optJSONObject(index) ?: continue
+            if (!DesktopPairingLifecycle.belongsToDesktop(contact, desktopId)) continue
+            val id = contact.optString("id").ifBlank { galaxyssiIdOf(contact) }
+            if (id.isNotBlank()) removeChatHistory(context, id)
+        }
         return true
     }
 
@@ -901,10 +921,13 @@ object AppStore {
         val fingerprint = payload.optString("desktop_fingerprint")
             .ifBlank { payload.optString("identity_key_sha256") }
             .ifBlank { payload.optString("identity_fingerprint") }
+            .ifBlank { link.desktopFingerprint }
         val contacts = contacts(context)
         val existing = findContactByGalaxySSIId(contacts, desktopId)
         val contact = existing ?: JSONObject()
-        if (DesktopPairingLifecycle.isHistoryOnly(contact) && !link.paired) return false
+        if (desktopId != link.desktopId || !DesktopPairingLifecycle.canRestoreHistory(
+                contact, link.desktopFingerprint.takeIf { link.paired && it.equals(fingerprint, ignoreCase = true) }
+            )) return false
         DesktopPairingLifecycle.clearHistoryOnly(contact)
         if (!contact.optBoolean("user_renamed", false)) {
             contact.put("name", defaultName)
@@ -974,9 +997,11 @@ object AppStore {
                 val contact = contacts.optJSONObject(j) ?: continue
                 val contactId = contact.optString("id").ifBlank { galaxyssiIdOf(contact) }
                 if (contactId != id && galaxyssiIdOf(contact) != id) continue
-                if (!DesktopPairingLifecycle.isHistoryOnly(contact) ||
-                    GalaxySSILinkProtocol.serverLink(context, desktopId)?.paired == true
-                ) {
+                if (!DesktopPairingLifecycle.isHistoryOnly(contact) || DesktopPairingLifecycle.canRestoreHistory(
+                        contact, GalaxySSILinkProtocol.serverLink(context, desktopId)?.takeIf {
+                            it.paired && it.desktopFingerprint.equals(fingerprint, ignoreCase = true)
+                        }?.desktopFingerprint
+                    )) {
                     DesktopPairingLifecycle.clearHistoryOnly(contact)
                     applyConnectorAgentStatus(context, contact, agent, id, now, desktopId, desktopName, fingerprint, agentId)
                     changed = true

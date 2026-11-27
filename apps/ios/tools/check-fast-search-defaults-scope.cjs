@@ -3,7 +3,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '912a8a07e063d3cc7da77f153f017d20fbed5304';
 const clean = value => value.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => require('./check-image-request-count-scope.cjs').retained(file, clean(fs.readFileSync(path.join(root, file), 'utf8')));
 const show = (ref, file) => clean(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function section(source, first, last) {
   const start = source.indexOf(first), end = source.indexOf(last, start + first.length);
@@ -16,6 +16,7 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retainedFastGrounding(source) {
+  source = require('./check-image-request-count-scope.cjs').retained(app + 'CloudWebGrounding.swift', source);
   source = require('./check-search-page-reads-scope.cjs').retained(app + 'CloudWebGrounding.swift', source);
   if (!source.includes('let ordinaryAlias = name.trimmingCharacters')) return source;
   source = source.replace(section(source, '  static func normalizeArguments(', '  static func boundedModelJson('),

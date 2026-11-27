@@ -9,7 +9,7 @@ private struct AgentIOSObsidianProjectionSpec {
   var legacySourceKey = ""
   var exactSource = ""
   var content: () throws -> String
-  var writeContent: ((URL) throws -> String?)?
+  var writeContent: ((URL, String?) throws -> String?)?
 }
 
 private enum AgentIOSObsidianProjectionStep: Equatable {
@@ -155,7 +155,7 @@ enum AgentIOSObsidianBridge {
       var visited = checkpoint?.visited ?? 0
       for index in page.groups.indices {
         let step = try project(
-          knowledgeProjectionSpec(appStore: appStore, group: page.groups[index]),
+          knowledgeProjectionSpec(appStore: appStore, group: page.groups[index], canPrepareLegacy: written < writeLimit),
           canWrite: written < writeLimit,
           root: root,
           stateStore: stateStore
@@ -264,8 +264,15 @@ enum AgentIOSObsidianBridge {
 
   private static func knowledgeProjectionSpec(
     appStore: GalaxySSIStore,
-    group: AgentKnowledgeSourceGroup
-  ) -> AgentIOSObsidianProjectionSpec {
+    group suppliedGroup: AgentKnowledgeSourceGroup,
+    canPrepareLegacy: Bool
+  ) throws -> AgentIOSObsidianProjectionSpec {
+    let group: AgentKnowledgeSourceGroup
+    if canPrepareLegacy {
+      group = try appStore.agentKnowledgeDatabase.resolveSourceExportGroup(suppliedGroup)
+    } else {
+      group = suppliedGroup
+    }
     let source = group.localItemId.ifBlank(group.source)
     let reading = source.lowercased().hasPrefix("http://") || source.lowercased().hasPrefix("https://")
     let sourceKey = knowledgeSourceKey(group)
@@ -277,7 +284,7 @@ enum AgentIOSObsidianBridge {
       legacySourceKey: "knowledge:\(GlobalAgentText.stableKey(source))",
       exactSource: source,
       content: { "" },
-      writeContent: { destination in
+      writeContent: { destination, expectedHash in
         try writeKnowledgeProjection(
           database: appStore.agentKnowledgeDatabase,
           group: group,
@@ -285,7 +292,8 @@ enum AgentIOSObsidianBridge {
           type: reading ? "reading" : "knowledge",
           fallbackTitle: title,
           source: source,
-          destination: destination
+          destination: destination,
+          expectedDestinationHash: expectedHash
         )
       }
     )
@@ -299,77 +307,25 @@ enum AgentIOSObsidianBridge {
     fallbackTitle: String,
     source: String,
     destination: URL,
-    scratchCipher suppliedScratchCipher: GalaxySSIAttachmentAtRestCipher? = nil
+    scratchCipher suppliedScratchCipher: GalaxySSIAttachmentAtRestCipher? = nil,
+    expectedDestinationHash: String? = nil,
+    scratchOrder suppliedOrder: AgentKnowledgeProjectionOrder? = nil
   ) throws -> String? {
     let fileManager = FileManager.default
-    let jobId = UUID().uuidString.lowercased()
-    let scratchURL = fileManager.temporaryDirectory
-      .appendingPathComponent("galaxyssi-obsidian-order-\(jobId).sqlite")
-    defer {
-      for suffix in ["", "-wal", "-shm"] { try? fileManager.removeItem(atPath: scratchURL.path + suffix) }
+    guard let generation = database.nativeFiles.readToken() else { throw CancellationError() }
+    func checkActive() throws {
+      try Task.checkCancellation()
+      guard database.nativeFiles.readToken() == generation else { throw CancellationError() }
     }
-    var scratch: OpaquePointer?
-    guard sqlite3_open_v2(
-      scratchURL.path,
-      &scratch,
-      SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
-      nil
-    ) == SQLITE_OK, let scratch else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_close_v2(scratch) }
-    _ = sqlite3_exec(scratch, "PRAGMA journal_mode = DELETE", nil, nil, nil)
-    _ = sqlite3_exec(scratch, "PRAGMA synchronous = FULL", nil, nil, nil)
-    guard sqlite3_exec(scratch, """
-      CREATE TABLE ordered_parts(
-        chunk_index INTEGER NOT NULL,
-        id_hash TEXT NOT NULL,
-        encrypted_item BLOB NOT NULL,
-        PRIMARY KEY(chunk_index, id_hash)
-      )
-      """, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
-    try? fileManager.setAttributes(
-      [.protectionKey: FileProtectionType.complete],
-      ofItemAtPath: scratchURL.path
-    )
-    let scratchCipher = suppliedScratchCipher ?? GalaxySSIAttachmentAtRestCipher(
-      keyAccount: "agent.obsidian.order.aes256.v1"
-    )
-    guard sqlite3_exec(scratch, "BEGIN IMMEDIATE", nil, nil, nil) == SQLITE_OK else {
-      throw AgentKnowledgeDatabaseError.unavailable
+    let publication = try AgentIOSProjectionDestination(destination, expected: expectedDestinationHash)
+    let order = try suppliedOrder ?? AgentKnowledgeProjectionOrder(cipher: suppliedScratchCipher)
+    defer { order.close() }
+    let jobId = order.lease.id
+    try database.enumerateSourceSnapshotItems(group) { item in
+      guard AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge(item.content) else { return }
+      try order.append(item)
     }
-    do {
-      try database.enumerateSourceSnapshotItems(group) { item in
-        guard AgentIOSObsidianProjectionPrivacyPolicy.safeKnowledge(item.content) else { return }
-        let idHash = sha256(item.id)
-        let plaintext = try JSONEncoder.galaxySSI.encode(item)
-        let encrypted = try scratchCipher.encrypt(
-          plaintext,
-          purpose: "obsidian-order:v1:\(jobId):\(idHash)"
-        )
-        var insert: OpaquePointer?
-        guard sqlite3_prepare_v2(
-          scratch,
-          "INSERT INTO ordered_parts(chunk_index, id_hash, encrypted_item) VALUES (?, ?, ?)",
-          -1,
-          &insert,
-          nil
-        ) == SQLITE_OK, let insert else { throw AgentKnowledgeDatabaseError.unavailable }
-        defer { sqlite3_finalize(insert) }
-        sqlite3_bind_int64(insert, 1, Int64(item.chunkIndex))
-        idHash.withCString {
-          sqlite3_bind_text(insert, 2, $0, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        }
-        encrypted.withUnsafeBytes { bytes in
-          sqlite3_bind_blob(insert, 3, bytes.baseAddress, Int32(encrypted.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        }
-        guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
-      }
-      guard sqlite3_exec(scratch, "COMMIT", nil, nil, nil) == SQLITE_OK else {
-        throw AgentKnowledgeDatabaseError.unavailable
-      }
-    } catch {
-      _ = sqlite3_exec(scratch, "ROLLBACK", nil, nil, nil)
-      throw error
-    }
+    try order.finish()
 
     var bodyHasher = SHA256()
     var title = fallbackTitle
@@ -380,28 +336,8 @@ enum AgentIOSObsidianBridge {
     var previousTail = ""
     var redacted = false
     func scanOrdered(_ consume: (String) throws -> Void) throws {
-      var statement: OpaquePointer?
-      guard sqlite3_prepare_v2(
-        scratch,
-        "SELECT id_hash, encrypted_item FROM ordered_parts ORDER BY chunk_index ASC, id_hash ASC",
-        -1,
-        &statement,
-        nil
-      ) == SQLITE_OK, let statement else { throw AgentKnowledgeDatabaseError.unavailable }
-      defer { sqlite3_finalize(statement) }
-      while sqlite3_step(statement) == SQLITE_ROW {
-        guard let hashText = sqlite3_column_text(statement, 0),
-              let bytes = sqlite3_column_blob(statement, 1) else {
-          throw AgentKnowledgeDatabaseError.corruptRecord
-        }
-        let idHash = String(cString: hashText)
-        let encrypted = Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, 1)))
-        guard let plaintext = try? scratchCipher.decrypt(
-                encrypted,
-                expectedPurpose: "obsidian-order:v1:\(jobId):\(idHash)"
-              ),
-              let item = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeItem.self, from: plaintext),
-              sha256(item.id) == idHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      try order.scan { item in
+        try checkActive()
         try consume(AgentIOSObsidianProjectionPrivacyPolicy.transcriptText(item.content)
           .trimmingCharacters(in: .whitespacesAndNewlines))
         if count == 0 {
@@ -438,7 +374,8 @@ enum AgentIOSObsidianBridge {
         tags: tags,
         body: "Sensitive content omitted by GalaxySSI"
       )
-      try content.write(to: destination, atomically: true, encoding: .utf8)
+      try checkActive()
+      try publication.publish(Data(content.utf8), job: jobId)
       return sha256(content)
     }
 
@@ -452,13 +389,12 @@ enum AgentIOSObsidianBridge {
       tags: tags,
       contentHash: bodyHash
     )
-    let temporary = destination.deletingLastPathComponent()
-      .appendingPathComponent(".\(destination.lastPathComponent).\(jobId).tmp")
-    fileManager.createFile(atPath: temporary.path, contents: nil)
+    let temporary = try publication.stage(job: jobId)
     defer { try? fileManager.removeItem(at: temporary) }
     let output = try FileHandle(forWritingTo: temporary)
     var outputHasher = SHA256()
     func write(_ data: Data) throws {
+      try checkActive()
       try output.write(contentsOf: data)
       outputHasher.update(data: data)
     }
@@ -478,12 +414,8 @@ enum AgentIOSObsidianBridge {
       try? output.close()
       throw error
     }
-    try fileManager.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temporary.path)
-    if fileManager.fileExists(atPath: destination.path) {
-      _ = try fileManager.replaceItemAt(destination, withItemAt: temporary)
-    } else {
-      try fileManager.moveItem(at: temporary, to: destination)
-    }
+    try checkActive()
+    try publication.publish(temporary)
     return outputHasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 
@@ -504,6 +436,7 @@ enum AgentIOSObsidianBridge {
     guard canWrite else { return .deferred }
     let relativePath = indexed?.relativePath.ifBlank(spec.relativePath) ?? spec.relativePath
     let fileURL = root.appendingPathComponent(relativePath)
+    if indexed == nil && FileManager.default.fileExists(atPath: fileURL.path) { return .unchanged }
     try FileManager.default.createDirectory(
       at: fileURL.deletingLastPathComponent(),
       withIntermediateDirectories: true,
@@ -511,7 +444,7 @@ enum AgentIOSObsidianBridge {
     )
     let generatedHash: String
     if let writeContent = spec.writeContent {
-      guard let hash = try writeContent(fileURL) else { return .unchanged }
+      guard let hash = try writeContent(fileURL, indexed?.generatedHash) else { return .unchanged }
       generatedHash = hash
     } else {
       let content = try spec.content()
@@ -635,9 +568,8 @@ enum AgentIOSObsidianBridge {
       let url = root.appendingPathComponent(entry.relativePath)
       guard FileManager.default.fileExists(atPath: url.path),
             modifiedMillis(url) != entry.lastModifiedMillis,
-            let data = try? Data(contentsOf: url),
-            let content = String(data: data, encoding: .utf8) else { continue }
-      let currentHash = sha256(content)
+            let scanned = try? AgentIOSObsidianTextScan.read(url, maximumUTF16: maximumCandidateCharacters) else { continue }
+      let currentHash = scanned.hash
       if currentHash == entry.generatedHash {
         entry.lastModifiedMillis = modifiedMillis(url)
         stateStore.saveIndex(entry)
@@ -648,7 +580,7 @@ enum AgentIOSObsidianBridge {
           sourceKey: entry.sourceKey,
           relativePath: entry.relativePath,
           title: url.deletingPathExtension().lastPathComponent,
-          content: String(content.prefix(maximumCandidateCharacters))
+          content: scanned.prefix
         ))
         found += 1
       }
@@ -678,11 +610,12 @@ enum AgentIOSObsidianBridge {
     let segments = legacy.relativePath.split(separator: "/").map(String.init)
     guard !segments.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return nil }
     let url = root.appendingPathComponent(legacy.relativePath)
-    guard let content = try? String(contentsOf: url, encoding: .utf8),
-          frontMatterValue("galaxyssi_id", in: content) == spec.legacySourceKey,
+    guard let scanned = try? AgentIOSObsidianTextScan.read(url, maximumUTF16: maximumCandidateCharacters) else { return nil }
+    let content = scanned.prefix
+    guard frontMatterValue("galaxyssi_id", in: content) == spec.legacySourceKey,
           frontMatterValue("source", in: content) == spec.exactSource,
           content.contains("managed_by: galaxyssi") else { return nil }
-    let actualHash = sha256(content)
+    let actualHash = scanned.hash
     if !legacy.userModified && actualHash != legacy.generatedHash { legacy.userModified = true }
     legacy.sourceKey = spec.sourceKey
     legacy.sourceRevision = legacy.userModified ? legacy.sourceRevision : spec.sourceRevision

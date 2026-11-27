@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..', 'memory-native');
 const read = name => fs.readFileSync(path.join(root, name), 'utf8');
 const lib = read('src/lib.rs'), owner = read('src/owner.rs'), buffers = read('src/buffers.rs');
 const header = read('include/GalaxySSIMemory.h'), manifest = read('Cargo.toml');
-const functions = ['open', 'checkpoint', 'begin', 'append', 'search', 'node_count', 'cancel', 'close'];
+const functions = ['open', 'checkpoint', 'begin', 'append', 'search', 'node_count', 'records_partitioned', 'migrate_records', 'cancel', 'close'];
 for (const name of functions) {
   assert.ok(lib.includes(`fn gs_memory_${name}(`), name);
   assert.ok(header.includes(`int32_t gs_memory_${name}(`), name);
@@ -37,5 +37,5 @@ const lock = read('Cargo.lock');
 assert.match(lock, /name = "galaxyssi-ios-memory"/);
 assert.match(lock, /name = "galaxyssi-memory-native"\nversion = "0.6.0"/);
 assert.match(lock, /a2373e82de8b0edea674736e7fa1c2d55b9a9f44/);
-assert.equal((read('src/tests.rs').match(/#\[test\]/g) || []).length, 9);
+assert.equal((read('src/tests.rs').match(/#\[test\]/g) || []).length, 12);
 console.log('iOS native knowledge ABI source checks passed; no native build or Rust test execution');

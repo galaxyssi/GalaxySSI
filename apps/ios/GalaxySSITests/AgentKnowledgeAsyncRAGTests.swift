@@ -150,7 +150,7 @@ final class AgentKnowledgeAsyncRAGTests: XCTestCase {
       // Remove only this fixture's UUID-qualified database families, never History.
       if UUID(uuidString: identifier) != nil, root.lastPathComponent == "History" {
         for prefix in ["agent-knowledge-", "agent-conversations-", "chat-history-"] {
-          for suffix in ["", "-wal", "-shm", ".payloads", ".native"] {
+          for suffix in ["", "-wal", "-shm", ".payloads", ".primary", ".native"] {
             try? FileManager.default.removeItem(at: root.appendingPathComponent("\(prefix)\(identifier).sqlite\(suffix)"))
           }
         }

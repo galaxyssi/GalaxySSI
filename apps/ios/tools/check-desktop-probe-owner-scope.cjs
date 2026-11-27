@@ -2,12 +2,18 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '1d68be9b738d8cbc48745b51554dbb24b4aa3129';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-mqtt-inbound-timing-scope.cjs').retained(file,
+  require('./check-knowledge-primary-partitions-scope.cjs').retained(file,
+  require('./check-connector-acceptance-evidence-scope.cjs').retained(file,
+    fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'))));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const hook = '      // Offline legacy probes also advance the clock owned by the journal query pump.\n' +
   '      guard usesLegacyMqtt else { continue }\n';
 function retained(file, source) {
+  source = require('./check-mqtt-inbound-timing-scope.cjs').retained(file, source);
+  source = require('./check-knowledge-primary-partitions-scope.cjs').retained(file,
+    require('./check-connector-acceptance-evidence-scope.cjs').retained(file, source));
   if (file.endsWith('GalaxySSIServices.swift')) return source.replace(hook, '');
   if (file.endsWith('check-phone-local-model-resource-scope.cjs')) return source
     .replace("const read = file => require('./check-desktop-probe-owner-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')), cache = new Map();",

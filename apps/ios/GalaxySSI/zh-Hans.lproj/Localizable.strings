@@ -1,4 +1,9 @@
 "galaxyssi.tab.agent" = "Agent";
+"knowledge_stats_complete" = "知识库：%lld 条；来源=%lld";
+"knowledge_stats_partial" = "知识库：至少 %lld 条；至少 %lld 个来源；统计仍在建立索引";
+"knowledge_stats_unavailable" = "知识库统计暂不可用";
+"knowledge_stats_sources_pending" = "最近来源仍在建立索引";
+"knowledge_stats_sources_unavailable" = "最近来源暂不可用";
 "galaxyssi.agent.connector.waiting_original_result" = "正在等待原连接器任务的结果。";
 "cloud_web_fallback_sources" = "已获取以下来源，但尚未完成可靠汇总：";
 "cloud_web_fallback_empty" = "暂时没有取得可可靠汇总的联网证据。你可以稍后重试，或缩小查询范围。";
@@ -2622,6 +2627,7 @@
 "galaxyssi.agent_knowledge.audit_subtitle" = "%d 个来源 / %@ / %d 个匹配被拦截";
 "galaxyssi.agent_knowledge.imported_count" = "已导入 %d 个知识分块";
 "galaxyssi.agent_knowledge.import_failed" = "导入失败：%@";
+"galaxyssi.agent_knowledge.source_changed" = "准备导入时来源已发生变化，请使用当前来源重新导入。";
 "galaxyssi.agent_knowledge.import_too_large" = "文档超过 20 MB 导入上限";
 "galaxyssi.agent_knowledge.import_sensitive" = "由于资料疑似包含密钥或令牌，已阻止导入";
 "galaxyssi.agent_knowledge.no_readable_text" = "没有找到可读取的文本";

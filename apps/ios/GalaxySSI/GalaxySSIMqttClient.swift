@@ -1096,7 +1096,9 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     }
     let opaquePayload = Data(packet.payload.suffix(from: index))
     guard let secret = relationshipSecret(forReceivingTopic: topic),
-          let payload = try? GalaxySSILinkProtocol.openWirePacket(opaquePayload, secret: secret) else {
+          let payload = try? MqttInboundDebugTiming.measure(.wireOpen, {
+            try GalaxySSILinkProtocol.openWirePacket(opaquePayload, secret: secret)
+          }) else {
       return
     }
     if let onAuthenticatedIngress {
