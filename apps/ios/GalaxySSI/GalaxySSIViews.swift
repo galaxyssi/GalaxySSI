@@ -140,6 +140,7 @@ final class GalaxySSIAppDelegate: NSObject, UIApplicationDelegate, UNUserNotific
     GalaxySSIHealthAppointmentBackground.register()
     AgentKnowledgeBackgroundScheduler.register()
     AgentKnowledgeStorageBackground.register()
+    AgentIOSOriginalPageArchiveBackground.register()
     return true
   }
 

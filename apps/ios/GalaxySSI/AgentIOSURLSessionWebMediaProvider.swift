@@ -957,6 +957,28 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     return resource.body
   }
 
+  func originalPageAsset(_ address: String, maxBytes: Int,
+                         invocation: AgentNativeToolInvocation) throws -> AgentIOSOriginalPageAsset {
+    guard maxBytes > 0,
+          invocation.context.grantedPermissions.contains(AgentIOSWebIntelligenceNativeToolCatalog.networkPermission),
+          invocation.context.grantedConsents.contains(AgentIOSWebIntelligenceNativeToolCatalog.publicWebConsent) else {
+      throw AgentIOSURLSessionWebError.invalidLimit
+    }
+    let startedAt = nowMillis()
+    let assetInvocation = AgentNativeToolInvocation(descriptor: invocation.descriptor,
+      input: ["url": .string(address)], context: invocation.context, startedAtEpochMillis: startedAt,
+      deadlineEpochMillis: min(invocation.deadlineEpochMillis, startedAt + 15_000),
+      hardDeadlineEpochMillis: invocation.deadlineEpochMillis, nowMillis: nowMillis,
+      cancellationRequested: { invocation.isCancellationRequested }, progressReporter: { _, _ in })
+    let resource = try requestResource(requestedURL: validatedPublicHTTPSURL(address),
+      method: .get, maxBodyBytes: Int64(min(maxBytes, 8 * 1_024 * 1_024)),
+      timeoutMillis: 15_000, invocation: assetInvocation, contentPolicy: .download)
+    guard !resource.isPartial,
+          ["text/css", "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"].contains(resource.contentType)
+      else { throw AgentIOSURLSessionWebError.unsupportedContentType(resource.contentType) }
+    return AgentIOSOriginalPageAsset(contentType: resource.contentType, data: resource.body, finalURL: resource.finalURL)
+  }
+
   private func executeWeb(
     operation: AgentIOSWebMediaOperation,
     input: AgentMcpJSONObject,

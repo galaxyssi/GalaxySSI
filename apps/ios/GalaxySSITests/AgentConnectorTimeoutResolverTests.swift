@@ -2,6 +2,104 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentConnectorTimeoutResolverTests: XCTestCase {
+  func testActiveObservationWakeUsesUnacceptedAndAcceptedStageClocks() throws {
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000"]
+    let first = try XCTUnwrap(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 2_000))
+    XCTAssertEqual(first.stage, .notAccepted)
+    XCTAssertEqual(first.delayMillis, 14_000)
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 16_000)?.delayMillis, 0)
+    metadata["transport_accepted_at"] = "20000"
+    metadata["remote_task_status"] = "accepted"
+    let accepted = try XCTUnwrap(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 21_000))
+    XCTAssertEqual(accepted.stage, .notRunning)
+    XCTAssertEqual(accepted.startedAt, 20_000)
+    XCTAssertEqual(accepted.delayMillis, 44_000)
+    XCTAssertNotEqual(first.clock, accepted.clock)
+  }
+
+  func testActiveObservationWakeDoesNotRefreshAClockOnTransportMetadataAlone() throws {
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000", "transport_accepted_at": "2000",
+      "remote_task_status": "queued", "remote_task_status_updated_at": "40000"]
+    let wake = try XCTUnwrap(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 46_000))
+    XCTAssertEqual(wake.delayMillis, 1_000)
+    metadata["remote_task_status_updated_at"] = "45000"
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 46_000), wake)
+  }
+
+  func testActiveObservationWakeUsesLiveProgressOnlyForReadOnlyWork() throws {
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000", "transport_accepted_at": "2000",
+      "remote_task_status": "running", "remote_task_status_updated_at": "30000"]
+    XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 40_000))
+    metadata["routing_requires_live_data"] = "true"
+    let wake = try XCTUnwrap(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 40_000))
+    XCTAssertEqual(wake.stage, .readOnlyStale)
+    XCTAssertEqual(wake.delayMillis, 50_000)
+    metadata["remote_task_status_updated_at"] = "40000"
+    XCTAssertNotEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 40_000)?.clock, wake.clock)
+  }
+
+  func testActiveObservationWakeRetainsAttachmentAndProbeIntervals() throws {
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000", "has_attachments": "true"]
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 2_000)?.delayMillis, 59_000)
+    metadata["transport_accepted_at"] = "2000"
+    metadata["remote_task_status"] = "queued"
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 3_000)?.delayMillis, 89_000)
+    metadata["remote_task_status"] = "running"
+    metadata["routing_requires_live_data"] = "true"
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 3_000)?.delayMillis, 179_000)
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 200_000,
+      lastWakeMillis: 190_000)?.delayMillis, AgentDesktopReplyRecoveryRecord.probeInterval - 10_000)
+  }
+
+  func testActiveObservationWakeLegacyQueueIsNotPersistedAsRemoteAcceptance() throws {
+    let metadata = ["awaiting_response": "true", "resource_started_at": "1000", "remote_task_status": "queued"]
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 16_000)?.stage, .notAccepted)
+    XCTAssertEqual(metadata["remote_task_status"], "queued")
+    XCTAssertNil(metadata["transport_accepted_at"])
+    var observed = metadata
+    observed["remote_task_status_seq"] = "1"
+    observed["remote_task_status_updated_at"] = "2000"
+    let wake = try XCTUnwrap(AgentNativeConnectorObservationWakePolicy.next(metadata: observed, nowMillis: 3_000))
+    XCTAssertEqual(wake.stage, .notRunning)
+    XCTAssertEqual(wake.startedAt, 2_000)
+    XCTAssertNil(observed["transport_accepted_at"])
+  }
+
+  func testActiveObservationWakeIgnoresTerminalUserWaitAndUnownedMetadata() {
+    let base = ["awaiting_response": "true", "resource_started_at": "1000", "transport_accepted_at": "2000"]
+    for status in ["completed", "failed", "timed_out", "cancelled", "waiting_input", "waiting_approval", "recovering"] {
+      var metadata = base
+      metadata["remote_task_status"] = status
+      XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 100_000), status)
+    }
+    var metadata = base
+    metadata["awaiting_response"] = "false"
+    XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 100_000))
+    XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: [:], nowMillis: 100_000))
+  }
+
+  func testActiveObservationWakeRejectsMalformedAndFutureAnchors() {
+    for invalid in ["0", "-1", "invalid", String(Int64.max)] {
+      let metadata = ["awaiting_response": "true", "resource_started_at": invalid]
+      XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 100_000))
+    }
+    var metadata = ["awaiting_response": "true", "resource_started_at": "1000", "remote_task_status_seq": "invalid"]
+    XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 100_000))
+    metadata.removeValue(forKey: "remote_task_status_seq")
+    metadata["transport_accepted_at"] = "invalid"
+    XCTAssertNil(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 100_000))
+  }
+
+  func testActiveObservationWakeDoesNotAuthorizeFailureOrChangeRoutingMetadata() {
+    let metadata = ["awaiting_response": "true", "resource_started_at": "1000", "manual_target_locked": "true",
+      "effect_outcome_unknown": "true", "non_retriable": "true", "auto_reroute_on_failure": "false"]
+    let copy = metadata
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 50_000)?.delayMillis, 0)
+    XCTAssertEqual(metadata, copy)
+    XCTAssertEqual(AgentNativeConnectorObservationWakePolicy.next(metadata: metadata, nowMillis: 50_000,
+      lastWakeMillis: 60_000)?.delayMillis, 0)
+  }
+
   func testObservationDeadlineUsesStageSpecificAnchors() {
     let metadata = ["resource_started_at": "1000", "transport_accepted_at": "12000",
       "remote_task_status_updated_at": "23000"]
