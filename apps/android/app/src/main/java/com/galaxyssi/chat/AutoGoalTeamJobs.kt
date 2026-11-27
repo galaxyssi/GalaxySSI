@@ -140,9 +140,9 @@ internal object AutoGoalTeamJobs {
                     "\n\n" + result
             }
         } catch (e: TeamAnswerWithheld) {
-            ctx.getString(R.string.auto_team_job_withheld, e.reservation)
+            ctx.getString(R.string.auto_team_job_withheld, e.reservation) + e.publicObjections
         } catch (e: TeamTableMismatch) {
-            ctx.getString(R.string.auto_team_table_mismatch, e.verified)
+            ctx.getString(R.string.auto_team_table_mismatch, e.verified) + e.publicObjections
         } catch (_: Exception) {
             cancel.cancel()
             ctx.getString(R.string.auto_team_job_failed, route.label)

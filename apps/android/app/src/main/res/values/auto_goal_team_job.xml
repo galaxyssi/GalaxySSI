@@ -10,5 +10,5 @@
     <string name="auto_team_passing">Pass all gates:</string>
     <string name="auto_team_none">None</string>
     <string name="auto_team_limitation">Evidence limitation:</string>
-    <string name="auto_team_table_mismatch">The reviewer did not confirm the table verdict. Only the recalculated results are shown.\n\n%1$s</string>
+    <string name="auto_team_table_mismatch">The reviewer did not confirm the table verdict. The draft was withheld. Recalculated from the source table:\n\n%1$s</string>
 </resources>

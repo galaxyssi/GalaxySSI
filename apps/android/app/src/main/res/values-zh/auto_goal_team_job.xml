@@ -10,5 +10,5 @@
     <string name="auto_team_passing">符合全部门槛：</string>
     <string name="auto_team_none">无</string>
     <string name="auto_team_limitation">证据局限：</string>
-    <string name="auto_team_table_mismatch">审核者未确认表格结论，仅展示按原表复算的结果。\n\n%1$s</string>
+    <string name="auto_team_table_mismatch">审核者未确认表格结论，草稿未发布。以下是按原表复算的结果：\n\n%1$s</string>
 </resources>
