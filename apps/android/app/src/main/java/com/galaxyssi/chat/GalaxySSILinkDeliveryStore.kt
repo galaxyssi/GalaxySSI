@@ -541,6 +541,21 @@ object GalaxySSILinkDeliveryStore {
         )
         val handledTransfers = mutableSetOf<String>()
         val handledSourceMessages = mutableSetOf<Long>()
+        val manualDependencies by lazy {
+            val parents = outboxArray(context)
+            buildSet<Pair<Long, String>> {
+                for (i in 0 until parents.length()) {
+                    val row = parents.getJSONObject(i)
+                    val allowed = row.optJSONArray("manual_files") ?: continue
+                    val deps = row.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS) ?: continue
+                    for (d in 0 until deps.length()) {
+                        val id = deps.optString(d)
+                        if ((0 until allowed.length()).any { allowed.optString(it) == id })
+                            add(row.optLong("client_source_message_id") to id)
+                    }
+                }
+            }
+        }
         val exhausted = buildList {
             for (index in 0 until source.length()) {
                 val item = source.optJSONObject(index) ?: continue
@@ -570,23 +585,14 @@ object GalaxySSILinkDeliveryStore {
                     continue
                 }
                 if (transferId.isNotBlank()) {
-                    if (sourceMessageId > 0 && !item.has("manual_until")) {
+                    if (sourceMessageId > 0 && !item.has("manual_until") &&
+                        (sourceMessageId to transferId) in manualDependencies) {
                         // Only newly opted-in chat batches, never peer messages or a lone upload.
-                        val parents = outboxArray(context)
-                        val optedIn = (0 until parents.length()).any { p ->
-                            val row = parents.getJSONObject(p)
-                            val allowed = row.optJSONArray("manual_files")
-                            val deps = row.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS)
-                            row.optLong("client_source_message_id") == sourceMessageId && allowed != null && deps != null &&
-                                (0 until allowed.length()).any { allowed.optString(it) == transferId } &&
-                                (0 until deps.length()).any { deps.optString(it) == transferId }
-                        }
-                        if (optedIn) {
-                            val until = nowMillis + 600_000L
-                            outboxDatabase(context).update(messageId) { it.put("manual_until", until).put("next_attempt_at", until) }
+                        val until = nowMillis + 600_000L
+                        outboxDatabase(context).update(messageId) { it.put("manual_until", until).put("next_attempt_at", until) }
+                        if (handledTransfers.add(transferId))
                             add(ExhaustedMessage(messageId, sourceMessageId, contactId, attempts, transferId, awaitingFileRetry = true))
-                            continue
-                        }
+                        continue
                     }
                     if (sourceMessageId > 0L) {
                         if (!handledSourceMessages.add(sourceMessageId)) continue

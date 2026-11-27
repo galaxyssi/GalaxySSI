@@ -126,6 +126,7 @@ internal class BlobOutgoingJournal(path: File) : Closeable {
             }
             if (phase != UPLOAD && phase != target && !(target == FAILURE && phase == FAILED_CLEANUP)) return false
             if (body.optString("desktop_id") != sourceId || body.optString("fingerprint") != fingerprint ||
+                body.optInt("file_retry_generation") != payload.optInt("file_retry_generation") ||
                 !(if (target == FAILURE) BlobFailureContract.matches(body.getJSONObject("manifest"), payload)
                   else BlobOutgoingContract.receiptMatches(body.getJSONObject("manifest"), payload))) return false
             body.put("receipt", payload)
@@ -159,7 +160,10 @@ internal class BlobOutgoingJournal(path: File) : Closeable {
     }, "id=? AND phase=? AND state=? AND due>?", arrayOf(id, MANUAL.toString(), READY.toString(), now.toString())) == 1
 
     @Synchronized fun restartUpload(work: BlobOutgoingWork) = db.update("jobs", ContentValues().apply {
-        val body = JSONObject(work.body.toString()).apply { remove("receipt") }
+        val body = JSONObject(work.body.toString()).apply {
+            remove("receipt")
+            put("file_retry_generation", optInt("file_retry_generation") + 1)
+        }
         put("body", encode(work.id, body)); put("phase", UPLOAD); put("state", READY); put("due", 0); put("claim", "")
     }, "id=? AND claim=? AND phase=?", arrayOf(work.id, work.claim, RESTART_UPLOAD.toString())) == 1
 

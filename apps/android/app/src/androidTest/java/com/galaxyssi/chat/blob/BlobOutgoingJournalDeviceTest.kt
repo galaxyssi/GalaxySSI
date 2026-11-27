@@ -65,6 +65,12 @@ class BlobOutgoingJournalDeviceTest {
             assertEquals(ids[2], only.id)
             assertEquals(BlobOutgoingJournal.UPLOAD, only.phase)
             assertFalse(only.body.has("receipt"))
+            val m = only.body.getJSONObject("manifest")
+            val ack = JSONObject(m.toString()).put("status", "stored").put("source_message_id", "7")
+            assertEquals(1, only.body.getInt("file_retry_generation"))
+            assertFalse(j.failedReceipt(only.id, BlobFailureContract.receipt(m, "blob_expired"), "test-desktop-private", fingerprint))
+            assertFalse(j.stored(only.id, ack, "test-desktop-private", fingerprint))
+            assertTrue(j.stored(only.id, ack.put("file_retry_generation", 1), "test-desktop-private", fingerprint))
         }
     }
     @Test fun activationDuringClaimDoesNotWaitForOldBackoff() = fixture { path ->

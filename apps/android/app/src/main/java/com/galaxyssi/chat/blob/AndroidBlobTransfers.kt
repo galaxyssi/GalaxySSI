@@ -165,6 +165,7 @@ private class BlobOutgoingCoordinator(private val context: Context) {
                 val file = AgentOutboundAttachmentTransferStore.find(context, work.id)
                 val code = work.body.getJSONObject("receipt").optString("error_code")
                 if (file != null && !work.body.optBoolean("manual_expired") && file.scope.attachmentRequestId.isBlank() &&
+                    work.body.getJSONObject("receipt").optBoolean("supports_file_retry") && work.body.optInt("file_retry_generation") < 3 &&
                     code in setOf("blob_expired", "blob_not_found", "ciphertext_hash_mismatch", "chunk_authentication_failed") &&
                     AgentFileReceipt.isBound(context, file, work.body.optString("fingerprint")) &&
                     GalaxySSILinkDeliveryStore.hasAttachmentDependency(context, file.scope.clientMessageId ?: 0, work.id) &&
@@ -210,7 +211,9 @@ private class BlobOutgoingCoordinator(private val context: Context) {
                         cancel.check(); currentConfig(work)
                         // A fresh Signal envelope permits retry after receiver persistence/decrypt failure.
                         GalaxySSILinkDeliveryStore.discardAttachmentTransferMessages(context, work.id)
-                        if (!GalaxySSIMqttClient.publishBlobOffer(BlobOutgoingContract.offerPayload(manifest, offer),
+                        val payload = BlobOutgoingContract.offerPayload(manifest, offer)
+                        work.body.optInt("file_retry_generation").takeIf { it > 0 }?.let { payload.put("file_retry_generation", it) }
+                        if (!GalaxySSIMqttClient.publishBlobOffer(payload,
                                 attachment.scope.contactId)) throw BlobFailure("blob_offer_not_queued", 503)
                     })
             }

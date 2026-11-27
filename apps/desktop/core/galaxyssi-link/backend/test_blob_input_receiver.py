@@ -215,6 +215,26 @@ class BlobInputReceiverTest(unittest.TestCase):
         self.assertEqual(1, len(self.receipts))
         self.assertEqual({"pending": 1}, self.receiver.journal.snapshot())
 
+    def test_manual_retry_reuses_original_task_and_rejects_stale_offers(self):
+        initial = self.enqueue()
+        self.store.clock = lambda: time.time() + 8 * 86400
+        self.receiver._process(self.claim())
+        self.assertTrue(self.receipts[-1]["supports_file_retry"])
+        self.store.clock = time.time
+        fresh = self.upload(self.content, suffix="manual", base_manifest=self.payload)
+        fresh["file_retry_generation"] = 1
+        for changed in ({**fresh, "file_retry_generation": 2}, {**fresh, "client_message_id": "other"}):
+            with self.assertRaisesRegex(BlobError, "conflict"):
+                self.enqueue(changed)
+        self.assertEqual(initial, self.enqueue(fresh))
+        self.receiver._process(self.claim())
+        self.assertEqual(("stored", 1), (self.receipts[-1]["status"], self.receipts[-1]["file_retry_generation"]))
+        self.assertEqual(self.content, self.resolve().read_bytes())
+        with self.assertRaisesRegex(BlobError, "conflict"):
+            self.enqueue()
+        with self.assertRaisesRegex(BlobError, "conflict"):
+            self.enqueue({**fresh, "file_retry_generation": 2})
+
     def test_fresh_request_recovers_expired_blob_without_reviving_old_attempt(self):
         old_id = self.enqueue()
         self.store.clock = lambda: time.time() + 8 * 86400

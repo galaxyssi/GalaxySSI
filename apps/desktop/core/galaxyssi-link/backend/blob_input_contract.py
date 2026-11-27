@@ -50,5 +50,11 @@ def validate_input_offer(payload: dict, route: str, source: str, configured_orig
     manifest.pop("created_at")
     manifest.pop("complete")
     manifest["client_message_id"] = manifest.pop("source_message_id")
-    return {"route": route, "source": source, "manifest": manifest,
+    generation = payload.get("file_retry_generation", 0)
+    if type(generation) is not int or not 0 <= generation <= 3:
+        raise BlobError("invalid_file_retry_generation")
+    body = {"route": route, "source": source, "manifest": manifest,
             "binding": binding, "offer": {**offer, "private": private}}
+    if generation:
+        body["file_retry_generation"] = generation
+    return body
