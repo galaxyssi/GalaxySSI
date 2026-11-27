@@ -15,6 +15,18 @@ final class AgentConversationGoalStore {
   private func valid(_ conversation: String) -> Bool {
     !owner.isBlank && owner.utf8.count <= 512 && !conversation.isBlank && conversation.utf8.count <= 512
   }
+  func goals() throws -> [AgentConversationGoal] {
+    Self.lock.lock(); defer { Self.lock.unlock() }
+    guard !owner.isBlank else { throw AgentConversationGoal.Failure.invalid }
+    var result: [AgentConversationGoal] = []
+    for key in GalaxySSIEncryptedUserDefaultsStore.storedKeys(defaults: defaults, prefix: namespace).sorted() {
+      guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, keyMaterialKey: material, secrets: secrets),
+        data.count <= 1_048_576, let goal = try? JSONDecoder().decode(AgentConversationGoal.self, from: data),
+        goal.valid, row(goal.conversation) == key else { throw AgentConversationGoal.Failure.unavailable }
+      if !defaults.bool(forKey: key + ".deleted") { result.append(goal) }
+    }
+    return result.sorted { $0.id.uuidString < $1.id.uuidString }
+  }
   func read(_ conversation: String) throws -> AgentConversationGoal? {
     Self.lock.lock(); defer { Self.lock.unlock() }
     guard valid(conversation) else { throw AgentConversationGoal.Failure.invalid }
@@ -46,5 +58,14 @@ final class AgentConversationGoalStore {
     guard valid(conversation) else { return }
     defaults.set(true, forKey: row(conversation) + ".deleted")
     GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: row(conversation))
+    DispatchQueue.main.async { NotificationCenter.default.post(name: Self.changed, object: nil) }
+  }
+  static func destroyAll(defaults: UserDefaults, secrets: GalaxySSISecretStore) {
+    lock.lock(); defer { lock.unlock() }
+    let root = "galaxyssi.conversation-goal.v1."
+    let keys = defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix(root) }
+    let owners = Set(keys.map { String($0.dropFirst(root.count).prefix(64)) }.filter { MqttRouteProtocol.hex($0, count: 64) })
+    for key in keys { defaults.removeObject(forKey: key) }
+    for owner in owners { GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: root + owner + ".material", secrets: secrets) }
   }
 }

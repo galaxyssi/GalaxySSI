@@ -2,6 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>com.galaxyssi.chat.ios.agent-refresh</string>
+    <string>com.galaxyssi.chat.ios.workflow-trigger-refresh</string>
+    <string>com.galaxyssi.ios.automation.refresh</string>
+    <string>com.galaxyssi.ios.cognition.refresh</string>
+    <string>com.galaxyssi.ios.health-model-attention.refresh</string>
+    <string>com.galaxyssi.ios.health-appointment.refresh</string>
+    <string>com.galaxyssi.chat.ios.knowledge-index</string>
+    <string>com.galaxyssi.chat.ios.knowledge-storage</string>
+    <string>com.galaxyssi.chat.ios.original-page-archive</string>
+    <string>com.galaxyssi.chat.ios.conversation-goal</string>
+  </array>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Find and configure your AR glasses on the same Wi-Fi network.</string>
   <key>UIBackgroundModes</key>

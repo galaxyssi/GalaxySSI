@@ -38,10 +38,12 @@ struct AgentConversationGoal: Codable, Equatable, Identifiable {
     let model: String
     let endpointSHA: String
     let host: String
+    var artifactSHA: String? = nil
     var valid: Bool {
       !target.isBlank && target.utf8.count <= 512 && !model.isBlank && model.utf8.count <= 512 &&
-        (kind == .local ? (target == "local-llm" && endpointSHA.isEmpty && host.isEmpty) :
-          (target != "local-llm" && MqttRouteProtocol.hex(endpointSHA, count: 64) && !host.isBlank && host.utf8.count <= 253))
+        (kind == .local ? (target == "local-llm" && endpointSHA.isEmpty && host.isEmpty &&
+          artifactSHA.map { MqttRouteProtocol.hex($0, count: 64) } != false) :
+          (target != "local-llm" && artifactSHA == nil && MqttRouteProtocol.hex(endpointSHA, count: 64) && !host.isBlank && host.utf8.count <= 253))
     }
   }
   let id: UUID
@@ -71,6 +73,7 @@ struct AgentConversationGoal: Codable, Equatable, Identifiable {
       allowance - rounds <= Self.roundBudget && checkpoints.count <= 16 &&
       checkpoints.allSatisfy { !$0.isBlank && $0.utf16.count <= 12_000 } && next.utf16.count <= 1_000 &&
       clarification.utf16.count <= 4_000 && (!inFlight || phase == .running) &&
+      (phase != .running || inFlight || rounds < allowance) &&
       (!review || !checkpoints.isEmpty) && (phase != .done || (!review && !checkpoints.isEmpty))
   }
   func claim() throws -> Self {

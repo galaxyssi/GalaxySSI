@@ -1388,6 +1388,12 @@
     C46370000000000000000001 /* AgentConversationGoal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000002 /* AgentConversationGoal.swift */; };
     C46370000000000000000003 /* AgentConversationGoalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000004 /* AgentConversationGoalStore.swift */; };
     C46370000000000000000005 /* AgentConversationGoalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000006 /* AgentConversationGoalTests.swift */; };
+    C46370000000000000000007 /* AgentConversationGoalInference.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000008 /* AgentConversationGoalInference.swift */; };
+    C46370000000000000000009 /* AgentConversationGoalRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4637000000000000000000A /* AgentConversationGoalRuntime.swift */; };
+    C4637000000000000000000B /* AgentConversationGoalBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4637000000000000000000C /* AgentConversationGoalBackground.swift */; };
+    C4637000000000000000000D /* AgentConversationGoalLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4637000000000000000000E /* AgentConversationGoalLifecycle.swift */; };
+    C4637000000000000000000F /* GalaxySSIConversationGoalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000010 /* GalaxySSIConversationGoalView.swift */; };
+    C46370000000000000000011 /* AgentConversationGoalInferenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46370000000000000000012 /* AgentConversationGoalInferenceTests.swift */; };
     C46270000000000000000001 /* VoiceMessageDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000002 /* VoiceMessageDraft.swift */; };
     C46270000000000000000003 /* VoiceMessageSpeechEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */; };
     C46270000000000000000005 /* VoiceMessageNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000006 /* VoiceMessageNativeTools.swift */; };
@@ -3770,6 +3776,12 @@
     C46370000000000000000002 /* AgentConversationGoal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoal.swift; sourceTree = "<group>"; };
     C46370000000000000000004 /* AgentConversationGoalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalStore.swift; sourceTree = "<group>"; };
     C46370000000000000000006 /* AgentConversationGoalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalTests.swift; sourceTree = "<group>"; };
+    C46370000000000000000008 /* AgentConversationGoalInference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalInference.swift; sourceTree = "<group>"; };
+    C4637000000000000000000A /* AgentConversationGoalRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalRuntime.swift; sourceTree = "<group>"; };
+    C4637000000000000000000C /* AgentConversationGoalBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalBackground.swift; sourceTree = "<group>"; };
+    C4637000000000000000000E /* AgentConversationGoalLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalLifecycle.swift; sourceTree = "<group>"; };
+    C46370000000000000000010 /* GalaxySSIConversationGoalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationGoalView.swift; sourceTree = "<group>"; };
+    C46370000000000000000012 /* AgentConversationGoalInferenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationGoalInferenceTests.swift; sourceTree = "<group>"; };
     C46270000000000000000002 /* VoiceMessageDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageDraft.swift; sourceTree = "<group>"; };
     C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageSpeechEvidence.swift; sourceTree = "<group>"; };
     C46270000000000000000006 /* VoiceMessageNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageNativeTools.swift; sourceTree = "<group>"; };
@@ -6411,6 +6423,11 @@
         C46280000000000000000018 /* AgentSingleFileDesktopIntent.swift */,
         C46370000000000000000002 /* AgentConversationGoal.swift */,
         C46370000000000000000004 /* AgentConversationGoalStore.swift */,
+        C46370000000000000000008 /* AgentConversationGoalInference.swift */,
+        C4637000000000000000000A /* AgentConversationGoalRuntime.swift */,
+        C4637000000000000000000C /* AgentConversationGoalBackground.swift */,
+        C4637000000000000000000E /* AgentConversationGoalLifecycle.swift */,
+        C46370000000000000000010 /* GalaxySSIConversationGoalView.swift */,
         C46270000000000000000002 /* VoiceMessageDraft.swift */,
         C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */,
         C46270000000000000000006 /* VoiceMessageNativeTools.swift */,
@@ -7191,6 +7208,7 @@
         C46280000000000000000016 /* AgentSingleFileReadTests.swift */,
         C46280000000000000000020 /* AgentSingleFileDesktopIntentTests.swift */,
         C46370000000000000000006 /* AgentConversationGoalTests.swift */,
+        C46370000000000000000012 /* AgentConversationGoalInferenceTests.swift */,
         C46270000000000000000008 /* VoiceMessageDraftTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
         C43050000000000000000022 /* GalaxySSIHealthCyclingSessionTests.swift */,
@@ -8963,6 +8981,11 @@
         C46280000000000000000017 /* AgentSingleFileDesktopIntent.swift in Sources */,
         C46370000000000000000001 /* AgentConversationGoal.swift in Sources */,
         C46370000000000000000003 /* AgentConversationGoalStore.swift in Sources */,
+        C46370000000000000000007 /* AgentConversationGoalInference.swift in Sources */,
+        C46370000000000000000009 /* AgentConversationGoalRuntime.swift in Sources */,
+        C4637000000000000000000B /* AgentConversationGoalBackground.swift in Sources */,
+        C4637000000000000000000D /* AgentConversationGoalLifecycle.swift in Sources */,
+        C4637000000000000000000F /* GalaxySSIConversationGoalView.swift in Sources */,
         C46270000000000000000001 /* VoiceMessageDraft.swift in Sources */,
         C46270000000000000000003 /* VoiceMessageSpeechEvidence.swift in Sources */,
         C46270000000000000000005 /* VoiceMessageNativeTools.swift in Sources */,
@@ -9737,6 +9760,7 @@
         C46280000000000000000015 /* AgentSingleFileReadTests.swift in Sources */,
         C46280000000000000000019 /* AgentSingleFileDesktopIntentTests.swift in Sources */,
         C46370000000000000000005 /* AgentConversationGoalTests.swift in Sources */,
+        C46370000000000000000011 /* AgentConversationGoalInferenceTests.swift in Sources */,
         C46270000000000000000007 /* VoiceMessageDraftTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,
         C43050000000000000000021 /* GalaxySSIHealthCyclingSessionTests.swift in Sources */,
@@ -10026,7 +10050,6 @@
         DEVELOPMENT_TEAM = "";
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index com.galaxyssi.chat.ios.knowledge-storage com.galaxyssi.chat.ios.original-page-archive";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";
@@ -10094,7 +10117,6 @@
         ENABLE_DEBUG_DYLIB = NO;
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
-        INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = "com.galaxyssi.chat.ios.agent-refresh com.galaxyssi.chat.ios.workflow-trigger-refresh com.galaxyssi.ios.automation.refresh com.galaxyssi.ios.cognition.refresh com.galaxyssi.ios.health-model-attention.refresh com.galaxyssi.ios.health-appointment.refresh com.galaxyssi.chat.ios.knowledge-index com.galaxyssi.chat.ios.knowledge-storage com.galaxyssi.chat.ios.original-page-archive";
         INFOPLIST_FILE = GalaxySSI/BackgroundModes.plist;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan GalaxySSI pairing QR codes and health reports, or attach photos to Agent tasks.";
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Connect to a blood pressure monitor when you choose to collect a measurement.";

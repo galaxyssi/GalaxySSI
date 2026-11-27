@@ -1129,6 +1129,9 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func destroyAllPrivateData() {
+    AgentConversationGoalRuntime.shared.interrupt()
+    AgentConversationGoalBackground.schedule(pending: false)
+    AgentConversationGoalStore.destroyAll(defaults: defaults, secrets: secrets)
     let accounts = Set(contacts.flatMap { contact in
       contact.cloudModels.map(\.keychainAccount)
     })
@@ -1259,7 +1262,8 @@ final class GalaxySSIStore: ObservableObject {
       content: AgentSessionTitlePolicy.titleSource(content),
       at: createdAt
     )
-    if sourceTrace != AgentConversationSchedule.occurrenceStage, sourceTrace != AgentSingleFileRead.stage {
+    if sourceTrace != AgentConversationSchedule.occurrenceStage, sourceTrace != AgentSingleFileRead.stage,
+      sourceTrace != AgentConversationGoalRuntime.stage {
       captureExplicitAgentCoreMemory(content, conversationId: conversationId, contactId: contactId, eventId: message.id.uuidString)
     }
     if !readOnlyAnalysis, (contactId == "hermes" || contact(id: contactId)?.type.caseInsensitiveCompare("agent") == .orderedSame),

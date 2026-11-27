@@ -153,6 +153,7 @@ struct AgentHomeView: View {
   @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
   @State var composerSubmissionID: UUID?
   @State var healthCareSubmission: GalaxySSIHealthCareComposerSubmission?
+  @State var conversationGoalLaunch: AgentConversationGoalLaunch?
   @State var screenAssistantStopping = false
   @State var screenAssistantVoiceCancellationRequest = 0
   @State var agentVoiceCaptureDictationOnly = false
@@ -503,6 +504,14 @@ struct AgentHomeView: View {
         GalaxySSIDoorAccessView(launch: launch)
       }
       .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
+      .sheet(item: $conversationGoalLaunch) { launch in
+        GalaxySSIConversationGoalView(launch: launch) {
+          if store.profile.identityFingerprint == launch.owner, store.activeAgentConversationId == launch.conversation,
+            AgentTurnReceiptEvidence.hash(draft.trimmingCharacters(in: .whitespacesAndNewlines)) == launch.draftSHA { draft = "" }
+        }
+      }
+      .onChange(of: scenePhase) { if $0 != .active { conversationGoalLaunch = nil } }
+      .onChange(of: store.profile.identityFingerprint) { _ in conversationGoalLaunch = nil }
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
           guard !screenAssistantStopping else { return }
