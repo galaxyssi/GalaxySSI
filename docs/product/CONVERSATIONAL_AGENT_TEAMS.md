@@ -209,9 +209,15 @@ the server supports schema-constrained decoding. For a known llama.cpp server
 only, add `--schema-plan` to exercise native schema constraints. Both paths
 validate role count, dependency order, assignments and the synthesis brief
 before dispatch. Neither repairs a broken plan by inventing missing work.
-When an explicit request for independent final review is recognized, a plan
-without a final editor stops before any worker call; no unaudited draft is published.
-Remote endpoints keep the existing planning protocol.
+For an explicit independent final review, the planner writes a separate
+`final_review` brief as well as the contributor assignments and synthesis brief.
+The brief commissions one real reviewer within the ten-role budget. It receives
+the completed draft, not a placeholder or a prediction of what the author will
+say. An independent work item can be a single assignment string; typed items
+retain explicit kinds and dependencies. The app doesn't supply missing briefs,
+invent graph edges, or count synthesis as review. A plan without a final editor
+stops before workers; no unaudited draft is published. Outside this explicit
+review mode, remote endpoints keep the existing planning protocol.
 
 For an open-ended concept instead of a table comparison, use `--concept` as
 an option. This fixed Chinese turn goes through the same team-command
