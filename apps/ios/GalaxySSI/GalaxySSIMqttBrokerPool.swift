@@ -67,6 +67,34 @@ final class GalaxySSIMqttBrokerPool {
     }
   }
 
+  func diagnostics(now: Int64) async -> MqttTransportDiagnostics {
+    let selection: (String, [String: MqttBrokerPathTransport])? = await withCheckedContinuation { continuation in
+      queue.async {
+        continuation.resume(returning: self.running ? (self.configurationID, self.paths) : nil)
+      }
+    }
+    guard let (configuration, paths) = selection else { return .unavailable }
+    var observed: [String: MqttBrokerPathDiagnostics] = [:]
+    for endpoint in MqttBrokerEndpoint.catalog {
+      guard !Task.isCancelled else { return .unavailable }
+      if let path = paths[endpoint.id], let value = await path.diagnosticSnapshot(),
+         value.brokerID == endpoint.id, value.configurationID == configuration {
+        observed[endpoint.id] = value
+      }
+    }
+    let captured = observed
+    let result: MqttTransportDiagnostics = await withCheckedContinuation { continuation in
+      queue.async {
+        guard self.running, self.configurationID == configuration else {
+          continuation.resume(returning: .unavailable); return
+        }
+        continuation.resume(returning: MqttTransportDiagnostics(paths: captured,
+          verifiedDelivery: self.policy.diagnostics(now: now).verifiedDelivery))
+      }
+    }
+    return Task.isCancelled ? .unavailable : result
+  }
+
   func wakeForTraffic() {
     queue.async {
       guard self.running else { return }

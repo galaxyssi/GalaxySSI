@@ -7846,3 +7846,18 @@
 "agent_model_picker.terra" = "视觉推理";
 "agent_model_picker.luna" = "快速、专注的任务";
 "agent_model_picker.retry" = "重新加载模型";
+
+"mqtt_diagnostics_paths" = "MQTT 连接路径";
+"mqtt_diagnostics_unknown" = "尚未观测";
+"mqtt_diagnostics_disconnected" = "未连接";
+"mqtt_diagnostics_connecting" = "连接中";
+"mqtt_diagnostics_subscribing" = "订阅中";
+"mqtt_diagnostics_receive_ready" = "接收订阅已就绪";
+"mqtt_diagnostics_recovering" = "恢复中";
+"mqtt_diagnostics_network_unavailable" = "网络不可用";
+"mqtt_diagnostics_activity" = "重连 %lld 次 · 排队 %d · 发送中 %d";
+"mqtt_diagnostics_subscriptions" = "订阅 %d/%d · 待确认 %d";
+"mqtt_diagnostics_no_samples" = "暂无对端确认的送达样本";
+"mqtt_diagnostics_ms" = "%lld 毫秒";
+"mqtt_diagnostics_insufficient_samples" = "样本不足";
+"mqtt_diagnostics_delivery_detail" = "%d 个对端确认样本 · p50 %@ · p95 %@";

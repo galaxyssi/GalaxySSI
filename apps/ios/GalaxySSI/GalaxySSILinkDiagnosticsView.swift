@@ -2,10 +2,18 @@ import SwiftUI
 
 struct GalaxySSILinkDiagnosticsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scenePhase
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var snapshot = GalaxySSILinkTransportDiagnostics.snapshot()
+  @State private var transport = MqttTransportDiagnostics.unavailable
 
   var body: some View {
     List {
+      Section(header: Text(t("mqtt_diagnostics_paths", "MQTT Paths"))) {
+        ForEach(MqttBrokerEndpoint.catalog, id: \.id) { endpoint in
+          mqttPathRow(endpoint)
+        }
+      }
       Section(header: Text(t("protocol_transport_summary", "Summary"))) {
         metricRow(
           t("protocol_replay_events", "Replay Events"),
@@ -61,6 +69,72 @@ struct GalaxySSILinkDiagnosticsView: View {
       }
     }
     .onAppear(perform: refresh)
+    .task(id: scenePhase) {
+      guard scenePhase == .active else { return }
+      while !Task.isCancelled {
+        refresh()
+        let current = await coordinator.mqttTransportDiagnostics()
+        guard !Task.isCancelled else { return }
+        transport = current
+        do { try await Task.sleep(nanoseconds: 1_000_000_000) }
+        catch { return }
+      }
+    }
+  }
+
+  private func mqttPathRow(_ endpoint: MqttBrokerEndpoint) -> some View {
+    let path = transport.paths[endpoint.id]
+    let state = path?.state ?? .unknown
+    let name = endpoint.id == "emqx" ? "EMQX" : (endpoint.id == "hivemq" ? "HiveMQ" : "Mosquitto")
+    return VStack(alignment: .leading, spacing: 5) {
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text(name).font(.headline)
+        Spacer(minLength: 8)
+        Text(mqttStateTitle(state))
+          .font(.subheadline)
+          .foregroundColor(state == .receiveReady ? .galaxySSIAccent : .secondary)
+          .multilineTextAlignment(.trailing)
+      }
+      if let path {
+        Text(String(format: t("mqtt_diagnostics_activity", "Reconnects %lld / queued %d / in flight %d"),
+          path.reconnectAttempts, path.queuedPublishes, path.inflightPublishes))
+        Text(String(format: t("mqtt_diagnostics_subscriptions", "Subscriptions %d/%d / pending %d"),
+          path.activeSubscriptions, path.desiredSubscriptions, path.pendingSubscriptions))
+      }
+      Text(mqttDeliveryDetail(transport.verifiedDelivery[endpoint.id]))
+        .foregroundColor(.secondary)
+    }
+    .font(.caption)
+    .padding(.vertical, 4)
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private func mqttStateTitle(_ state: MqttBrokerPathDiagnostics.State) -> String {
+    switch state {
+    case .unknown: return t("mqtt_diagnostics_unknown", "Not observed")
+    case .disconnected: return t("mqtt_diagnostics_disconnected", "Disconnected")
+    case .connecting: return t("mqtt_diagnostics_connecting", "Connecting")
+    case .subscribing: return t("mqtt_diagnostics_subscribing", "Subscribing")
+    case .receiveReady: return t("mqtt_diagnostics_receive_ready", "Receive subscriptions ready")
+    case .recovering: return t("mqtt_diagnostics_recovering", "Recovering")
+    case .networkUnavailable: return t("mqtt_diagnostics_network_unavailable", "Network unavailable")
+    }
+  }
+
+  private func mqttDeliveryDetail(_ stats: MqttMultipathPolicy.DeliveryStats?) -> String {
+    guard let stats, stats.samples > 0 else {
+      return t("mqtt_diagnostics_no_samples", "No peer-confirmed delivery samples")
+    }
+    let p50 = stats.p50.map { String(format: t("mqtt_diagnostics_ms", "%lld ms"), $0) }
+      ?? t("mqtt_diagnostics_unknown", "Not observed")
+    let p95: String
+    if stats.samples >= 30, let value = stats.p95 {
+      p95 = String(format: t("mqtt_diagnostics_ms", "%lld ms"), value)
+    } else {
+      p95 = t("mqtt_diagnostics_insufficient_samples", "Insufficient samples")
+    }
+    return String(format: t("mqtt_diagnostics_delivery_detail", "%d peer-confirmed samples / p50 %@ / p95 %@"),
+      stats.samples, p50, p95)
   }
 
   private func refresh() {

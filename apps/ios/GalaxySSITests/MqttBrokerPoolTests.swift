@@ -548,6 +548,8 @@ final class FakeMqttBrokerPath: MqttBrokerPathTransport {
   var currentSecretFingerprint = "secret-hash"
   var outstanding: Set<String> = []
   var invalidateBeforePublish = false
+  var diagnosticsValue: MqttBrokerPathDiagnostics?
+  var diagnosticsRead: (() async -> MqttBrokerPathDiagnostics?)?
   private var snapshot: MqttBrokerPathSnapshot
 
   init(id: String) { snapshot = .init(brokerID: id, generation: 0, connected: false, subscriptions: []) }
@@ -575,6 +577,10 @@ final class FakeMqttBrokerPath: MqttBrokerPathTransport {
     guard publication.accepts(snapshot: snapshot, secretFingerprint: currentSecretFingerprint) else { return .failed }
     sealedPublications.append(publication)
     return .queued
+  }
+  func diagnosticSnapshot() async -> MqttBrokerPathDiagnostics? {
+    if let diagnosticsRead { return await diagnosticsRead() }
+    return diagnosticsValue
   }
   func disconnect() {
     snapshot.connected = false
@@ -714,5 +720,139 @@ extension MqttBrokerPoolTests {
     XCTAssertEqual(remaining, ["hivemq": 1])
     let result = await pool.publish(publication(), brokerID: "hivemq")
     XCTAssertEqual(result, .queued)
+  }
+}
+
+// Observational diagnostic fixtures; no live broker, NWPathMonitor or device UI.
+extension MqttBrokerPoolTests {
+  private func diagnostic(_ path: FakeMqttBrokerPath, id: String) -> MqttBrokerPathDiagnostics {
+    MqttBrokerPathDiagnostics(brokerID: id, configurationID: path.configuration?.configurationID ?? "",
+      state: .receiveReady, reconnectAttempts: 3, desiredSubscriptions: 2, activeSubscriptions: 2,
+      pendingSubscriptions: 0, queuedPublishes: 4, inflightPublishes: 1)
+  }
+
+  func testDiagnosticStateSeparatesStoppedOfflineConnectingAndReceiveReadiness() {
+    func state(stopped: Bool = false, online: Bool = true, connecting: Bool = false,
+      connected: Bool = false, ready: Bool = false, recovering: Bool = false) -> MqttBrokerPathDiagnostics.State {
+      MqttBrokerPathDiagnostics.state(stopped: stopped, networkAvailable: online, connecting: connecting,
+        connected: connected, receiveReady: ready, recovering: recovering)
+    }
+    XCTAssertEqual(state(stopped: true, online: false, connecting: true), .disconnected)
+    XCTAssertEqual(state(online: false, connected: true, ready: true), .networkUnavailable)
+    XCTAssertEqual(state(connecting: true, recovering: true), .connecting)
+    XCTAssertEqual(state(connected: true), .subscribing)
+    XCTAssertEqual(state(connected: true, ready: true), .receiveReady)
+    XCTAssertEqual(state(ready: true), .disconnected)
+    XCTAssertEqual(state(recovering: true), .recovering)
+    XCTAssertEqual(state(), .disconnected)
+  }
+
+  func testUnstartedNativeClientDiagnosticsDoNotInventConnectionOrActivity() async throws {
+    let client = GalaxySSIMqttClient(endpoint: MqttBrokerEndpoint.catalog[1])
+    let value = await client.diagnosticSnapshot()
+    let snapshot = try XCTUnwrap(value)
+    XCTAssertEqual(snapshot.brokerID, "hivemq")
+    XCTAssertEqual(snapshot.state, .disconnected)
+    XCTAssertEqual(snapshot.reconnectAttempts, 0)
+    XCTAssertEqual(snapshot.desiredSubscriptions, 0)
+    XCTAssertEqual(snapshot.activeSubscriptions, 0)
+    XCTAssertEqual(snapshot.pendingSubscriptions, 0)
+    XCTAssertEqual(snapshot.queuedPublishes, 0)
+    XCTAssertEqual(snapshot.inflightPublishes, 0)
+  }
+
+  func testPoolDiagnosticsAreUnavailableUntilStarted() async {
+    let (pool, paths) = rig()
+    let value = await pool.diagnostics(now: 1_000)
+    XCTAssertTrue(value.paths.isEmpty)
+    XCTAssertTrue(value.verifiedDelivery.isEmpty)
+    XCTAssertTrue(paths.values.allSatisfy { $0.configuration == nil })
+  }
+
+  func testPoolDiagnosticsPreserveObservedCountsWithoutPublishingOrReadinessChanges() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    for endpoint in MqttBrokerEndpoint.catalog {
+      let path = try XCTUnwrap(paths[endpoint.id])
+      path.diagnosticsValue = diagnostic(path, id: endpoint.id)
+    }
+    let before = await pool.readyGenerations(for: topics)
+    let snapshot = await pool.diagnostics(now: 1_000)
+    let after = await pool.readyGenerations(for: topics)
+    XCTAssertEqual(before, after)
+    XCTAssertTrue(after.isEmpty)
+    XCTAssertEqual(Set(snapshot.paths.keys), ["emqx", "hivemq", "mosquitto"])
+    for value in snapshot.paths.values {
+      XCTAssertEqual(value.reconnectAttempts, 3)
+      XCTAssertEqual(value.queuedPublishes, 4)
+      XCTAssertEqual(value.inflightPublishes, 1)
+    }
+    XCTAssertTrue(snapshot.verifiedDelivery.values.allSatisfy { $0.samples == 0 && $0.p50 == nil && $0.p95 == nil })
+    XCTAssertTrue(paths.values.allSatisfy { $0.publications.isEmpty && $0.sealedPublications.isEmpty })
+  }
+
+  func testUnobservedPathsStayAbsentInsteadOfReceivingSyntheticStates() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"])
+    path.diagnosticsValue = diagnostic(path, id: "emqx")
+    let snapshot = await pool.diagnostics(now: 1_000)
+    XCTAssertEqual(Set(snapshot.paths.keys), ["emqx"])
+    XCTAssertNil(snapshot.paths["hivemq"])
+    XCTAssertNil(snapshot.paths["mosquitto"])
+  }
+
+  func testDiagnosticSamplesRejectWrongBrokerAndConfiguration() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let emqx = try XCTUnwrap(paths["emqx"]), hive = try XCTUnwrap(paths["hivemq"])
+    emqx.diagnosticsValue = diagnostic(emqx, id: "hivemq")
+    hive.diagnosticsValue = MqttBrokerPathDiagnostics(brokerID: "hivemq", configurationID: "old-configuration",
+      state: .receiveReady, reconnectAttempts: 99, desiredSubscriptions: 2, activeSubscriptions: 2,
+      pendingSubscriptions: 0, queuedPublishes: 0, inflightPublishes: 0)
+    let snapshot = await pool.diagnostics(now: 1_000)
+    XCTAssertTrue(snapshot.paths.isEmpty)
+  }
+
+  func testReconfigurationDuringDiagnosticReadDiscardsEntireOldOwnerSnapshot() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"]), old = diagnostic(path, id: "emqx")
+    path.diagnosticsRead = {
+      pool.connect(self.configuration())
+      _ = await pool.readyGenerations(for: self.topics)
+      return old
+    }
+    let snapshot = await pool.diagnostics(now: 1_000)
+    XCTAssertTrue(snapshot.paths.isEmpty)
+    XCTAssertTrue(snapshot.verifiedDelivery.isEmpty)
+    path.diagnosticsRead = nil
+  }
+
+  func testDisconnectDuringDiagnosticReadDoesNotPublishStaleReadyState() async throws {
+    let (pool, paths) = rig()
+    await start(pool)
+    let path = try XCTUnwrap(paths["emqx"]), old = diagnostic(path, id: "emqx")
+    path.diagnosticsRead = {
+      pool.disconnect()
+      _ = await pool.readyGenerations(for: self.topics)
+      return old
+    }
+    let snapshot = await pool.diagnostics(now: 1_000)
+    XCTAssertTrue(snapshot.paths.isEmpty)
+    XCTAssertTrue(snapshot.verifiedDelivery.isEmpty)
+    path.diagnosticsRead = nil
+  }
+
+  func testCancelledDiagnosticReadDoesNotReturnReadyState() async {
+    let (pool, _) = rig()
+    await start(pool)
+    let task = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return await pool.diagnostics(now: 1_000)
+    }
+    let snapshot = await task.value
+    XCTAssertTrue(snapshot.paths.isEmpty)
+    XCTAssertTrue(snapshot.verifiedDelivery.isEmpty)
   }
 }

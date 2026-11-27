@@ -53,6 +53,10 @@ TLS cancellation, power use, UI, device or process-death acceptance. No Swift
 compile/XCTest, native tests, network probes, CI monitoring or IPA is requested
 here. No raw reports, private/device evidence or generated packages are committed.
 
+The same PR now also includes observed path diagnostics; see
+`ANDROID_3045_PATH_DIAGNOSTICS.md`. Its additional nine methods bring this PR's
+authored additions to nineteen, without native execution.
+
 The full Android #3045 includes lifecycle diagnostics, mixed-workload latency,
 background projection, interrupted result commit and wider release acceptance.
 Existing implementations must still be assessed against those requirements; this

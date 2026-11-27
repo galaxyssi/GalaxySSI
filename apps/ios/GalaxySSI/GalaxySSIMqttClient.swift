@@ -157,6 +157,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private var reconnectWorkItem: DispatchWorkItem?
   private var topicRotationWorkItem: DispatchWorkItem?
   private var reconnectAttempt = 0
+  private var connectionAttempts: Int64 = 0
   private var transportRecoveryInProgress = false
   private var subscriptions: [String] = []
   private var activeSubscriptions: Set<String> = []
@@ -254,6 +255,25 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         self.pumpPendingPublishes()
         self.scheduleBrokerAckWatchdog()
         continuation.resume(returning: .queued)
+      }
+    }
+  }
+
+  func diagnosticSnapshot() async -> MqttBrokerPathDiagnostics? {
+    await withCheckedContinuation { continuation in
+      queue.async {
+        let desired = Set(self.subscriptions)
+        let pending = self.pendingSubscriptions.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        let state = MqttBrokerPathDiagnostics.state(stopped: self.intentionallyDisconnected || self.networkMonitor == nil,
+          networkAvailable: self.networkAvailability.permitsConnection,
+          connecting: self.connection != nil && !self.connected, connected: self.connected,
+          receiveReady: !desired.isEmpty && self.activeSubscriptions.isSuperset(of: desired),
+          recovering: self.reconnectWorkItem != nil || self.transportRecoveryInProgress)
+        continuation.resume(returning: MqttBrokerPathDiagnostics(brokerID: self.endpoint.id,
+          configurationID: self.configurationID, state: state,
+          reconnectAttempts: max(0, self.connectionAttempts - 1), desiredSubscriptions: desired.count,
+          activeSubscriptions: self.activeSubscriptions.count, pendingSubscriptions: pending.count,
+          queuedPublishes: self.pendingPacketPublishes.count, inflightPublishes: self.inFlightPublishes.count))
       }
     }
   }
@@ -683,6 +703,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
 
   private func start() {
     guard connection == nil, !intentionallyDisconnected, networkAvailability.permitsConnection else { return }
+    if connectionAttempts < Int64.max { connectionAttempts += 1 }
     let parameters = NWParameters.tls
     let mqttConnection = NWConnection(host: host, port: port, using: parameters)
     connection = mqttConnection
