@@ -506,14 +506,10 @@ struct AgentHomeView: View {
         GalaxySSIDoorAccessView(launch: launch)
       }
       .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
-      .sheet(item: $conversationGoalLaunch) { launch in
-        GalaxySSIConversationGoalView(launch: launch) {
-          if store.profile.identityFingerprint == launch.owner, store.activeAgentConversationId == launch.conversation,
-            AgentTurnReceiptEvidence.hash(draft.trimmingCharacters(in: .whitespacesAndNewlines)) == launch.draftSHA { draft = "" }
-        }
-      }
-      .onChange(of: scenePhase) { if $0 != .active { conversationGoalLaunch = nil } }
-      .onChange(of: store.profile.identityFingerprint) { _ in conversationGoalLaunch = nil }
+      .modifier(GalaxySSIConversationGoalSheet(launch: $conversationGoalLaunch) { launch in
+        if store.profile.identityFingerprint == launch.owner, store.activeAgentConversationId == launch.conversation,
+          AgentTurnReceiptEvidence.hash(draft.trimmingCharacters(in: .whitespacesAndNewlines)) == launch.draftSHA { draft = "" }
+      })
       .modifier(GalaxySSIHealthAgentLabSheet(launch: $localLabLaunch))
       .onChange(of: scenePhase) { if $0 != .active { localLabGroupRequest = nil } }
       .onChange(of: store.profile.identityFingerprint) { _ in localLabGroupRequest = nil }

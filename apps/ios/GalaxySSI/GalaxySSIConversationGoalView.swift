@@ -36,6 +36,23 @@ struct AgentConversationGoalLaunch: Identifiable {
 }
 
 @MainActor
+struct GalaxySSIConversationGoalSheet: ViewModifier {
+  @EnvironmentObject private var store: GalaxySSIStore
+  @Environment(\.scenePhase) private var scene
+  @Binding var launch: AgentConversationGoalLaunch?
+  let applied: (AgentConversationGoalLaunch) -> Void
+  func body(content: Content) -> some View {
+    content.sheet(item: $launch) { item in
+      GalaxySSIConversationGoalView(launch: item) { applied(item) }
+    }
+    .onChange(of: scene) { if $0 != .active { launch = nil } }
+    .onChange(of: store.profile.identityFingerprint) { _ in launch = nil }
+    .onChange(of: store.activeAgentConversationId) { if launch?.conversation != $0 { launch = nil } }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in launch = nil }
+  }
+}
+
+@MainActor
 struct GalaxySSIConversationGoalView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.scenePhase) private var scene
