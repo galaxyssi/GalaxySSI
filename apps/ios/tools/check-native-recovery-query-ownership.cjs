@@ -21,8 +21,10 @@ function retainedServices(s) {
   const block = section(s, first, last);
   assert.equal(block, section(show(approved, file), first, last), 'Only exact native query authorization normalizes');
   s = once(s, block);
-  s = once(s, '    guard managedNativeRecoveryMayQuery(source) else { return false }\n');
-  return once(s, '      if record.binding.managedSource != nil {\n        guard let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),\n              managedNativeRecoveryMayQuery(managed) else { continue }\n      }\n');
+  s = once(s, '    guard managedNativeRecoveryMayQuery(source) else { return false }\n    if let reason = record.expiryReason(now: now),',
+    '    if let reason = record.expiryReason(now: now),');
+  return once(s, '      if record.binding.managedSource != nil {\n        guard let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),\n              managedNativeRecoveryMayQuery(managed) else { continue }\n      }\n      guard requests.count < 4, ready(record.binding) else { continue }',
+    '      guard requests.count < 4, ready(record.binding) else { continue }');
 }
 function retained(f, s) {
   if (f === file) return retainedServices(s);

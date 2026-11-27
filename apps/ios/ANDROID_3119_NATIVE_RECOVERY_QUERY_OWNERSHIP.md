@@ -14,6 +14,8 @@ uses the existing untracked-dispatch failure path and never starts the queue.
 
 Both legacy and journal-backed recovery query producers reauthorize identified
 native waits before consuming query counters or producing a network request.
+The legacy path gates before expiry side effects as well, so an unauthorized
+native wait cannot become a synthetic failed response merely due to silence.
 The current profile, saved permission, foreground/unlocked/readable state,
 execution settings, active session, privacy/tracking controls, exact task phase,
 saved pending receipt and original outgoing message must still match. An owned
