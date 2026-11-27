@@ -5,7 +5,8 @@ const base = 'b0d299157e8035b1b7849831bae31697d81753cc', android = '65655f0c79c6
 const norm = value => value.replace(/\r\n/g, '\n');
 const read = file => {
   const hooks = require('./check-search-response-cache-scope.cjs');
-  return hooks.retainedResponseCache(hooks.retainedResponseSearch(norm(fs.readFileSync(path.join(root, file), 'utf8'))));
+  const source = require('./check-immutable-source-routing.cjs').retainedImmutableRouting(norm(fs.readFileSync(path.join(root, file), 'utf8')));
+  return hooks.retainedResponseCache(hooks.retainedResponseSearch(source));
 };
 const show = (ref, file) => norm(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 const providerHooks = [

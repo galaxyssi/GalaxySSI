@@ -138,10 +138,11 @@ enum AgentIOSWebIntelligenceQueryRouting {
         (general.contains(source.vertical) ? 1.0 : 0) + languageMatch + source.authority * 0.5 +
         (health[source.id] ?? AgentIOSWebSourceHealth(sourceID: source.id)).routingScore
     }
-    let ranked = eligible.enumerated().filter { !blocked.contains($0.element.id) }.sorted {
-      let left = score($0.element), right = score($1.element)
-      return left == right ? $0.offset < $1.offset : left > right
-    }.map(\.element)
+    let ranked = eligible.enumerated().filter { !blocked.contains($0.element.id) }.map {
+      (source: $0.element, ordinal: $0.offset, score: score($0.element))
+    }.sorted {
+      $0.score == $1.score ? $0.ordinal < $1.ordinal : $0.score > $1.score
+    }.map { $0.source }
     var selected: [AgentIOSWebIntelligenceSourceSpec] = []
     var seen = Set<String>()
     for category in categories.sorted() {
@@ -169,7 +170,7 @@ enum AgentIOSWebIntelligenceQueryRouting {
     "crossref", "semantic_scholar", "arxiv", "pubmed", "crates_io", "npm", "mdn", "devdocs", "pypi"
   ]
 
-  private static var orderedSources: [AgentIOSWebIntelligenceSourceSpec] {
+  private static let orderedSources: [AgentIOSWebIntelligenceSourceSpec] = {
     let roots: [AgentIOSWebIntelligenceSourceSpec] = [
       .init(id: "bing", title: "Bing", vertical: .general, allowedHosts: [], authority: 0.5),
       .init(id: "duckduckgo", title: "DuckDuckGo", vertical: .general, allowedHosts: [], authority: 0.5),
@@ -182,7 +183,7 @@ enum AgentIOSWebIntelligenceQueryRouting {
       [AgentIOSArxivSearchAdapter.entry.spec, AgentIOSDevDocsSearchAdapter.entry.spec]
     let base = baseSourceOrder.compactMap { id in adapters.first { $0.id == id } }
     return base + AgentIOSWebIntelligenceSourceCatalog.indexedSources
-  }
+  }()
 
   static func queryLanguage(_ query: String) -> String {
     let scalars = query.unicodeScalars.map(\.value)

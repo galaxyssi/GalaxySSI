@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '6ce96ba0fefa4a22697a39058a870fb583b251a6', android = '65655f0c79c6ab04121150229a65b089180f82f2';
 const norm = value => value.replace(/\r\n/g, '\n');
-const read = file => norm(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => require('./check-immutable-source-routing.cjs').retainedImmutableRouting(norm(fs.readFileSync(path.join(root, file), 'utf8')));
 const show = (ref, file) => norm(cp.execFileSync('git', ['show', ref + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 const hooks = {
   "raw": [
