@@ -1,7 +1,7 @@
 // Static contracts only; no Swift/XCTest, database execution or UI/device acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = 'f6eb451d14caa820e2ba2328eb280e3799798120', app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-projection-scratch-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 const promptBlock = `      if let snapshot = request.knowledgeStats,
@@ -11,6 +11,7 @@ const promptBlock = `      if let snapshot = request.knowledgeStats,
       }
 `;
 function retained(f, s) {
+  s = require('./check-knowledge-projection-scratch-scope.cjs').retained(f, s);
   if (f === app + 'AgentKnowledgeDatabase.swift') return s.replace(section(s, '  func knowledgeStats()', '  struct PrimaryMigrationPage:'),
     section(old(f), '  func knowledgeStats()', '  struct PrimaryMigrationPage:'));
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return s.split('\n').filter(l => !/AgentKnowledgeStatistics(?:Context|ReadAdmission)(?:Tests)?\.swift/.test(l)).join('\n');

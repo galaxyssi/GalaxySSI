@@ -437,17 +437,30 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
 }
 
 enum AgentKnowledgeSourceRevision {
-  static func digest(_ items: [AgentKnowledgeItem]) -> String {
-    var hasher = SHA256()
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    for item in items.sorted(by: { $0.id < $1.id }) {
-      guard let data = try? encoder.encode(item) else { continue }
+  struct Accumulator {
+    private var hasher = SHA256()
+    private let encoder: JSONEncoder
+    init() { encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys] }
+    mutating func append(_ item: AgentKnowledgeItem) throws {
+      let data = try encoder.encode(item)
       var length = UInt64(data.count).bigEndian
       withUnsafeBytes(of: &length) { hasher.update(data: Data($0)) }
       hasher.update(data: data)
     }
-    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    mutating func finish() -> String {
+      hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+  }
+  static func identityPrecedes(_ left: String, _ right: String) -> Bool {
+    if left != right { return left < right }
+    return left.utf16.lexicographicallyPrecedes(right.utf16)
+  }
+  static func digest(_ items: [AgentKnowledgeItem]) -> String {
+    var accumulator = Accumulator()
+    for item in items.sorted(by: { identityPrecedes($0.id, $1.id) }) {
+      try? accumulator.append(item)
+    }
+    return accumulator.finish()
   }
 }
 
