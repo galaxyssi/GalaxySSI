@@ -95,6 +95,7 @@ final class AgentKnowledgeDatabase {
   private let payloadDirectory: URL
   private let primaryPayloads: AgentKnowledgePrimaryPartitions
   private let lock = NSRecursiveLock()
+  private let indexMemoScope = AgentKnowledgeIndexOperationScope()
   private var database: OpaquePointer?
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
@@ -248,7 +249,8 @@ final class AgentKnowledgeDatabase {
       guard let database, sqlite3_get_autocommit(database) != 0 else { throw AgentKnowledgeDatabaseError.unavailable }
     }
     let primarySnapshotLease = try primaryPayloads.snapshotLease()
-    return try AgentKnowledgeCommittedReadView(fileURL: fileURL, primarySnapshotLease: primarySnapshotLease) { [nativeFiles = self.nativeFiles] in
+    return try AgentKnowledgeCommittedReadView(fileURL: fileURL, primarySnapshotLease: primarySnapshotLease,
+      indexMemoScope: indexMemoScope) { [nativeFiles = self.nativeFiles] in
       guard nativeFiles.readToken(backgroundLease: backgroundLease) == token else { throw CancellationError() }
     }
   }
@@ -3061,9 +3063,11 @@ final class AgentKnowledgeDatabase {
   }
 
   private func keyedHash(_ value: String) -> String {
-    HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: indexKey())
-      .map { String(format: "%02x", $0) }
-      .joined()
+    indexMemoScope.key(value, calculate: { calculateIndexKey(value) })
+  }
+
+  private func calculateIndexKey(_ value: String) -> String {
+    AgentKnowledgeIndexKeyMemo.hex(HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: indexKey()))
   }
 
   private func indexKey() -> SymmetricKey {
@@ -3520,7 +3524,7 @@ final class AgentKnowledgeDatabase {
   private func locked<T>(_ body: () throws -> T) rethrows -> T {
     lock.lock()
     defer { lock.unlock() }
-    return try body()
+    return try indexMemoScope.withOperation(body)
   }
 
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

@@ -1,10 +1,11 @@
 // Source contracts only. This does not compile Swift or execute XCTest.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), base = 'd29e681d2bd99dffe3fc5e8a5af8e95108f2eb33', app = 'apps/ios/GalaxySSI/';
-const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
+const read = f => require('./check-knowledge-index-memo-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function retained(f, s) {
+  s = require('./check-knowledge-index-memo-scope.cjs').retained(f, s);
   if (f === app + 'AgentKnowledgeModels.swift') return s.replace(section(s, 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'),
     section(old(f), 'enum AgentKnowledgeSourceRevision {', 'struct AgentKnowledgeSourceCursor:'));
   if (f === app + 'AgentKnowledgeDatabase.swift' && s.includes('sourceRevision: AgentKnowledgeSourceRevision.digest(members)')) return s

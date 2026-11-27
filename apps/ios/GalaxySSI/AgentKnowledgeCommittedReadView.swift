@@ -9,13 +9,16 @@ final class AgentKnowledgeCommittedReadView {
   private var database: OpaquePointer?
   private var primarySnapshotLease: AgentKnowledgePrimaryPartitions.SnapshotLease?
   private let checkActive: () throws -> Void
+  private let indexMemoScope: AgentKnowledgeIndexOperationScope?
   private var activeReads = 0, closing = false
   private(set) var revision: Int64 = 0
 
   init(fileURL: URL, primarySnapshotLease: AgentKnowledgePrimaryPartitions.SnapshotLease? = nil,
+    indexMemoScope: AgentKnowledgeIndexOperationScope? = nil,
     checkActive: @escaping () throws -> Void) throws {
     self.primarySnapshotLease = primarySnapshotLease
     self.checkActive = checkActive
+    self.indexMemoScope = indexMemoScope
     do {
       try Task.checkCancellation(); try checkActive()
       guard sqlite3_open_v2(fileURL.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK,
@@ -37,6 +40,10 @@ final class AgentKnowledgeCommittedReadView {
   }
   deinit { close() }
   func read<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
+    guard let indexMemoScope else { return try readWithinOperation(body) }
+    return try indexMemoScope.withOperation { try readWithinOperation(body) }
+  }
+  private func readWithinOperation<T>(_ body: (OpaquePointer) throws -> T) throws -> T {
     guard let database, !closing else { throw AgentKnowledgeDatabaseError.unavailable }
     try Task.checkCancellation(); try checkActive()
     activeReads += 1
