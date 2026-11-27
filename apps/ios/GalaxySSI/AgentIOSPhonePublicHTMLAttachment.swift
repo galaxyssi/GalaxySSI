@@ -145,6 +145,17 @@ enum AgentIOSPhonePublicHTMLAttachment {
         if let originalHTML {
           preparation.originalSourceArchiveName = try? AgentIOSOriginalHTMLSourceArchive
             .save(originalHTML).lastPathComponent
+          if let export = preparation.export,
+             let network = provider as? AgentIOSURLSessionWebIntelligenceProvider,
+             let media = network.webMediaProvider as? AgentIOSURLSessionWebMediaToolProvider,
+             let original = try? AgentIOSOriginalPageDocument.build(source: originalHTML,
+               url: preparation.sourceURL, language: interfaceLanguage, load: { address, limit in
+                 guard invocation.remainingTimeMillis > 0, !invocation.isCancellationRequested else { return nil }
+                 return try? media.originalPageAsset(address, maxBytes: limit, invocation: invocation)
+               }) {
+            preparation.export = AgentIOSPhonePublicHTMLExport(id: export.id,
+              displayName: String(export.displayName.dropLast(5)) + "-original.html", data: original.data)
+          }
         }
         accumulator.set(preparation, at: index)
       }
