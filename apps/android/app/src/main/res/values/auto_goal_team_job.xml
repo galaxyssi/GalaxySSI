@@ -1,0 +1,7 @@
+<resources>
+    <string name="auto_team_job_receipt">Team result · %1$d delegated roles · %2$d model turns</string>
+    <string name="auto_team_job_queued">Team request queued · %1$s</string>
+    <string name="auto_team_job_interrupted">The team was interrupted. Its last requests have an unknown outcome and were not repeated. Start a new team request to try again.</string>
+    <string name="auto_team_job_failed">The team could not deliver a verified workflow result using %1$s. A model call, the plan, or a worker response did not pass checks. No alternate model was used.</string>
+    <string name="auto_team_job_stopped">Team stopped. No further results from this run will be added.</string>
+</resources>

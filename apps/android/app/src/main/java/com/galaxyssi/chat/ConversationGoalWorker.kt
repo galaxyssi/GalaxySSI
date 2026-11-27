@@ -56,17 +56,23 @@ internal object ConversationGoalRunner {
         } }
         val prompt = JSONObject().put("objective", g.objective).put("checkpoints", org.json.JSONArray(history))
             .put("pending", g.next).put("clarification", g.note).put("remaining_rounds", g.allowance - g.rounds).toString()
-        val route = g.route
+        return text(context, g.route, g.chat, g.id, g.rounds, system, prompt, token, resolveCloud)
+    }
+
+    internal suspend fun text(context: Context, route: GoalRoute, chat: String, run: String, round: Int,
+        system: String, prompt: String, token: AgentNativeToolCancellationToken,
+        resolveCloud: (Context, String, String) -> JSONObject? = ::cloud): String {
+        check(!token.isCancellationRequested)
         if (route.target == "local-llm") {
             val profile = LocalModelCooperativeRuntime.readyProfiles(context, LocalModelWorkClass.BACKGROUND)
                 .singleOrNull { it.id == route.model } ?: error("model unavailable")
             return LocalModelInferenceRuntime.generate(context, profile, system, prompt, maximumTokens = 2048,
-                workClass = LocalModelWorkClass.BACKGROUND, taskId = g.id).text
+                workClass = LocalModelWorkClass.BACKGROUND, taskId = run).text
         }
         val c = resolveCloud(context, route.target, route.model) ?: error("model unavailable")
         check(c.getString("cloud_model") == route.model && fingerprint(c) == route.endpointHash)
         val response = CloudModelClient.nativeToolAdapter(context, c, emptyList()).complete(
-            AgentModelRequest(g.id, g.chat, "${g.id}-${g.rounds}", g.id, g.chat, g.rounds,
+            AgentModelRequest(run, chat, "$run-$round", run, chat, round,
                 listOf(AgentModelMessage.system(system), AgentModelMessage.user(prompt)), "[]",
                 AgentNativeJsonCodec.sha256("[]"), 0, 3000, 120_000, 0, token))
         check(response.toolCalls.isEmpty())
