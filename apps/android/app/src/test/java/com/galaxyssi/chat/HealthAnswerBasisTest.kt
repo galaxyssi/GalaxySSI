@@ -4,14 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HealthAnswerBasisTest {
-    private val report = """{"record":{"id":"record-a","revision":2},"metric":"GLUCOSE","measured_at":400,"value":"private value"}"""
+    private val recordId = "d1d8f475-30e0-40ca-9b43-c623f528a1e1"
+    private val report = """{"record":{"id":"$recordId","revision":2},"metric":"GLUCOSE","measured_at":400,"value":"private value"}"""
 
     @Test fun sourceFactsFollowApprovedRecordRevisionAndNotDuplicatedHistoryOrUnavailableRelatedRows() {
         val sources = HealthAnswerBasis.snapshot("""{"metric":"GLUCOSE","assessment":$report,"measurement_history":{"samples":[$report]},
             "clarification_context":{"context_status":"CURRENT_RECORD","confirmed_at":405,"recorded_condition":"FASTING"},
             "related_measurements":{"selected":[{"metric":"GLUCOSE","available":false,"sample":$report}]},
             "selected_profile":{"fields":{"SEX":{"state":"UNKNOWN"}},"entries":[]}}""")
-        assertEquals(listOf(HealthBasisSource(HealthBasisKind.MEASUREMENT, 400, metric = HealthMetric.GLUCOSE),
+        assertEquals(listOf(HealthBasisSource(HealthBasisKind.MEASUREMENT, 400, metric = HealthMetric.GLUCOSE, record = HealthCareRecordRef(recordId, 2)),
             HealthBasisSource(HealthBasisKind.CONTEXT, 405)), sources)
         assertTrue(sources.all { HealthBasisSource.from(it.json()) == it })
         assertFalse(sources.any { it.json().toString().contains("private value") || it.json().toString().contains("FASTING") })

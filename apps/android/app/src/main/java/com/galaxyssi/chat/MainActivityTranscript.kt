@@ -1238,8 +1238,14 @@ internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntr
     } else {
         richContent
     }
-    return decorateAgentReplySpeech(entry, content)
+    val reply = decorateAgentReplySpeech(entry, content)
+    val basis = healthAnswerFooter(entry) ?: return reply
+    return LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(reply); addView(basis) }
 }
+
+internal fun MainActivity.healthAnswerFooter(entry: AgentTranscriptEntry): View? =
+    if (entry.sourceConversationId.isBlank() && AgentTurnReceipt.isReplyText(entry) && !isAgentApprovalEntry(entry))
+        healthCareSurface?.answerRow(entry.conversationId, entry.turnId) else null
 
 internal fun MainActivity.agentAssistantRichContent(
     displayEntry: AgentTranscriptEntry,
@@ -1547,9 +1553,6 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
         })
         addView(agentResearchTraceRow(entry, turnEntries.filter { it.role == AgentTranscriptRole.ASSISTANT }
             .joinToString("\n") { it.text }))
-        if (completed && turnEntries.any { it.conversationId == entry.conversationId && it.turnId == entry.turnId &&
-                AgentTurnReceipt.isReplyText(it) && !isAgentApprovalEntry(it) })
-            healthCareSurface?.answerRow(entry.conversationId, entry.turnId)?.let { addView(it) }
         if (progressPresentation.visible) {
             addView(agentPlanProgressSummaryRow(entry, groupKey, progressPresentation))
         }

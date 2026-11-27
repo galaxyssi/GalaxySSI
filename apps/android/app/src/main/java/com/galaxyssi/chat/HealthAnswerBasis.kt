@@ -5,13 +5,15 @@ import org.json.JSONObject
 
 internal enum class HealthBasisKind { MEASUREMENT, CONTEXT, PROFILE, GUIDELINE, TARGET, INSTRUCTION, FOLLOW_UP, RETRIEVED }
 
-internal data class HealthBasisSource(val kind: HealthBasisKind, val at: Long, val title: String = "", val metric: HealthMetric? = null) {
+internal data class HealthBasisSource(val kind: HealthBasisKind, val at: Long, val title: String = "", val metric: HealthMetric? = null,
+    val record: HealthCareRecordRef? = null) {
     fun json() = JSONObject().put("kind", kind.name).put("at", at).put("title", title)
-        .apply { metric?.let { put("metric", it.name) } }
+        .apply { metric?.let { put("metric", it.name) }; record?.let { put("record", it.json()) } }
 
     companion object {
         fun from(v: JSONObject) = HealthBasisSource(HealthBasisKind.valueOf(v.getString("kind")), v.getLong("at"),
-            v.optString("title").take(256), v.optString("metric").takeIf(String::isNotBlank)?.let(HealthMetric::valueOf))
+            v.optString("title").take(256), v.optString("metric").takeIf(String::isNotBlank)?.let(HealthMetric::valueOf),
+            v.optJSONObject("record")?.let(HealthCareRecordRef::from))
     }
 }
 
@@ -26,8 +28,9 @@ internal object HealthAnswerBasis {
             val record = value?.optJSONObject("record") ?: return
             val id = record.optString("id")
             val metric = runCatching { HealthMetric.valueOf(name) }.getOrNull() ?: return
-            if (id.isNotBlank() && record.optInt("revision") > 0 && value.optLong("measured_at") > 0)
-                rows["record:$id:${record.optInt("revision")}"] = HealthBasisSource(HealthBasisKind.MEASUREMENT, value.getLong("measured_at"), metric = metric)
+            if (HealthProfilePolicy.uuid(id) && record.optInt("revision") > 0 && value.optLong("measured_at") > 0)
+                rows["record:$id:${record.optInt("revision")}"] = HealthBasisSource(HealthBasisKind.MEASUREMENT, value.getLong("measured_at"),
+                    metric = metric, record = HealthCareRecordRef.from(record))
         }
         fun each(a: JSONArray?, block: (JSONObject) -> Unit) { if (a != null) for (i in 0 until a.length()) a.optJSONObject(i)?.let(block) }
         val assessment = root.optJSONObject("assessment")
@@ -53,5 +56,23 @@ internal object HealthAnswerBasis {
             rows["target"] = HealthBasisSource(HealthBasisKind.TARGET, it.getLong("confirmed_at"))
         }
         return rows.values.toList()
+    }
+
+    fun localReportNames(context: android.content.Context, names: HealthOverviewDatabases, rows: List<HealthBasisSource>): List<HealthBasisSource> {
+        if (rows.none { it.record != null }) return rows
+        return HealthRecordStore(context, names.records).use { records ->
+            HealthOriginalStore(context, names.originals, names.originalRoot(context), records).use { originals ->
+                rows.map { row ->
+                    val ref = row.record ?: return@map row
+                    val observation = records.record(ref.id)?.takeIf { it.revision == ref.revision && it.draft.metric == row.metric &&
+                        it.draft.measuredAt == row.at && it.profileId == "self" } ?: return@map row
+                    val evidence = observation.draft.evidence ?: return@map row
+                    val name = originals.original(evidence.originalId)?.takeIf {
+                        it.sha256 == evidence.sha256 && !it.reviewOnly && originals.present(it)
+                    }?.name?.take(180).orEmpty()
+                    if (name.isEmpty()) row else row.copy(title = name)
+                }
+            }
+        }
     }
 }

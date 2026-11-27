@@ -22,6 +22,7 @@ internal class HealthCareAgentSurface(
     private var dirty = false
     private var generation = 0
     private var visibleConversation = ""
+    private var ordinaryConversation = ""
     private val basisRows = mutableSetOf<HealthAnswerBasisRow>()
     private val observer = object : ContentObserver(main) {
         override fun onChange(selfChange: Boolean) {
@@ -35,7 +36,8 @@ internal class HealthCareAgentSurface(
         if (active) return
         active = true
         listOf(HealthCareStore.changes(activity, names.care), HealthPrivacyStore.changes(activity, names.privacy),
-            HealthRecordStore.changes(activity, names.records), HealthProfileStore.changes(activity, names.profile)).forEach {
+            HealthRecordStore.changes(activity, names.records), HealthProfileStore.changes(activity, names.profile),
+            HealthOriginalStore.changesUri(activity).buildUpon().appendPath("originals").build()).forEach {
             activity.contentResolver.registerContentObserver(it, false, observer)
         }
         reload()
@@ -68,8 +70,10 @@ internal class HealthCareAgentSurface(
     }
 
     fun answerRow(conversation: String, turn: String): View? {
+        if (conversation.isBlank() || conversation == ordinaryConversation || turn.isBlank()) return null
         val current = activity.agentTranscriptStore.activeConversation()
-        if (turn.isBlank() || current.id != conversation || HealthCareAgentScope.concernId(current) == null) return null
+        if (current.id != conversation) return null
+        if (HealthCareAgentScope.concernId(current) == null) { ordinaryConversation = conversation; return null }
         return HealthAnswerBasisRow(activity, conversation, turn, { row, attach ->
             if (attach) { basisRows.add(row); requestBasis(row, false) } else basisRows.remove(row)
         }, ::requestBasis)
@@ -89,7 +93,9 @@ internal class HealthCareAgentSurface(
                 HealthCareStore(context, names.care).use { store ->
                     val grant = store.discussionGrant(row.turn)?.takeIf { it.conversationId == row.conversation && it.concernId == concern }
                         ?: return@use null
-                    store.answerBasis(grant) to (grant.approvedAt + HealthCareDiscussionPolicy.MAX_APPROVAL_AGE)
+                    val sources = store.answerBasis(grant)
+                    (if (expand) HealthAnswerBasis.localReportNames(context, names, sources) else sources) to
+                        (grant.approvedAt + HealthCareDiscussionPolicy.MAX_APPROVAL_AGE)
                 }
             }.getOrNull()
             main.post {
@@ -113,6 +119,7 @@ internal class HealthCareAgentSurface(
             visibleConversation = conversation.id
         }
         val concernId = HealthCareAgentScope.concernId(conversation)
+        ordinaryConversation = if (concernId == null) conversation.id else ""
         if (concernId == null) {
             clear()
             dirty = false

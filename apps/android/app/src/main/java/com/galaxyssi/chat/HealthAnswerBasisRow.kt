@@ -43,7 +43,8 @@ internal class HealthAnswerBasisRow(
             })
             rows.forEach { row ->
                 val kind = context.resources.getStringArray(R.array.health_basis_kinds)[row.kind.ordinal]
-                val label = row.metric?.let { activity.getString(it.titleResource()) } ?: row.title
+                val label = listOfNotNull(row.metric?.let { activity.getString(it.titleResource()) },
+                    row.title.takeIf(String::isNotBlank)).joinToString(" · ")
                 addView(TextView(context).apply {
                     text = listOf(kind, label, row.at.takeIf { it > 0 }?.let { dates.format(Date(it)) }.orEmpty())
                         .filter(String::isNotBlank).joinToString(" · ")
