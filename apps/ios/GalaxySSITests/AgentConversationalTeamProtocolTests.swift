@@ -60,4 +60,44 @@ final class AgentConversationalTeamProtocolTests: XCTestCase {
     XCTAssertThrowsError(try Contract.report("FINDING|```galaxyssi-rich\nDISSENT|-\nEND", role: role))
     XCTAssertThrowsError(try Contract.synthesis("```galaxyssi-rich\nEND"))
   }
+  func testNumberedPlanAssignsStableHostIDsAndEarlierDependencies() throws {
+    let plan = try Contract.plan("WORK|-|Compute all rows.\nREVIEW|1|Audit numbers.\nCRITIC|1,2|Find counterexamples.\nSYNTHESIS|Compare with units.")
+    XCTAssertEqual(plan.roles.map(\.id), ["role1", "role2", "role3"])
+    XCTAssertEqual(plan.roles.map(\.kind), [.worker, .reviewer, .dissent])
+    XCTAssertEqual(plan.roles[2].parents, ["role1", "role2"])
+  }
+  func testNumberedPlanRejectsForwardZeroPaddedSelfDuplicateAndMixedReferences() {
+    for body in ["WORK|1|Self.", "WORK|-|A\nREVIEW|0|Zero.", "WORK|-|A\nREVIEW|01|Padded.",
+      "WORK|-|A\nREVIEW|2|Self.", "WORK|-|A\nREVIEW|1,1|Duplicate.",
+      "WORK|-|A\nROLE|legacy|worker|-|Mixed.", "ROLE|legacy|worker|-|A\nWORK|-|Mixed."] {
+      XCTAssertThrowsError(try Contract.plan(body + "\nSYNTHESIS|Combine."))
+    }
+  }
+  func testTypedJSONReportsAndSynthesisAcceptCompletePlainOrJsonFencedObjects() throws {
+    let role = Contract.Role(id: "role1", kind: .worker, parents: [], assignment: "Compare.")
+    XCTAssertNil(try Contract.report(#"{"finding":"A result"}"#, role: role).dissent)
+    XCTAssertNil(try Contract.report(#"{"finding":"A result","dissent":null}"#, role: role).dissent)
+    XCTAssertEqual(try Contract.report("```json\n{\"finding\":\"A result\",\"dissent\":\"Not measured\"}\n```", role: role).dissent, "Not measured")
+    XCTAssertEqual(try Contract.synthesis(#"{"answer":"Compare 4 kg with 5 kg.\nA hypothesis, not a measurement."}"#),
+      "Compare 4 kg with 5 kg.\nA hypothesis, not a measurement.")
+  }
+  func testTypedResultsRejectExtraFieldsWrongTypesPartialObjectsAndTrailingProse() {
+    let role = Contract.Role(id: "role1", kind: .worker, parents: [], assignment: "Compare.")
+    for raw in [#"{"finding":true}"#, #"{"finding":"A","dissent":false}"#, #"{"finding":"A","tools":[]}"#,
+      #"{"finding":"A","dissent":""}"#, #"{"finding":"A"} trailing"#, #"{"finding":"A"}"# + "{}"] {
+      XCTAssertThrowsError(try Contract.report(raw, role: role))
+    }
+    for raw in [#"{"answer":true}"#, #"{"answer":"A","objective":"changed"}"#, #"{"answer":"A"} trailing"#,
+      #"{"answer":"unfinished"#] { XCTAssertThrowsError(try Contract.synthesis(raw)) }
+  }
+  func testJSONDecodedBoundsAndRichContentRestrictionsStillApply() throws {
+    let role = Contract.Role(id: "role1", kind: .worker, parents: [], assignment: "Compare.")
+    func json(_ key: String, _ value: String) throws -> String {
+      String(decoding: try JSONSerialization.data(withJSONObject: [key: value]), as: UTF8.self)
+    }
+    XCTAssertThrowsError(try Contract.report(json("finding", String(repeating: "x", count: 2_001)), role: role))
+    XCTAssertThrowsError(try Contract.report(json("finding", "```galaxyssi-rich"), role: role))
+    XCTAssertThrowsError(try Contract.synthesis(json("answer", String(repeating: "x", count: 8_001))))
+    XCTAssertThrowsError(try Contract.synthesis(json("answer", "```galaxyssi-rich")))
+  }
 }

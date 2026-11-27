@@ -22,6 +22,12 @@ enum AgentConversationalTeamCommand: Equatable {
       value.range(of: entire ? "^(?:" + pattern + ")$" : pattern, options: [.regularExpression, .caseInsensitive]) != nil
     }
   }
+  private static let negative = #"\b(?:do not|don't|don\u2019t|not to|never|without|no need to|no)\s+(?:(?:do|use|using|form|forming|ask|asking|have|having|need|want|get|an?|the|any|to)\s+){0,4}(?:team|agents?|multiple agents|multi-agent|delegat\w*|independent(?:ly)?)\b"#
+  static func allowsModelReview(_ text: String, language: String) -> Bool {
+    !text.isBlank && !text.hasPrefix("/") && makeStart(text) == .start(text) &&
+      !matches(text, key: "negative", english: negative) &&
+      GalaxySSIHealthAgentLab.intent(text, following: true, language: language) == nil
+  }
   private static func makeStart(_ objective: String) -> Self {
     guard objective.utf16.count <= 4_000 else { return .tooLong }
     let health = #"\b(?:my|our|patient['\u2019]s)\s+(?:(?:latest|last|recent|personal)\s+){0,2}(?:health records?|medical records?|lab results?|blood (?:pressure|sugar|tests?)|diagnosis|prescriptions?|symptoms?)\b|\bblood pressure\b\s*[:=]?\s*\d{2,3}\s*/\s*\d{2,3}"#
@@ -43,7 +49,6 @@ enum AgentConversationalTeamCommand: Equatable {
     guard let quoted = try? NSRegularExpression(pattern: quotes) else { return nil }
     let prefix = String(text.prefix(4_000))
     let visible = quoted.stringByReplacingMatches(in: prefix, range: NSRange(prefix.startIndex..., in: prefix), withTemplate: " ")
-    let negative = #"\b(?:do not|don't|don\u2019t|not to|never|without|no need to|no)\s+(?:(?:do|use|using|form|forming|ask|asking|have|having|need|want|get|an?|the|any|to)\s+){0,4}(?:team|agents?|multiple agents|multi-agent|delegat\w*|independent(?:ly)?)\b"#
     if matches(visible, key: "negative", english: negative) { return nil }
     let meta = #"^(?:(?:please |can you |could you )?(?:explain|translate|define|describe|tell me (?:about|how|what|why))\b|(?:what|why|how|when|where|should|does|is it|do (?:i|we))\b)"#
     let requested = visible.components(separatedBy: separators).contains { clause in

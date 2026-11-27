@@ -11,6 +11,7 @@ extension AgentHomeView {
       guard coordinator.voiceAppContexts.isForegroundOwner(voiceAppAnchor),
             store.activeAgentConversationId == voiceAppAnchor.conversationID else { return }
     }
+    teamDraftRevision = UUID(); conversationalTeamLaunch = nil; modelTeamReview.invalidate()
     let cleanDraft = draft.trimmingCharacters(in: .whitespacesAndNewlines)
     let outgoingAttachments = AgentVoiceAttachmentSubmissionPolicy.select(
       goalOverride: voiceAttachmentSnapshot == nil ? nil : cleanDraft,
@@ -83,6 +84,7 @@ extension AgentHomeView {
     let submissionID = submissionScope.requestId
     composerSubmissionID = submissionID
     let submittingConversation = submissionScope.conversationId
+    let reviewRevision = teamDraftRevision
     let assistantRunID = screenAssistantConversationID == store.activeAgentConversationId
       ? screenAssistantRunID : nil
     let submission = Task { @MainActor in
@@ -105,6 +107,8 @@ extension AgentHomeView {
         requestKind: assistantRunID == nil ? .conversation : .screenAnalysis,
         readOnlyAnalysis: assistantRunID != nil,
         onOutgoing: { outgoing in
+          bindModelTeamReview(outgoing, expectedRevision: reviewRevision,
+            hasExtras: isVoiceSubmission || !outgoingAttachments.isEmpty || assistantRunID != nil)
           if outgoing.conversationId == submittingConversation, store.activeAgentConversationId == submittingConversation {
             olderTranscriptAnchor = nil
             pendingAgentSwipeDirection = AgentIOSAgentSwipeDirection.down.rawValue

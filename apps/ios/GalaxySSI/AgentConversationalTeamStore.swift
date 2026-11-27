@@ -44,7 +44,7 @@ final class AgentConversationalTeamStore {
       if job.id != expected.id {
         guard !expected.active, job.state == .queued else { throw AgentConversationalTeamJob.Failure.stale }
       } else {
-        guard expected.active, job.objective == expected.objective, job.route == expected.route,
+        guard expected.active, job.objective == expected.objective, job.route == expected.route, job.source == expected.source,
           job.revision == expected.revision + 1, job.calls >= expected.calls else { throw AgentConversationalTeamJob.Failure.stale }
         guard expected.state == .queued ? [.running, .stopped].contains(job.state) : job.state != .queued else {
           throw AgentConversationalTeamJob.Failure.stale

@@ -95,7 +95,8 @@ final class AgentConversationalTeamRuntime: ObservableObject {
       AgentConversationGoalInference.isCurrent(original.route, store: store),
       let actual = try? repository(store).read(original.conversation) else { return false }
     return actual.id == original.id && actual.state == .running &&
-      actual.objective == original.objective && actual.route == original.route
+      actual.objective == original.objective && actual.route == original.route && actual.source == original.source &&
+      (original.source == nil || original.source?.matches(store, conversation: original.conversation, objective: original.objective) == true)
   }
   private func ask(_ system: String, prompt: String, original: AgentConversationalTeamJob,
     store: GalaxySSIStore, epoch: UUID) async throws -> String {
@@ -115,7 +116,8 @@ final class AgentConversationalTeamRuntime: ObservableObject {
       for saved in try repository.jobs() {
         guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
         guard let initial = try repository.read(saved.conversation), initial.id == saved.id else { continue }
-        guard AgentConversationGoalRuntime.eligible(store.agentSession(id: initial.conversation)) else {
+        guard AgentConversationGoalRuntime.eligible(store.agentSession(id: initial.conversation)),
+          initial.source == nil || initial.source?.matches(store, conversation: initial.conversation, objective: initial.objective) == true else {
           if initial.active {
             let stopped = try initial.stop(); try repository.replace(stopped, expected: initial); try repository.retire(stopped)
           } else { try repository.retire(initial) }
@@ -164,13 +166,14 @@ final class AgentConversationalTeamRuntime: ObservableObject {
   @discardableResult
   func publish(_ job: AgentConversationalTeamJob, store: GalaxySSIStore) -> Bool {
     guard !job.active, identity(store), AgentConversationGoalRuntime.eligible(store.agentSession(id: job.conversation)),
+      job.source == nil || job.source?.matches(store, conversation: job.conversation, objective: job.objective) == true,
       (try? repository(store).read(job.conversation)) == job else { return false }
     let remote = "conversation-team:\(job.id):result"
     let body = job.state == .finished ? job.answer : text("stopped", "Team stopped. Late results will not be published.", store)
     do {
       // This API commits the transcript row before returning, unlike an in-memory duplicate check.
       _ = try store.persistTransportIncoming(body, from: "hermes", remoteMessageId: remote,
-        conversationId: job.conversation, turnId: job.id.uuidString, richOutputJson: "", tracePrefix: Self.stage)
+        conversationId: job.conversation, turnId: job.source?.turn ?? job.id.uuidString, richOutputJson: "", tracePrefix: Self.stage)
       try repository(store).retire(job)
       return true
     } catch { return false }
