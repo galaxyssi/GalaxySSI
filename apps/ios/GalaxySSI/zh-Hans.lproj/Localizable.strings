@@ -7936,3 +7936,8 @@
 "galaxyssi.agent.file.stored" = "对端已确认保存文件";
 "galaxyssi.agent.file.closed" = "传输已关闭，未核实送达";
 "galaxyssi.agent.file.unknown" = "尚无文件送达回执";
+"galaxyssi.conversation_goal.command_status" = "状态";
+"galaxyssi.conversation_goal.command_help" = "帮助";
+"galaxyssi.conversation_goal.command_pause" = "暂停";
+"galaxyssi.conversation_goal.command_stop" = "停止";
+"galaxyssi.conversation_goal.command_resume" = "继续";
