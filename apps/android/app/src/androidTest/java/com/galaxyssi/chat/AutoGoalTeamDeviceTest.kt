@@ -55,6 +55,71 @@ class AutoGoalTeamDeviceTest {
         }
     }
 
+    @Test fun modelAuthoredIndependentFinalReviewOnPhoneLoopbackRevisesTheActualDraft() = runBlocking {
+        val objective = "Compare schedules, then independently audit the final answer."
+        val assignment = "Verify the claim about the Friday handover against the stated limitation."
+        val draft = "The Friday handover is fixed."
+        val dissent = "No Friday slot was confirmed."
+        val approved = "The Friday handover is provisional."
+        val replies = listOf(
+            JSONObject().put("roles", JSONArray().put("Check the slot.")).put("synthesis", "Report the time.")
+                .put("final_review", assignment),
+            JSONObject().put("finding", "Worker-only calendar note.").put("dissent", dissent),
+            JSONObject().put("answer", draft),
+            JSONObject().put("verdict", "revise").put("objection", dissent).put("answer", approved)
+        )
+        MockWebServer().use { server ->
+            for (reply in replies) {
+                val message = JSONObject().put("role", "assistant").put("content", reply.toString())
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(
+                    JSONObject().put("choices", JSONArray().put(JSONObject().put("message", message))).toString()))
+            }
+            server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
+            val id = UUID.randomUUID().toString()
+            val preset = CLOUD_MODEL_PRESETS.single { it.provider == "Custom" && it.apiStyle == "openai" }
+            val contact = JSONObject().put("cloud_provider", preset.provider).put("cloud_api_style", preset.apiStyle)
+                .put("cloud_model", "fixture").put("cloud_api_key", "synthetic")
+                .put("cloud_endpoint", "http://127.0.0.1:${server.port}/v1/chat/completions")
+            val route = GoalRoute(id, "fixture", ConversationGoalRunner.fingerprint(contact))
+            var count = 0
+            val result = runAutoGoalTeam(objective, { system, input ->
+                val round = ++count
+                check(round <= replies.size) { "Unexpected call after final review" }
+                withContext(Dispatchers.IO) {
+                    ConversationGoalRunner.text(ctx, route, id, id, round, system, input,
+                        AgentNativeToolCancellationToken.NONE) { _, _, _ -> contact }
+                }
+            })
+
+            assertEquals(replies.size, server.requestCount)
+            val inputs = List(replies.size) {
+                val request = server.takeRequest()
+                assertEquals("/v1/chat/completions", request.path)
+                val body = JSONObject(request.body.readUtf8())
+                assertEquals("fixture", body.getString("model"))
+                for (key in listOf("tools", "tool_choice", "functions", "function_call", "response_format"))
+                    assertFalse("Unexpected request field: $key", body.has(key))
+                val messages = body.getJSONArray("messages")
+                JSONObject(messages.getJSONObject(messages.length() - 1).getString("content"))
+            }
+            assertEquals(listOf("plan", "role", "synthesis", "audit"), inputs.map { it.getString("stage") })
+            assertTrue(inputs.first().getBoolean("final_review_required"))
+            val audit = inputs.last()
+            assertEquals(objective, audit.getString("objective"))
+            assertEquals(assignment, audit.getString("assignment"))
+            assertEquals(draft, audit.getString("draft"))
+            assertNotEquals(inputs[1].getString("id"), audit.getString("id"))
+            assertEquals(0, audit.getJSONArray("reports").length())
+            assertFalse(audit.toString().contains("Worker-only calendar note."))
+            val forwarded = audit.getJSONArray("additional_objections")
+            assertEquals(1, forwarded.length())
+            assertEquals(inputs[1].getString("id"), forwarded.getJSONObject(0).getString("id"))
+            assertEquals(dissent, forwarded.getJSONObject(0).getString("dissent"))
+            assertTrue(result.contains(approved))
+            assertFalse(result.contains(draft))
+        }
+    }
+
     private fun runTableFixture(hardPlanSchema: Boolean) = runBlocking {
         val id = UUID.randomUUID().toString()
         val calls = AtomicInteger()
