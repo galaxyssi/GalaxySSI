@@ -3,6 +3,8 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), cp = requ
 const root = path.resolve(__dirname, '../../..'), base = 'deb134e35da3ec029978ddd998000a7e265ed52a', app = 'apps/ios/GalaxySSI/';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const integrationBase = '932bff3712599517cafa8c90180dd9c3f80b70b0';
+const integrated = f => cp.execFileSync('git', ['show', integrationBase + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 const compact = '    if let pageReads = CloudSearchPageReads.compactReceipts(in: pack) {\n      compactPackInput["page_reads"] = pageReads\n      compactPackInput["page_read_status"] = pack["page_read_status"]\n    }\n';
 function retained(f, s) {
@@ -14,7 +16,10 @@ function retained(f, s) {
   return s;
 }
 function validate() {
-  for (const f of [app + 'CloudWebGrounding.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj']) assert.equal(retained(f, read(f)), old(f), f);
+  assert.equal(retained(app + 'CloudWebGrounding.swift', read(app + 'CloudWebGrounding.swift')), old(app + 'CloudWebGrounding.swift'));
+  // The follow-up leaves the merged page-read and retrieval test registrations untouched.
+  assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'), integrated('apps/ios/GalaxySSI.xcodeproj/project.pbxproj'));
+  assert.equal(read(app + 'CloudWebGrounding.swift'), integrated(app + 'CloudWebGrounding.swift'));
   const helper = read(app + 'CloudSearchPageReads.swift');
   for (const token of ['min(max(limit, 1), 4)', 'parts.user == nil, parts.password == nil',
     'seen.insert(AgentIOSWebEvidencePack.canonicalURL(raw))', 'let urls = Array(urls.prefix(4))',

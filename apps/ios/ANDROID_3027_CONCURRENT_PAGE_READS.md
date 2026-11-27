@@ -1,8 +1,10 @@
 # Android #3027: concurrent ranked source-page reads
 
 Android merge: ade1033cb1efa697805718d41aeb5411e7cdc5dc (#3027).
-Integration base: deb134e35da3ec029978ddd998000a7e265ed52a (main).
-The now-merged #4610 image/session/diagnostic changes are retained from main.
+Follow-up integration base: 932bff3712599517cafa8c90180dd9c3f80b70b0 (main).
+#4612 and #4613 are now merged. This follow-up retains their page-read integration,
+retrieval cancellation, project registrations and #4610 image/session changes.
+The serial-page comparison checkpoint remains deb134e35da3ec029978ddd998000a7e265ed52a.
 
 ## Observed gap and production integration
 
@@ -75,6 +77,11 @@ monitoring or IPA are performed. Android/Desktop sources and versions are
 unchanged, with iOS 15 minimum retained. No raw reports/private data are committed.
 
 The historical web-fallback, web-tool-failure and fast-search-defaults source
-guards were attempted and still fail on existing streaming-engine/cached-capacity
+guards were attempted and still fail on existing streaming-engine/web-media
 baseline drift. Their reported production files are unchanged against main. No
-old engine behavior or fixed cache-byte limit is restored to satisfy those checks.
+old engine or media-provider behavior is restored to satisfy those checks.
+Image-request-count, ordered-reply-images, MQTT-inbound-timing and knowledge-
+publication-cancellation scope checks also fail at older whole-file checkpoints.
+All seven failures were reproduced using only files from integration main; the
+mobile-stream-session check passes. The focused page-read check, project
+structure check, JavaScript syntax and changed-source Han placement pass.
