@@ -5,8 +5,9 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 // chain. Only declared primary hooks may differ from that pinned source.
 const base = 'bf3933c65b5963a5b0c5cbe7d826a8eea8366919';
 // Retain the already merged connector increments when comparing the independent knowledge baseline.
-const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const read = file => require('./check-model-failure-evidence-scope.cjs').retained(file,
+  require('./check-connector-acceptance-evidence-scope.cjs').retained(file,
+    fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n')));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -19,6 +20,7 @@ const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPa
   'AgentKnowledgePrimarySourceIntegrationTests.swift'];
 const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n';
 function retained(file, source) {
+  source = require('./check-model-failure-evidence-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(line => !names.some(name => line.includes(name))).join('\n')
     .split(' com.galaxyssi.chat.ios.knowledge-storage').join('');
   if (file.endsWith('GalaxySSIViews.swift')) return source

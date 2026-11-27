@@ -14940,6 +14940,7 @@ final class MessageCoordinator: ObservableObject {
           action.parameters[AgentIOSConnectorDispatch.profileKey] == store.profile.identityFingerprint,
           nativeConnectorDispatches.insert(dispatch.owner).inserted else { return }
     var started = false
+    let failureEvidence = AgentConnectorModelFailureEvidence(owner: dispatch.owner)
     do {
       guard let original = queuedNativeConnectorContext(dispatch) else {
         throw GalaxySSIError.invalidPayload("The original connector continuation is no longer active. Nothing was sent.")
@@ -15005,6 +15006,7 @@ final class MessageCoordinator: ObservableObject {
         guard profile.id == model, LocalModelRuntimeSettings.isProfileEnabled(profile),
               LocalModelInferenceRuntime.shared.ready(profile: profile) else { throw LocalModelInferenceError.modelNotReady }
         started = true
+        failureEvidence.beginPhoneInference()
         let answer = try await LocalModelInferenceRuntime.shared.generateAsync(profile: profile,
           systemPrompt: AgentUntrustedEvidenceBoundary.enforceSystemPrompt((action.parameters[AgentExecutionPolicyPrompt.contextKey] ?? "")
             .ifBlank("Complete the scoped user request and return only the useful final response.")),
@@ -15029,13 +15031,16 @@ final class MessageCoordinator: ObservableObject {
         var text = ""
         var completed = false
         started = true
+        failureEvidence.beginCloudInference()
         for try await event in cloudStreamEngine.streamConversation(contact: selected, store: store,
-          turns: [turn], images: images, requestId: dispatch.owner) {
+          turns: [turn], images: images, requestId: dispatch.owner, connectorFailureEvidence: failureEvidence) {
           guard queuedNativeConnectorContext(dispatch) != nil else { throw CancellationError() }
           switch event {
           case .textDelta(let delta): text += delta.text
           case .completed: completed = true
-          case .failed(let failure): throw GalaxySSIError.invalidPayload(failure.error.message)
+          case .failed(let failure):
+            failureEvidence.recordStreamFailure(code: failure.error.code, requestId: dispatch.owner)
+            throw GalaxySSIError.invalidPayload(failure.error.message)
           case .connected, .usage, .toolCallDelta, .citationPreview: break
           }
         }
@@ -15113,10 +15118,11 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     } catch {
-      if started {
+      if started && !failureEvidence.permitsKnownFailure(requestId: dispatch.owner, error: error, taskCancelled: Task.isCancelled) {
         _ = markQueuedConnectorUnknown(dispatch)
         return
       }
+      if started && queuedNativeConnectorContext(dispatch, requireExecution: false) == nil { return }
       publishNativeConnectorResponse(dispatch.response(error.localizedDescription, success: false), profile: action.parameters[AgentIOSConnectorDispatch.profileKey] ?? "")
     }
   }
