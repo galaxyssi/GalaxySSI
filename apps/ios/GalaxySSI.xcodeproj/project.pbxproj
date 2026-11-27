@@ -1805,6 +1805,7 @@
     A10000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */; };
     A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */; };
     A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */; };
+    C46800000000000000000001 /* GalaxySSISettingsRuntimeSummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46800000000000000000002 /* GalaxySSISettingsRuntimeSummaryTests.swift */; };
     A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */; };
     A10000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */; };
     A10000000000000000000658 /* VoiceWhisperModelStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */; };
@@ -4733,6 +4734,7 @@
     A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoiceLocalWhisperRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelManagerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsTests.swift; sourceTree = "<group>"; };
+    C46800000000000000000002 /* GalaxySSISettingsRuntimeSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISettingsRuntimeSummaryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSTests.swift; sourceTree = "<group>"; };
     A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelStorageTests.swift; sourceTree = "<group>"; };
@@ -7152,6 +7154,7 @@
         A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */,
         A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */,
         A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */,
+        C46800000000000000000002 /* GalaxySSISettingsRuntimeSummaryTests.swift */,
         A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */,
         A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */,
         A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */,
@@ -9735,6 +9738,7 @@
         A10000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift in Sources */,
         A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */,
         A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */,
+        C46800000000000000000001 /* GalaxySSISettingsRuntimeSummaryTests.swift in Sources */,
         A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */,
         A10000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift in Sources */,
         A10000000000000000000658 /* VoiceWhisperModelStorageTests.swift in Sources */,

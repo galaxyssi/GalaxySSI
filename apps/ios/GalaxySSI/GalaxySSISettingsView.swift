@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-struct GalaxySSISettingsSummarySnapshot {
+struct GalaxySSISettingsSummarySnapshot: Equatable, Sendable {
   var memoryCount = 0
   var memoryConflictCount = 0
   var knowledgeItemCount = 0
@@ -20,12 +20,47 @@ struct GalaxySSISettingsSummarySnapshot {
   var mcpRecommended = 0
 }
 
+struct GalaxySSISettingsRuntimeSummary: Equatable, Sendable {
+  let key: String
+  let nativeToolTotal: Int
+  let nativeToolAvailable: Int
+  let mcpInstalled: Int
+  let mcpReady: Int
+  let mcpRecommended: Int
+
+  fileprivate static func load() -> Self {
+    let tools = AgentPhoneNativeToolCatalog.descriptors()
+    let connections = AgentMcpRegistry(FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())).list()
+    let localKey = LocalModelRuntimeSettings.activeProfiles().map {
+      "\($0.id):\(LocalModelRuntimeSettings.isProfileEnabled($0))"
+    }.joined(separator: ",")
+    return project(tools: tools, connections: connections, localKey: localKey,
+      nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+  }
+
+  static func project(tools: [AgentNativeToolDescriptor], connections: [AgentMcpConnection],
+                      localKey: String, nowMillis: Int64) -> Self {
+    let nativeKey = tools.map { "\($0.id):\($0.risk.rawValue):\($0.availability.status.rawValue)" }.joined(separator: ",")
+    let mcpKey = connections.map {
+      "\($0.id):\($0.state.rawValue):\($0.enabled):\($0.isCallable(nowMillis: nowMillis))"
+    }.joined(separator: ",")
+    return .init(key: [localKey, nativeKey, mcpKey].joined(separator: "|"), nativeToolTotal: tools.count,
+      nativeToolAvailable: tools.filter { $0.risk != .blocked && $0.availability.status == .available }.count,
+      mcpInstalled: connections.count, mcpReady: connections.filter { $0.isCallable(nowMillis: nowMillis) }.count,
+      mcpRecommended: AgentDefaultCapabilityCatalog.mcpEntries.count)
+  }
+
+  static func isFresh(storedAt: TimeInterval, now: TimeInterval) -> Bool {
+    storedAt.isFinite && now.isFinite && storedAt >= 0 && now >= storedAt && now - storedAt < 30
+  }
+}
+
 @MainActor
 enum GalaxySSISettingsSummaryCache {
   private static var cachedKey = ""
   private static var cachedSnapshot: GalaxySSISettingsSummarySnapshot?
-  private static var cachedAt = Date.distantPast
-  private static let maximumAge: TimeInterval = 30
+  private static var cachedAt: TimeInterval = -1
+  private static var generation: UInt64 = 0
 
   static func key(for store: GalaxySSIStore) -> String {
     let taskRevision = store.agentTaskRecords.map(\.updatedAtMillis).max() ?? 0
@@ -45,34 +80,25 @@ enum GalaxySSISettingsSummaryCache {
       String(safety.deviceControlAllowed),
       String(safety.executionPaused)
     ].joined(separator: ",")
-    let localModelKey = LocalModelRuntimeSettings.activeProfiles().map { profile in
-      "\(profile.id):\(LocalModelRuntimeSettings.isProfileEnabled(profile))"
-    }.joined(separator: ",")
-    let nativeToolKey = AgentPhoneNativeToolCatalog.descriptors().map { tool in
-      "\(tool.id):\(tool.availability.status.rawValue)"
-    }.joined(separator: ",")
-    let mcpKey = AgentMcpRegistry(
-      FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
-    ).list().map { connection in
-      "\(connection.id):\(connection.state.rawValue):\(connection.enabled)"
-    }.joined(separator: ",")
     return [
+      store.profile.identityFingerprint,
       "\(store.agentMemoryItems.count):\(store.agentKnowledgeItems.count):\(store.agentKnowledgeAccessAudit.count)",
       "\(store.agentTaskRecords.count):\(taskRevision)",
       "\(store.proactiveTasks.count):\(store.proactiveRuns.count)",
       "\(activeConversationCount):\(archivedConversationCount):\(conversationRevision)",
       "\(store.contacts.count):\(contactRevision)",
-      safetyKey,
-      localModelKey,
-      nativeToolKey,
-      mcpKey
+      safetyKey
     ].joined(separator: "|")
   }
 
   static func prepare(store: GalaxySSIStore) async -> GalaxySSISettingsSummarySnapshot {
-    let currentKey = key(for: store)
+    generation &+= 1
+    let requestGeneration = generation
+    let runtime = await Task.detached(priority: .utility) { GalaxySSISettingsRuntimeSummary.load() }.value
+    let sourceKey = key(for: store)
+    let currentKey = sourceKey + "|" + runtime.key
     if currentKey == cachedKey,
-       Date().timeIntervalSince(cachedAt) < maximumAge,
+       GalaxySSISettingsRuntimeSummary.isFresh(storedAt: cachedAt, now: ProcessInfo.processInfo.systemUptime),
        let cachedSnapshot {
       return cachedSnapshot
     }
@@ -94,13 +120,6 @@ enum GalaxySSISettingsSummaryCache {
         .waitingResponse,
         .paused
       ]
-      let tools = AgentPhoneNativeToolCatalog.descriptors()
-      let availableTools = tools.filter {
-        $0.risk != .blocked && $0.availability.status == .available
-      }.count
-      let mcpConnections = AgentMcpRegistry(
-        FileAgentMcpStore(rootURL: FileAgentMcpStore.defaultRootURL())
-      ).list()
       return GalaxySSISettingsSummarySnapshot(
         memoryCount: memorySnapshot.activeCount,
         memoryConflictCount: memorySnapshot.conflicts.count,
@@ -113,24 +132,25 @@ enum GalaxySSISettingsSummaryCache {
         enabledAutomationCount: automationTasks.filter(\.enabled).count,
         sessionCount: activeConversationCount + archivedConversationCount,
         archivedSessionCount: archivedConversationCount,
-        nativeToolTotal: tools.count,
-        nativeToolAvailable: availableTools,
-        mcpInstalled: mcpConnections.count,
-        mcpReady: mcpConnections.filter {
-          $0.isCallable(nowMillis: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
-        }.count,
-        mcpRecommended: AgentDefaultCapabilityCatalog.mcpEntries.count
+        nativeToolTotal: runtime.nativeToolTotal,
+        nativeToolAvailable: runtime.nativeToolAvailable,
+        mcpInstalled: runtime.mcpInstalled,
+        mcpReady: runtime.mcpReady,
+        mcpRecommended: runtime.mcpRecommended
       )
     }.value
-    cachedKey = currentKey
-    cachedSnapshot = prepared
-    cachedAt = Date()
+    if !Task.isCancelled, generation == requestGeneration, key(for: store) == sourceKey {
+      cachedKey = currentKey
+      cachedSnapshot = prepared
+      cachedAt = ProcessInfo.processInfo.systemUptime
+    }
     return prepared
   }
 }
 
 struct SettingsView: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var interfaceLanguage
+  @Environment(\.scenePhase) private var scenePhase
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var showingAddModel = false
   @State private var statusText = ""
@@ -139,6 +159,9 @@ struct SettingsView: View {
   @State private var settingsStatsLoading = true
   @State private var navigationContentGate = GalaxySSINavigationContentGate()
   @State private var settingsStats = GalaxySSISettingsSummarySnapshot()
+  @State private var settingsStatsOwner = ""
+  @State private var settingsRefreshRevision: UInt64 = 0
+  @State private var settingsVisible = false
   var showsBackButton = true
   var onBackToAgent: (() -> Void)? = nil
 
@@ -192,12 +215,20 @@ struct SettingsView: View {
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
       }
-      .onAppear(perform: refreshLinkDiagnostics)
+      .onAppear { settingsVisible = true; refreshLinkDiagnostics() }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentRoutingDidUpdate).receive(on: RunLoop.main)) { _ in
+        if settingsVisible, scenePhase == .active { settingsRefreshRevision &+= 1 }
+      }
       .onDisappear {
+        settingsVisible = false
         navigationContentGate.invalidate()
       }
       .task(id: settingsStatsTaskID) {
-        await prepareSettingsStats()
+        guard settingsVisible, scenePhase == .active else { return }
+        while !Task.isCancelled, settingsVisible, scenePhase == .active {
+          await prepareSettingsStats()
+          do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
+        }
       }
     }
     .navigationViewStyle(StackNavigationViewStyle())
@@ -227,20 +258,25 @@ struct SettingsView: View {
   }
 
   private var settingsStatsTaskID: String {
-    GalaxySSISettingsSummaryCache.key(for: store)
+    "\(GalaxySSISettingsSummaryCache.key(for: store))|\(settingsVisible)|\(scenePhase == .active)|\(settingsRefreshRevision)"
   }
 
   private func prepareSettingsStats() async {
     let generation = navigationContentGate.begin()
-    if let cached = GalaxySSINavigationContentPrewarm.snapshot(for: store)?.settings,
+    let owner = store.profile.identityFingerprint
+    if settingsStatsOwner != owner {
+      settingsStatsOwner = owner
+      settingsStats = GalaxySSISettingsSummarySnapshot()
+      settingsStatsLoading = true
+    }
+    if settingsStatsLoading, let cached = GalaxySSINavigationContentPrewarm.snapshot(for: store)?.settings,
        !Task.isCancelled {
       settingsStats = cached
       settingsStatsLoading = false
-    } else {
-      settingsStatsLoading = true
     }
     let prepared = await GalaxySSISettingsSummaryCache.prepare(store: store)
-    guard !Task.isCancelled, navigationContentGate.isCurrent(generation) else { return }
+    guard !Task.isCancelled, settingsVisible, scenePhase == .active,
+          navigationContentGate.isCurrent(generation), store.profile.identityFingerprint == owner else { return }
     settingsStats = prepared
     settingsStatsLoading = false
   }
