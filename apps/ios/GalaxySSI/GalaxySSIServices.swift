@@ -44,6 +44,7 @@ final class MessageCoordinator: ObservableObject {
   @Published private(set) var artifactDownloadSavedPath = ""
   @Published private(set) var artifactDownloadFailure = ""
   @Published private(set) var pendingPhonePublicPageExport: AgentIOSPhonePublicHTMLExport?
+  private lazy var originalPageArchives = AgentIOSOriginalPageArchiveRuntime(store: store)
   @Published private(set) var desktopControlSnapshots: [String: AgentDesktopRemoteControlSnapshot] = [:]
   @Published private(set) var remoteAgentTaskStatuses: [String: AgentRemoteTaskStatusSnapshot] = [:]
   private var finishedResearchRuns = AgentConnectorResearchProgress.FinishedRuns()
@@ -764,6 +765,7 @@ final class MessageCoordinator: ObservableObject {
     AgentIOSEvalReliabilityHarness.shared.start()
     if usesLegacyMqtt { startLegacyMqtt() } else { startJournalMqttIfInstalled() }
     installForegroundRecoveryWake()
+    originalPageArchives.wake()
     recoverManagedBrowserMembers()
     recoverSupervisedBrowserWaits()
     startAutomationScheduler()
@@ -1105,6 +1107,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   func resumePendingAgentDelivery() {
+    originalPageArchives.wake()
     guard reconcileLegacyConversationSchedules() else { return }
     drainNativeConnectorResponseOutbox()
     resumeWaitingNativeConnectors()
@@ -1139,6 +1142,7 @@ final class MessageCoordinator: ObservableObject {
       Task { @MainActor in
         guard let self else { return }
         self.continueForegroundCapturePermissions()
+        self.originalPageArchives.wake()
         self.recoverManagedBrowserMembers()
         self.recoverAcceptedGoalDeliveries()
         self.recoverSupervisedBrowserWaits()
@@ -6405,6 +6409,7 @@ final class MessageCoordinator: ObservableObject {
           recentUserMessages: recentUserMessages
         )
         let publicPages: [AgentIOSPhonePublicHTMLPreparation]
+        let publicPageProfile = store.profile.identityFingerprint
         if phonePublicPageEnabled {
           let interfaceLanguage = store.languagePolicy.interfaceLanguage
           publicPages = await Task.detached(priority: .userInitiated) {
@@ -6426,6 +6431,8 @@ final class MessageCoordinator: ObservableObject {
           ? retryText
           : retryText + "\n\n" + AgentIOSPhonePublicHTMLAttachment.instruction(for: publicPages)
         for publicPage in publicPages {
+          await originalPageArchives.enqueue(publicPage, conversation: outgoing.conversationId,
+            turn: homeTurnId, expectedProfile: publicPageProfile)
           if let archiveName = publicPage.originalSourceArchiveName {
             store.appendDeliveryTrace(
               outgoing.id,
