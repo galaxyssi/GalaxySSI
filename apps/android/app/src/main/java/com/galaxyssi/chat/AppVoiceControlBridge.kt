@@ -14,6 +14,7 @@ internal object AppVoiceControlBridge {
     private var owner = WeakReference<MainActivity>(null)
     @Volatile private var snapshot: AgentNativeJsonObject = mapOf("voice_active" to false)
     private val anchors = VoiceAppContextStore()
+    private val drafts = VoiceMessageDraft()
 
     fun bind(activity: MainActivity) { owner = WeakReference(activity) }
     fun usesCommunicationAudio(): Boolean = owner.get()?.agentVoiceConversation?.communicationAudio?.active == true
@@ -30,7 +31,14 @@ internal object AppVoiceControlBridge {
             "article_id" to voice?.contextArticleId.orEmpty(), "playback_state" to voice?.newsPlaybackState.orEmpty(),
             "playback_article_id" to voice?.newsArticleId.orEmpty())
     }
-    fun capture(activity: MainActivity, traceId: String) { update(activity); anchors.capture(traceId, snapshot) }
+    fun capture(activity: MainActivity, traceId: String, spoken: String = "") {
+        update(activity)
+        anchors.capture(traceId, snapshot + mapOf("spoken_send_confirmation" to VoiceMessageDraft.explicitConfirmation(spoken),
+            "spoken_choice" to VoiceMessageDraft.explicitChoice(spoken)))
+    }
+    fun choice(invocation: AgentNativeToolInvocation) =
+        anchors.get(invocation.context.conversationId, invocation.context.turnId)?.get("spoken_choice") as? Int ?: 0
+    fun discardVoiceDraft(activity: MainActivity) { if (owner.get() === activity) drafts.clear() }
     fun bindTurn(traceId: String, conversationId: String, turnId: String) = anchors.bind(traceId, conversationId, turnId)
     fun context(conversationId: String, turnId: String): AgentNativeJsonObject {
         val live = snapshot.takeIf { conversationId.isNotBlank() && it["conversation_id"] == conversationId }
@@ -40,8 +48,30 @@ internal object AppVoiceControlBridge {
             "article_id" to (live?.get("playback_article_id") ?: "")))
     }
     fun release(activity: MainActivity) {
-        if (owner.get() === activity) { owner.clear(); snapshot = mapOf("voice_active" to false); anchors.clear() }
+        if (owner.get() === activity) { drafts.clear(); owner.clear(); snapshot = mapOf("voice_active" to false); anchors.clear() }
     }
+
+    fun <T> withDraft(invocation: AgentNativeToolInvocation, fn: (VoiceMessageDraft, VoiceMessageDraft.Speaker, Boolean) -> T): T {
+        val c = invocation.context
+        val task = FutureTask {
+            invocation.checkpoint()
+            val activity = owner.get()
+            val voice = activity?.agentVoiceConversation
+            val origin = anchors.get(c.conversationId, c.turnId)
+            if (activity == null || activity.isDestroyed || activity.isFinishing || voice == null || !voice.hasForegroundHost() ||
+                voice.session.conversationId != c.conversationId || !voice.session.acceptsAppControlTurn(c.turnId) ||
+                origin?.get("voice_active") != true)
+                throw AppControlFailure("voice_turn_changed", "This voice turn is no longer active. Nothing new was sent.")
+            fn(drafts, VoiceMessageDraft.Speaker(voice.session.generation.toString(), c.conversationId, c.turnId),
+                origin["spoken_send_confirmation"] == true)
+        }
+        main.post(task)
+        try { return task.get(invocation.remainingTimeMillis.coerceAtMost(8_000), TimeUnit.MILLISECONDS) }
+        catch (e: java.util.concurrent.ExecutionException) { throw e.cause ?: e }
+        finally { main.removeCallbacks(task); task.cancel(false) }
+    }
+
+    fun finishDraft(claim: VoiceMessageDraft.Claim, state: String, message: Long) = drafts.finish(claim, state, message)
 
     fun execute(operation: String, input: AgentNativeJsonObject, invocation: AgentNativeToolInvocation): AgentNativeJsonObject {
         check(Looper.myLooper() != Looper.getMainLooper()) { "App tools must not block the UI thread" }

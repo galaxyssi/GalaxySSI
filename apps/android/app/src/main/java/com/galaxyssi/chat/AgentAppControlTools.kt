@@ -7,7 +7,7 @@ internal fun interface AgentAppControlPlatform {
 
 internal object AgentAppControlTools {
     const val PREFIX = "galaxyssi.app."
-    val toolIds = setOf("context", "reminders", "contacts", "send_message", "news", "read_article", "navigate", "playback")
+    val toolIds = setOf("context", "reminders", "contacts", "send_message", "voice_message", "news", "read_article", "navigate", "playback")
         .mapTo(linkedSetOf()) { PREFIX + it }
 
     fun definitions(platform: AgentAppControlPlatform): List<AgentNativeToolDefinition> {
@@ -43,8 +43,14 @@ internal object AgentAppControlTools {
                 "Never choose an arbitrary contact or substitute an Agent for a person.",
                 mapOf("query" to string(), "limit" to AgentNativeJsonSchema.integer(1, 20))),
             define("send_message", "Send exact text to an observed peer contact_id. Returns durable message_id and " +
-                "queued/published/failed, NOT delivered. Do not send a voice-control instruction as message content.",
+                "queued/published/failed, NOT delivered. In live voice it only prepares a draft; continue with voice_message. Never speak as if a draft was sent.",
                 mapOf("contact_id" to string(), "text" to string(10_000)), setOf("contact_id", "text"), false),
+            define("voice_message", "Manage this voice session's unsent message. prepare(query,text); status returns revision. " +
+                "For 'not A, B', use change_recipient(revision,query=B); never repeat or rewrite the body. If choices are ambiguous, " +
+                "read them and wait for the user's choice, then choose(revision,contact_id). Read back recipient/body and ask for 确认发送 or 'send it'. " +
+                "confirm or cancel needs the current revision. A queued/published/uncertain message cannot be recalled. Never start a replacement automatically.",
+                mapOf("operation" to AgentNativeJsonSchema.string(enumValues = setOf("prepare","status","change_recipient","choose","confirm","cancel")),
+                    "revision" to string(), "query" to string(), "contact_id" to string(), "text" to string(10_000)), setOf("operation"), false),
             define("news", "List readable local news by topic/title and optional earliest timestamp. Returns article IDs and sources. " +
                 "Empty means no matching downloaded articles, not permission to invent news.",
                 mapOf("query" to string(), "since_epoch_ms" to AgentNativeJsonSchema.integer(0),
