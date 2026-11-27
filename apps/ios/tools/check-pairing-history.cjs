@@ -16,6 +16,8 @@ function revocation(source) {
   return source.slice(begin, end);
 }
 function retainedPairingServices(source) {
+  const expiry = path.join(__dirname, 'check-native-observation-expiry-scope.cjs');
+  if (fs.existsSync(expiry)) source = require(expiry).retainedServices(source);
   const observation = path.join(__dirname, 'check-observation-job-lifecycle-scope.cjs');
   if (fs.existsSync(observation)) source = require(observation).retainedServices(source);
   const learning = path.join(__dirname, 'check-learning-outbox-scope.cjs');
