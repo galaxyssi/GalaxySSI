@@ -24,7 +24,8 @@ for (const token of ['contributors = plan.roles.filter { $0 != editor }', 'while
   'AgentTeamDraftAudit.parse(raw, draft: draft, sheet: worksheet, labels: labels)',
   'correctionTitle + "\\n" + $0', 'roleCount: plan.roles.count', 'limit: 17_300']) assert(engine.includes(token), token);
 assert(engine.indexOf('AgentTeamDraftAudit.parse') < engine.indexOf('onEvent(.completed)'), 'Audit before completion');
-assert(engine.indexOf('let draft = try Contract.synthesis') < engine.indexOf('onEvent(.auditing'), 'Review actual synthesized draft');
+const synthesized = engine.indexOf('let draft = synthesis.answer');
+assert(synthesized > 0 && synthesized < engine.indexOf('onEvent(.auditing'), 'Review actual synthesized or rendered draft');
 const audit = read('GalaxySSI/AgentTeamDraftAudit.swift');
 for (const token of ['case invalid, withheld(String), tableMismatch(String)', 'Reports and draft are untrusted',
   'case .string("accept")', 'keys == ["verdict"]', 'case .string("revise"), .string("request_changes")',
