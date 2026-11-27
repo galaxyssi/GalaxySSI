@@ -1,4 +1,4 @@
-// Source contracts only. This does not execute Swift, validate live concurrency or complete the UI/job pipeline.
+// Source contracts only. This does not execute Swift or validate live concurrency/background scheduling.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,7 +26,8 @@ const event = engine.slice(engine.indexOf('  enum Event:'), engine.indexOf('  st
 assert(!/String|objective|assignment|finding/.test(event), 'Progress must contain only bounded metadata');
 const project = read('GalaxySSI.xcodeproj/project.pbxproj');
 for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamEngine', 'AgentConversationalTeamCommand',
-  'AgentConversationalTeamJob', 'AgentConversationalTeamStore', 'AgentConversationalTeamJobTests',
+  'AgentConversationalTeamJob', 'AgentConversationalTeamStore', 'AgentConversationalTeamJobTests', 'AgentConversationalTeamStoreTests',
+  'AgentConversationalTeamRuntime', 'AgentConversationalTeamBackground', 'AgentConversationalTeamLifecycle', 'GalaxySSIConversationalTeamView',
   'AgentConversationalTeamProtocolTests', 'AgentConversationalTeamEngineTests', 'AgentConversationalTeamCommandTests']) {
   const file = `${name.endsWith('Tests') ? 'GalaxySSITests' : 'GalaxySSI'}/${name}.swift`;
   const source = read(file);
@@ -63,4 +64,41 @@ for (const token of ['NSRecursiveLock()', 'AgentTurnReceiptEvidence.hash(owner)'
 const wire = read('GalaxySSI/AgentConversationGoalInference.swift');
 assert(wire.includes('prompt: String? = nil') && wire.includes('system: system, prompt: prompt'), 'Exact shared text payload path');
 assert.equal((read('GalaxySSITests/AgentConversationalTeamJobTests.swift').match(/func test/g) || []).length, 5);
-console.log('Conversational team command/protocol/engine/job source contracts passed; confirmation, worker and background integration pending; no native execution.');
+assert.equal((read('GalaxySSITests/AgentConversationalTeamStoreTests.swift').match(/func test/g) || []).length, 6);
+const runtime = read('GalaxySSI/AgentConversationalTeamRuntime.swift');
+for (const token of ['private weak var store:', 'ticket = UUID(); work?.cancel()', 'guard self.graceToken == token',
+  'guard grant == value', 'GalaxySSIStore.canRestoreConversationGoalState()', 'Task.isCancelled',
+  'actual.id == original.id && actual.state == .running', 'actual.objective == original.objective && actual.route == original.route',
+  'let next = try previous.reserveCall()', 'repository(store).replace(next, expected: previous)',
+  'requestID: "conversation-team-\\(original.id)-\\(next.calls)"', 'AgentConversationGoalInference.text',
+  'if initial.state == .running', 'initial.finish(text("interrupted"', 'let running = try initial.begin()',
+  'try repository.replace(running, expected: initial)', 'AgentConversationalTeamEngine.run',
+  'try repository.replace(finished, expected: actual)', 'store.persistTransportIncoming', 'try repository(store).retire(job)']) assert(runtime.includes(token), token);
+assert(runtime.indexOf('initial.finish(text("interrupted"') < runtime.indexOf('AgentConversationalTeamEngine.run'), 'Uncertain recovery before dispatch');
+assert(runtime.indexOf('try repository.replace(running, expected: initial)') < runtime.indexOf('AgentConversationalTeamEngine.run'), 'Durable claim before dispatch');
+assert(runtime.indexOf('store.persistTransportIncoming') < runtime.indexOf('try repository(store).retire(job)'), 'Durable publication before retirement');
+assert(!/localizedDescription|print\(|NSLog\(|error\.description/.test(runtime), 'No raw provider failure logging');
+const ui = read('GalaxySSI/GalaxySSIConversationalTeamView.swift');
+for (const token of ['valid() && scene == .active', 'launch.selection == AgentModelSelectionSettings.selection',
+  'guard launch.selection.mode == .manual', '$0.target == target', '$0.model == launch.selection.modelId',
+  'choices.indices.contains(selected)', 'routes().contains(route)', 'GalaxySSIHealthAgentLab.intent',
+  'try repository.replace(next, expected: nil)', 'AgentConversationalTeamRuntime.shared.publish(actual',
+  'launch.revision == teamDraftRevision', 'AgentMentionText.parse(text, targets: targets).requestedMembers.isEmpty']) assert(ui.includes(token), token);
+const home = read('GalaxySSI/GalaxySSIAndroidParityUI.swift');
+assert(home.includes('if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil }'), 'Every draft edit invalidates consent');
+assert(home.includes('draft: Binding(get: { draft }, set: { draft = $0 })'), 'Composer edits use the revision-tracked setter');
+assert(home.includes('.onChange(of: attachments.map(\\.id)) { _ in conversationalTeamLaunch = nil }'), 'Extras invalidate consent');
+const submit = read('GalaxySSI/GalaxySSIAgentHomeMessageSubmission.swift');
+assert(submit.indexOf('if offerConversationalTeam(') < submit.indexOf('if offerConversationGoal('), 'Local command intercept precedes ordinary dispatch');
+const app = read('GalaxySSI/GalaxySSIViews.swift');
+assert(app.includes('AgentConversationalTeamBackground.register()') && app.includes('AgentConversationalTeamLifecycle(store: runtime.store)'), 'App lifecycle hookup');
+const background = read('GalaxySSI/AgentConversationalTeamBackground.swift');
+assert(background.includes('expected: epoch') && background.includes('generation != expected') && background.includes('expireBackground(grant)'), 'Generation-bound background expiration');
+assert(read('GalaxySSI/BackgroundModes.plist').includes('<string>com.galaxyssi.chat.ios.conversation-team</string>'), 'Typed BG permission');
+assert(read('GalaxySSI/GalaxySSIStoreSessions.swift').includes('AgentConversationalTeamStore(owner: profile.identityFingerprint, defaults: defaults, secrets: secrets).remove(id)'), 'Conversation deletion');
+const hostStore = read('GalaxySSI/GalaxySSIStore.swift');
+assert(hostStore.includes('AgentConversationalTeamStore.destroyAll') && hostStore.includes('sourceTrace != AgentConversationalTeamRuntime.stage'), 'Reset and memory isolation');
+for (const key of ['title', 'help', 'objective', 'model', 'no_provider', 'consent', 'background', 'authorize', 'stop', 'close',
+  'changed', 'unavailable', 'refused', 'queued', 'calls', 'receipt', 'disagreements', 'interrupted', 'failed', 'stopped',
+  'state_queued', 'state_running', 'state_finished', 'state_stopped']) assert(keys.has(key), key);
+console.log('Conversational team protocol, command, consent, persistence, worker and lifecycle source contracts passed; 34 native test methods authored but not executed.');

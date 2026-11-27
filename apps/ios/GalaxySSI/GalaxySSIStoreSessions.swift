@@ -1080,6 +1080,8 @@ extension GalaxySSIStore {
       researchCheckpointStore.remove(conversation: id)
       turnReceiptStore.delete(owner: profile.identityFingerprint, conversation: id)
       AgentConversationGoalStore(owner: profile.identityFingerprint, defaults: defaults, secrets: secrets).remove(id)
+      AgentConversationalTeamStore(owner: profile.identityFingerprint, defaults: defaults, secrets: secrets).remove(id)
+      AgentConversationalTeamRuntime.shared.changed(conversation: id)
     }
     for session in knownConversations where session.collaborationRoster != nil &&
       agentConversationDatabase.read(session.id) == nil {
