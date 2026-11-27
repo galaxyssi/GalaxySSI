@@ -386,6 +386,13 @@ final class GalaxySSIStore: ObservableObject {
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
+  static func canRestoreConversationGoalState(defaults: UserDefaults = .standard,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared) -> Bool {
+    guard var data = GalaxySSIEncryptedStateStore.load(defaults: defaults, secrets: secrets) else { return false }
+    defer { data.wipeSensitive() }
+    guard let state = try? JSONDecoder.galaxySSI.decode(PersistedState.self, from: data) else { return false }
+    return !state.profile.identityFingerprint.isBlank
+  }
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
@@ -1129,6 +1136,9 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func destroyAllPrivateData() {
+    AgentConversationGoalRuntime.shared.interrupt()
+    AgentConversationGoalBackground.schedule(pending: false)
+    AgentConversationGoalStore.destroyAll(defaults: defaults, secrets: secrets)
     let accounts = Set(contacts.flatMap { contact in
       contact.cloudModels.map(\.keychainAccount)
     })
@@ -1260,7 +1270,7 @@ final class GalaxySSIStore: ObservableObject {
       at: createdAt
     )
     if sourceTrace != AgentConversationSchedule.occurrenceStage, sourceTrace != AgentSingleFileRead.stage,
-      sourceTrace != GalaxySSIHealthAgentLab.stage {
+      sourceTrace != AgentConversationGoalRuntime.stage, sourceTrace != GalaxySSIHealthAgentLab.stage {
       captureExplicitAgentCoreMemory(content, conversationId: conversationId, contactId: contactId, eventId: message.id.uuidString)
     }
     if !readOnlyAnalysis, (contactId == "hermes" || contact(id: contactId)?.type.caseInsensitiveCompare("agent") == .orderedSame),
