@@ -74,6 +74,8 @@ final class AgentKnowledgeDatabase {
   private let sourcePreviewNamespace: String
   private let payloadDirectory: URL
   private let lock = NSRecursiveLock()
+  private var indexOperationDepth = 0
+  private var indexMemo: AgentKnowledgeIndexKeyMemo?
   private var database: OpaquePointer?
 
   init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
@@ -2301,9 +2303,21 @@ final class AgentKnowledgeDatabase {
   }
 
   private func keyedHash(_ value: String) -> String {
-    HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: indexKey())
-      .map { String(format: "%02x", $0) }
-      .joined()
+    // Query-only snapshots must never wait for or borrow another thread's memo.
+    // Recursive try-lock succeeds for the current operation owner only while
+    // its operation depth is nonzero; an independent read calculates directly.
+    if lock.try() {
+      defer { lock.unlock() }
+      if indexOperationDepth > 0 {
+        if indexMemo == nil { indexMemo = try? AgentKnowledgeIndexKeyMemo() }
+        if let memo = indexMemo, let result = try? memo.key(value, calculate: { calculateIndexKey(value) }) { return result }
+      }
+    }
+    return calculateIndexKey(value)
+  }
+
+  private func calculateIndexKey(_ value: String) -> String {
+    AgentKnowledgeIndexKeyMemo.hex(HMAC<SHA256>.authenticationCode(for: Data(value.utf8), using: indexKey()))
   }
 
   private func indexKey() -> SymmetricKey {
@@ -2720,7 +2734,12 @@ final class AgentKnowledgeDatabase {
 
   private func locked<T>(_ body: () throws -> T) rethrows -> T {
     lock.lock()
-    defer { lock.unlock() }
+    indexOperationDepth += 1
+    defer {
+      indexOperationDepth -= 1
+      if indexOperationDepth == 0 { indexMemo?.close(); indexMemo = nil }
+      lock.unlock()
+    }
     return try body()
   }
 
