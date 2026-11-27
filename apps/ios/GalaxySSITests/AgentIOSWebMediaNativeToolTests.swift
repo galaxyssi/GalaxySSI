@@ -309,6 +309,7 @@ extension GalaxySSIStoreTests {
   func testAgentIOSWebMediaNativeToolCatalogAndExecutorMirrorsAndroidDefaultTools() throws {
     final class FakeWebMediaProvider: AgentIOSWebMediaToolProviding {
       var implementationId = "fake.ios.web_media"
+      var declaredNetworkPolicy: String?
       var currentAvailability: AgentNativeToolAvailability = .available
       var invokedOperations: [AgentIOSWebMediaOperation] = []
       var capturedInputs: [AgentMcpJSONObject] = []
@@ -327,12 +328,14 @@ extension GalaxySSIStoreTests {
         let sha = String(repeating: "a", count: 64)
         switch operation {
         case .webSearch:
+          var metadata: AgentMcpJSONObject = [:]
+          if let declaredNetworkPolicy { metadata["network_policy"] = .string(declaredNetworkPolicy) }
           return AgentNativeToolExecutionResult.success(
             output: commonWeb(method: "get").merging([
               "query": input["query"] ?? .string("GalaxySSI"),
               "results": .array([.object(["title": .string("GalaxySSI"), "url": .string("https://galaxyssi.example")])]),
               "result_count": .int(1)
-            ]) { current, _ in current }
+            ]) { current, _ in current }, metadata: metadata
           )
         case .webOpen, .browserRender:
           return AgentNativeToolExecutionResult.success(
@@ -589,7 +592,7 @@ extension GalaxySSIStoreTests {
     XCTAssertFalse(provider.invokedOperations.contains(.contentExtract))
     XCTAssertTrue(search.isSuccess)
     XCTAssertEqual(search.output["operation"], .string("web.search"))
-    XCTAssertEqual(search.metadata["network_policy"], .string("public_https_pinned_dns_v1"))
+    XCTAssertEqual(search.metadata["network_policy"], .string("provider_network_policy_unspecified"))
     XCTAssertTrue(session.isSuccess)
     XCTAssertEqual(session.output["browser_id"], .string("browser-session-0001"))
     XCTAssertEqual(invalidURL.status, .failed)
@@ -605,6 +608,19 @@ extension GalaxySSIStoreTests {
     XCTAssertEqual(unavailable.status, .unavailable)
     XCTAssertEqual(unavailable.error?.code, "tool_unavailable")
     XCTAssertTrue(unavailableProvider.invokedOperations.isEmpty)
+    for definition in definitions where [AgentIOSWebMediaNativeToolCatalog.webSearch,
+      AgentIOSWebMediaNativeToolCatalog.webFetch, AgentIOSWebMediaNativeToolCatalog.httpRequest,
+      AgentIOSWebMediaNativeToolCatalog.webHead, AgentIOSWebMediaNativeToolCatalog.fileDownload,
+      AgentIOSWebMediaNativeToolCatalog.webDownload].contains(definition.id) {
+      XCTAssertEqual(definition.provenanceMetadata["network_policy"], "provider_network_policy_unspecified")
+    }
+    provider.declaredNetworkPolicy = "synthetic_explicit_policy"
+    var declaredContext = networkContext
+    declaredContext.invocationId = "declared-network-policy"
+    let declared = registry.invoke(AgentIOSWebMediaNativeToolCatalog.webSearch,
+      input: ["query": .string("GalaxySSI"), "max_results": .int(1)], context: declaredContext)
+    XCTAssertTrue(declared.isSuccess)
+    XCTAssertEqual(declared.metadata["network_policy"], .string("synthetic_explicit_policy"))
   }
 
   func testAgentIOSURLSessionWebMediaProviderExecutesBoundedHTTPSTools() throws {

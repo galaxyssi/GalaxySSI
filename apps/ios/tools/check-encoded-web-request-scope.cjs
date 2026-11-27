@@ -5,6 +5,7 @@ const base = 'c8a48aaa9c24427d606b32d894848b9bdd48c648', android = '65655f0c79c6
 const clean = text => text.replace(/\r\n/g, '\n');
 const read = file => {
   let source = clean(fs.readFileSync(path.join(root, file), 'utf8'));
+  source = require('./check-web-network-assurance-scope.cjs').retained(file, source);
   if (file.endsWith('AgentIOSPublicAddressPolicy.swift')) source = require('./check-special-use-address-scope.cjs').retainedPolicy(source);
   return source;
 };
