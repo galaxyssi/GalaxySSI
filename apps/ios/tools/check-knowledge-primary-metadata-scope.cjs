@@ -1,6 +1,6 @@
 // Source contracts only; not Swift/native SQLite/device/recovery acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = 'ea967c52114fdd6071a0bf5517146babcfd3ebb8', app = 'apps/ios/GalaxySSI/';
+const root = path.resolve(__dirname, '../../..'), base = '3b8340ced4f3779daaaa2e8ec9ae3cca5e84c983', app = 'apps/ios/GalaxySSI/';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
@@ -22,7 +22,7 @@ const finalMetadata = `      if old.headerHash != nil {
       }
 `;
 function retained(f, source) {
-  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryMetadata(?:Tests)?\.swift/.test(l)).join('\n');
+  if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledgePrimaryMetadata(?:Integration)?(?:Tests)?\.swift/.test(l)).join('\n');
   if (f === app + 'AgentKnowledgePrimaryCopyStore.swift' && source.includes('  static func accountMetadata(')) return source.replace(section(source, '  static func accountMetadata(', '  static func checkpoint('), '');
   if (f === app + 'AgentKnowledgeDatabase.swift' && source.includes('  private func validatePrimaryHeader(')) return source
     .replace(headerEncoding, '    let encrypted = Data([0])\n')
@@ -94,6 +94,13 @@ function validate() {
     'AgentKnowledgeReadConnectionPool', 'AgentKnowledgeSQLiteStatements', 'AgentKnowledgePrimaryReaderSlots',
     'AgentKnowledgePrimaryAllocations', 'AgentKnowledgePrimaryDurability', 'AgentKnowledgePrimaryFrameCodec', 'AgentKnowledgeStorageBackground'])
     assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+  const integration = read('apps/ios/GalaxySSITests/AgentKnowledgePrimaryMetadataIntegrationTests.swift');
+  assert.equal((integration.match(/  func test/g) || []).length, 4);
+  for (const name of ['PreparedSourceWritesHeaderPointerAndReopensWithAuthenticatedBody',
+    'PreparationRejectsCatalogTimestampTamperingAgainstPhysicalHeader',
+    'PostPreparationIndexMutationFailsGenerationFenceBeforePublishingHeader',
+    'PreparedPrecommitFailureKeepsOriginalHeaderPointerBodyAndOutbox']) assert(integration.includes('func test' + name + '('), name);
+  assert(read('apps/ios/GalaxySSITests/AgentKnowledgePrimarySourceIntegrationTests.swift').includes("length(encrypted_payload)=69 AND CAST(substr(encrypted_payload,1,5) AS TEXT)='khp1:'"));
   console.log('Actual authenticated primary headers/pointers, snapshot-index validation, header-before-reference copy publication, checked physical schema upgrade and 15 authored-only fixture contracts passed source checks; no native acceptance.');
 }
 module.exports = {retained, validate};

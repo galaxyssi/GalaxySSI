@@ -1,7 +1,9 @@
 // Source contracts only. No Swift/Compression/CryptoKit/SQLite or XCTest execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path'), crypto = require('node:crypto');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
+// Exact retained baseline now includes the independently reviewed #3031/#3033-36
+// chain. Only declared primary hooks may differ from that pinned source.
+const base = 'bf3933c65b5963a5b0c5cbe7d826a8eea8366919';
 const read = file => require('./check-knowledge-primary-durability-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -11,7 +13,8 @@ function section(source, start, end) {
 }
 const names = ['AgentKnowledgePrimaryFrameCodec.swift', 'AgentKnowledgePrimaryPartitions.swift', 'AgentKnowledgePrimaryPartitionsTests.swift',
   'AgentKnowledgeStorageBackground.swift', 'AgentKnowledgeStorageMaintenanceTests.swift',
-  'AgentKnowledgePrimaryReaderSlots.swift', 'AgentKnowledgePrimaryReaderSlotsTests.swift'];
+  'AgentKnowledgePrimaryReaderSlots.swift', 'AgentKnowledgePrimaryReaderSlotsTests.swift',
+  'AgentKnowledgePrimarySourceIntegrationTests.swift'];
 const properties = '  private let primaryPayloads: AgentKnowledgePrimaryPartitions\n';
 function retained(file, source) {
   source = require('./check-knowledge-primary-durability-scope.cjs').retained(file, source);
@@ -21,10 +24,22 @@ function retained(file, source) {
     .replace('    AgentKnowledgeStorageBackground.register()\n', '')
     .replace('    AgentKnowledgeStorageBackground.bind(database: store.agentKnowledgeDatabase)\n', '');
   if (file.endsWith('GalaxySSIServices.swift')) return source.replace('    store.agentKnowledgeDatabase.startPrimaryPayloadMigration()\n', '');
+  if (file.endsWith('AgentKnowledgeCommittedReadView.swift')) return source
+    .replace('  private var primarySnapshotLease: AgentKnowledgePrimaryPartitions.SnapshotLease?\n', '')
+    .replace('  init(fileURL: URL, primarySnapshotLease: AgentKnowledgePrimaryPartitions.SnapshotLease? = nil,\n    checkActive: @escaping () throws -> Void) throws {\n    self.primarySnapshotLease = primarySnapshotLease',
+      '  init(fileURL: URL, checkActive: @escaping () throws -> Void) throws {')
+    .replace('      // No active callback remains; do not release retention on a zombie handle.\n      while let statement = sqlite3_next_stmt(database, nil) { sqlite3_finalize(statement) }\n', '')
+    .replace('\n    // Release physical retention only after statements, WAL and handle are closed.\n    primarySnapshotLease = nil', '');
   if (file.endsWith('AgentKnowledgeDatabase.swift') && source.includes('  struct PrimaryMigrationPage:')) {
     const original = old(file);
     source = source.replace(properties, '')
       .split('    let primarySnapshotLease = try primaryPayloads.snapshotLease()\n    defer { withExtendedLifetime(primarySnapshotLease) {} }\n').join('')
+      .replace('    let primarySnapshotLease = try primaryPayloads.snapshotLease()\n', '')
+      .replace('AgentKnowledgeCommittedReadView(fileURL: fileURL, primarySnapshotLease: primarySnapshotLease)',
+        'AgentKnowledgeCommittedReadView(fileURL: fileURL)')
+      .replace('          guard let database, execute("BEGIN IMMEDIATE")', '          guard execute("BEGIN IMMEDIATE")')
+      .replace('          try primaryPayloads.beginWriteBatch(catalog: database)\n          defer { primaryPayloads.endWriteBatch(catalog: database) }\n', '')
+      .replace('          try primaryPayloads.prepareBatchCommit(catalog: database, checkActive: { try prepared.checkActive() })\n', '')
       .replace('    var deferred: Bool = false\n', '')
       .replace('    primaryPayloads = AgentKnowledgePrimaryPartitions(catalogURL: fileURL, secrets: secrets)\n', '')
       .replace(section(source, '  struct PrimaryMigrationPage:', '  @discardableResult\n  func maintainExternalPayloads('), '')
@@ -83,6 +98,12 @@ function retained(file, source) {
     return source;
   }
   if (file.endsWith('AgentKnowledgeAsyncRAGTests.swift')) return source.replace('".payloads", ".primary", ".native"', '".payloads", ".native"');
+  if (file.endsWith('AgentKnowledgeReadAdmissionTests.swift')) {
+    source = source.split('      try seedLegacyKnowledgePayloads([item()], url: url, secrets: secrets)\n').join('');
+    const block = section(source, '  func testValidationAuthenticatesCiphertextRatherThanTrustingStableSQLIdentity()',
+      '  func testViewRejectsCloseDuringReadAndLifecycleInvalidation()');
+    return source.replace(block, block.replace('try fixture { database, url, secrets in', 'try fixture { database, url, _ in'));
+  }
   if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
     .replace("const read = file => require('./check-knowledge-primary-partitions-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
       "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
@@ -91,6 +112,7 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'AgentKnowledgeDatabase.swift', app + 'GalaxySSIServices.swift', app + 'GalaxySSIViews.swift', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj',
+    app + 'AgentKnowledgeCommittedReadView.swift', 'apps/ios/GalaxySSITests/AgentKnowledgeReadAdmissionTests.swift',
     'apps/ios/GalaxySSITests/AgentKnowledgeDatabaseTests.swift', 'apps/ios/GalaxySSITests/AgentKnowledgeAsyncRAGTests.swift',
     'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
   const inventory = JSON.parse(read('apps/ios/ANDROID_3037_SOURCE_INVENTORY.json'));
