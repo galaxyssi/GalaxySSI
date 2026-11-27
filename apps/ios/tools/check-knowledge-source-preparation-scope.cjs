@@ -12,7 +12,8 @@ const section = (from, to) => {
 };
 const preparation = section('  func prepareSourceReplacement(', '  func commitSourceReplacement(');
 assert.doesNotMatch(preparation, /try locked|BEGIN IMMEDIATE|execute\("COMMIT/);
-for (const text of ['try readCommitted { connection', 'sourceGeneration(hash: sourceHash, on: connection)',
+assert.doesNotMatch(preparation, /requestIndexRetry|try readCommitted/);
+for (const text of ['let view = try committedReadView()', 'defer { view.close() }', 'return try view.read { connection', 'sourceGeneration(hash: sourceHash, on: connection)',
   'sourceRecord(hash: key, on: connection)', 'ORDER BY item_hash LIMIT 64', 'try onPage(count)',
   'key < policy!.itemKey', 'try stage.finishPrevious()', 'nativeFiles.readToken() == token']) assert.ok(preparation.includes(text), text);
 const commit = section('  func commitSourceReplacement(', '  private func validatePreparedIdentity(');

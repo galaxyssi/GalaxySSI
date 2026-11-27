@@ -133,6 +133,102 @@ final class AgentKnowledgeNativeIndexTests: XCTestCase {
     }
   }
 
+  func testReadyGraphStillMigratesOneBoundedRecordPage() throws {
+    try backgroundFixture { index, state, lease in
+      XCTAssertNotNil(index.readyStamp)
+      let before = state.checkpoint
+      XCTAssertFalse(try index.maintainRecords(pageSize: 64, token: lease.token))
+      XCTAssertEqual(state.migrationPages, [64])
+      XCTAssertEqual(state.checkpoint, before)
+      XCTAssertNotNil(index.readyStamp)
+      state.migrationCompletes = true
+      XCTAssertTrue(try index.maintainRecords(pageSize: 64, token: lease.token))
+      XCTAssertEqual(state.migrationPages, [64, 64])
+    }
+  }
+
+  func testPartitionedGraphDoesNotEnterWriteMigration() throws {
+    try backgroundFixture { index, state, lease in
+      state.partitioned = true
+      XCTAssertTrue(try index.maintainRecords(token: lease.token))
+      XCTAssertTrue(state.migrationPages.isEmpty)
+    }
+  }
+
+  func testForegroundReplayAndSearchNeverMigrateRecords() throws {
+    try fixture(chunks: 1) { database, _, spec in
+      let state = try sessionState(database, spec), token = try XCTUnwrap(database.nativeFiles.activeToken())
+      let index = AgentKnowledgeNativeIndex(database: database, provenance: spec, factory: factory(state))
+      XCTAssertTrue(try index.advance(token: token))
+      _ = try index.search([0.6, 0.8], count: 4, token: token)
+      XCTAssertThrowsError(try index.maintainRecords(token: token))
+      XCTAssertTrue(state.migrationPages.isEmpty)
+    }
+  }
+
+  func testMigrationBoundsAndExpiredLeaseDoNotReachTheWriter() throws {
+    try backgroundFixture { index, state, lease in
+      for size in [0, 257, Int.max] { XCTAssertThrowsError(try index.maintainRecords(pageSize: size, token: lease.token)) }
+      lease.end()
+      XCTAssertThrowsError(try index.maintainRecords(token: lease.token))
+      XCTAssertTrue(state.migrationPages.isEmpty)
+    }
+  }
+
+  func testMigrationFailureRetiresSessionWithoutRewritingReplayProgress() throws {
+    try backgroundFixture { index, state, lease in
+      let before = state.checkpoint
+      state.migrationFails = true
+      XCTAssertThrowsError(try index.maintainRecords(token: lease.token))
+      XCTAssertNil(index.readyStamp)
+      XCTAssertGreaterThan(state.closes, 0)
+      XCTAssertEqual(state.checkpoint, before)
+    }
+  }
+
+  func testLeaseExpiryDuringMigrationRejectsLateCompletion() throws {
+    try backgroundFixture { index, state, lease in
+      state.migrationCompletes = true
+      state.onMigrate = { lease.end() }
+      defer { state.onMigrate = nil }
+      XCTAssertThrowsError(try index.maintainRecords(token: lease.token))
+      XCTAssertNil(index.readyStamp)
+      XCTAssertEqual(state.migrationPages, [64])
+    }
+  }
+
+  func testIncompleteMigrationResumesAfterIndexOwnerRecreation() throws {
+    try fixture(chunks: 1) { database, _, spec in
+      let lease = try database.nativeFiles.beginBackgroundLease()
+      defer { lease.end() }
+      let state = try sessionState(database, spec)
+      let first = AgentKnowledgeNativeIndex(database: database, provenance: spec, backgroundLease: lease, factory: factory(state))
+      XCTAssertTrue(try first.advance(token: lease.token))
+      XCTAssertFalse(try first.maintainRecords(pageSize: 16, token: lease.token))
+      let checkpoint = state.checkpoint
+      first.close()
+      let resumed = AgentKnowledgeNativeIndex(database: database, provenance: spec, backgroundLease: lease, factory: factory(state))
+      defer { resumed.close() }
+      XCTAssertTrue(try resumed.advance(token: lease.token))
+      state.migrationCompletes = true
+      XCTAssertTrue(try resumed.maintainRecords(pageSize: 16, token: lease.token))
+      XCTAssertEqual(state.migrationPages, [16, 16])
+      XCTAssertEqual(state.checkpoint, checkpoint)
+    }
+  }
+
+  private func backgroundFixture(_ body: (AgentKnowledgeNativeIndex, SessionState, AgentKnowledgeNativeFiles.BackgroundLease) throws -> Void) throws {
+    try fixture(chunks: 1) { database, _, spec in
+      let lease = try database.nativeFiles.beginBackgroundLease()
+      defer { lease.end() }
+      let state = try sessionState(database, spec)
+      let index = AgentKnowledgeNativeIndex(database: database, provenance: spec, backgroundLease: lease, factory: factory(state))
+      defer { index.close() }
+      XCTAssertTrue(try index.advance(token: lease.token))
+      try body(index, state, lease)
+    }
+  }
+
   private func fixture(chunks: Int, _ body: (AgentKnowledgeDatabase, AgentKnowledgeItem, AgentKnowledgeVectorProvenance) throws -> Void) throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -176,6 +272,9 @@ final class AgentKnowledgeNativeIndexTests: XCTestCase {
     var created = false
     var ordinals: [Int] = [], skipped: [Int64] = []
     var searches = 0, closes = 0
+    var partitioned = false, migrationCompletes = false, migrationFails = false
+    var migrationPages: [Int] = []
+    var onMigrate: (() -> Void)?
     var matches: [AgentKnowledgeNativeMatch] = []
     var onAppend: (() -> Void)?, onSearch: (() -> Void)?
     init(epoch: String) { checkpoint = AgentKnowledgeNativeCheckpoint(epoch: epoch, last: nil, pending: nil) }
@@ -209,6 +308,14 @@ final class AgentKnowledgeNativeIndexTests: XCTestCase {
     }
     func search(_ query: [Float], count: Int, breadth: Int) throws -> [AgentKnowledgeNativeMatch] {
       try live(); state.searches += 1; state.onSearch?(); return state.matches
+    }
+    func recordsPartitioned() throws -> Bool { try live(); return state.partitioned }
+    func migrateRecords(limit: Int) throws -> Bool {
+      try live(); state.migrationPages.append(limit)
+      if state.migrationFails { throw AgentKnowledgeNativeError.nativeFailure }
+      state.onMigrate?()
+      state.partitioned = state.migrationCompletes
+      return state.partitioned
     }
     func cancel() { cancelled = true }
     func close() { if !closed { state.closes += 1; closed = true } }

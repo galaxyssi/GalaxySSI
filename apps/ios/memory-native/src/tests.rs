@@ -103,3 +103,76 @@ fn cancelled_or_closed_unknown_handles_are_idempotent() {
 fn panic_is_contained_at_boundary() {
     assert_eq!(boundary(|| -> Result<()> { panic!("synthetic boundary panic") }), 2);
 }
+
+#[test]
+fn record_maintenance_rejects_null_outputs_and_clears_error_flags() {
+    assert_eq!(unsafe { gs_memory_records_partitioned(-1, ptr::null_mut()) }, 1);
+    assert_eq!(unsafe { gs_memory_migrate_records(-1, 64, ptr::null_mut()) }, 1);
+    let mut complete = 99;
+    assert_eq!(unsafe { gs_memory_records_partitioned(-1, &mut complete) }, 1);
+    assert_eq!(complete, 0);
+    for limit in [0, 257, u32::MAX] {
+        complete = 99;
+        assert_eq!(unsafe { gs_memory_migrate_records(-1, limit, &mut complete) }, 1);
+        assert_eq!(complete, 0);
+    }
+}
+
+struct MaintenanceFixture { path: PathBuf, handle: i64 }
+impl MaintenanceFixture {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!("galaxyssi-ios-record-maintenance-{}-{}-{}",
+            std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+        let mut fixture = Self { path, handle: 0 };
+        fixture.open(true);
+        fixture
+    }
+    fn open(&mut self, create: bool) {
+        let text = self.path.to_str().unwrap().as_bytes();
+        let root = [1.0, 0.0];
+        assert_eq!(unsafe { gs_memory_open(text.as_ptr(), text.len(), &config(),
+            if create { root.as_ptr() } else { ptr::null() }, if create { 2 } else { 0 }, &mut self.handle) }, 0);
+    }
+    fn checkpoint(&self) -> Vec<u8> {
+        let mut bytes = vec![0; 208]; let mut written = 0;
+        assert_eq!(unsafe { gs_memory_checkpoint(self.handle, bytes.as_mut_ptr(), bytes.len(), &mut written) }, 0);
+        bytes.truncate(written); bytes
+    }
+}
+impl Drop for MaintenanceFixture {
+    fn drop(&mut self) { gs_memory_close(self.handle); let _ = std::fs::remove_dir_all(&self.path); }
+}
+
+#[test]
+fn partitioned_store_maintenance_is_idempotent_and_preserves_replay_after_reopen() {
+    let mut fixture = MaintenanceFixture::new();
+    let before = fixture.checkpoint(); let mut complete = 99;
+    assert_eq!(unsafe { gs_memory_records_partitioned(fixture.handle, &mut complete) }, 0);
+    assert_eq!(complete, 1);
+    for limit in [1, 64, 256] {
+        assert_eq!(unsafe { gs_memory_migrate_records(fixture.handle, limit, &mut complete) }, 0);
+        assert_eq!(complete, 1); assert_eq!(fixture.checkpoint(), before);
+    }
+    assert_eq!(gs_memory_close(fixture.handle), 0); fixture.handle = 0;
+    fixture.open(false);
+    assert_eq!(fixture.checkpoint(), before);
+    assert_eq!(unsafe { gs_memory_records_partitioned(fixture.handle, &mut complete) }, 0);
+    assert_eq!(complete, 1);
+}
+
+#[test]
+fn cancelled_or_closed_record_maintenance_cannot_claim_completion() {
+    let fixture = MaintenanceFixture::new(); let mut complete = 99;
+    assert_eq!(gs_memory_cancel(fixture.handle), 0);
+    assert_eq!(unsafe { gs_memory_migrate_records(fixture.handle, 64, &mut complete) }, 1);
+    assert_eq!(complete, 0);
+    complete = 99;
+    assert_eq!(unsafe { gs_memory_records_partitioned(fixture.handle, &mut complete) }, 1);
+    assert_eq!(complete, 0);
+    assert_eq!(gs_memory_close(fixture.handle), 0);
+    complete = 99;
+    assert_eq!(unsafe { gs_memory_migrate_records(fixture.handle, 64, &mut complete) }, 1);
+    assert_eq!(complete, 0);
+}

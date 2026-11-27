@@ -113,6 +113,25 @@ final class AgentKnowledgeNativeBridge: AgentKnowledgeNativeSession {
     }
   }
 
+  func recordsPartitioned() throws -> Bool {
+    try flag { gs_memory_records_partitioned($0, $1) }
+  }
+
+  func migrateRecords(limit: Int) throws -> Bool {
+    guard (1...256).contains(limit) else { throw AgentKnowledgeNativeError.invalidRecord }
+    return try flag { gs_memory_migrate_records($0, UInt32(limit), $1) }
+  }
+
+  private func flag(_ call: (Int64, UnsafeMutablePointer<UInt8>) -> Int32) throws -> Bool {
+    lock.lock()
+    let id = handle
+    lock.unlock()
+    guard id > 0 else { throw AgentKnowledgeNativeError.closed }
+    var complete: UInt8 = 0
+    guard call(id, &complete) == 0, complete <= 1 else { throw AgentKnowledgeNativeError.nativeFailure }
+    return complete == 1
+  }
+
   func cancel() {
     lock.lock()
     let id = handle

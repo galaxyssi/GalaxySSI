@@ -15,6 +15,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
   var phoneOwnsExecution: Bool
   var timerCheckpoint: [String: String]?
   var observationRepairDiagnostics: [AgentMcpJSONObject]?
+  var knowledgeStats: AgentKnowledgeStats? = nil
 
   var permitsAnswerOnlyResponse: Bool {
     let intentGoal = AgentUntrustedEvidenceBoundary.trustedInstructionPrefix(planRequest.goal)
@@ -79,6 +80,7 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
     case phoneOwnsExecution = "phone_owns_execution"
     case timerCheckpoint = "timer_checkpoint"
     case observationRepairDiagnostics = "observation_repair_diagnostics"
+    case knowledgeStats = "knowledge_stats"
   }
 
   init(from decoder: Decoder) throws {
@@ -100,5 +102,6 @@ struct AgentModelPlanningPromptRequest: Codable, Equatable {
       observationRepairDiagnostics: try container.decodeIfPresent([AgentMcpJSONObject].self, forKey: .observationRepairDiagnostics)
     )
     ownedOperationContext = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .ownedOperationContext)
+    knowledgeStats = try container.decodeIfPresent(AgentKnowledgeStats.self, forKey: .knowledgeStats)
   }
 }

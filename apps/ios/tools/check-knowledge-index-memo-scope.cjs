@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '7896a98c2ca7f7555ae5c6aa217efade1015efa4';
+const base = '3911ef0c91d986c3b4b8194f849c1d3b5c3d938f';
 const raw = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const read = name => raw(app + name);
 const old = file => cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -84,11 +84,11 @@ for (const file of [app + 'AgentKnowledgeDatabase.swift', app + 'AgentKnowledgeC
 const memoFile = app + 'AgentKnowledgeIndexKeyMemo.swift';
 const priorMemo = cp.execFileSync('git', ['show', '5c21d5994a898360781a2ed836f66a5c0ea9815c:' + memoFile], {cwd: root, encoding: 'utf8'}).replace(/\r\n/g, '\n');
 assert.equal(memo.slice(0, memo.indexOf('// All bodies are synchronous.')).trimEnd(), priorMemo.trimEnd(), 'Original LRU/UTF8/close kernel unchanged');
-const guard = 'apps/ios/tools/check-knowledge-primary-metadata-scope.cjs';
+const guard = 'apps/ios/tools/check-knowledge-projection-scratch-scope.cjs';
 assert.equal(raw(guard), old(guard)
   .replace("const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n');",
     "const read = f => require('./check-knowledge-index-memo-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n'));")
-  .replace('function retained(f, source) {\n', "function retained(f, source) {\n  source = require('./check-knowledge-index-memo-scope.cjs').retained(f, source);\n"));
+  .replace('function retained(f, s) {\n', "function retained(f, s) {\n  s = require('./check-knowledge-index-memo-scope.cjs').retained(f, s);\n"));
 console.log('iOS thread/operation-owned write and committed-read memo, exact retained main/crypto kernels and eighteen authored-only fixture contracts passed source checks; no native acceptance.');
 }
 module.exports = {retained, validate};

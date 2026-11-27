@@ -1250,9 +1250,10 @@ final class AgentKnowledgeDatabase {
   }
 
   func sourceSnapshotItems(_ group: AgentKnowledgeSourceGroup) throws -> [AgentKnowledgeItem] {
+    let resolved = try resolveSourceExportGroup(group)
     var items: [AgentKnowledgeItem] = []
-    try enumerateSourceSnapshotItems(group) { items.append($0) }
-    guard AgentKnowledgeSourceRevision.digest(items) == group.sourceRevision else {
+    try enumerateSourceSnapshotItems(resolved) { items.append($0) }
+    guard AgentKnowledgeSourceRevision.digest(items) == resolved.sourceRevision else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
     return items.sorted { left, right in
@@ -1260,115 +1261,150 @@ final class AgentKnowledgeDatabase {
     }
   }
 
+  // Only an explicitly requested legacy source is read. The old header and the
+  // source generation fence the metadata-only publication; bodies stay intact.
+  func resolveSourceExportGroup(_ group: AgentKnowledgeSourceGroup,
+    beforePublication: () throws -> Void = {}) throws -> AgentKnowledgeSourceGroup {
+    guard group.sourceRevision.isBlank else { return group }
+    guard !group.source.isBlank, group.chunkCount >= 0, let token = nativeFiles.readToken() else {
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
+    let sourceHash = keyedHash(group.source)
+    func originalHeader(on connection: OpaquePointer) throws -> Data {
+      guard let row = prepare("SELECT updated_at,encrypted_header FROM knowledge_source_headers WHERE source_hash=?", on: connection) else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(row) }; bind(sourceHash, at: 1, to: row)
+      guard sqlite3_step(row) == SQLITE_ROW, sqlite3_column_type(row, 0) == SQLITE_INTEGER,
+        let encrypted = blob(row, column: 1) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      let updated = sqlite3_column_int64(row, 0)
+      let current = try JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self,
+        from: cipher.decrypt(encrypted, expectedPurpose: sourceHeaderPurpose(sourceHash)))
+      guard current.updatedAtMillis == updated, keyedHash(current.source) == sourceHash,
+        sqlite3_step(row) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      guard current == group, current.source.utf8.elementsEqual(group.source.utf8) else { throw AgentKnowledgeDatabaseError.staleCursor }
+      return encrypted
+    }
+    let view = try committedReadView()
+    defer { view.close() }
+    let baseline = try view.read { connection in
+      (try originalHeader(on: connection), try sourceGeneration(hash: sourceHash, on: connection))
+    }
+    view.close()
+    let prepared = try prepareSourceReplacement(group.source, next: { nil })
+    defer { prepared.close() }
+    guard prepared.token == token else { throw CancellationError() }
+    guard prepared.revision == baseline.1 else { throw AgentKnowledgeDatabaseError.sourceReplacementChanged }
+    let stage = try prepared.claim(for: self)
+    defer { prepared.failed(); stage.close() }
+    guard stage.previousCount == Int64(group.chunkCount) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    try prepared.checkActive()
+    try stage.finishMutation()
+    var resolved = group
+    resolved.sourceRevision = try stage.sourceRevision(side: .previous, checkActive: { try prepared.checkActive() })
+    try beforePublication()
+    return try locked {
+      try prepared.checkActive()
+      guard let database, execute("BEGIN IMMEDIATE") else { throw AgentKnowledgeDatabaseError.unavailable }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      guard try sourceGeneration(hash: sourceHash) == prepared.revision else { throw AgentKnowledgeDatabaseError.sourceReplacementChanged }
+      guard try originalHeader(on: database) == baseline.0 else { throw AgentKnowledgeDatabaseError.staleCursor }
+      let encrypted = try cipher.encrypt(JSONEncoder.galaxySSI.encode(resolved), purpose: sourceHeaderPurpose(sourceHash))
+      guard let size = Int32(exactly: encrypted.count), let oldSize = Int32(exactly: baseline.0.count),
+        let update = prepare("UPDATE knowledge_source_headers SET encrypted_header=? WHERE source_hash=? AND encrypted_header=?") else {
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(update) }
+      bind(sourceHash, at: 2, to: update)
+      guard encrypted.withUnsafeBytes({ sqlite3_bind_blob(update, 1, $0.baseAddress, size, Self.transient) }) == SQLITE_OK,
+        baseline.0.withUnsafeBytes({ sqlite3_bind_blob(update, 3, $0.baseAddress, oldSize, Self.transient) }) == SQLITE_OK,
+        sqlite3_step(update) == SQLITE_DONE, sqlite3_changes(database) == 1,
+        insertSourcePreview(resolved, sourceHash: sourceHash, updatedAtMillis: group.updatedAtMillis, encryptedHeader: encrypted),
+        execute("UPDATE knowledge_browse_revision SET revision=revision+1 WHERE id=1 AND typeof(revision)='integer' AND revision>=0 AND revision<9223372036854775807"),
+        sqlite3_changes(database) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
+      try prepared.commitCanonical {
+        guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
+      }
+      committed = true
+      return resolved
+    }
+  }
+
   func enumerateSourceSnapshotItems(
     _ group: AgentKnowledgeSourceGroup,
     consume: (AgentKnowledgeItem) throws -> Void
   ) throws {
+    let group = try resolveSourceExportGroup(group)
     guard !group.source.isBlank, group.chunkCount >= 0, !group.sourceRevision.isBlank else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
-    let primarySnapshotLease = try primaryPayloads.snapshotLease()
-    defer { withExtendedLifetime(primarySnapshotLease) {} }
-    var snapshot: OpaquePointer?
-    guard sqlite3_open_v2(
-      fileURL.path,
-      &snapshot,
-      SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
-      nil
-    ) == SQLITE_OK, let snapshot else {
-      if let snapshot { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
-      throw AgentKnowledgeDatabaseError.unavailable
-    }
-    defer { AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
-    sqlite3_busy_timeout(snapshot, 5_000)
-    guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "PRAGMA mmap_size = 0", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "BEGIN", nil, nil, nil) == SQLITE_OK else {
-      throw AgentKnowledgeDatabaseError.unavailable
-    }
-    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil) }
-
-    let sourceHash = keyedHash(group.source)
-    var header: OpaquePointer?
-    guard AgentKnowledgeSQLiteStatements.shared.prepare(
-      snapshot,
-      "SELECT updated_at, encrypted_header FROM knowledge_source_headers WHERE source_hash = ? LIMIT 1",
-      -1,
-      &header,
-      nil
-    ) == SQLITE_OK, let header else { throw AgentKnowledgeDatabaseError.unavailable }
-    bind(sourceHash, at: 1, to: header)
-    guard sqlite3_step(header) == SQLITE_ROW,
-          let encryptedHeader = blob(header, column: 1),
-          let plaintext = try? cipher.decrypt(
-            encryptedHeader,
-            expectedPurpose: sourceHeaderPurpose(sourceHash)
-          ),
-          let current = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext) else {
-      AgentKnowledgeSQLiteStatements.shared.release(header)
-      throw AgentKnowledgeDatabaseError.corruptRecord
-    }
-    AgentKnowledgeSQLiteStatements.shared.release(header)
-    guard current.source == group.source,
-          current.sourceRevision == group.sourceRevision,
-          current.chunkCount == group.chunkCount else {
-      throw AgentKnowledgeDatabaseError.staleCursor
-    }
-
-    var afterUpdatedAt = Int64.max
-    var afterItemHash = ""
-    var firstPage = true
-    var emitted = 0
-    while true {
-      let predicate = firstPage ? "" : "AND (updated_at < ? OR (updated_at = ? AND item_hash > ?))"
-      var page: OpaquePointer?
-      guard AgentKnowledgeSQLiteStatements.shared.prepare(
-        snapshot,
-        """
-        SELECT item_hash, updated_at, encrypted_payload FROM knowledge_items
-        WHERE source_hash = ? \(predicate)
-        ORDER BY updated_at DESC, item_hash ASC LIMIT 64
-        """,
-        -1,
-        &page,
-        nil
-      ) == SQLITE_OK, let page else { throw AgentKnowledgeDatabaseError.unavailable }
-      bind(sourceHash, at: 1, to: page)
-      if !firstPage {
-        sqlite3_bind_int64(page, 2, afterUpdatedAt)
-        sqlite3_bind_int64(page, 3, afterUpdatedAt)
-        bind(afterItemHash, at: 4, to: page)
+    let view = try committedReadView()
+    defer { view.close() }
+    try view.read { snapshot in
+      let sourceHash = keyedHash(group.source)
+      var header: OpaquePointer?
+      guard AgentKnowledgeSQLiteStatements.shared.prepare(snapshot,
+        "SELECT updated_at, encrypted_header FROM knowledge_source_headers WHERE source_hash = ? LIMIT 1",
+        -1, &header, nil) == SQLITE_OK, let header else {
+        if let header { AgentKnowledgeSQLiteStatements.shared.release(header) }
+        throw AgentKnowledgeDatabaseError.unavailable
       }
-      var pageCount = 0
-      while sqlite3_step(page) == SQLITE_ROW {
-        guard let hashText = sqlite3_column_text(page, 0) else {
-          AgentKnowledgeSQLiteStatements.shared.release(page)
-          throw AgentKnowledgeDatabaseError.corruptRecord
+      defer { AgentKnowledgeSQLiteStatements.shared.release(header) }
+      bind(sourceHash, at: 1, to: header)
+      guard sqlite3_step(header) == SQLITE_ROW, sqlite3_column_type(header, 0) == SQLITE_INTEGER,
+        let encryptedHeader = blob(header, column: 1),
+        let plaintext = try? cipher.decrypt(encryptedHeader, expectedPurpose: sourceHeaderPurpose(sourceHash)),
+        let current = try? JSONDecoder.galaxySSI.decode(AgentKnowledgeSourceGroup.self, from: plaintext),
+        current.updatedAtMillis == sqlite3_column_int64(header, 0),
+        sqlite3_step(header) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      guard current.source == group.source, current.sourceRevision == group.sourceRevision,
+        current.chunkCount == group.chunkCount else { throw AgentKnowledgeDatabaseError.staleCursor }
+
+      var afterUpdatedAt = Int64.max, afterItemHash = "", firstPage = true, emitted = 0
+      while true {
+        try Task.checkCancellation()
+        let predicate = firstPage ? "" : "AND (updated_at < ? OR (updated_at = ? AND item_hash > ?))"
+        var page: OpaquePointer?
+        guard AgentKnowledgeSQLiteStatements.shared.prepare(snapshot, """
+          SELECT item_hash, updated_at, encrypted_payload FROM knowledge_items
+          WHERE source_hash = ? \(predicate)
+          ORDER BY updated_at DESC, item_hash ASC LIMIT 64
+          """, -1, &page, nil) == SQLITE_OK, let page else {
+          if let page { AgentKnowledgeSQLiteStatements.shared.release(page) }
+          throw AgentKnowledgeDatabaseError.unavailable
         }
-        let itemHash = String(cString: hashText)
-        let updatedAt = sqlite3_column_int64(page, 1)
-        let item = try decode(page, hashColumn: 0, payloadColumn: 2)
-        guard sourceIdentity(item) == group.source, item.updatedAtMillis == updatedAt else {
-          AgentKnowledgeSQLiteStatements.shared.release(page)
-          throw AgentKnowledgeDatabaseError.corruptRecord
+        var pageCount = 0
+        do {
+          defer { AgentKnowledgeSQLiteStatements.shared.release(page) }
+          bind(sourceHash, at: 1, to: page)
+          if !firstPage {
+            sqlite3_bind_int64(page, 2, afterUpdatedAt)
+            sqlite3_bind_int64(page, 3, afterUpdatedAt)
+            bind(afterItemHash, at: 4, to: page)
+          }
+          while true {
+            try Task.checkCancellation()
+            let status = sqlite3_step(page)
+            if status == SQLITE_DONE { break }
+            guard status == SQLITE_ROW, let hashText = sqlite3_column_text(page, 0),
+              sqlite3_column_type(page, 1) == SQLITE_INTEGER else { throw AgentKnowledgeDatabaseError.corruptRecord }
+            let itemHash = String(cString: hashText), updatedAt = sqlite3_column_int64(page, 1)
+            guard firstPage || updatedAt < afterUpdatedAt || (updatedAt == afterUpdatedAt && itemHash > afterItemHash),
+              emitted < group.chunkCount else { throw AgentKnowledgeDatabaseError.corruptRecord }
+            let item = try decode(page, hashColumn: 0, payloadColumn: 2)
+            guard sourceIdentity(item) == group.source, item.updatedAtMillis == updatedAt else {
+              throw AgentKnowledgeDatabaseError.corruptRecord
+            }
+            // Check the original generation before and after each delivered record.
+            try view.read { _ in try consume(item) }
+            emitted += 1; afterUpdatedAt = updatedAt; afterItemHash = itemHash; pageCount += 1
+            firstPage = false
+          }
         }
-        try consume(item)
-        emitted += 1
-        guard emitted <= group.chunkCount else {
-          AgentKnowledgeSQLiteStatements.shared.release(page)
-          throw AgentKnowledgeDatabaseError.corruptRecord
-        }
-        afterUpdatedAt = updatedAt
-        afterItemHash = itemHash
-        pageCount += 1
+        if pageCount < 64 { break }
       }
-      AgentKnowledgeSQLiteStatements.shared.release(page)
-      if pageCount < 64 { break }
-      firstPage = false
-    }
-    guard emitted == group.chunkCount else {
-      throw AgentKnowledgeDatabaseError.corruptRecord
+      guard emitted == group.chunkCount else { throw AgentKnowledgeDatabaseError.corruptRecord }
     }
   }
 
@@ -1382,29 +1418,38 @@ final class AgentKnowledgeDatabase {
   }
 
   func knowledgeStats() throws -> AgentKnowledgeStats {
-    try locked {
+    // Metadata must not request the lexical repair worker or decode bodies.
+    let view = try committedReadView()
+    defer { view.close() }
+    return try view.read { connection in
       guard let statement = prepare("""
         SELECT i.items, d.groups, i.complete,
-          COALESCE((SELECT updated_at FROM knowledge_items ORDER BY updated_at DESC, item_hash ASC LIMIT 1), 0)
+          COALESCE((SELECT updated_at FROM knowledge_items ORDER BY updated_at DESC, item_hash ASC LIMIT 1), 0),
+          d.complete
         FROM knowledge_item_count_state i
         JOIN knowledge_source_directory_state d ON d.id = i.id
         WHERE i.id = 1 LIMIT 1
-        """) else { throw AgentKnowledgeDatabaseError.unavailable }
+        """, on: connection) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
-      guard sqlite3_step(statement) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      guard sqlite3_step(statement) == SQLITE_ROW,
+        (0..<5).allSatisfy({ sqlite3_column_type(statement, Int32($0)) == SQLITE_INTEGER }) else {
+        throw AgentKnowledgeDatabaseError.corruptRecord
+      }
       let items = sqlite3_column_int64(statement, 0)
       let sources = sqlite3_column_int64(statement, 1)
-      let itemComplete = sqlite3_column_int(statement, 2)
+      let itemComplete = sqlite3_column_int64(statement, 2)
       let updatedAt = sqlite3_column_int64(statement, 3)
-      let directory = try sourceDirectoryState()
-      guard items >= 0, sources >= 0, (0...1).contains(itemComplete), updatedAt >= 0 else {
+      let directoryComplete = sqlite3_column_int64(statement, 4)
+      guard items >= 0, sources >= 0, (0...1).contains(itemComplete), updatedAt >= 0,
+        (0...1).contains(directoryComplete), let itemCount = Int(exactly: items), let sourceCount = Int(exactly: sources),
+        sqlite3_step(statement) == SQLITE_DONE else {
         throw AgentKnowledgeDatabaseError.corruptRecord
       }
       return AgentKnowledgeStats(
-        itemCount: Int(clamping: items),
-        sourceCount: Int(clamping: sources),
+        itemCount: itemCount,
+        sourceCount: sourceCount,
         lastUpdatedAtMillis: updatedAt,
-        countsComplete: itemComplete == 1 && directory.complete
+        countsComplete: itemComplete == 1 && directoryComplete == 1
       )
     }
   }
@@ -1824,7 +1869,9 @@ final class AgentKnowledgeDatabase {
     }
     do {
       let result = try timing.measure(.prepare) {
-        try readCommitted { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in
+        let view = try committedReadView()
+        defer { view.close() }
+        return try view.read { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in
           guard nativeFiles.readToken() == token else { throw CancellationError() }
           let sourceHash = keyedHash(source)
           let revision = try sourceGeneration(hash: sourceHash, on: connection)
@@ -1921,20 +1968,21 @@ final class AgentKnowledgeDatabase {
               if latest == nil || item.updatedAtMillis > latest!.updatedAtMillis ||
                 (item.updatedAtMillis == latest!.updatedAtMillis && keyedHash(item.id) < keyedHash(latest!.id)) { latest = item }
             }
+            try stage.finishMutation()
             if changed > 0 {
               try sourceStatement("DELETE FROM knowledge_source_headers WHERE source_hash=?", sourceHash)
               if let latest {
                 let group = AgentKnowledgeSourceGroup(source: source,
                   title: latest.title.replacingOccurrences(of: "\\s+\\[[0-9]+/[0-9]+\\]$", with: "", options: .regularExpression),
                   itemIds: [], chunkCount: Int(stage.incomingCount), cloudAccess: latest.cloudAccess,
-                  agentAccess: latest.agentAccess, allowedAgentIds: latest.allowedAgentIds, updatedAtMillis: latest.updatedAtMillis)
+                  agentAccess: latest.agentAccess, allowedAgentIds: latest.allowedAgentIds, updatedAtMillis: latest.updatedAtMillis,
+                  sourceRevision: try stage.sourceRevision(checkActive: { try prepared.checkActive() }))
                 guard insertSourceHeader(group) else { throw AgentKnowledgeDatabaseError.unavailable }
               }
               guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {
                 throw AgentKnowledgeDatabaseError.unavailable
               }
             }
-            try stage.finishMutation()
           }
           if changed > 0 {
             try timing.measure(.observe) {
@@ -2203,7 +2251,8 @@ final class AgentKnowledgeDatabase {
           cloudAccess: latest.cloudAccess,
           agentAccess: latest.agentAccess,
           allowedAgentIds: latest.allowedAgentIds,
-          updatedAtMillis: latest.updatedAtMillis
+          updatedAtMillis: latest.updatedAtMillis,
+          sourceRevision: AgentKnowledgeSourceRevision.digest(members)
         )
       }
   }

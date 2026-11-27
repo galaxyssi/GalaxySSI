@@ -22,7 +22,7 @@ final class AgentKnowledgeSourceStaging {
   private var allowedCount = 0
   private struct OrderKey: Codable { var id: String; var chunk: Int; var record: Bool }
   private(set) var incomingCount: Int64 = 0
-  private var previousCount: Int64 = 0
+  private(set) var previousCount: Int64 = 0
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
   init(source: String, parent: URL = FileManager.default.temporaryDirectory) throws {
@@ -42,10 +42,15 @@ final class AgentKnowledgeSourceStaging {
         guard let context else { return 0 }
         return Unmanaged<AgentKnowledgeSourceStaging>.fromOpaque(context).takeUnretainedValue().compare(a, ac, b, bc)
       }, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+      guard sqlite3_create_collation_v2(database, "SOURCE_ID_ORDER", SQLITE_UTF8, Unmanaged.passUnretained(self).toOpaque(), { context, ac, a, bc, b in
+        guard let context else { return 0 }
+        return Unmanaged<AgentKnowledgeSourceStaging>.fromOpaque(context).takeUnretainedValue().compare(a, ac, b, bc, identity: true)
+      }, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
       try execute("PRAGMA journal_mode=DELETE"); try execute("PRAGMA synchronous=FULL")
       try execute("PRAGMA cache_size=-2048"); try execute("PRAGMA mmap_size=0"); try execute("PRAGMA temp_store=FILE")
       try execute("CREATE TABLE records(token TEXT PRIMARY KEY,incoming BLOB,previous BLOB) WITHOUT ROWID")
       try execute("CREATE TABLE ordering(side TEXT,sort_key TEXT COLLATE SOURCE_ORDER,token TEXT,PRIMARY KEY(side,sort_key)) WITHOUT ROWID")
+      try execute("CREATE INDEX source_identity_order ON ordering(side,sort_key COLLATE SOURCE_ID_ORDER)")
       try execute("CREATE TABLE allowed_keys(token TEXT PRIMARY KEY,sort_key TEXT COLLATE SOURCE_ORDER UNIQUE) WITHOUT ROWID")
       try execute("BEGIN IMMEDIATE")
     } catch { close(); throw error }
@@ -120,7 +125,7 @@ final class AgentKnowledgeSourceStaging {
   }
   // SQLite sorts only encrypted metadata. Bodies remain in the authenticated
   // staging table and are resolved one at a time after verifying their sort key.
-  func orderedVisit(_ side: Side, consume: (AgentKnowledgeItem) throws -> Void) throws {
+  func orderedVisit(_ side: Side, byIdentity: Bool = false, consume: (AgentKnowledgeItem) throws -> Void) throws {
     guard phase == .finished, !collationFailed else { throw AgentKnowledgeDatabaseError.corruptRecord }
     try execute("BEGIN IMMEDIATE")
     do {
@@ -139,7 +144,8 @@ final class AgentKnowledgeSourceStaging {
     } catch { try? execute("ROLLBACK"); throw error }
     try execute("BEGIN IMMEDIATE")
     do {
-      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE SOURCE_ORDER") { row in
+      let collation = byIdentity ? "SOURCE_ID_ORDER" : "SOURCE_ORDER"
+      try statement("SELECT sort_key,token FROM ordering WHERE side=? ORDER BY sort_key COLLATE \(collation)") { row in
         try bind(side.rawValue, at: 1, to: row)
         var seen: Int64 = 0, previous: OrderKey?
         while true {
@@ -149,7 +155,7 @@ final class AgentKnowledgeSourceStaging {
           if status == SQLITE_DONE { break }
           guard status == SQLITE_ROW, !collationFailed, let tokenText = sqlite3_column_text(row, 1) else { throw AgentKnowledgeDatabaseError.corruptRecord }
           let key = try orderKey(sqlite3_column_text(row, 0), sqlite3_column_bytes(row, 0))
-          if let previous, !less(previous, key) { throw AgentKnowledgeDatabaseError.corruptRecord }
+          if let previous, !(byIdentity ? AgentKnowledgeSourceRevision.identityPrecedes(previous.id, key.id) : less(previous, key)) { throw AgentKnowledgeDatabaseError.corruptRecord }
           guard key.record, let item = try itemAt(String(cString: tokenText), side: side),
             item.id.utf8.elementsEqual(key.id.utf8), item.chunkIndex == key.chunk else { throw AgentKnowledgeDatabaseError.corruptRecord }
           try consume(item); previous = key; seen += 1
@@ -159,6 +165,11 @@ final class AgentKnowledgeSourceStaging {
       }
       try execute("COMMIT")
     } catch { try? execute("ROLLBACK"); throw error }
+  }
+  func sourceRevision(side: Side = .incoming, checkActive: () throws -> Void = {}) throws -> String {
+    var accumulator = AgentKnowledgeSourceRevision.Accumulator()
+    try orderedVisit(side, byIdentity: true) { try checkActive(); try accumulator.append($0); try checkActive() }
+    return accumulator.finish()
   }
   func clearAllowed() throws {
     guard phase == .finished else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -208,8 +219,12 @@ final class AgentKnowledgeSourceStaging {
     return try JSONDecoder().decode(OrderKey.self, from: AES.GCM.open(AES.GCM.SealedBox(combined: sealed),
       using: cipherKey, authenticating: Data("source-order:\(job)".utf8)))
   }
-  private func compare(_ a: UnsafeRawPointer?, _ ac: Int32, _ b: UnsafeRawPointer?, _ bc: Int32) -> Int32 {
+  private func compare(_ a: UnsafeRawPointer?, _ ac: Int32, _ b: UnsafeRawPointer?, _ bc: Int32, identity: Bool = false) -> Int32 {
     let left = try? orderKey(a, ac), right = try? orderKey(b, bc)
+    if identity, let left, let right {
+      return AgentKnowledgeSourceRevision.identityPrecedes(left.id, right.id) ? -1 :
+        (AgentKnowledgeSourceRevision.identityPrecedes(right.id, left.id) ? 1 : 0)
+    }
     if let left, let right { return less(left, right) ? -1 : (less(right, left) ? 1 : 0) }
     collationFailed = true
     // Keep a deterministic total ordering even after failure; consumers reject

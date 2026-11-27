@@ -361,17 +361,20 @@ struct AgentKnowledgeStats: Codable, Equatable {
   var sourceCount: Int
   var lastUpdatedAtMillis: Int64
   var countsComplete: Bool
+  var countsUnavailable: Bool
 
   init(
     itemCount: Int = 0,
     sourceCount: Int = 0,
     lastUpdatedAtMillis: Int64 = 0,
-    countsComplete: Bool = true
+    countsComplete: Bool = true,
+    countsUnavailable: Bool = false
   ) {
     self.itemCount = max(itemCount, 0)
     self.sourceCount = max(sourceCount, 0)
     self.lastUpdatedAtMillis = max(lastUpdatedAtMillis, 0)
-    self.countsComplete = countsComplete
+    self.countsComplete = countsComplete && !countsUnavailable
+    self.countsUnavailable = countsUnavailable
   }
 
   enum CodingKeys: String, CodingKey {
@@ -379,6 +382,7 @@ struct AgentKnowledgeStats: Codable, Equatable {
     case sourceCount = "source_count"
     case lastUpdatedAtMillis = "last_updated_at_millis"
     case countsComplete = "counts_complete"
+    case countsUnavailable = "counts_unavailable"
   }
 
   init(from decoder: Decoder) throws {
@@ -387,7 +391,8 @@ struct AgentKnowledgeStats: Codable, Equatable {
       itemCount: try container.decodeIfPresent(Int.self, forKey: .itemCount) ?? 0,
       sourceCount: try container.decodeIfPresent(Int.self, forKey: .sourceCount) ?? 0,
       lastUpdatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastUpdatedAtMillis) ?? 0,
-      countsComplete: try container.decodeIfPresent(Bool.self, forKey: .countsComplete) ?? true
+      countsComplete: try container.decodeIfPresent(Bool.self, forKey: .countsComplete) ?? true,
+      countsUnavailable: try container.decodeIfPresent(Bool.self, forKey: .countsUnavailable) ?? false
     )
   }
 }
@@ -432,17 +437,30 @@ struct AgentKnowledgeSourceGroup: Codable, Equatable, Identifiable {
 }
 
 enum AgentKnowledgeSourceRevision {
-  static func digest(_ items: [AgentKnowledgeItem]) -> String {
-    var hasher = SHA256()
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    for item in items.sorted(by: { $0.id < $1.id }) {
-      guard let data = try? encoder.encode(item) else { continue }
+  struct Accumulator {
+    private var hasher = SHA256()
+    private let encoder: JSONEncoder
+    init() { encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys] }
+    mutating func append(_ item: AgentKnowledgeItem) throws {
+      let data = try encoder.encode(item)
       var length = UInt64(data.count).bigEndian
       withUnsafeBytes(of: &length) { hasher.update(data: Data($0)) }
       hasher.update(data: data)
     }
-    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    mutating func finish() -> String {
+      hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+  }
+  static func identityPrecedes(_ left: String, _ right: String) -> Bool {
+    if left != right { return left < right }
+    return left.utf16.lexicographicallyPrecedes(right.utf16)
+  }
+  static func digest(_ items: [AgentKnowledgeItem]) -> String {
+    var accumulator = Accumulator()
+    for item in items.sorted(by: { identityPrecedes($0.id, $1.id) }) {
+      try? accumulator.append(item)
+    }
+    return accumulator.finish()
   }
 }
 
