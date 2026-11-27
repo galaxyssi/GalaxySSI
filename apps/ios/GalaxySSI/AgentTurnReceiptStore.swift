@@ -60,6 +60,14 @@ final class AgentTurnReceiptStore {
       return write(row, child)
     }
   }
+  func bindFileReadDesktop(_ key: Key, intent: AgentSingleFileDesktopIntent) -> Bool {
+    locked {
+      guard key.valid, intent.valid, intent.identity.conversationId == key.conversation, intent.identity.turnId == key.turn,
+        var row = read(key), row.fileReadSource != nil, row.fileReadDesktop == nil else { return false }
+      row.fileReadDesktop = intent
+      return write(row, key)
+    }
+  }
   func begin(_ key: Key, choice: AgentModelSelection, wall: Int64 = AgentControlPlaneClock.nowMillis(),
              uptime: UInt64 = DispatchTime.now().uptimeNanoseconds) {
     locked {

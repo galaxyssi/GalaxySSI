@@ -333,6 +333,7 @@ extension MessageCoordinator {
       scheduleOutboxFlush(after: 0)
       return
     }
+    if recordSingleFileDesktopFailure(payload, file: transfer) { scheduleOutboxFlush(after: 0); return }
     _ = connectorResponseBus.publish(AgentConnectorResponse(
       sourceMessageId: sourceMessageId,
       contactId: observation.contactId,

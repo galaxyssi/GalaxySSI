@@ -1,4 +1,4 @@
-// Source contracts for the transport/receipt foundation, not complete UI parity or native execution.
+// Source contracts for file recovery and isolated reads; these do not execute Swift or prove runtime behavior.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const cp = require('node:child_process');
@@ -19,7 +19,7 @@ has('AgentTurnReceiptStore', ['entries.count < 10', 'guard body(&receipt)', 'gua
   'keyMaterialKey: Self.materialKey', 'NSRecursiveLock()', 'source.digest, count: 64']);
 has('AgentAttachmentReadingTool', ['galaxyssi.app.attachment_reading', '"result"', '"recognized"', '"unreadable"',
   'UIApplication.shared.applicationState == .active', 'parent.digest == AgentTurnReceiptEvidence.hash(block.id)',
-  'AgentFileReceipt.originals(original).count >= 2', '"delivery_verified": .bool(false)']);
+  'AgentFileReceipt.originals(original).count >= 2', 'permitScopedRead: Bool = false', '"delivery_verified": .bool(false)']);
 has('AgentFileRetryPolicy', ['CFGetTypeID(number) != CFBooleanGetTypeID()', 'generation(payload) == file.fileRetryGeneration',
   'file.fileRetryGeneration < 3', 'file.scope.attachmentRequestId == nil', 'AgentAttachmentDeliveryFailureContract.matches']);
 has('AgentBlobProtocol', ['payload["file_retry_generation"] = attachment.fileRetryGeneration']);
@@ -61,6 +61,28 @@ has('AgentSingleFileRead', ['turns: [only]', 'only.richOutputJson = ""', 'reques
   'Text extraction only; original layout and non-text visual content are not supplied.',
   'AgentModelToolLoopCancellationSource()', 'onCancel: { cancellation.cancel() }']);
 has('GalaxySSIStore', ['sourceTrace != AgentSingleFileRead.stage']);
+has('AgentSingleFileDesktopIntent', ['Set(payload.keys) == fields', 'descriptors.count == 1',
+  'Self.digest(descriptors) == descriptorsSHA', 'Self.digest(invocation) == invocationSHA',
+  'fileReadOwners[identity.turnId] == store.profile.identityFingerprint', 'intent.originalRichSHA',
+  'fileReadRegisteredIdentity(contact: item.contactId, source: item.clientSourceMessageId)',
+  'guard let scope = item.fileReadScope else { return nil }', 'readTurn == identity.turnId',
+  'session.globalTopicKey.isBlank', 'store.agentSafetySettings.connectorCallsAllowed']);
+const desktopRead = services.slice(services.indexOf('  private func readSingleFileOnDesktop('), services.indexOf('  private func cancelFileReadDesktop('));
+for (const token of ['attachments: [file]', 'preserveOriginalBytes: true', 'bindFileReadDesktop(key, intent: intent)',
+  'fileReadScope: source.turnId', 'AgentTaskExecutionMode.planOnly.rawValue', 'intent.matches(payload)',
+  'currentFileReadDesktopContext(', 'reply.executionGeneration == 1', 'reply.taskStatus == "completed"',
+  'ProcessInfo.processInfo.systemUptime + 120', 'cancelFileReadDesktop(intent, link: link)',
+  'defer { attachmentTransferStore.discard(prepared.map(\\.transferId)',
+  'defer { managedDesktopReplyLedger.markApplied(ownerRunId: owner) }']) assert(desktopRead.includes(token), token);
+for (const token of ['original.content', 'recentLocalConversationContext(', 'conversation_context', 'session_requirement',
+  'await send(', 'resumeWaitingNativeConnectors(']) assert(!desktopRead.includes(token), 'Isolated Desktop read must not use ' + token);
+assert(interpretation.includes('permitScopedRead: true'), 'Only the host reader may report an isolated child result');
+has('GalaxySSILinkReliability', ['case fileReadScope = "file_read_scope"', '$0.fileReadScope == task.fileReadScope',
+  'fileReadScope: request.fileReadScope']);
+has('GalaxySSIServices+Outbox', ['if fileReadOutboxAllowed(item) == false']);
+for (const token of ['if !planner && !fileRead', 'record.matchesCommittedResult(normalized)',
+  'self.recordSingleFileDesktopFailure(payload, file: transfer)', 'current.intent.matches(payload)',
+  'payload.string("sender") == self.store.profile.galaxySSIId']) assert(services.includes(token), token);
 has('GalaxySSIAgentTranscriptMessagesView', ['.environment(\\.agentFileReceiptSource, message.isMine']);
 has('GalaxySSIRichContentView', ['@Environment(\\.agentFileReceiptSource)', 'fileReceiptCaption', 'onlyItemID: block.id']);
 has('GalaxySSIAgentFileReceiptsView', ['originals.filter { onlyItemID == nil || $0.id == onlyItemID }',
@@ -72,11 +94,12 @@ for (const name of ['GalaxySSISignalEngine', 'AgentNativeToolCore', 'AgentNative
   'GalaxySSIEncryptedUserDefaultsStore']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name + ' retained');
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
 for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool', 'AgentFileReceiptTests',
-  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView', 'AgentSingleFileReadTests']) {
+  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView', 'AgentSingleFileReadTests',
+  'AgentSingleFileDesktopIntent', 'AgentSingleFileDesktopIntentTests']) {
   assert.equal(project.split(name + '.swift in Sources').length - 1, 2, name + ' project registration');
 }
 for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool',
-  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView']) {
+  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView', 'AgentSingleFileDesktopIntent']) {
   assert(!/\p{Script=Han}/u.test(read(app + name + '.swift')), name + ': localized strings only in resources');
 }
-console.log('iOS file recovery and cloud/local read source contracts passed; Desktop interpretation remains pending, no native execution.');
+console.log('iOS file recovery and cloud/local/Desktop read source contracts passed; no Swift compilation or native execution.');

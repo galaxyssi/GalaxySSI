@@ -131,6 +131,10 @@ extension MessageCoordinator {
     var rejectedSourceIds = Set<String>()
     for var item in pending {
       guard !Task.isCancelled else { return }
+      if fileReadOutboxAllowed(item) == false {
+        _ = deliveryStore.discardClientSourceMessage(item.clientSourceMessageId)
+        continue
+      }
       guard learningOutboxEligibility()(item) else { continue }
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue

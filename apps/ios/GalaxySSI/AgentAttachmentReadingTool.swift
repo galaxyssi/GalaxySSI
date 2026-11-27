@@ -26,7 +26,8 @@ extension GalaxySSIStore {
   func reportAttachmentReading(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     reportAttachmentReading(invocation.input, conversation: invocation.context.conversationId, turn: invocation.context.turnId)
   }
-  func reportAttachmentReading(_ input: AgentMcpJSONObject, conversation: String, turn: String) -> AgentNativeToolExecutionResult {
+  func reportAttachmentReading(_ input: AgentMcpJSONObject, conversation: String, turn: String,
+    permitScopedRead: Bool = false) -> AgentNativeToolExecutionResult {
     let context = (conversationId: conversation, turnId: turn)
     guard UIApplication.shared.applicationState == .active, activeAgentConversationId == context.conversationId, canReadAgentTranscript,
       let session = agentSession(id: context.conversationId), session.status == .active,
@@ -44,7 +45,7 @@ extension GalaxySSIStore {
     let parent = turnReceiptStore.read(childKey)?.fileReadSource
     let parentTurn = parent?.turn ?? context.turnId
     if let parent {
-      guard blocks.count == 1, parent.digest == AgentTurnReceiptEvidence.hash(block.id),
+      guard permitScopedRead, blocks.count == 1, parent.digest == AgentTurnReceiptEvidence.hash(block.id),
         let parentID = UUID(uuidString: parentTurn), let original = persistedMessage(id: parentID, contactId: "hermes"),
         original.conversationId == context.conversationId, original.turnId == parentTurn,
         AgentFileReceipt.originals(original).count >= 2,

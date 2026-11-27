@@ -24,6 +24,7 @@ final class MessageCoordinator: ObservableObject {
   lazy var contactReminderAlert = GalaxySSIContactReminderAlert()
   private var pendingCollaborationConversations: Set<String> = []
   private var fileRecoveriesInFlight: Set<String> = []
+  var fileReadOwners: [String: String] = [:]
   private var pendingCollaborationFollowups: Set<String> = []
   private var privateHealthJournalRounds: [String: (binding: GalaxySSIHealthDesktopResearch.Binding, valid: () -> Bool)] = [:]
   private lazy var managedBrowserContinuations = AgentManagedBrowserContinuationStore(secrets: store.secrets)
@@ -3073,6 +3074,9 @@ final class MessageCoordinator: ObservableObject {
       guard currentHealthDesktopBinding(binding.identity, contact: record.contactId, source: record.sourceMessageId)?.owner ==
         record.ownerRunId else { return nil }
     }
+    if record.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix) {
+      guard fileReadDesktopRecordIsCurrent(record, requireLive: !(allowCommitted && record.state != .pending && record.response != nil)) else { return nil }
+    }
     let probe = AgentConnectorResponse(sourceMessageId: managed.sourceMessageId, contactId: binding.contactId,
       content: "recovery identity", conversationId: record.conversationId, turnId: record.turnId,
       taskId: record.taskId, executionGeneration: managed.executionGeneration)
@@ -4510,7 +4514,7 @@ final class MessageCoordinator: ObservableObject {
     guard let registered = currentManagedDesktopReply(record.binding),
           let response = AgentConnectorResponse.fromPayload(payload),
           let receipt = desktopResultRecovery.receipt(record) else { return }
-    let committed = registered.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix)
+    let committed = AgentSingleFileDesktopIntent.isInferenceOwner(registered.ownerRunId)
       ? persistPairedPhonePlannerResponse(response, record: registered)
       : connectorResponseBus.publish(response)
     guard committed,
@@ -4526,6 +4530,11 @@ final class MessageCoordinator: ObservableObject {
           response.taskId == record.taskId, response.executionGeneration == record.executionGeneration,
           let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis())
     else { return false }
+    if record.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix),
+      !fileReadDesktopRecordIsCurrent(record, requireLive: record.state == .pending) { return false }
+    if record.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix), record.state != .pending {
+      return record.matchesCommittedResult(normalized)
+    }
     if record.ownerRunId.hasPrefix(GalaxySSIHealthDesktopResearch.ownerPrefix) {
       guard let identity = taskIdentityStore.identity(contactId: record.contactId, sourceMessageId: String(record.sourceMessageId)),
             currentHealthDesktopBinding(identity, contact: record.contactId, source: record.sourceMessageId)?.owner ==
@@ -4543,7 +4552,7 @@ final class MessageCoordinator: ObservableObject {
       turnId: payload.string("turn_id"), taskId: payload.string("task_id"),
       executionGeneration: Int64(payload.int("execution_generation")))
     guard let record = try? managedDesktopReplyLedger.recoveryRecord(matching: probe) else { return false }
-    return record.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix)
+    return AgentSingleFileDesktopIntent.isInferenceOwner(record.ownerRunId)
   }
 
   private func managedDesktopResultIsCommitted(_ response: AgentConnectorResponse) -> Bool {
@@ -5105,8 +5114,11 @@ final class MessageCoordinator: ObservableObject {
     if planner, binding.agentId != "codex" || payload.string("desktop_id") != receipt.desktopId {
       throw MqttRouteError.identityChanged
     }
+    let fileRead = owner.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix)
+    if fileRead, binding.agentId != owner.agentId || payload.string("desktop_id") != receipt.desktopId ||
+      !fileReadDesktopRecordIsCurrent(owner, requireLive: owner.state == .pending) { throw MqttRouteError.identityChanged }
     _ = try managedDesktopReplyLedger.commitDesktopResult(normalized, receipt: receipt, binding: binding)
-    if !planner {
+    if !planner && !fileRead {
       _ = connectorResponseBus.publish(normalized)
     }
     try finishJournalBackedManagedReceipt(receipt, binding: binding)
@@ -18361,6 +18373,179 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  func fileReadRegisteredIdentity(contact: String, source: String) -> AgentTaskIdentity? {
+    taskIdentityStore.identity(contactId: contact, sourceMessageId: source)
+  }
+
+  private func fileReadDesktopRecordIsCurrent(_ record: AgentManagedResponseRecord, requireLive: Bool) -> Bool {
+    let key = AgentTurnReceiptStore.Key(owner: store.profile.identityFingerprint, conversation: record.conversationId, turn: record.turnId)
+    guard let intent = store.turnReceiptStore.read(key)?.fileReadDesktop, intent.valid, intent.owner == record.ownerRunId,
+      intent.source == record.sourceMessageId, intent.contact == record.contactId, intent.agent == record.agentId,
+      intent.identity.conversationId == record.conversationId, intent.identity.turnId == record.turnId,
+      intent.identity.taskId == record.taskId, record.executionGeneration == 1,
+      let contact = store.contact(id: intent.contact), contact.isCommunicable, contact.connectorAgentId == intent.agent,
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == intent.desktop &&
+        $0.routes.clientRouteId == intent.identity.clientRouteId }),
+      intent.binding == GalaxySSITransportReceiptJournal.binding(peerId: intent.desktop, routes: link.routes) else { return false }
+    return !requireLive || currentFileReadDesktopContext(source: String(intent.source), contact: contact,
+      identity: intent.identity, routes: link.routes) != nil
+  }
+
+  func recordSingleFileDesktopFailure(_ payload: [String: Any], file: AgentPreparedOutboundAttachment) -> Bool {
+    guard let source = file.scope.clientMessageId, let contact = store.contact(id: file.scope.contactId),
+      let identity = taskIdentityStore.identity(contactId: contact.id, sourceMessageId: source),
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == file.scope.desktopId }),
+      let current = currentFileReadDesktopContext(source: source, contact: contact, identity: identity, routes: link.routes),
+      current.intent.transfer == file.transferId, current.intent.attachment == file.attachmentId,
+      AgentAttachmentDeliveryFailureContract.matches(receipt: payload, attachment: file) else { return false }
+    let response = AgentConnectorResponse(sourceMessageId: current.intent.source, contactId: current.intent.contact,
+      content: "The selected file transfer failed. No interpretation was verified.", conversationId: identity.conversationId,
+      turnId: identity.turnId, taskId: identity.taskId, success: false, receivedAtMillis: AgentControlPlaneClock.nowMillis(),
+      taskStatus: "failed", executionGeneration: 1, deliveryFailureCode: payload.string("error_code"))
+    return managedDesktopReplyLedger.complete(response)?.ownerRunId == current.intent.owner
+  }
+
+  private func readSingleFileOnDesktop(_ file: GalaxySSIDraftAttachment, source: ChatMessage, original: ChatMessage,
+    target: GalaxySSIContact, valid: () -> Bool) async throws -> String {
+    guard valid(), target.isCommunicable, target.deliveryMode.isGalaxySSILinkFamily,
+      store.agentSafetySettings.connectorCallsAllowed, GalaxySSISignalEngine.isAvailable,
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == target.desktopId }),
+      signalEngine.hasSession(remoteName: link.desktopId) else { throw AgentSingleFileRead.Failure.unavailable }
+    let selection = AgentModelSelectionSettings.selection(for: source.conversationId)
+    let profile = target.connectorInvocationProfile
+    let model = selection.mode == .manual && !selection.modelId.isBlank
+      ? profile.canonicalModelId(selection.modelId) : profile.normalizedModelId("")
+    let effort = selection.mode == .manual ? selection.reasoningEffort : AgentModelReasoningEffort.automatic
+    guard model.isBlank || profile.models.contains(where: { $0.id == model }),
+      effort == .automatic || profile.reasoningEfforts.contains(effort),
+      let invocation = AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: effort) else {
+      throw AgentSingleFileRead.Failure.unavailable
+    }
+    let probe = AgentMediaNetworkDetector.shared.currentProbe
+    let budget = AgentTaskBudgetPolicy.evaluate(budget: store.agentTaskBudget,
+      usage: AgentTaskBudgetUsage(networkBytes: Int64(file.data.count), usageEstimated: true),
+      environment: AgentTaskBudgetEnvironment(networkAvailable: probe.networkPresent && probe.internetCapable && probe.validated,
+        networkValidated: probe.validated, networkMetered: probe.metered), networkRequired: true, trustedNetworkTarget: true)
+    guard budget.allowed else { throw AgentSingleFileRead.Failure.unavailable }
+    let digest = AgentTurnReceiptEvidence.hash(store.profile.identityFingerprint + ":" + source.turnId)
+    let owner = AgentSingleFileDesktopIntent.ownerPrefix + digest
+    let numeric = max(1, Int64(digest.prefix(13), radix: 16) ?? 0)
+    let wireSource = String(numeric)
+    let identity = AgentTaskIdentity(clientRouteId: link.routes.clientRouteId, conversationId: source.conversationId,
+      taskId: AgentTeamDispatchIds.nameBasedUUID("single-file-read:\(owner)").uuidString, turnId: source.turnId)
+    let language = LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage)
+    let prompt = AgentSingleFileRead.instructions(language: language)
+    let ticket = AgentDataDisclosureLedger.beginDesktopRequest(store: disclosureStore, contactId: target.id,
+      desktopId: link.desktopId, providerId: target.connectorAgentId, title: target.displayName, text: prompt,
+      attachments: [.init(file)], conversationId: source.conversationId, taskId: identity.taskId, turnId: source.turnId)
+    guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: target.displayName) }
+    var completed = false
+    defer {
+      if !completed { AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed) }
+    }
+    let scope = try AgentAttachmentTransferScope(contactId: target.id, desktopId: link.desktopId,
+      clientRouteId: identity.clientRouteId, conversationId: identity.conversationId, taskId: identity.taskId,
+      turnId: identity.turnId, clientMessageId: wireSource)
+    let prepared = try attachmentTransferStore.prepare(scope: scope, attachments: [file],
+      mediaProfile: mediaNetworkProfileProvider(), preserveOriginalBytes: true)
+    defer { attachmentTransferStore.discard(prepared.map(\.transferId), deliveryStore: deliveryStore) }
+    guard prepared.count == 1, let attachment = prepared.first else { throw AgentSingleFileRead.Failure.sourceChanged }
+    let descriptors = prepared.map { $0.descriptor() }
+    let intent = AgentSingleFileDesktopIntent(source: numeric, owner: owner, contact: target.id,
+      agent: target.connectorAgentId, model: model, effort: effort, desktop: link.desktopId, identity: identity,
+      binding: GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
+      attachment: file.id, transfer: attachment.transferId, originalRichSHA: AgentTurnReceiptEvidence.hash(original.richOutputJson),
+      promptSHA: AgentTurnReceiptEvidence.hash(prompt), descriptorsSHA: AgentSingleFileDesktopIntent.digest(descriptors) ?? "",
+      invocationSHA: AgentSingleFileDesktopIntent.digest(invocation) ?? "")
+    guard valid(), let key = store.turnReceiptKey(conversation: source.conversationId, turn: source.turnId), intent.valid,
+      taskIdentityStore.register(contactId: target.id, sourceMessageId: wireSource, identity: identity),
+      store.turnReceiptStore.bindFileReadDesktop(key, intent: intent) else { throw AgentSingleFileRead.Failure.sourceChanged }
+    let now = AgentControlPlaneClock.nowMillis()
+    let record = AgentManagedResponseRecord(ownerRunId: owner, supervisorRunId: source.turnId,
+      agentId: target.connectorAgentId, deliveryMode: .observe, sourceMessageId: numeric, contactId: target.id,
+      conversationId: source.conversationId, turnId: source.turnId, taskId: identity.taskId, createdAtMillis: now)
+    try managedDesktopReplyLedger.register(record)
+    defer { managedDesktopReplyLedger.markApplied(ownerRunId: owner) }
+    guard let binding = AgentDesktopReplyBinding.managed(record: record, desktopId: link.desktopId,
+      agentId: target.connectorAgentId, identity: identity) else { throw AgentSingleFileRead.Failure.sourceChanged }
+    defer {
+      if !completed { cancelFileReadDesktop(intent, link: link) }
+      _ = desktopReplyRecovery.retire(binding)
+      _ = deliveryStore.discardClientSourceMessage(wireSource)
+    }
+    let payload: [String: Any] = ["type": "text", "message_id": identity.taskId, "content": prompt,
+      "contact_id": target.id, "desktop_id": link.desktopId, "agent_id": target.connectorAgentId,
+      "sender": store.profile.galaxySSIId, "client_route_id": identity.clientRouteId,
+      "conversation_id": identity.conversationId, "turn_id": identity.turnId, "task_id": identity.taskId,
+      "source_message_id": wireSource, "client_message_id": wireSource, "time": now,
+      "connector_task_mode": AgentPairedPhonePlannerRoute.connectorMode,
+      "execution_mode": AgentTaskExecutionMode.planOnly.rawValue,
+      "_galaxyssi_task_execution_mode": AgentTaskExecutionMode.planOnly.rawValue,
+      "_galaxyssi_long_term_write_allowed": "false", "agent_invocation": invocation,
+      "response_language": language, "request_kind": AgentRequestKind.screenAnalysis.rawValue,
+      "execution_generation": 1, "attachments": descriptors]
+    do {
+      guard valid(), intent.matches(payload), desktopReplyRecovery.track(binding, now: now) else { throw AgentSingleFileRead.Failure.sourceChanged }
+      if let runtime = journalMqttRuntime {
+        let projection = MqttPeerChatProjection(store: store, localFingerprint: link.routes.localFingerprint)
+        let matches = projection.currentDestinations().filter { $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes }
+        guard matches.count == 1, let destination = matches.first else { throw MqttRouteError.identityChanged }
+        let blobs = try await blobOutgoingCoordinator.registerJournal(prepared, link: link,
+          binding: MqttBusinessIdentity(destination.peer.binding).binding, contactID: target.id)
+        guard valid(), currentFileReadDesktopContext(source: wireSource, contact: target, identity: identity, routes: link.routes) != nil else {
+          throw AgentSingleFileRead.Failure.sourceChanged
+        }
+        _ = try runtime.enqueueDesktopConnectorRequest(payload, desktopId: link.desktopId, attachments: prepared,
+          blobTransfers: blobs, ownerContactID: "hermes")
+        if !blobs.isEmpty { await blobOutgoingCoordinator.wake() }
+      } else {
+        let declarations = try makeOutboundAttachmentDeliveryRequests(prepared, link: link, sourceMessageId: wireSource,
+          contactId: target.id, fileReadScope: source.turnId)
+        guard deliveryStore.enqueueDeferredAttachmentTask(LinkDeliveryEnqueueRequest(messageId: identity.taskId,
+          topic: link.routes.upTopic, wirePayload: "", requiresValidatedNetwork: attachment.requiresValidatedNetwork,
+          blockedByAttachmentTransferIds: [attachment.transferId], clientSourceMessageId: wireSource, contactId: target.id,
+          fileReadScope: source.turnId),
+          payload: String(decoding: try GalaxySSILinkProtocol.jsonData(payload), as: UTF8.self), attachments: declarations) else {
+          throw GalaxySSIError.transportUnavailable
+        }
+      }
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .queued)
+      scheduleOutboxFlushFromStore()
+      let deadline = ProcessInfo.processInfo.systemUptime + 120
+      repeat {
+        try Task.checkCancellation()
+        guard valid(), currentFileReadDesktopContext(source: wireSource, contact: target, identity: identity, routes: link.routes) != nil else {
+          throw AgentSingleFileRead.Failure.sourceChanged
+        }
+        if let reply = try managedDesktopReplyLedger.recoveryRecord(owner: owner)?.response {
+          guard reply.success, reply.taskStatus == "completed", reply.sourceMessageId == numeric,
+            reply.contactId == target.id, reply.conversationId == identity.conversationId,
+            reply.turnId == identity.turnId, reply.taskId == identity.taskId, reply.executionGeneration == 1,
+            reply.content.utf8.count <= AgentSingleFileRead.maximumReplyBytes else { throw AgentSingleFileRead.Failure.incomplete }
+          completed = true
+          return reply.content
+        }
+        try await Task.sleep(nanoseconds: 250_000_000)
+      } while ProcessInfo.processInfo.systemUptime < deadline
+      throw AgentSingleFileRead.Failure.timeout
+    } catch {
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .failed)
+      throw error
+    }
+  }
+
+  private func cancelFileReadDesktop(_ intent: AgentSingleFileDesktopIntent, link: ServerLink) {
+    let payload: [String: Any] = ["type": "agent_task_cancel", "task_id": intent.identity.taskId,
+      "client_route_id": intent.identity.clientRouteId, "conversation_id": intent.identity.conversationId,
+      "turn_id": intent.identity.turnId, "contact_id": intent.contact, "source_message_id": String(intent.source),
+      "agent_id": intent.agent, "desktop_id": intent.desktop, "time": AgentControlPlaneClock.nowMillis()]
+    if let runtime = journalMqttRuntime { try? runtime.enqueueDesktopConnectorCancellation(payload, desktopId: intent.desktop) }
+    else if let wire = try? linkWirePayload(payload, link: link) {
+      deliveryStore.enqueue(messageId: wire.messageId, topic: link.routes.upTopic, wirePayload: wire.wireText, contactId: intent.contact)
+    }
+    scheduleOutboxFlushFromStore()
+  }
+
   func readAgentFile(messageID: UUID, itemID: String) async -> Bool {
     let owner = store.profile.identityFingerprint
     guard UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
@@ -18393,6 +18578,8 @@ final class MessageCoordinator: ObservableObject {
     guard valid(), let file = attachment, file.id == itemID, !file.data.isEmpty,
       Int64(file.data.count) <= AgentOutboundAttachmentTransferStore.maxAttachmentBytes else { return false }
     let childID = UUID(), childTurn = childID.uuidString
+    fileReadOwners[childTurn] = owner
+    defer { fileReadOwners.removeValue(forKey: childTurn) }
     let childKey = AgentTurnReceiptStore.Key(owner: owner, conversation: original.conversationId, turn: childTurn)
     store.turnReceiptStore.begin(childKey, choice: AgentModelSelectionSettings.selection(for: original.conversationId, defaults: store.defaults))
     guard store.turnReceiptStore.bindFileRead(childKey, source: .init(turn: original.turnId, digest: AgentTurnReceiptEvidence.hash(itemID))),
@@ -18417,11 +18604,13 @@ final class MessageCoordinator: ObservableObject {
         raw = try await AgentSingleFileRead.cloud(contact: resolved, store: store, disclosure: disclosureStore,
           source: outgoing, attachment: file,
           valid: { valid() && !self.disclosureStore.blockedDestinationIds().contains(resolved.id) })
+      } else if let agent = selectedAgentContact(for: contact, conversationId: original.conversationId, goal: goal) {
+        raw = try await readSingleFileOnDesktop(file, source: outgoing, original: original, target: agent, valid: valid)
       } else { throw AgentSingleFileRead.Failure.unavailable }
       guard valid() else { throw AgentSingleFileRead.Failure.sourceChanged }
       let report = try AgentSingleFileRead.parse(raw)
       let saved = store.reportAttachmentReading(["ordinal": .int(1), "result": .string(report.result.rawValue)],
-        conversation: original.conversationId, turn: childTurn)
+        conversation: original.conversationId, turn: childTurn, permitScopedRead: true)
       guard saved.isSuccess, valid() else { throw AgentSingleFileRead.Failure.sourceChanged }
       let rich = AgentRichContentCodec.encode([AgentRichBlock(id: "file-read-" + childTurn, type: .text, text: report.reply)])
       let reply = store.appendIncoming(report.reply, from: "hermes", remoteMessageId: "file-read-" + childTurn,
@@ -18501,7 +18690,8 @@ final class MessageCoordinator: ObservableObject {
     _ attachments: [AgentPreparedOutboundAttachment],
     link: ServerLink,
     sourceMessageId: String,
-    contactId: String
+    contactId: String,
+    fileReadScope: String? = nil
   ) throws -> [LinkDeliveryEnqueueRequest] {
     try AgentAttachmentPublishOrder.initialSteps(attachments).map { step in
       let wire = try linkWirePayload(try step.payload(), link: link)
@@ -18514,7 +18704,8 @@ final class MessageCoordinator: ObservableObject {
         clientSourceMessageId: sourceMessageId,
         contactId: contactId,
         attachmentTransferId: step.attachment.transferId,
-        attachmentDeclaration: step.declaration
+        attachmentDeclaration: step.declaration,
+        fileReadScope: fileReadScope
       )
     }
   }
@@ -18612,9 +18803,11 @@ final class MessageCoordinator: ObservableObject {
         if self.connectorResponseBus.isTerminal(response) { return }
         let managed = try self.managedDesktopReplyLedger.ownsResponse(response)
         if managed, let record = try self.managedDesktopReplyLedger.recoveryRecord(matching: response),
-           record.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix) {
+           AgentSingleFileDesktopIntent.isInferenceOwner(record.ownerRunId) {
           let (binding, current) = try self.journalBackedManagedBinding(response, desktopId: payload.string("desktop_id"))
-          guard binding.agentId == "codex", payload.string("type") == "text", binding.matches(payload),
+          guard (record.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix) ?
+              (binding.agentId == record.agentId && self.fileReadDesktopRecordIsCurrent(record, requireLive: record.state == .pending)) : binding.agentId == "codex"),
+                payload.string("type") == "text", binding.matches(payload),
                 let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: AgentControlPlaneClock.nowMillis()),
                 current.matchesCommittedResult(normalized) ||
                   (current.state == .pending && self.persistPairedPhonePlannerResponse(normalized, record: current) &&
@@ -18654,14 +18847,21 @@ final class MessageCoordinator: ObservableObject {
         return binding.route.connector.desktopId == target.peer.remoteSignalName &&
           binding.route.desktopFingerprint == target.routes.remoteFingerprint
       }, resolveManagedAttachmentOwner: { [weak self] payload, contact, identity, target in
-        self?.resolveNativeManagedAttachmentOwner(payload, contact: contact, identity: identity, target: target)
+        if let self, let current = self.currentFileReadDesktopContext(source: payload.string("source_message_id"),
+          contact: contact, identity: identity, routes: target.routes) {
+          guard current.intent.matches(payload), payload.string("sender") == self.store.profile.galaxySSIId else { return nil }
+          return .init(message: current.message, managedOwnerRunID: current.intent.owner)
+        }
+        return self?.resolveNativeManagedAttachmentOwner(payload, contact: contact, identity: identity, target: target)
       }, recordManagedAttachmentFailure: { [weak self] payload, transfer in
         guard let self, UIApplication.shared.isProtectedDataAvailable,
               self.desktopReplyRecoveryOwner == self.store.profile.identityFingerprint else { throw MqttRouteError.identityChanged }
         _ = try self.attachmentDeliveryFailureStore.record(receipt: payload, attachment: transfer)
+        if self.recordSingleFileDesktopFailure(payload, file: transfer) { return }
         Task { @MainActor [weak self] in self?.resumeWaitingNativeConnectors() }
       }, managedAttachmentSourceIsCurrent: { [weak self] source, contact, identity, target in
-        self?.nativeManagedAttachmentOwner(source: source, contact: contact, identity: identity, target: target) != nil
+        self?.currentFileReadDesktopContext(source: source, contact: contact, identity: identity, routes: target.routes) != nil ||
+          self?.nativeManagedAttachmentOwner(source: source, contact: contact, identity: identity, target: target) != nil
       }, resolveCodexReplayOwner: { [weak self] source, contact, identity, target in
         self?.journalCodexReplayOwner(source, contact: contact, identity: identity, target: target)
       }, receiveAnswerPreview: { [weak self] payload, desktop, route in
@@ -20143,11 +20343,12 @@ final class MessageCoordinator: ObservableObject {
     }
     if let response = AgentConnectorResponse.fromPayload(appPayload) {
       if let pending = try? managedDesktopReplyLedger.recoveryRecord(matching: response),
-         pending.ownerRunId.hasPrefix(AgentPairedPhonePlannerRoute.ownerPrefix) {
+         AgentSingleFileDesktopIntent.isInferenceOwner(pending.ownerRunId) {
         guard object.string("scheme") == "signal", let link, link.paired,
               let contact = store.contact(id: pending.contactId), contact.trustState == .verified,
               link.desktopId == contact.desktopId, link.desktopId == appPayload.string("desktop_id"),
-              appPayload.string("type") == "text", appPayload.string("agent_id") == "codex",
+              appPayload.string("type") == "text", appPayload.string("agent_id") ==
+                (pending.ownerRunId.hasPrefix(AgentSingleFileDesktopIntent.ownerPrefix) ? pending.agentId : "codex"),
               appPayload.string("client_route_id") == link.routes.clientRouteId,
               response.contactId == pending.contactId, response.taskId == pending.taskId,
               taskIdentityStore.matchesRegistered(payload: appPayload) else {
