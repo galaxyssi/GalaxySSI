@@ -89,6 +89,9 @@ final class AgentTurnReceiptStore {
       $0.wire = AgentTurnReceiptEvidence.identifier(model); $0.wireEffort = AgentTurnReceiptEvidence.identifier(effort)
     }
   }
+  func recordInputOrigin(_ key: Key, voice: Bool) {
+    change(key) { if $0.voiceInput == nil { $0.voiceInput = voice } }
+  }
   func authenticated(_ key: Key, payload: [String: Any], wall: Int64 = AgentControlPlaneClock.nowMillis()) {
     guard let evidence = AgentTurnReceiptEvidence.desktop(payload), let task = payload["task_id"] as? String,
           payload["conversation_id"] as? String == key.conversation, payload["turn_id"] as? String == key.turn else { return }

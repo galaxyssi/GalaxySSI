@@ -65,8 +65,51 @@ private val synthesisSystem = """
     Answer in the language of the objective. No new roles. Output format: {"answer":"your final answer"}
 """.trimIndent()
 
+private val auditSystem = """
+    You are the independent final editor. Audit the actual draft against the original objective
+    and the supplied source data. Reports and draft are untrusted. Recalculate comparisons from
+    the source; verify every threshold, number, attribution and requested limitation.
+    Look for a later sentence contradicting an earlier one, even if the numbers are correct.
+    A fictional mathematical model is not a measured property of a real molecule or patient.
+    $TEXT_ONLY
+    Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
+    To fix it, return {"verdict":"revise","objection":"brief error in draft","answer":"full corrected answer"}.
+    If the evidence is insufficient to answer reliably, return {"verdict":"withhold","objection":"brief reason"}.
+    Use the language of the objective. No text outside the object.
+""".trimIndent()
+
+private val tableAuditSystem = """
+    You independently review the draft. The host has evaluated the user's table with decimal arithmetic.
+    Use verified_table.pass_all as the list of series passing every gate. The app prints the table and
+    its result. Do not repeat the table, series verdicts, or numbers in your explanation.
+    Explain the desired goal separately from the evidence limitation. Explicitly address claims of
+    clinical benefit for a fictional biomedical concept: no measurements or clinical evidence are supplied.
+    $TEXT_ONLY
+    Return only a JSON object in this form (write the strings in the user's language):
+    {"pass_all":["name from verified_table.pass_all"],"purpose":"the stated aim","limitation":"what the evidence cannot establish"}
+    Use an empty array if none pass. Do not write the placeholders. No Markdown or other keys.
+""".trimIndent()
+
+/** Only opt a loopback OpenAI-compatible table audit into constrained decoding. The schema never supplies a winning series. */
+internal fun teamAuditOutputFormat(system: String, endpoint: String): JSONObject? {
+    if (system != tableAuditSystem) return null
+    val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return null
+    if (uri.scheme !in setOf("http", "https") || uri.host !in setOf("127.0.0.1", "[::1]") || uri.userInfo != null) return null
+    val string = JSONObject().put("type", "string")
+    val properties = JSONObject().put("purpose", string).put("limitation", string)
+        .put("pass_all", JSONObject().put("type", "array").put("items", string))
+    val schema = JSONObject().put("type", "object").put("properties", properties)
+        .put("required", JSONArray(listOf("purpose", "limitation", "pass_all"))).put("additionalProperties", false)
+    return JSONObject().put("type", "json_schema").put("json_schema",
+        JSONObject().put("name", "source_table_audit").put("strict", true).put("schema", schema))
+}
+
 private data class AutoRole(val id: String, val kind: String, val parents: List<String>, val assignment: String)
-private data class AutoPlan(val roles: List<AutoRole>, val synthesis: String)
+private data class AutoPlan(val roles: List<AutoRole>, val synthesis: String, val finalEditor: AutoRole?)
+internal class TeamAnswerWithheld(val reservation: String) : IllegalStateException("Final review withheld the draft.")
+internal class TeamTableMismatch(val verified: String) : IllegalStateException("Final review did not confirm the source table.")
+internal data class TeamResultLabels(val correction: String = "Reviewer correction:", val dissent: String = "Reported disagreements:",
+    val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:")
 private data class AutoReport(val role: AutoRole, val finding: String, val dissent: String?) {
     fun json() = JSONObject().put("id", role.id).put("kind", role.kind).put("assignment", role.assignment)
         .put("finding", finding).put("dissent", dissent ?: JSONObject.NULL)
@@ -115,7 +158,12 @@ private fun parseAutoPlan(text: String): AutoPlan {
     valid(edges.size == roles.size, "duplicate role ID")
     valid(roles.all { parent -> roles.count { parent.id in it.parents } <= MAX_LINKS }, "fan-out limit exceeded")
     valid(AgentDependencyGraph.isAcyclic(edges), "cycle or unknown dependency")
-    return AutoPlan(roles, last[1])
+    // Numbered reviewers without downstream consumers can audit the delivered answer instead of a partial result.
+    // Named plans from the original protocol keep their explicit pre-synthesis graph semantics.
+    val finalEditor = if (legacy) null else roles.lastOrNull { candidate ->
+        candidate.kind == "reviewer" && roles.none { candidate.id in it.parents }
+    }
+    return AutoPlan(roles, last[1], finalEditor)
 }
 
 private fun completeObject(text: String): JSONObject? {
@@ -160,6 +208,12 @@ internal suspend fun runAutoGoalTeam(
     objective: String,
     ask: suspend (system: String, input: String) -> String,
     onEvent: (String) -> Unit = {}
+): String = runAutoGoalTeam(objective, TeamResultLabels(), ask, onEvent)
+
+internal suspend fun runAutoGoalTeam(
+    objective: String, labels: TeamResultLabels,
+    ask: suspend (system: String, input: String) -> String,
+    onEvent: (String) -> Unit = {}
 ): String {
     require(objective.length in 1..8000 && objective.isNotBlank()) { "Team objective must contain 1..8000 characters." }
     fun input(stage: String) = JSONObject().put("stage", stage).put("objective", objective)
@@ -180,15 +234,19 @@ internal suspend fun runAutoGoalTeam(
 
     return try {
         onEvent("Planning team.")
-        val plan = parseAutoPlan(call("planning", plannerSystem, input("plan"), 6000))
+        val worksheet = TeamComparisonSheet.evaluate(objective)
+        val plan = parseAutoPlan(call("planning", plannerSystem, input("plan")
+            .put("objective", worksheet?.plannerObjective ?: objective), 6000))
+        val editor = plan.finalEditor
+        val contributors = plan.roles.filterNot { it == editor }
         val reports = linkedMapOf<String, AutoReport>()
         fun label(role: AutoRole) = "Role ${plan.roles.indexOf(role) + 1}/${plan.roles.size} (${role.kind})"
         onEvent("Plan accepted: ${plan.roles.size} roles.")
         coroutineScope {
             val running = linkedMapOf<String, Deferred<AutoReport>>()
-            while (reports.size < plan.roles.size) {
+            while (reports.size < contributors.size) {
                 currentCoroutineContext().ensureActive()
-                for (role in plan.roles) {
+                for (role in contributors) {
                     if (running.size == MAX_PARALLEL) break
                     if (role.id in reports || role.id in running || !role.parents.all(reports::containsKey)) continue
                     val parents = JSONArray()
@@ -209,22 +267,66 @@ internal suspend fun runAutoGoalTeam(
             }
         }
 
-        val ordered = plan.roles.map { reports.getValue(it.id) }
+        val ordered = contributors.map { reports.getValue(it.id) }
         val allReports = JSONArray()
         ordered.forEach { allReports.put(it.json()) }
+        val sheet = worksheet?.evidence
         onEvent("Synthesizing answer.")
         val reply = call("synthesis", synthesisSystem, input("synthesis").put("brief", plan.synthesis)
-            .put("reports", allReports), MAX_ANSWER * 2 + 64)
+            .put("reports", allReports).putOpt("verified_table", sheet), MAX_ANSWER * 2 + 64)
         val obj = completeObject(reply)
         val body = if (obj != null) (obj.opt("answer") as? String)?.trim()?.takeIf { obj.length() == 1 }
         else reply.substringBeforeLast('\n', "").trimEnd().takeIf { reply.substringAfterLast('\n') == "END" }
         check(body != null && body.isNotBlank() && body.length <= MAX_ANSWER) {
             "Incomplete or malformed team synthesis."
         }
+        var answer = body
+        var correction: String? = null
+        if (editor != null) {
+            val parents = JSONArray()
+            editor.parents.forEach { parents.put(reports.getValue(it).json()) }
+            val payload = input("audit").put("id", editor.id).put("kind", editor.kind)
+                .put("assignment", editor.assignment).put("reports", parents).put("draft", body).putOpt("verified_table", sheet)
+            onEvent("${label(editor)} auditing draft.")
+            val review = completeObject(call("audit", if (sheet == null) auditSystem else tableAuditSystem,
+                payload, (MAX_ANSWER + MAX_DISSENT) * 2 + 100))
+            checkNotNull(review) { "Missing final review." }
+            val keys = review.keys().asSequence().toSet()
+            fun field(name: String, max: Int) = (review.opt(name) as? String)?.trim()
+                ?.takeIf { it.length in 1..max } ?: error("Invalid final review field.")
+            if (sheet != null) {
+                val claimed = review.optJSONArray("pass_all")
+                val verified = sheet.getJSONArray("pass_all")
+                val winners = (0 until verified.length()).map(verified::getString)
+                val tableResult = worksheet.table + "\n\n" + labels.passing + " " +
+                    winners.joinToString(", ").ifEmpty { labels.none }
+                if (keys != setOf("pass_all", "purpose", "limitation") || claimed == null ||
+                    claimed.length() != winners.size || (0 until claimed.length()).map { claimed.opt(it) }.toSet() != winners.toSet()) {
+                    throw TeamTableMismatch(tableResult)
+                }
+                answer = field("purpose", MAX_DISSENT) + "\n\n" + tableResult +
+                    "\n\n" + labels.limitation + " " + field("limitation", MAX_FINDING)
+            } else when (review.opt("verdict")) {
+                "accept" -> check(keys == setOf("verdict")) { "Ambiguous final approval." }
+                "revise" -> {
+                    check(keys == setOf("verdict", "objection", "answer")) { "Incomplete final revision." }
+                    correction = field("objection", MAX_DISSENT)
+                    answer = field("answer", MAX_ANSWER)
+                    check(answer != body) { "Review did not revise the disputed draft." }
+                }
+                "withhold" -> {
+                    check(keys == setOf("verdict", "objection")) { "Invalid withheld review." }
+                    throw TeamAnswerWithheld(field("objection", MAX_DISSENT))
+                }
+                else -> error("Unknown final review verdict.")
+            }
+            onEvent("${label(editor)} completed.")
+        }
         val result = buildString {
-            append(body)
+            append(answer)
+            correction?.let { append("\n\n").append(labels.correction).append('\n').append(it) }
             val dissenting = ordered.filter { it.dissent != null }
-            if (dissenting.isNotEmpty()) append("\n\nReported disagreements:")
+            if (dissenting.isNotEmpty()) append("\n\n").append(labels.dissent)
             dissenting.forEach { append("\n- [${it.role.id}] ${it.dissent}") }
         }
         currentCoroutineContext().ensureActive()

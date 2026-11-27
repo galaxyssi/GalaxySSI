@@ -15,6 +15,58 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AutoGoalTeamEngineTest {
+    @Test fun finalEditorIsAnAllocatedRoleAndItsDecisionIsNotAnotherSynthesis() = runBlocking {
+        val jobs = (1..9).map { "WORK|-|Evaluate item $it" } + "REVIEW|2,5|Audit edge cases"
+        val fake = Fake(plan(*jobs.toTypedArray())) { request ->
+            when (request.getString("stage")) {
+                "role" -> report(request.getString("id"), if (request.getString("id") == "role9") "Still disputed." else "-")
+                "synthesis" -> {
+                    assertEquals(9, request.getJSONArray("reports").length())
+                    """{"answer":"Both cases pass."}"""
+                }
+                "audit" -> {
+                    assertEquals("Both cases pass.", request.getString("draft"))
+                    val parents = request.getJSONArray("reports")
+                    assertEquals(listOf("role2", "role5"), (0 until parents.length()).map { parents.getJSONObject(it).getString("id") })
+                    """{"verdict":"revise","objection":"One threshold was missed.","answer":"Only the second passes."}"""
+                }
+                else -> error("Unexpected stage")
+            }
+        }
+        val result = fake.run()
+        assertFalse(result.contains("Both cases pass."))
+        for (part in listOf("Only the second passes.", "One threshold was missed.", "Still disputed.")) assertTrue(part in result)
+        assertEquals(12, fake.calls.size)
+        assertEquals(listOf("synthesis", "audit"), fake.calls.takeLast(2))
+    }
+
+    @Test fun withheldMalformedOrCancelledAuditsCannotPublishTheDraft() = runBlocking {
+        for (audit in listOf("""{"verdict":"withhold","objection":"No source."}""",
+            """{"verdict":"accept","answer":"unexpected"}""", """{"verdict":"revise","objection":"wrong","answer":"Unreviewed"}""",
+            """{"verdict":"revise","objection":"wrong"}""", "partial", "cancel")) {
+            val fake = Fake(plan("WORK|-|Find the source", "REVIEW|1|Audit it")) { request ->
+                when (request.getString("stage")) {
+                    "role" -> report("first")
+                    "audit" -> if (audit == "cancel") throw CancellationException() else audit
+                    else -> """{"answer":"Unreviewed"}"""
+                }
+            }
+            val failure = runCatching { fake.run() }.exceptionOrNull()
+            assertNotNull(failure)
+            if ("withhold" in audit) assertEquals("No source.", (failure as TeamAnswerWithheld).reservation)
+            if (audit == "cancel") assertTrue(failure is CancellationException)
+            assertFalse("Team completed." in fake.events)
+        }
+    }
+
+    @Test fun reviewerWithDownstreamConsumersStaysInDependencyOrder() = runBlocking {
+        val fake = Fake(plan("WORK|-|Count", "REVIEW|1|Check count", "WORK|2|Estimate cost")) {
+            if (it.getString("stage") == "synthesis") "Done.\nEND" else report(it.getString("id"))
+        }
+        assertEquals("Done.", fake.run())
+        assertEquals(listOf("plan", "role1", "role2", "role3", "synthesis"), fake.calls)
+    }
+
     @Test fun completeJsonFindingsAllowUnreportedReservationsButNotPartialOrMixedObjects() = runBlocking {
         for (text in listOf("""{"finding":"Reported."}""", """{"finding":"Reported.","dissent":null}""",
             """{"finding":"Reported.","dissent":"Unresolved."}""")) {
@@ -44,7 +96,10 @@ class AutoGoalTeamEngineTest {
                     val inputs = it.getJSONArray("reports")
                     assertEquals(listOf("role1", "role2"), (0 until inputs.length()).map { i -> inputs.getJSONObject(i).getString("id") })
                 }
-                report(it.getString("id"))
+                if (it.getString("stage") == "audit") {
+                    assertEquals("Done.", it.getString("draft"))
+                    """{"verdict":"accept"}"""
+                } else report(it.getString("id"))
             }
         }
         assertEquals("Done.", fake.run())

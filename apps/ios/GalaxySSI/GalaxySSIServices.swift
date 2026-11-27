@@ -5855,6 +5855,9 @@ final class MessageCoordinator: ObservableObject {
     if let voiceAppAnchor, !readOnlyAnalysis {
       voiceAppContexts.bind(voiceAppAnchor, conversationID: outgoing.conversationId, turnID: outgoing.turnId)
     }
+    if let key = store.turnReceiptKey(conversation: outgoing.conversationId, turn: outgoing.turnId) {
+      store.turnReceiptStore.recordInputOrigin(key, voice: voiceAppAnchor != nil || !voiceSessionId.isEmpty)
+    }
     onOutgoing?(outgoing)
     guard !Task.isCancelled else { return false }
     if isPeerSend {
@@ -17529,6 +17532,70 @@ final class MessageCoordinator: ObservableObject {
     }
     store.appendDeliveryTrace(source, contactId: contactID, stage: "phone_contact_queued",
       detail: "Queued in the encrypted outbox.", status: .queued)
+    scheduleOutboxFlush(after: 0)
+    return voicePeerTextReceipt(source, status: "queued")
+  }
+
+  func enqueueConfirmedVoiceRecipient(
+    _ text: String, contactID: String, context: AgentNativeToolInvocationContext
+  ) -> AgentNativeToolExecutionResult {
+    guard let contact = store.visibleContacts.first(where: { $0.id == contactID }) else {
+      return .failure(code: "recipient_unavailable", message: "The confirmed recipient is unavailable.")
+    }
+    if isPhoneContact(contact) { return enqueueVoicePeerText(text, contactID: contactID, context: context) }
+    guard contact.isCommunicable, contact.isDesktopDeviceContact,
+      !text.isBlank, text.utf16.count <= 10_000, text.utf8.count <= 40_000,
+      let key = context.idempotencyKey, !key.isBlank,
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
+      GalaxySSISignalEngine.isAvailable else {
+      return .failure(code: "peer_send_unavailable", message: "An exact paired encrypted Desktop recipient is required.")
+    }
+    let identity = [context.conversationId, context.turnId, contactID, key].map { "\($0.utf8.count):\($0)" }.joined()
+    let source = AgentTeamDispatchIds.nameBasedUUID("voice-peer-send:\(identity)")
+    let sourceID = source.uuidString
+    if let previous = store.persistedMessage(id: source, contactId: contactID) {
+      guard previous.isMine, previous.content == text else {
+        return .failure(code: "peer_send_conflict", message: "This request identity already belongs to different text.")
+      }
+      if [.sent, .delivered, .read].contains(previous.deliveryStatus) { return voicePeerTextReceipt(source, status: "published") }
+      if let status = deliveryStore.voiceTextQueueStatus(messageId: GalaxySSILinkProtocol.normalizedMessageId(sourceID),
+        sourceId: sourceID, contactId: contactID) {
+        return voicePeerTextReceipt(source, status: status == "published" ? "published" : "queued")
+      }
+    }
+    do {
+      if let runtime = journalMqttRuntime {
+        if store.persistedMessage(id: source, contactId: contactID) == nil {
+          _ = store.appendOutgoing(text, to: contactID, messageId: source)
+        }
+        _ = try runtime.enqueueDirectPeerText(messageId: source, contactId: contactID)
+      } else {
+        let payload: [String: Any] = ["type": "peer_message",
+          "message_id": GalaxySSILinkProtocol.normalizedMessageId(sourceID),
+          "source_message_id": sourceID, "client_message_id": sourceID, "content": text,
+          "contact_id": link.desktopId, "sender": store.profile.galaxySSIId,
+          "conversation_id": AgentPeerChatTransport.conversationId(for: link),
+          "turn_id": AgentPeerChatTransport.turnId(for: sourceID), "task_id": AgentPeerChatTransport.taskId(for: sourceID),
+          "client_route_id": link.routes.clientRouteId, "desktop_id": link.desktopId,
+          "time": Int64(Date().timeIntervalSince1970 * 1_000)]
+        let wire = try linkWirePayload(payload, link: link)
+        if store.persistedMessage(id: source, contactId: contactID) == nil {
+          _ = store.appendOutgoing(text, to: contactID, messageId: source)
+        }
+        guard store.persistedMessage(id: source, contactId: contactID)?.content == text,
+          deliveryStore.enqueueConfirmedVoiceText(LinkDeliveryEnqueueRequest(messageId: wire.messageId,
+            topic: link.routes.upTopic, wirePayload: wire.wireText, requiresValidatedNetwork: false,
+            blockedByAttachmentTransferIds: [], clientSourceMessageId: sourceID, contactId: contactID)) else {
+          throw GalaxySSIError.transportUnavailable
+        }
+      }
+    } catch {
+      store.appendDeliveryTrace(source, contactId: contactID, stage: "voice_peer_queue_failed",
+        detail: "Unable to verify encrypted queue persistence. Do not automatically resend.", status: .failed)
+      return .failure(code: "peer_queue_uncertain", message: "Queue persistence is uncertain. Do not automatically resend.")
+    }
+    store.appendDeliveryTrace(source, contactId: contactID, stage: "voice_peer_queued",
+      detail: "Queued in the encrypted outbox; delivery is not verified.", status: .queued)
     scheduleOutboxFlush(after: 0)
     return voicePeerTextReceipt(source, status: "queued")
   }

@@ -7908,6 +7908,10 @@
 "public_news_event_sources" = "同一事件的报道";
 "public_news_event_removed" = "这篇报道已不在本机存档中。";
 "public_news_event_no_body" = "本机尚未下载这篇报道的原文。";
+"galaxyssi.voice_message.confirmation_phrases" = "[\"确认发送\",\"确认发出\",\"发送吧\",\"发吧\",\"可以发送\"]";
+"galaxyssi.voice_message.choice_ordinals" = "[\"一\",\"二\",\"三\",\"四\",\"五\",\"六\",\"七\",\"八\",\"九\",\"十\"]";
+"galaxyssi.voice_message.choice_prefixes" = "[\"选\",\"第\"]";
+"galaxyssi.voice_message.choice_suffixes" = "[\"个\"]";
 "galaxyssi.chat_search.heading" = "消息与附件";
 "galaxyssi.chat_search.attachment" = "附件";
 "galaxyssi.chat_search.query_limit" = "请输入不超过 256 个字符的关键词。";

@@ -71,7 +71,8 @@ internal object ConversationGoalRunner {
         }
         val c = resolveCloud(context, route.target, route.model) ?: error("model unavailable")
         check(c.getString("cloud_model") == route.model && fingerprint(c) == route.endpointHash)
-        val response = CloudModelClient.nativeToolAdapter(context, c, emptyList()).complete(
+        val format = teamAuditOutputFormat(system, c.getString("cloud_endpoint"))
+        val response = CloudModelClient.nativeToolAdapter(context, c, emptyList(), textOnlyResponseFormat = format).complete(
             AgentModelRequest(run, chat, "$run-$round", run, chat, round,
                 listOf(AgentModelMessage.system(system), AgentModelMessage.user(prompt)), "[]",
                 AgentNativeJsonCodec.sha256("[]"), 0, 3000, 120_000, 0, token))

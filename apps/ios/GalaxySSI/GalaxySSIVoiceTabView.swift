@@ -154,6 +154,7 @@ struct GalaxySSIVoiceTabView: View {
       .onChange(of: holdToTalk.isRecording) { _ in syncPassiveListening() }
       .onChange(of: scenePhase) { phase in
         if phase != .active {
+          invalidateVoiceAppContext()
           stopInputAcknowledgement()
           passiveBlockedSessionId = activeVoiceReplySessionId
           stopPassiveListening(resumeWake: false)
@@ -161,6 +162,7 @@ struct GalaxySSIVoiceTabView: View {
       }
       .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
         if notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt == AVAudioSession.InterruptionType.began.rawValue {
+          invalidateVoiceAppContext()
           stopInputAcknowledgement()
           passiveBlockedSessionId = activeVoiceReplySessionId
           stopPassiveListening(resumeWake: false)
@@ -783,7 +785,7 @@ struct GalaxySSIVoiceTabView: View {
             submitStatus = ""
           },
           onFinish: submitVoiceTranscript,
-          onCancel: invalidateVoiceAppContext
+          onCancel: { invalidateVoiceAppContext() }
         )
       }
       .onEnded { value in
@@ -947,25 +949,20 @@ struct GalaxySSIVoiceTabView: View {
     submitVoiceTranscript(
       submission.text,
       correctionReview: submission.correctionReview,
-      sessionId: submission.sessionId
-    )
-  }
-
-  private func submitVoiceTranscript(_ text: String) {
-    submitVoiceTranscript(
-      text,
-      correctionReview: nil,
-      sessionId: VoiceInteractionCoordinatorRegistry.coordinator.snapshot().sessionId
+      sessionId: submission.sessionId,
+      spokenText: submission.spokenText
     )
   }
 
   private func submitVoiceTranscript(
     _ text: String,
     correctionReview: VoiceTranscriptCorrectionReview?,
-    sessionId: String
+    sessionId: String,
+    spokenText: String?
   ) {
     let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanText.isEmpty, !voiceAppCaptureInvalidated else { return }
+    if let spokenText { coordinator.voiceAppContexts.captureSpoken(spokenText, anchor: voiceAppAnchor) }
     let contact = voiceTargetContact
     if let anchor = voiceAppAnchor {
       let expectedTarget = entryContext != nil ? "hermes" : anchor.contactID.ifBlank("hermes")
@@ -1121,7 +1118,7 @@ struct GalaxySSIVoiceTabView: View {
   }
 
   private func captureVoiceAppContext() {
-    invalidateVoiceAppContext()
+    invalidateVoiceAppContext(preserveDraft: true)
     voiceAppCaptureInvalidated = false
     guard viewVisible, scenePhase == .active else { return }
     let target = voiceTargetContact
@@ -1134,9 +1131,9 @@ struct GalaxySSIVoiceTabView: View {
     )
   }
 
-  private func invalidateVoiceAppContext() {
+  private func invalidateVoiceAppContext(preserveDraft: Bool = false) {
     if voiceAppAnchor != nil { voiceAppCaptureInvalidated = true }
-    coordinator.voiceAppContexts.invalidate(voiceAppAnchor)
+    coordinator.voiceAppContexts.invalidate(voiceAppAnchor, preserveDraft: preserveDraft)
     voiceAppAnchor = nil
   }
 

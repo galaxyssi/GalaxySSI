@@ -13,14 +13,16 @@ import org.json.*;
 
 /** Opt-in host smoke test. Only a fixed, public, synthetic task is sent to a loopback model. */
 class LocalTeamAcceptance {
-    static final String TASK = "Evaluate fictional Phe-Buffer, a hypothetical protein function for PKU. "
+    static String task(boolean swapped) {
+        return "Evaluate fictional Phe-Buffer, a hypothetical protein function for PKU. "
         + "The proposed function is to reduce excess phenylalanine (Phe) while sparing low Phe. "
-        + "Compare two toy response curves A=x/(1+x) and B=x*x/(1+x*x) at x=0.25,1,4. "
+        + "Compare two toy response curves " + (swapped ? "B=x/(1+x) and A=x*x/(1+x*x)" : "A=x/(1+x) and B=x*x/(1+x*x)") + " at x=0.25,1,4. "
         + "The invented gates are response <0.10 at 0.25 and >0.85 at 4. "
         + "Independently audit the claim that matching the midpoint proves clinical benefit. "
         + "Give the six values, say which curve meets both toy gates, and distinguish a desired property "
         + "from something measured in a molecule. No real patients, sequences, or protocols. "
-        + "Source: independently calculated mathematical reference, not measurements: " + reference();
+        + "Source: independently calculated mathematical reference, not measurements:\n" + table(swapped);
+    }
     final HttpClient client = HttpClient.newBuilder().proxy(ProxySelector.of(null))
         .connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
     final Set<String> ids = ConcurrentHashMap.newKeySet();
@@ -42,6 +44,7 @@ class LocalTeamAcceptance {
         JSONObject body = new JSONObject().put("model", model).put("messages", messages)
             .put("temperature", 0).put("seed", 42).put("stream", false).put("max_tokens", 850)
             .put("chat_template_kwargs", new JSONObject().put("enable_thinking", false));
+        body.putOpt("response_format", AutoGoalTeamEngineKt.teamAuditOutputFormat(system, endpoint.toString()));
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(110))
             .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
         var requestFuture = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
@@ -77,49 +80,68 @@ class LocalTeamAcceptance {
         if (!condition) throw new IllegalStateException(message);
     }
 
-    static String reference() {
+    static String reference(boolean swapped) {
         var table = new StringJoiner("; ");
         for (double x : new double[]{0.25,1,4}) {
-            table.add(String.format(Locale.ROOT,"x=%s: A=%.3f, B=%.3f",x,x/(1+x),x*x/(1+x*x)));
+            double a=x/(1+x), b=x*x/(1+x*x);
+            table.add(String.format(Locale.ROOT,"x=%s: A=%.3f, B=%.3f",x,swapped?b:a,swapped?a:b));
         }
         return table.toString();
     }
 
-    void run() throws Exception {
+    static String table(boolean swapped) {
+        StringBuilder table = new StringBuilder("| input | gate | A | B |\n|---|---|---|---|");
+        for (double x : new double[]{0.25,1,4}) {
+            double a=x/(1+x), b=x*x/(1+x*x);
+            table.append(String.format(Locale.ROOT,"\n| %s | %s | %.3f | %.3f |", x,
+                x == 0.25 ? "<0.10" : x == 4 ? ">0.85" : "-", swapped?b:a, swapped?a:b));
+        }
+        return table.toString();
+    }
+
+    void run(boolean swapped) throws Exception {
         String answer = BuildersKt.<String>runBlocking(EmptyCoroutineContext.INSTANCE,
-            (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(TASK, this::ask,
+            (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(task(swapped), this::ask,
                 event -> { System.out.println(event); return Unit.INSTANCE; }, cont));
-        var roles = calls.stream().filter(c -> c.getString("stage").equals("role")).toList();
+        var roles = calls.stream().filter(c -> Set.of("role","audit").contains(c.getString("stage"))).toList();
         require(roles.size() >= 2 && roles.size() <= 10 && ids.size() == roles.size()+2, "Expected real independent calls");
         require(roles.stream().anyMatch(r -> Set.of("reviewer","dissent").contains(r.getString("kind"))), "No independent check");
         require(roles.stream().anyMatch(r -> !r.getJSONArray("reports").isEmpty()), "No handoff observed");
-        var reports = calls.stream().filter(c -> c.getString("stage").equals("synthesis")).findFirst().orElseThrow().getJSONArray("reports");
-        require(reports.length() == roles.size(), "Missing report at synthesis");
+        JSONObject synthesis = calls.stream().filter(c -> c.getString("stage").equals("synthesis")).findFirst().orElseThrow();
+        var reports = synthesis.getJSONArray("reports");
+        var audits = calls.stream().filter(c -> c.getString("stage").equals("audit")).toList();
+        require(audits.size() == 1 && calls.indexOf(audits.get(0)) > calls.indexOf(synthesis) &&
+            !audits.get(0).getString("draft").isBlank(), "No independent final-draft review");
+        require(reports.length() == roles.size()-1, "Missing contributor report at synthesis");
         for (int i=0; i<reports.length(); i++) {
             JSONObject report = reports.getJSONObject(i);
             if (!report.isNull("dissent")) require(answer.contains(report.getString("dissent")), "Dropped reservation");
         }
         System.out.println("Final public answer:\n" + answer);
         System.out.println("Transport verified: " + roles.size() + " model-chosen roles, " + ids.size() + " distinct completions.");
-        System.out.println("Numerical reference (fictional model only): " + reference());
+        System.out.println("Numerical reference (fictional model only): " + reference(swapped));
         // A returned paragraph alone is not evidence of scientific or even arithmetic correctness.
-        var reported = java.util.regex.Pattern.compile("(?<![0-9.])(?:0?\\.[0-9]+)(?![0-9.])")
-            .matcher(answer).results().map(m -> Double.parseDouble(m.group())).toList();
+        String finalBody = answer.split("\n\n(?:Reviewer correction:|Reported disagreements:)", 2)[0];
+        var reported = java.util.regex.Pattern.compile("(?<![0-9.])(?:0?\\.[0-9]+)(?![0-9])")
+            .matcher(finalBody).results().map(m -> Double.parseDouble(m.group())).toList();
         for (double expected : new double[]{0.2,1.0/17,0.5,0.8,16.0/17}) {
             require(reported.stream().anyMatch(n -> Math.abs(n-expected) <= 0.0011),
                 "Public answer omitted a reference value: " + expected);
         }
-        screenVerdict(answer);
+        require(finalBody.contains(table(swapped)), "Source labels or values changed at publication");
+        screenVerdict(finalBody, swapped);
         System.out.println("Basic numeric and contradiction checks passed. Interpretation still requires review.");
     }
 
-    static void screenVerdict(String answer) {
+    static void screenVerdict(String answer, boolean swapped) {
         String lower = answer.toLowerCase(Locale.ROOT);
+        String winner=swapped?"a":"b", loser=swapped?"b":"a";
         String success = "\\s+(?:is the (?:only )?(?:one|curve) (?:that|which) |)(?:meets?|passes?|satisfies|satisfy)\\b[^.!?\\n]{0,45}\\bboth\\b";
-        require(!java.util.regex.Pattern.compile("\\b(?:curve\\s+)?a"+success).matcher(lower).find(),
-            "Contradiction: A does not meet the toy gates");
-        require(java.util.regex.Pattern.compile("\\b(?:curve\\s+)?b"+success).matcher(lower).find(),
-            "No explicit supported B verdict; manual review needed");
+        require(!java.util.regex.Pattern.compile("\\b(?:curve\\s+)?"+loser+success).matcher(lower).find(),
+            "Contradiction: "+loser+" does not meet the toy gates");
+        require(lower.lines().anyMatch(("pass all gates: "+winner)::equals) ||
+            java.util.regex.Pattern.compile("\\b(?:curve\\s+)?"+winner+success).matcher(lower).find(),
+            "No explicit supported verdict; manual review needed");
         require(lower.contains("clinical") && java.util.regex.Pattern.compile(
             "\\b(?:not|no|cannot|unverified|unproven|unknown|unsupported|insufficient)\\b").matcher(lower).find(),
             "No explicit limitation on clinical inference; manual review needed");
@@ -128,15 +150,17 @@ class LocalTeamAcceptance {
     public static void main(String[] args) throws Exception {
         if (Arrays.equals(args, new String[]{"--check-rubric"})) {
             String good = "B meets both toy gates. No clinical evidence.";
-            screenVerdict(good);
+            screenVerdict(good, false);
+            screenVerdict("A meets both toy gates. No clinical evidence.", true);
             for (String bad : List.of(good + " Curve A meets both toy gates.", "B meets both toy gates.", "No clinical evidence.")) {
-                try { screenVerdict(bad); } catch (IllegalStateException expected) { continue; }
+                try { screenVerdict(bad, false); } catch (IllegalStateException expected) { continue; }
                 throw new AssertionError("Rubric missed a known invalid verdict");
             }
             System.out.println("Rubric regressions passed (no model called).");
             return;
         }
-        if (args.length != 2) throw new IllegalArgumentException("Expected loopback port and local model ID");
-        new LocalTeamAcceptance(Integer.parseInt(args[0]), args[1]).run();
+        if (args.length != 2 && !(args.length == 3 && args[2].equals("--swap")))
+            throw new IllegalArgumentException("Expected loopback port, local model ID, optional --swap");
+        new LocalTeamAcceptance(Integer.parseInt(args[0]), args[1]).run(args.length == 3);
     }
 }

@@ -292,8 +292,9 @@ object CloudModelClient {
         context: Context,
         contact: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
-        catalogFingerprint: String = ""
-    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null)
+        catalogFingerprint: String = "",
+        textOnlyResponseFormat: JSONObject? = null
+    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null, textOnlyResponseFormat)
 
     internal fun nativeToolAdapter(context: Context, contact: JSONObject, initial: AgentNativeToolCatalogView,
         catalogProvider: (AgentModelRequest) -> AgentNativeToolCatalogView): AgentModelAdapter =
@@ -304,7 +305,8 @@ object CloudModelClient {
         contactValue: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String,
-        catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?
+        catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?,
+        textOnlyResponseFormat: JSONObject? = null
     ): AgentModelAdapter {
         val contact = JSONObject(contactValue.toString())
         validateContact(context, contact)
@@ -373,6 +375,8 @@ object CloudModelClient {
                         when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> {
                                 if (toolCatalog.descriptors.isNotEmpty()) body.put("tool_choice", "auto")
+                                if (textOnlyResponseFormat != null && toolCatalog.descriptors.isEmpty())
+                                    body.put("response_format", textOnlyResponseFormat)
                                 body.put("stream", false)
                             }
                             AgentModelToolProvider.ANTHROPIC -> {
