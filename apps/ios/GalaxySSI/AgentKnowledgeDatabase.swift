@@ -2140,7 +2140,13 @@ final class AgentKnowledgeDatabase {
   private func insert(_ item: AgentKnowledgeItem) -> Bool {
     let itemHash = keyedHash(item.id)
     guard let plaintext = try? JSONEncoder.galaxySSI.encode(item) else { return false }
-    let encrypted = Data([0])
+    let sealedHeader: Data, encrypted: Data
+    do {
+      let header = AgentKnowledgePrimaryMetadata.Header(itemHash: itemHash, sourceHash: keyedHash(sourceIdentity(item)),
+        updatedAtMillis: item.updatedAtMillis, bodySHA256: SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined())
+      sealedHeader = try cipher.encrypt(JSONEncoder().encode(header), purpose: AgentKnowledgePrimaryMetadata.purpose(itemHash))
+      encrypted = try AgentKnowledgePrimaryMetadata.pointer(sealedHeader)
+    } catch { return false }
     guard let statement = prepare("""
             INSERT INTO knowledge_items(item_hash, source_hash, updated_at, encrypted_payload)
             VALUES (?, ?, ?, ?)
@@ -2154,7 +2160,7 @@ final class AgentKnowledgeDatabase {
     }
     guard sqlite3_step(statement) == SQLITE_DONE else { return false }
     guard let database else { return false }
-    do { try primaryPayloads.append(plaintext, itemHash: itemHash, catalog: database) }
+    do { try primaryPayloads.append(plaintext, itemHash: itemHash, catalog: database, header: sealedHeader) }
     catch { return false }
     guard let indexStatement = prepare(
       "INSERT INTO knowledge_fts(item_hash, tokens) VALUES (?, ?)"
@@ -3340,7 +3346,31 @@ final class AgentKnowledgeDatabase {
           keyedHash(item.id) == itemHash else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
+    if let header = try primaryPayloads.resolveHeader(itemHash: itemHash, catalog: catalog, stored: encrypted) {
+      try validatePrimaryHeader(header, item: item, itemHash: itemHash, catalog: catalog)
+    }
     return item
+  }
+
+  private func validatePrimaryHeader(_ resolved: AgentKnowledgePrimaryMetadata.Resolved, item: AgentKnowledgeItem,
+                                     itemHash: String, catalog: OpaquePointer) throws {
+    let plaintext = try cipher.decrypt(resolved.encrypted, expectedPurpose: AgentKnowledgePrimaryMetadata.purpose(itemHash))
+    let header = try JSONDecoder().decode(AgentKnowledgePrimaryMetadata.Header.self, from: plaintext)
+    guard header.version == 1, header.itemHash == itemHash, header.sourceHash == keyedHash(sourceIdentity(item)),
+          header.updatedAtMillis == item.updatedAtMillis, header.bodySHA256 == resolved.bodySHA256 else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    var raw: OpaquePointer?
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(catalog, "SELECT source_hash,updated_at FROM knowledge_items WHERE item_hash=?", -1, &raw, nil) == SQLITE_OK,
+          let row = raw else {
+      if let raw { AgentKnowledgeSQLiteStatements.shared.release(raw) }; throw AgentKnowledgeDatabaseError.unavailable
+    }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(row) }
+    bind(itemHash, at: 1, to: row)
+    guard sqlite3_step(row) == SQLITE_ROW, let source = sqlite3_column_text(row, 0),
+          String(cString: source) == header.sourceHash, sqlite3_column_int64(row, 1) == header.updatedAtMillis else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
   }
 
   private func insertExternalPayload(_ plaintext: Data, itemHash: String) -> Bool {

@@ -37,7 +37,7 @@ final class AgentKnowledgePrimarySourceIntegrationTests: XCTestCase {
       let next = item("needle replacement " + String(repeating: "synthetic ", count: 20_000))
       try sourceReplace(database, next)
       XCTAssertEqual(try scalar(url, "SELECT COUNT(*) FROM knowledge_primary_refs"), 1)
-      XCTAssertEqual(try scalar(url, "SELECT COUNT(*) FROM knowledge_items WHERE encrypted_payload=x'00'"), 1)
+      XCTAssertEqual(try scalar(url, "SELECT COUNT(*) FROM knowledge_items WHERE length(encrypted_payload)=69 AND CAST(substr(encrypted_payload,1,5) AS TEXT)='khp1:'"), 1)
       let reopened = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
       XCTAssertEqual(try reopened.all(), [next])
       XCTAssertEqual(try reopened.searchCandidates(query: "needle"), [next])

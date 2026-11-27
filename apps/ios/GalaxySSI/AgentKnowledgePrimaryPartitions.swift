@@ -30,6 +30,7 @@ final class AgentKnowledgePrimaryPartitions {
     var frames: Int
     var plainBytes: Int64
     var sha256: String
+    var headerHash: String? = nil
   }
 
   private final class WriteBatch {
@@ -210,15 +211,15 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   // References can be staged in the catalog, but none may be published before prepareBatchCommit.
-  func append(_ plain: Data, itemHash: String, catalog: OpaquePointer, checkActive: () throws -> Void = {}) throws {
+  func append(_ plain: Data, itemHash: String, catalog: OpaquePointer, header: Data? = nil, checkActive: () throws -> Void = {}) throws {
     writerLock.lock()
     defer { writerLock.unlock() }
     let batch = try ownedBatch(catalog: catalog)
-    do { try appendFrames(plain, itemHash: itemHash, catalog: catalog, batch: batch, checkActive: checkActive) }
+    do { try appendFrames(plain, itemHash: itemHash, catalog: catalog, batch: batch, header: header, checkActive: checkActive) }
     catch { batch?.failed = true; throw error }
   }
 
-  private func appendFrames(_ plain: Data, itemHash: String, catalog: OpaquePointer, batch: WriteBatch?,
+  private func appendFrames(_ plain: Data, itemHash: String, catalog: OpaquePointer, batch: WriteBatch?, header: Data?,
                             checkActive: () throws -> Void) throws {
     try checkActive()
     try ensureSharedLease()
@@ -228,6 +229,7 @@ final class AgentKnowledgePrimaryPartitions {
     let id = try partition(catalog: catalog, bucket: bucket, checkActive: checkActive)
     let database = try writer(id: id, bucket: bucket)
     let entry = UUID().uuidString.lowercased()
+    let headerHash = try header.map { try AgentKnowledgePrimaryMetadata.hash($0) }
     var frameCount = 0, offset = 0
     var storedBytes: Int64 = 0
     do {
@@ -237,6 +239,7 @@ final class AgentKnowledgePrimaryPartitions {
       }
       var committed = false
       defer { if batch == nil && !committed { try? execute(database, "ROLLBACK") } }
+      if let header { storedBytes = try AgentKnowledgePrimaryMetadata.write(database, entry: entry, encrypted: header) }
       let statement = try prepare(database, "INSERT INTO frames(entry_id,ordinal,sealed) VALUES(?,?,?)")
       defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       while offset < plain.count {
@@ -274,8 +277,8 @@ final class AgentKnowledgePrimaryPartitions {
     try AgentKnowledgePrimaryDurability.verify(catalog, role: .catalog)
     try Task.checkCancellation()
     try checkActive()
-    let reference = Reference(version: 1, partition: id, entry: entry, frames: frameCount,
-      plainBytes: Int64(plain.count), sha256: Self.sha256(plain))
+    let reference = Reference(version: headerHash == nil ? 1 : 2, partition: id, entry: entry, frames: frameCount,
+      plainBytes: Int64(plain.count), sha256: Self.sha256(plain), headerHash: headerHash)
     let sealedReference = try cipher.encrypt(JSONEncoder().encode(reference), purpose: referencePurpose(itemHash))
     guard sealedReference.count <= 8 * 1_024 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let insert = try prepare(catalog, "INSERT INTO knowledge_primary_refs(item_hash,partition_id,sealed_ref) VALUES(?,?,?)")
@@ -302,6 +305,54 @@ final class AgentKnowledgePrimaryPartitions {
     return try readPayload(itemHash: itemHash, catalog: catalog, checkActive: checkActive)
   }
 
+  func resolveHeader(itemHash: String, catalog: OpaquePointer, stored: Data) throws -> AgentKnowledgePrimaryMetadata.Resolved? {
+    let expected = try AgentKnowledgePrimaryMetadata.pointerHash(stored)
+    writerLock.lock(); defer { writerLock.unlock() }
+    readerLock.lock(); defer { readerLock.unlock() }
+    try ensureSharedLease()
+    guard let reference = try reference(itemHash: itemHash, catalog: catalog) else {
+      guard expected == nil else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return nil
+    }
+    guard let hash = reference.headerHash else {
+      guard expected == nil else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      return nil
+    }
+    guard hash == expected else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    return try AgentKnowledgePrimaryMetadata.Resolved(encrypted: encryptedHeader(reference, catalog: catalog, checkActive: {}),
+      bodySHA256: reference.sha256)
+  }
+
+  private func encryptedHeader(_ reference: Reference, catalog: OpaquePointer, checkActive: () throws -> Void) throws -> Data {
+    guard let hash = reference.headerHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    if let batch = writeBatch, batch.catalog == catalog {
+      guard batch.thread === Thread.current, !batch.failed else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      if batch.pending.contains(reference.partition) {
+        guard let writer = writers.values.first(where: { $0.id == reference.partition }) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        return try AgentKnowledgePrimaryMetadata.read(writer.database, entry: reference.entry, expected: hash)
+      }
+    }
+    let slot = try readerSlots.acquire(checkActive: checkActive)
+    defer { slot.end() }
+    return try readConnections.read(root: root, file: root.appendingPathComponent(reference.partition + ".sqlite"),
+      directoryDescriptor: directoryDescriptor, checkActive: checkActive,
+      open: { try open(reference.partition, create: false, readOnly: true) }) {
+      try AgentKnowledgePrimaryMetadata.read($0, entry: reference.entry, expected: hash)
+    }
+  }
+
+  private func copyHeader(_ source: Reference, target: Reference, catalog: OpaquePointer, database: OpaquePointer,
+                          checkActive: () throws -> Void) throws -> Int64 {
+    guard source.headerHash == target.headerHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    guard let hash = source.headerHash else { return 0 }
+    let encrypted = try encryptedHeader(source, catalog: catalog, checkActive: checkActive)
+    let bytes = try AgentKnowledgePrimaryMetadata.write(database, entry: target.entry, encrypted: encrypted)
+    guard try AgentKnowledgePrimaryMetadata.read(database, entry: target.entry, expected: hash) == encrypted else {
+      throw AgentKnowledgeDatabaseError.corruptRecord
+    }
+    return bytes
+  }
+
   private func reference(itemHash: String, catalog: OpaquePointer) throws -> Reference? {
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
@@ -318,7 +369,9 @@ final class AgentKnowledgePrimaryPartitions {
   private func decodeReference(itemHash: String, partition: String, encrypted: Data) throws -> Reference {
     let reference = try JSONDecoder().decode(Reference.self,
       from: cipher.decrypt(encrypted, expectedPurpose: referencePurpose(itemHash)))
-    guard reference.version == 1, Self.token(partition), partition == reference.partition, Self.token(reference.entry),
+    guard (reference.version == 1 && reference.headerHash == nil) ||
+            (reference.version == 2 && reference.headerHash.map(AgentKnowledgePrimaryMetadata.digest) == true),
+          Self.token(partition), partition == reference.partition, Self.token(reference.entry),
           reference.frames > 0, reference.plainBytes > 0, reference.plainBytes <= Int64(Int.max),
           Int64(reference.frames) == 1 + (reference.plainBytes - 1) / Int64(AgentKnowledgePrimaryFrameCodec.maximumPlainBytes),
           Self.digest(reference.sha256) else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -583,7 +636,10 @@ final class AgentKnowledgePrimaryPartitions {
     }
     try Self.finishCheckpoint(checkActive)
     let next = Reference(version: old.version, partition: destination, entry: entry, frames: old.frames,
-      plainBytes: old.plainBytes, sha256: old.sha256)
+      plainBytes: old.plainBytes, sha256: old.sha256, headerHash: old.headerHash)
+    let headerBytes = try copyHeader(old, target: next, catalog: catalog, database: database, checkActive: { try Self.finishCheckpoint(checkActive) })
+    guard storedBytes <= Int64.max - headerBytes else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    storedBytes += headerBytes
     let sealed = try cipher.encrypt(JSONEncoder().encode(next), purpose: referencePurpose(itemHash))
     guard sealed.count <= 8 * 1_024 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let update = try prepare(catalog, "UPDATE knowledge_primary_refs SET partition_id=?,sealed_ref=? WHERE item_hash=? AND partition_id=? AND sealed_ref=?")
@@ -654,7 +710,7 @@ final class AgentKnowledgePrimaryPartitions {
       return 0
     }
     let target = Reference(version: old.version, partition: job.destination, entry: state.entry, frames: old.frames,
-      plainBytes: old.plainBytes, sha256: old.sha256)
+      plainBytes: old.plainBytes, sha256: old.sha256, headerHash: old.headerHash)
     if state.copied < old.frames {
       guard let prefix = Int(job.key.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       let database = try writer(id: job.destination, bucket: prefix & 3)
@@ -689,6 +745,14 @@ final class AgentKnowledgePrimaryPartitions {
     try state.validate(old)
     if state.verified == old.frames {
       guard state.copiedHash == state.verifiedHash else { throw AgentKnowledgeDatabaseError.corruptRecord }
+      if old.headerHash != nil {
+        guard let prefix = Int(job.key.prefix(2), radix: 16) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+        let database = try writer(id: job.destination, bucket: prefix & 3)
+        try execute(database, "BEGIN IMMEDIATE TRANSACTION")
+        batch.pending.insert(job.destination); batch.hasWrites = true
+        let bytes = try copyHeader(old, target: target, catalog: catalog, database: database, checkActive: { try Self.finishCheckpoint(checkActive) })
+        try AgentKnowledgePrimaryCopyStore.accountMetadata(catalog, job, previous: state.storedBytes, added: bytes)
+      }
       let reference = try cipher.encrypt(JSONEncoder().encode(target), purpose: referencePurpose(job.key))
       guard reference.count <= 8_192 else { throw AgentKnowledgeDatabaseError.corruptRecord }
       try AgentKnowledgePrimaryCopyStore.publish(catalog, job, reference: reference)
@@ -967,11 +1031,13 @@ final class AgentKnowledgePrimaryPartitions {
     try execute(database, "PRAGMA mmap_size=0")
     if readOnly {
       try execute(database, "PRAGMA query_only=ON")
+      try AgentKnowledgePrimaryMetadata.configure(database, writable: false)
     } else {
       try AgentKnowledgePrimaryDurability.configure(database, role: .primary)
       if create {
         try execute(database, "CREATE TABLE frames(entry_id TEXT NOT NULL,ordinal INTEGER NOT NULL CHECK(ordinal>=0),sealed BLOB NOT NULL,PRIMARY KEY(entry_id,ordinal)) WITHOUT ROWID")
       }
+      try AgentKnowledgePrimaryMetadata.configure(database, writable: true)
       for suffix in ["", "-wal", "-shm"] where FileManager.default.fileExists(atPath: url.path + suffix) {
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication,
           .posixPermissions: 0o600], ofItemAtPath: url.path + suffix)
