@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, native recovery, clock, MQTT or storage execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '7aaec0cb7efdf18956abcb5f0894a17e228347d9';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'd83f2c41d709f3f2a667871a1530021d00b50760';
 const serviceFile = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -49,7 +49,8 @@ if (require.main === module) {
   for (const token of ['store.canReadAgentTranscript', 'desktopReplyRecovery.record(for: observation.binding) == observation',
     'currentManagedDesktopReply(observation.binding) == record', '!PhoneExecutionAuthority.isCancelled',
     '!session.privateMode, !session.trackingPaused', 'else { return true }', 'if expiry.missingResult',
-    'updated.phase = .blocked', 'updated.blocked = true', 'store.commitOwnedAgentTaskState(expected: task, updated: updated)']) assert(owned.includes(token), token);
+    'updated.phase = .blocked', 'updated.blocked = true', 'updated.result = updated.verification',
+    'store.commitOwnedAgentTaskState(expected: task, updated: updated)']) assert(owned.includes(token), token);
   assert(!/connectorResponseBus.publish|\.retire\(|\.release\(|connectorFallbackAction\(/.test(owned));
   const accepted = s => { try { retainedServices(s); return true; } catch { return false; } };
   for (const changed of [owned.replace('currentManagedDesktopReply(observation.binding) == record,', ''),
