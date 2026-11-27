@@ -153,6 +153,8 @@ struct AgentHomeView: View {
   @State var screenAssistantSubmissions: [UUID: Task<Void, Never>] = [:]
   @State var composerSubmissionID: UUID?
   @State var healthCareSubmission: GalaxySSIHealthCareComposerSubmission?
+  @State var localLabLaunch: GalaxySSIHealthAgentLab.Launch?
+  @State var localLabGroupRequest: GalaxySSIHealthAgentLab.Launch?
   @State var screenAssistantStopping = false
   @State var screenAssistantVoiceCancellationRequest = 0
   @State var agentVoiceCaptureDictationOnly = false
@@ -503,6 +505,18 @@ struct AgentHomeView: View {
         GalaxySSIDoorAccessView(launch: launch)
       }
       .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
+      .modifier(GalaxySSIHealthAgentLabSheet(launch: $localLabLaunch))
+      .onChange(of: scenePhase) { if $0 != .active { localLabGroupRequest = nil } }
+      .onChange(of: store.profile.identityFingerprint) { _ in localLabGroupRequest = nil }
+      .alert(t("galaxyssi.health.local_lab.group_title", "Open a private conversation"),
+        isPresented: Binding(get: { localLabGroupRequest != nil }, set: { if !$0 { localLabGroupRequest = nil } })) {
+        if let request = localLabGroupRequest {
+          Button(t("galaxyssi.health.local_lab.private", "Open privately")) { openPrivateLocalLab(request) }
+        }
+        Button(t("galaxyssi.common.cancel", "Cancel"), role: .cancel) { localLabGroupRequest = nil }
+      } message: {
+        Text(t("galaxyssi.health.local_lab.group_notice", "Saved health results stay on this phone. Open a private conversation instead of sharing them with the group."))
+      }
       .sheet(isPresented: $screenshotPickerPresented) {
         GalaxySSIScreenshotInputView { attachment in
           guard !screenAssistantStopping else { return }

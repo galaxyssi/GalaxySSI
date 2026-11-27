@@ -32,6 +32,7 @@ extension AgentHomeView {
       }
       return
     }
+    if offerLocalLabQuery(cleanDraft, hasAttachments: !outgoingAttachments.isEmpty) { return }
     coordinator.updateAgentScreenContext(agentScreenSnapshot.screen)
     if let configuration = AgentDoorAccessConfiguration.enabled(automatic: true),
        let command = configuration.command(cleanDraft) {
