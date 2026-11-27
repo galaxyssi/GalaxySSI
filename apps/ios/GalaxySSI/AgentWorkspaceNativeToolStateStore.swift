@@ -28,7 +28,12 @@ protocol AgentWorkspaceNativeToolStateStore {
   func clear()
 }
 
-final class FileAgentWorkspaceNativeToolStateStore: AgentWorkspaceNativeToolStateStore {
+protocol AgentWorkspaceNativeToolCheckedStateStore: AgentWorkspaceNativeToolStateStore {
+  func loadChecked() throws -> [String: [String: AgentWorkspaceNativeToolStoredEntry]]
+  func saveChecked(_ workspaces: [String: [String: AgentWorkspaceNativeToolStoredEntry]]) throws
+}
+
+final class FileAgentWorkspaceNativeToolStateStore: AgentWorkspaceNativeToolCheckedStateStore {
   private let fileURL: URL
   private let fileManager: FileManager
   private let lock = NSLock()
@@ -41,26 +46,37 @@ final class FileAgentWorkspaceNativeToolStateStore: AgentWorkspaceNativeToolStat
   }
 
   func load() -> [String: [String: AgentWorkspaceNativeToolStoredEntry]] {
+    (try? loadChecked()) ?? [:]
+  }
+
+  func loadChecked() throws -> [String: [String: AgentWorkspaceNativeToolStoredEntry]] {
     lock.lock()
     defer { lock.unlock() }
-    guard fileManager.fileExists(atPath: fileURL.path),
-          let data = try? Data(contentsOf: fileURL) else {
+    return try loadUnlocked()
+  }
+
+  private func loadUnlocked() throws -> [String: [String: AgentWorkspaceNativeToolStoredEntry]] {
+    let data: Data
+    do {
+      data = try Data(contentsOf: fileURL)
+    } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
       return [:]
     }
-    return (try? decoder.decode([String: [String: AgentWorkspaceNativeToolStoredEntry]].self, from: data)) ?? [:]
+    return try decoder.decode([String: [String: AgentWorkspaceNativeToolStoredEntry]].self, from: data)
   }
 
   func save(_ workspaces: [String: [String: AgentWorkspaceNativeToolStoredEntry]]) {
+    try? saveChecked(workspaces)
+  }
+
+  func saveChecked(_ workspaces: [String: [String: AgentWorkspaceNativeToolStoredEntry]]) throws {
     lock.lock()
     defer { lock.unlock() }
-    do {
-      let directory = fileURL.deletingLastPathComponent()
-      try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
-      let data = try encoder.encode(workspaces)
-      try data.write(to: fileURL, options: .atomic)
-    } catch {
-      // Workspace persistence must not break native tool execution.
-    }
+    _ = try loadUnlocked()
+    let directory = fileURL.deletingLastPathComponent()
+    try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
+    let data = try encoder.encode(workspaces)
+    try data.write(to: fileURL, options: .atomic)
   }
 
   func clear() {

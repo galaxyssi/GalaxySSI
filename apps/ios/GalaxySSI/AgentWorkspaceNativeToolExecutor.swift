@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 final class AgentWorkspaceNativeToolExecutor {
+  static let preparationQueue = DispatchQueue(label: "galaxyssi.workspace-restore", qos: .utility)
   private static let maxBatchFiles = 64
   private static let maxBatchWriteBytes: Int64 = 1_024 * 1_024
 
@@ -45,6 +46,9 @@ final class AgentWorkspaceNativeToolExecutor {
   }
 
   private var workspaces: [String: [String: Entry]] = [:]
+  private let stateLock = NSLock()
+  private var persistentStatePrepared = false
+  private var workspaceStateDirty = false
   private let policy: AgentWorkspaceFilePolicy
   private let nowMillis: () -> Int64
   private let stateStore: AgentWorkspaceNativeToolStateStore?
@@ -56,13 +60,36 @@ final class AgentWorkspaceNativeToolExecutor {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
     stateStore: AgentWorkspaceNativeToolStateStore? = nil,
-    runtimeRoot: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL()
+    runtimeRoot: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
+    preparationQueue: DispatchQueue? = nil
   ) {
     self.policy = policy
     self.nowMillis = nowMillis
     self.stateStore = stateStore
     self.runtimeRoot = runtimeRoot
-    self.workspaces = Self.restoreWorkspaces(stateStore?.load() ?? [:])
+    if let preparationQueue {
+      preparationQueue.async { [weak self] in self?.preparePersistentState() }
+    } else {
+      preparePersistentState()
+    }
+  }
+
+  private func preparePersistentState() {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    preparePersistentStateUnlocked()
+  }
+
+  private func preparePersistentStateUnlocked() {
+    guard !persistentStatePrepared else { return }
+    do {
+      let stored = try (stateStore as? AgentWorkspaceNativeToolCheckedStateStore)?.loadChecked()
+        ?? stateStore?.load() ?? [:]
+      workspaces = Self.restoreWorkspaces(stored)
+      persistentStatePrepared = true
+    } catch {
+      // Leave preparation incomplete so a later explicit invocation may retry the read.
+    }
   }
 
   func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
@@ -93,6 +120,28 @@ final class AgentWorkspaceNativeToolExecutor {
   }
 
   private func run(toolId: String, input: AgentMcpJSONObject) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    stateLock.lock()
+    defer { workspaceStateDirty = false; stateLock.unlock() }
+    preparePersistentStateUnlocked()
+    guard persistentStatePrepared else {
+      return failure(.ioError, "restore", toolId, "The saved workspace state could not be read. No workspace operation was started.")
+    }
+    let previous = workspaces
+    workspaceStateDirty = false
+    let result = runPrepared(toolId: toolId, input: input)
+    guard case .success = result else { workspaces = previous; return result }
+    if workspaceStateDirty {
+      do {
+        try savePersistentState()
+      } catch {
+        workspaces = previous
+        return failure(.ioError, "persist", toolId, "The workspace state could not be saved. The in-memory change was discarded.")
+      }
+    }
+    return result
+  }
+
+  private func runPrepared(toolId: String, input: AgentMcpJSONObject) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
     let workspaceId = canonicalWorkspaceId(string(input, "workspace_id")) ?? string(input, "workspace_id")
     switch toolId {
     case AgentPhoneNativeToolCatalog.workspaceInitialize:
@@ -1237,7 +1286,11 @@ final class AgentWorkspaceNativeToolExecutor {
   }
 
   private func persistWorkspaces() {
-    stateStore?.save(workspaces.mapValues { workspace in
+    workspaceStateDirty = true
+  }
+
+  private func savePersistentState() throws {
+    let stored = workspaces.mapValues { workspace in
       workspace.mapValues { entry in
         AgentWorkspaceNativeToolStoredEntry(
           type: entry.type,
@@ -1245,7 +1298,12 @@ final class AgentWorkspaceNativeToolExecutor {
           modifiedAtMillis: entry.modifiedAtMillis
         )
       }
-    })
+    }
+    if let checked = stateStore as? AgentWorkspaceNativeToolCheckedStateStore {
+      try checked.saveChecked(stored)
+    } else {
+      stateStore?.save(stored)
+    }
   }
 
   private static func restoreWorkspaces(
