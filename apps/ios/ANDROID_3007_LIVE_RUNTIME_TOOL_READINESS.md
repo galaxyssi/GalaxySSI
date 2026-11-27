@@ -40,6 +40,13 @@ They are not end-to-end provider acceptance.
 No Swift/native build, XCTest execution, full repository check, CI inspection,
 simulator/device/live network/model execution, IPA or private evidence is included.
 
+Local integration with sixteen pending branches (#4664 and #4671-#4685) had no
+textual or Xcode registration conflict. All twenty-two focused source guards,
+`npm run check:ios` and `git diff --check` passed on that combined tree. No guard
+in another branch required modification for this change. The registry's original
+committed-result replay precedes live admission and remains untouched; no remote
+PR is approved or merged by this verification.
+
 ## Remaining work
 
 There is no continuous readiness notification. Descriptor snapshots follow the
