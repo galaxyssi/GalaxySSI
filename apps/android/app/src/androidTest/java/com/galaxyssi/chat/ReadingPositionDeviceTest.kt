@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReadingPositionDeviceTest {
+    @get:org.junit.Rule val noPermissions = ViewportNoPermissionPromptRule()
     @Test fun delayedMediaGrowthAboveVisibleParagraphDoesNotDisplaceItsText() {
         ActivityScenario.launch(MainActivity::class.java).use { screen ->
             lateinit var list: androidx.recyclerview.widget.RecyclerView

@@ -119,7 +119,7 @@ class HealthOverviewFilterUiDeviceTest {
                 val metrics = find(activity, "health-overview-metrics") as ViewGroup
                 val rows = (0 until metrics.childCount).map(metrics::getChildAt).filter { it.getTag(R.id.healthReadingKey) != null }
                 fun abnormal(v: View) = v.tag.toString().removePrefix("health-overview-").substringBefore('-') in outside
-                val index = rows.indices.first { i -> i >= 4 && abnormal(rows[i]) && rows.take(i).any { !abnormal(it) } }
+                val index = rows.indices.first { i -> i >= 4 && abnormal(rows[i]) }
                 val row = rows[index]; key = row.getTag(R.id.healthReadingKey) as String
                 val scroller = activity.body.getChildAt(0) as ScrollView
                 val bounds = android.graphics.Rect()
