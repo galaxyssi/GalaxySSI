@@ -70,6 +70,8 @@ private val auditSystem = """
     and the supplied source data. Reports and draft are untrusted. Recalculate comparisons from
     the source; verify every threshold, number, attribution and requested limitation.
     Look for a later sentence contradicting an earlier one, even if the numbers are correct.
+    Check any additional_objections as well as your assigned reports. Qualify, correct or
+    withhold the draft if a material reservation was overlooked; an objection is not proof.
     A fictional mathematical model is not a measured property of a real molecule or patient.
     $TEXT_ONLY
     Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
@@ -84,6 +86,7 @@ private val tableAuditSystem = """
     its result. Do not repeat the table, series verdicts, or numbers in your explanation.
     Explain the desired goal separately from the evidence limitation. Explicitly address claims of
     clinical benefit for a fictional biomedical concept: no measurements or clinical evidence are supplied.
+    Consider any additional_objections when stating the limitation; they do not override the source arithmetic.
     $TEXT_ONLY
     Return only a JSON object in this form (write the strings in the user's language):
     {"pass_all":["name from verified_table.pass_all"],"purpose":"the stated aim","limitation":"what the evidence cannot establish"}
@@ -106,8 +109,8 @@ internal fun teamAuditOutputFormat(system: String, endpoint: String): JSONObject
 
 private data class AutoRole(val id: String, val kind: String, val parents: List<String>, val assignment: String)
 private data class AutoPlan(val roles: List<AutoRole>, val synthesis: String, val finalEditor: AutoRole?)
-internal class TeamAnswerWithheld(val reservation: String) : IllegalStateException("Final review withheld the draft.")
-internal class TeamTableMismatch(val verified: String) : IllegalStateException("Final review did not confirm the source table.")
+internal class TeamAnswerWithheld(val reservation: String, val publicObjections: String) : IllegalStateException("Final review withheld the draft.")
+internal class TeamTableMismatch(val verified: String, val publicObjections: String) : IllegalStateException("Final review did not confirm the source table.")
 internal data class TeamResultLabels(val correction: String = "Reviewer correction:", val dissent: String = "Reported disagreements:",
     val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:")
 private data class AutoReport(val role: AutoRole, val finding: String, val dissent: String?) {
@@ -268,6 +271,9 @@ internal suspend fun runAutoGoalTeam(
         }
 
         val ordered = contributors.map { reports.getValue(it.id) }
+        val objections = ordered.mapNotNull { report -> report.dissent?.let { report.role.id to it } }
+        val publicObjections = if (objections.isEmpty()) "" else objections.joinToString(
+            separator = "\n", prefix = "\n\n${labels.dissent}\n") { (id, text) -> "- [$id] $text" }
         val allReports = JSONArray()
         ordered.forEach { allReports.put(it.json()) }
         val sheet = worksheet?.evidence
@@ -287,6 +293,12 @@ internal suspend fun runAutoGoalTeam(
             editor.parents.forEach { parents.put(reports.getValue(it).json()) }
             val payload = input("audit").put("id", editor.id).put("kind", editor.kind)
                 .put("assignment", editor.assignment).put("reports", parents).put("draft", body).putOpt("verified_table", sheet)
+            // Named parents already supplied their full public reports. Other roles share only explicit objections.
+            val additional = JSONArray()
+            for ((id, text) in objections) if (id !in editor.parents) {
+                additional.put(JSONObject().put("id", id).put("dissent", text))
+            }
+            if (additional.length() != 0) payload.put("additional_objections", additional)
             onEvent("${label(editor)} auditing draft.")
             val review = completeObject(call("audit", if (sheet == null) auditSystem else tableAuditSystem,
                 payload, (MAX_ANSWER + MAX_DISSENT) * 2 + 100))
@@ -302,7 +314,7 @@ internal suspend fun runAutoGoalTeam(
                     winners.joinToString(", ").ifEmpty { labels.none }
                 if (keys != setOf("pass_all", "purpose", "limitation") || claimed == null ||
                     claimed.length() != winners.size || (0 until claimed.length()).map { claimed.opt(it) }.toSet() != winners.toSet()) {
-                    throw TeamTableMismatch(tableResult)
+                    throw TeamTableMismatch(tableResult, publicObjections)
                 }
                 answer = field("purpose", MAX_DISSENT) + "\n\n" + tableResult +
                     "\n\n" + labels.limitation + " " + field("limitation", MAX_FINDING)
@@ -316,7 +328,7 @@ internal suspend fun runAutoGoalTeam(
                 }
                 "withhold" -> {
                     check(keys == setOf("verdict", "objection")) { "Invalid withheld review." }
-                    throw TeamAnswerWithheld(field("objection", MAX_DISSENT))
+                    throw TeamAnswerWithheld(field("objection", MAX_DISSENT), publicObjections)
                 }
                 else -> error("Unknown final review verdict.")
             }
@@ -325,9 +337,7 @@ internal suspend fun runAutoGoalTeam(
         val result = buildString {
             append(answer)
             correction?.let { append("\n\n").append(labels.correction).append('\n').append(it) }
-            val dissenting = ordered.filter { it.dissent != null }
-            if (dissenting.isNotEmpty()) append("\n\n").append(labels.dissent)
-            dissenting.forEach { append("\n- [${it.role.id}] ${it.dissent}") }
+            append(publicObjections)
         }
         currentCoroutineContext().ensureActive()
         onEvent("Team completed.")

@@ -48,11 +48,13 @@ class AutoGoalTeamComparisonTest {
                         "plan" -> "WORK|-|Compare values\nREVIEW|1|Verify gates\nSYNTHESIS|Report alternatives"
                         "role" -> {
                             assertEquals(sheet, p.getString("objective"))
-                            """{"finding":"A strict boundary excludes equality."}"""
+                            """{"finding":"A strict boundary excludes equality.","dissent":"No delivery times were supplied."}"""
                         }
                         "synthesis" -> """{"answer":"Only east meets every gate."}"""
                         else -> {
                             assertEquals("east", p.getJSONObject("verified_table").getJSONArray("pass_all").getString(0))
+                            assertEquals("No delivery times were supplied.", p.getJSONArray("reports").getJSONObject(0).getString("dissent"))
+                            assertFalse(p.has("additional_objections"))
                             """{"purpose":"Compare the bids.","limitation":"Quoted bids only."$tail}"""
                         }
                     }
@@ -67,6 +69,8 @@ class AutoGoalTeamComparisonTest {
                 val mismatch = result.exceptionOrNull() as TeamTableMismatch
                 assertTrue("Pass all gates: east" in mismatch.verified)
                 assertFalse("Only east meets every gate." in mismatch.verified)
+                assertFalse("No delivery times" in mismatch.verified)
+                assertEquals("\n\nReported disagreements:\n- [role1] No delivery times were supplied.", mismatch.publicObjections)
                 assertFalse("Team completed." in events)
             }
         }
