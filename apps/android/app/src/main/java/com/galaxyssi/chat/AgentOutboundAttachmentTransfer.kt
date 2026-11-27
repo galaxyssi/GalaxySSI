@@ -309,6 +309,7 @@ internal object AgentOutboundAttachmentTransferStore {
         val transfer = find(context, payload.optString("transfer_id").lowercase()) ?: return null
         if (
             payload.optString("sha256").lowercase() != transfer.sha256 ||
+            (payload.has("attachment_id") && payload.optString("attachment_id") != transfer.attachmentId) ||
             payload.optString("client_route_id") != transfer.scope.clientRouteId ||
             payload.optString("conversation_id") != transfer.scope.conversationId ||
             payload.optString("task_id") != transfer.scope.taskId ||

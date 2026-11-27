@@ -32,7 +32,7 @@ internal fun MainActivity.bindAgentFileCaptions(row: View, entry: AgentTranscrip
                 "failed" -> R.string.agent_file_failed
                 "closed" -> R.string.agent_file_closed
                 "retrying" -> R.string.agent_file_resuming
-                else -> 0
+                else -> R.string.agent_file_no_receipt
             }
             val readId = when (hasRead) {
                 "recognized" -> R.string.agent_file_read

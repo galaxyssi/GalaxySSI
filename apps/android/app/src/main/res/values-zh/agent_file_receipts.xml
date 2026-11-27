@@ -1,4 +1,5 @@
 <resources>
+    <string name="agent_file_no_receipt">暂无单文件回执</string>
     <string name="agent_file_stored">已送达</string>
     <string name="agent_file_uploading">传输中</string>
     <string name="agent_file_failed">传输失败</string>

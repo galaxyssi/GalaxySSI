@@ -2784,6 +2784,16 @@ object GalaxySSIMqttClient {
             AndroidBlobTransfers.wake(context)
             return
         }
+        if (payload.optString("status") == "stored") {
+            val info = AgentTurnReceipt.fileInfo(context, AgentFileKey(transfer.scope.conversationId, transfer.scope.turnId, transfer.attachmentId))
+            if (!info?.optString("peer").isNullOrBlank()) {
+                val peer = GalaxySSILinkProtocol.serverLink(context, sourceDesktopId)
+                if (peer?.paired != true || peer.routes.remoteFingerprint != info!!.optString("peer") ||
+                    payload.optString("attachment_id") != transfer.attachmentId) return
+            }
+            val acknowledgement = AgentOutboundAttachmentTransferStore.acknowledgeStored(context, payload) ?: return
+            Log.i(TAG, "Stored attachment: matched=${acknowledgement.matchedMessages} released=${acknowledgement.releasedMessages}")
+        }
         val progress = payload.optInt("progress", -1).takeIf { it >= 0 }
             ?: PeerAttachmentTransferProgress.percent(
                 payload.optLong("received_bytes", 0L),
@@ -2804,16 +2814,6 @@ object GalaxySSIMqttClient {
             )
         )
         if (payload.optString("status") == "stored") {
-            val acknowledgement = AgentOutboundAttachmentTransferStore.acknowledgeStored(
-                context,
-                payload
-            ) ?: return
-            Log.i(
-                TAG,
-                "Stored input attachment acknowledged transfer=${acknowledgement.transferId.take(12)} " +
-                    "matched=${acknowledgement.matchedMessages} " +
-                    "released=${acknowledgement.releasedMessages}"
-            )
             retryHandler.post {
                 dispatchPendingMessages()
             }

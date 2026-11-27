@@ -1,4 +1,5 @@
 <resources>
+    <string name="agent_file_no_receipt">No individual delivery receipt</string>
     <string name="agent_file_stored">Delivered</string>
     <string name="agent_file_uploading">Transferring</string>
     <string name="agent_file_failed">Transfer failed</string>
