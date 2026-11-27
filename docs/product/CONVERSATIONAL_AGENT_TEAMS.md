@@ -249,6 +249,15 @@ For a falsifiable claim, contributors, the writer and the editor distinguish a
 contrary observation made with a working readout from an invalid measurement.
 Neither a broken readout nor an assumed outcome tests the prediction.
 This is a reasoning instruction, not a guarantee of scientific accuracy.
+When an independently reviewed task explicitly asks for a contrary observation,
+the writer can express a directional claim as two named quantities and two
+directions, together with its proposed purpose, competing explanation and
+missing evidence. The coordinator renders the prediction and its opposite
+using exactly the same input change and an interpretable readout. It supplies
+no domain variable or measured result. Qualitative answers remain available
+where this comparison does not fit. The independent editor sees the exact
+rendered text; a disputed structured claim cannot be replaced by unaudited
+prose. None of this validates the physical hypothesis.
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 

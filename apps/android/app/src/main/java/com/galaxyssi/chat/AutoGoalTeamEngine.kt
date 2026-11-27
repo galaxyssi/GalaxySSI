@@ -105,6 +105,33 @@ private val auditSystem = """
     Use the language of the objective. No text outside the object.
 """.trimIndent()
 
+private val contrastWriterSystem = """
+    Answer the original objective using the brief and public reports. For a directional hypothesis,
+    choose the independent quantity and a different observable quantity. Propose the function yourself.
+    Return one flat JSON object with these seven string fields and no other keys:
+    purpose: one concise sentence explaining the hypothetical function and intended mechanism.
+    input: the name of the independent quantity, without a direction or assumption about the readout.
+    input_direction: higher or lower. readout: the name of the observable quantity, without a direction.
+    expected_direction: higher or lower. These two directions are English enum values.
+    alternative: a competing cause of the same readout; explain why the signal alone is not specific.
+    gap: the missing evidence, not a claim that the proposed function exists or works.
+    Write the text fields in the objective's language. The host will compare two valid observations
+    under the identical input change. It supplies no variable, sign, mechanism or scientific conclusion.
+    At synthesis only, if a single directional comparison cannot answer the task, use the ordinary
+    single-field answer object instead. At rewrite, correct the fields in response to the actual objection.
+    $TEXT_ONLY
+""".trimIndent()
+
+private val contrastAuditSystem = """
+    Independently review the complete rendered draft against the objective, assignment, and public objections.
+    The paired statements use the same input change by construction; that alone does not validate the hypothesis.
+    Check that the proposed input, readout, direction and alternative make sense, respond to the objective,
+    and distinguish a prediction from measured evidence. Do not demand proof for an explicitly hypothetical idea.
+    If the whole answer is sound, return only {"verdict":"accept"}. Otherwise use verdict "request_changes"
+    with a specific objection for the writer, or "withhold" with the reason in objection. No other keys.
+    $TEXT_ONLY
+""".trimIndent()
+
 private val tableAuditSystem = """
     You independently review the draft. The host has evaluated the user's table with decimal arithmetic.
     Use verified_table.pass_all as the list of series passing every gate. The app prints the table and
@@ -250,7 +277,9 @@ internal class TeamFinalAuditMissing : IllegalStateException("No independent fin
 internal class TeamTableMismatch(val verified: String, val publicObjections: String) : IllegalStateException("Final review did not confirm the source table.")
 internal data class TeamResultLabels(val correction: String = "Reviewer correction:", val dissent: String = "Reported disagreements:",
     val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:",
-    val noReviewReason: String = "The reviewer did not give a specific reason.")
+    val noReviewReason: String = "The reviewer did not give a specific reason.", val contrast: TeamContrastText = TeamContrastText()) {
+    constructor(text: TeamContrastText) : this(contrast = text)
+}
 
 // Older models can echo the literal examples from the former audit contract.
 private fun isReviewPlaceholder(reason: String) = reason.trimEnd('.').lowercase() in setOf(
@@ -435,11 +464,14 @@ internal suspend fun runAutoGoalTeam(
         val allReports = JSONArray()
         ordered.forEach { allReports.put(it.json()) }
         val sheet = worksheet?.evidence
+        val offerContrast = editor != null && sheet == null && TeamPredictionContrast.requested(objective)
         onEvent("Synthesizing answer.")
-        val reply = call("synthesis", synthesisSystem, input("synthesis").put("brief", plan.synthesis)
+        val reply = call("synthesis", if (offerContrast) contrastWriterSystem else synthesisSystem, input("synthesis").put("brief", plan.synthesis)
             .put("reports", allReports).putOpt("verified_table", sheet), MAX_ANSWER * 2 + 64)
-        val obj = completeObject(reply)
-        val body = if (obj != null) (obj.opt("answer") as? String)?.trim()?.takeIf { obj.length() == 1 }
+        val obj = completeObject(reply, strict = offerContrast)
+        val contrast = obj?.takeIf { offerContrast && !it.has("answer") }
+        val body = if (contrast != null) TeamPredictionContrast.render(contrast, labels.contrast)
+        else if (obj != null) (obj.opt("answer") as? String)?.trim()?.takeIf { obj.length() == 1 }
         else reply.substringBeforeLast('\n', "").trimEnd().takeIf { reply.substringAfterLast('\n') == "END" }
         check(body != null && body.isNotBlank() && body.length <= MAX_ANSWER) {
             "Incomplete or malformed team synthesis."
@@ -458,7 +490,12 @@ internal suspend fun runAutoGoalTeam(
             }
             if (additional.length() != 0) payload.put("additional_objections", additional)
             onEvent("${label(editor)} auditing draft.")
-            val review = completeObject(call("audit", if (sheet == null) auditSystem else tableAuditSystem,
+            val auditInstructions = when {
+                sheet != null -> tableAuditSystem
+                contrast != null -> contrastAuditSystem
+                else -> auditSystem
+            }
+            val review = completeObject(call("audit", auditInstructions,
                 payload, (MAX_ANSWER + MAX_DISSENT) * 2 + 100), strict = true)
             checkNotNull(review) { "Missing final review." }
             val keys = review.keys().asSequence().toSet()
@@ -487,7 +524,8 @@ internal suspend fun runAutoGoalTeam(
                     check(keys == expected) { "Incomplete or ambiguous final revision." }
                     correction = objection()
                     if (!returnToWriter) answer = field("answer", MAX_ANSWER)
-                    if (returnToWriter || sameTeamDraft(answer, body)) {
+                    // An editor's free-text replacement cannot bypass the comparison that it just reviewed.
+                    if (contrast != null || returnToWriter || sameTeamDraft(answer, body)) {
                         // Planning + synthesis + one call per role have already run; fund both turns or neither.
                         fun withhold(reason: String): Nothing = throw TeamAnswerWithheld(reason, publicObjections)
                         val objection = correction
@@ -501,11 +539,13 @@ internal suspend fun runAutoGoalTeam(
                             withhold(objection)
                         }
                         onEvent("Revising disputed draft.")
-                        val rewrite = handback("rewrite", rewriteSystem, input("rewrite")
+                        val rewrite = handback("rewrite", if (contrast != null) contrastWriterSystem else rewriteSystem, input("rewrite")
                             .put("brief", plan.synthesis).put("reports", allReports)
-                            .put("draft", body).put("objection", objection), MAX_ANSWER * 2 + 64)
-                        val candidate = (rewrite?.opt("answer") as? String)?.trim()
-                        if (rewrite?.length() != 1 || candidate == null || candidate.length !in 1..MAX_ANSWER ||
+                            .put("draft", body).put("objection", objection).putOpt("original_claim", contrast), MAX_ANSWER * 2 + 64)
+                        val candidate = if (contrast == null) (rewrite?.opt("answer") as? String)?.trim()?.takeIf { rewrite.length() == 1 }
+                        else try { rewrite?.let { TeamPredictionContrast.render(it, labels.contrast) } }
+                        catch (_: Exception) { withhold(objection) }
+                        if (candidate == null || candidate.length !in 1..MAX_ANSWER ||
                             sameTeamDraft(candidate, body)) withhold(objection)
                         onEvent("${label(editor)} rechecking revision.")
                         val recheck = handback("recheck", recheckSystem, payload.put("stage", "recheck")
