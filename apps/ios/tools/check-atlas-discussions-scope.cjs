@@ -8,6 +8,7 @@ function has(name, tokens) { const s = read(app + name + '.swift'); for (const t
 function section(s, a, b) { const x = s.indexOf(a), y = s.indexOf(b, x + a.length); assert(x >= 0 && y > x, a); return s.slice(x, y); }
 function validate() {
   const discussion = has('GalaxySSIHealthAtlasDiscussion', ['maximumQuestionUTF16 = 500', 'return "body-atlas:" + itemID',
+    'range.lowerBound == itemID.startIndex, range.upperBound == itemID.endIndex',
     'session.globalTopicKey == topic', 'session.createdByAgent', 'session.status == .active', '!session.privateMode',
     '!session.trackingPaused', 'session.mergedIntoConversationId.isBlank', 'result.utf16.count <= 9_000',
     'result.utf8.count <= 32_000', 'saved.owner == owner', 'saved.topics.count <= 2_048',

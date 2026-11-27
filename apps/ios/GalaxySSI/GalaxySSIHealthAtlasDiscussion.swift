@@ -5,7 +5,8 @@ enum GalaxySSIHealthAtlasDiscussion {
   static let maximumQuestionUTF16 = 500
 
   static func topic(_ itemID: String) -> String? {
-    guard itemID.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$"#, options: .regularExpression) != nil else { return nil }
+    guard let range = itemID.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$"#, options: .regularExpression),
+          range.lowerBound == itemID.startIndex, range.upperBound == itemID.endIndex else { return nil }
     return "body-atlas:" + itemID
   }
 

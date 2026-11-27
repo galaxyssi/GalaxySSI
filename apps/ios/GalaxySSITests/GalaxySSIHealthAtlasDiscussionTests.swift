@@ -8,7 +8,7 @@ final class GalaxySSIHealthAtlasDiscussionTests: XCTestCase {
   func testObjectTopicsAreExactNotTitlesOrLegacyBroadTopics() {
     XCTAssertEqual(Discussion.topic("heart"), "body-atlas:heart")
     XCTAssertEqual(Discussion.topic("whole"), "body-atlas:whole")
-    for id in ["", " heart", "heart/other", "heart:other", String(repeating: "x", count: 61)] {
+    for id in ["", " heart", "heart/other", "heart:other", "heart\n", "heart\r\n", String(repeating: "x", count: 61)] {
       XCTAssertNil(Discussion.topic(id))
     }
     var session = AgentConversation(id: "fixture", title: "Heart", createdAt: 1, updatedAt: 1,
