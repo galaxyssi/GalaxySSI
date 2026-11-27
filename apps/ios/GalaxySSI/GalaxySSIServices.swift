@@ -235,7 +235,7 @@ final class MessageCoordinator: ObservableObject {
         AgentIOSURLSessionWebKnowledgeImporter(
           nowMillis: { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
           store: { title, content, source, tags in
-            settingsStore.replaceAgentKnowledgeSource(
+            try settingsStore.replaceAgentKnowledgeSourceChecked(
               title: title,
               content: content,
               source: source,
@@ -5890,19 +5890,27 @@ final class MessageCoordinator: ObservableObject {
     }
     guard !Task.isCancelled else { return false }
     if contact.id == "hermes", !effectiveAttachments.isEmpty, !reusedPriorAttachments {
-      let importedCount = AgentAttachmentKnowledgeImporter.importDocuments(
-        AgentAttachmentKnowledgeImporter.inputs(from: effectiveAttachments),
-        conversationId: outgoing.conversationId,
-        store: store
-      )
-      if importedCount > 0 {
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: contact.id,
-          stage: "agent_attachment_knowledge_imported",
-          detail: "\(importedCount) knowledge chunk(s)",
-          status: .delivered
+      do {
+        let importedCount = try AgentAttachmentKnowledgeImporter.importDocumentsChecked(
+          AgentAttachmentKnowledgeImporter.inputs(from: effectiveAttachments),
+          conversationId: outgoing.conversationId,
+          store: store
         )
+        if importedCount > 0 {
+          store.appendDeliveryTrace(
+            outgoing.id,
+            contactId: contact.id,
+            stage: "agent_attachment_knowledge_imported",
+            detail: "\(importedCount) knowledge chunk(s)",
+            status: .delivered
+          )
+        }
+      } catch {
+        let conflict = (error as? AgentKnowledgeDatabaseError) == .sourceReplacementChanged
+        store.appendDeliveryTrace(outgoing.id, contactId: contact.id,
+          stage: conflict ? "agent_attachment_knowledge_conflict" : "agent_attachment_knowledge_failed",
+          detail: conflict ? "Knowledge source changed during preparation; import again." : "Persistent knowledge import failed.",
+          status: .failed)
       }
     }
     if let collaborationPlan {
