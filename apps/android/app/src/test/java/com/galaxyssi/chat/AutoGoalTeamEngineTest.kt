@@ -103,6 +103,24 @@ class AutoGoalTeamEngineTest {
         }
     }
 
+    @Test fun echoedExampleIsNotAPublicCorrectionOrAReasonToStartMoreWork() = runBlocking {
+        for (decision in listOf("revise", "request_changes", "withhold")) {
+            val fake = Fake(plan("WORK|-|Find the source", "REVIEW|-|Final check")) { p ->
+                when (p.getString("stage")) {
+                    "role" -> report("No source.", "Source is missing.")
+                    "synthesis" -> """{"answer":"Draft."}"""
+                    "audit" -> JSONObject().put("verdict", decision).put("objection", "Brief error in draft.")
+                        .apply { if (decision == "revise") put("answer", "Unreviewed.") }.toString()
+                    else -> error("unexpected stage")
+                }
+            }
+            val withheld = runCatching { fake.run() }.exceptionOrNull() as TeamAnswerWithheld
+            assertEquals(TeamResultLabels().noReviewReason, withheld.reservation)
+            assertTrue("Source is missing." in withheld.publicObjections)
+            assertEquals(4, fake.calls.size)
+        }
+    }
+
     @Test fun trimmingLegacyDraftIsNotAnEditorialCorrection() = runBlocking {
         val fake = Fake(plan("REVIEW|-|Final check")) { p ->
             when (p.getString("stage")) {

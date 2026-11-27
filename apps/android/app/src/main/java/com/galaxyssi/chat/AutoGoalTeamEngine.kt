@@ -62,7 +62,7 @@ private const val PREDICTION_CHECK = "When the task asks what would falsify a pr
     "the expected observation, a valid observation contrary to it under the SAME independent conditions, and an " +
     "uninterpretable observation. Do not assume the predicted readout as a condition. If measurement or the " +
     "reporter fails, the result cannot test the claim; never list such failure as counterevidence, even as an alternative. " +
-    "Name what evidence is still missing. Do not invent data."
+    "Name a plausible competing explanation if the readout is not specific, and what evidence is missing. Do not invent data."
 
 private val workerSystem = """
     Perform only your assigned role on the objective. Do not delegate. Reports are from direct dependencies only.
@@ -98,10 +98,10 @@ private val auditSystem = """
     $PREDICTION_CHECK
     $TEXT_ONLY
     Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
-    To fix it, return {"verdict":"revise","objection":"brief error in draft","answer":"full corrected answer"}.
-    For a conceptual error, return {"verdict":"request_changes","objection":"what the writer must correct"}.
+    To fix it, set verdict to "revise"; include objection (the actual error) and answer (the full correction).
+    To send it back, set verdict to "request_changes" and include only the specific objection besides verdict.
     In particular, send back a draft that confuses an invalid measurement with evidence against a prediction.
-    If the evidence is insufficient to answer reliably, return {"verdict":"withhold","objection":"brief reason"}.
+    If the evidence is insufficient to answer reliably, set verdict to "withhold" and state the reason in objection.
     Use the language of the objective. No text outside the object.
 """.trimIndent()
 
@@ -132,7 +132,7 @@ private val recheckSystem = """
     $PREDICTION_CHECK
     $TEXT_ONLY
     Return only {"verdict":"accept"} if the replacement resolves the objection and meets the objective.
-    Otherwise return {"verdict":"withhold","objection":"specific reason in the language of the objective"}.
+    Otherwise set verdict to "withhold" and explain the actual remaining problem in objection. Return no other keys.
 """.trimIndent()
 
 /** Only opt a loopback OpenAI-compatible table audit into constrained decoding. The schema never supplies a winning series. */
@@ -249,7 +249,13 @@ internal class TeamAnswerWithheld(val reservation: String, val publicObjections:
 internal class TeamFinalAuditMissing : IllegalStateException("No independent final reviewer in the plan.")
 internal class TeamTableMismatch(val verified: String, val publicObjections: String) : IllegalStateException("Final review did not confirm the source table.")
 internal data class TeamResultLabels(val correction: String = "Reviewer correction:", val dissent: String = "Reported disagreements:",
-    val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:")
+    val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:",
+    val noReviewReason: String = "The reviewer did not give a specific reason.")
+
+// Older models can echo the literal examples from the former audit contract.
+private fun isReviewPlaceholder(reason: String) = reason.trimEnd('.').lowercase() in setOf(
+    "brief error in draft", "brief reason", "what the writer must correct", "specific reason in the language of the objective"
+)
 private data class AutoReport(val role: AutoRole, val finding: String, val dissent: String?) {
     fun json() = JSONObject().put("id", role.id).put("kind", role.kind).put("assignment", role.assignment)
         .put("finding", finding).put("dissent", dissent ?: JSONObject.NULL)
@@ -458,6 +464,9 @@ internal suspend fun runAutoGoalTeam(
             val keys = review.keys().asSequence().toSet()
             fun field(name: String, max: Int) = (review.opt(name) as? String)?.trim()
                 ?.takeIf { it.length in 1..max } ?: error("Invalid final review field.")
+            fun objection() = field("objection", MAX_DISSENT).also {
+                if (isReviewPlaceholder(it)) throw TeamAnswerWithheld(labels.noReviewReason, publicObjections)
+            }
             if (sheet != null) {
                 val claimed = review.optJSONArray("pass_all")
                 val verified = sheet.getJSONArray("pass_all")
@@ -476,7 +485,7 @@ internal suspend fun runAutoGoalTeam(
                     val returnToWriter = review.opt("verdict") == "request_changes"
                     val expected = if (returnToWriter) setOf("verdict", "objection") else setOf("verdict", "objection", "answer")
                     check(keys == expected) { "Incomplete or ambiguous final revision." }
-                    correction = field("objection", MAX_DISSENT)
+                    correction = objection()
                     if (!returnToWriter) answer = field("answer", MAX_ANSWER)
                     if (returnToWriter || sameTeamDraft(answer, body)) {
                         // Planning + synthesis + one call per role have already run; fund both turns or neither.
@@ -505,7 +514,7 @@ internal suspend fun runAutoGoalTeam(
                         if (recheck?.length() != 1 || recheck.opt("verdict") != "accept") {
                             val reason = (recheck?.opt("objection") as? String)?.trim()?.takeIf {
                                 recheck.length() == 2 && recheck.opt("verdict") in setOf("withhold", "request_changes") &&
-                                    it.length in 1..MAX_DISSENT
+                                    it.length in 1..MAX_DISSENT && !isReviewPlaceholder(it)
                             }
                             withhold(reason ?: objection)
                         }
@@ -514,7 +523,7 @@ internal suspend fun runAutoGoalTeam(
                 }
                 "withhold" -> {
                     check(keys == setOf("verdict", "objection")) { "Invalid withheld review." }
-                    throw TeamAnswerWithheld(field("objection", MAX_DISSENT), publicObjections)
+                    throw TeamAnswerWithheld(objection(), publicObjections)
                 }
                 else -> error("Unknown final review verdict.")
             }
