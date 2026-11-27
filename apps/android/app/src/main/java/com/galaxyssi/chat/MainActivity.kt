@@ -1132,7 +1132,7 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
         startMessageService()
         showMainTab(PAGE_AGENT)
         reopenRequestedControlCenterChild(intent)
-        requestAgentNotificationPermissionIfNeeded()
+        if (this !is HealthAtlasDiscussionActivity) requestAgentNotificationPermissionIfNeeded()
         traceStartup("first_render")
         scheduleAgentInitialHydration()
         scheduleAgentStartupMaintenance()
@@ -1485,6 +1485,10 @@ open class MainActivity : Activity(), GalaxySSIMqttClient.Listener {
             return
         }
         if (mainPage.visibility == View.VISIBLE && activeMainTab == PAGE_AGENT) {
+            if (this is HealthAtlasDiscussionActivity) {
+                finish()
+                return
+            }
             if (mainPageBackPressGate.shouldBackground(SystemClock.elapsedRealtime())) {
                 moveTaskToBack(true)
             }

@@ -78,7 +78,9 @@
     <string name="health_atlas_aging_note">了解组织维护及衰老研究。研究关联不能直接确定个人生物年龄或治疗收益。</string>
     <string name="health_atlas_ask">询问 Agent</string>
     <string name="health_atlas_ask_context">请解释“%1$s”。功能：%2$s。关联教学过程：%3$s。参考来源：%4$s。请说明机制及证据局限。这是一般学习内容，不是我的健康数据，不要推断我的诊断或治疗。</string>
-    <string name="health_atlas_ask_ready">在新会话中打开这个问题？</string>
+    <string name="health_atlas_ask_ready">询问当前图谱</string>
+    <string name="health_atlas_question_hint">关于这一步，你想了解什么？</string>
+    <string name="health_atlas_user_question">我的问题：%1$s</string>
     <string name="health_atlas_week">周</string>
     <string name="health_atlas_month">月</string>
     <string name="health_atlas_year">年</string>

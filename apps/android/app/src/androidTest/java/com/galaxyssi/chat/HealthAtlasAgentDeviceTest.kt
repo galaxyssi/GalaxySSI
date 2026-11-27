@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
+import android.widget.EditText
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.lifecycle.Lifecycle
@@ -20,6 +21,27 @@ import org.junit.Assume.assumeFalse
 import org.junit.Test
 
 class HealthAtlasAgentDeviceTest {
+    @Test fun repeatedAtlasQuestionsReuseOnlyTheActiveMatchingCatalogueItem() {
+        val store = AgentTranscriptStore(context)
+        val ids = mutableSetOf<String>()
+        val item = "fixture-" + UUID.randomUUID()
+        fun prepare(key: String): String {
+            val intent = HealthAtlasAgentHandoff.prepare(context, "Synthetic lesson", "What happens in this stage?", key)
+            assertEquals(HealthAtlasDiscussionActivity::class.java.name, intent.component?.className)
+            assertEquals(0, intent.flags and (Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK))
+            return requireNotNull(intent.getStringExtra("galaxyssi_agent_conversation_id")).also(ids::add)
+        }
+        try {
+            val first = prepare(item)
+            assertEquals(first, prepare(item))
+            assertNotEquals(first, prepare(item + "-other"))
+            store.setPrivateMode(first, true)
+            assertNotEquals(first, prepare(item))
+        } finally {
+            ids.forEach { store.deleteConversation(it) }
+        }
+    }
+
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private fun View.tagged(value: String): View? = if (tag == value) this else if (this is ViewGroup)
@@ -105,6 +127,48 @@ class HealthAtlasAgentDeviceTest {
             roots.firstNotNullOfOrNull { it.findViewById<View>(android.R.id.button2) }!!.performClick()
         }
     }
+    @Test fun returningFromTheLessonDiscussionKeepsTheVisibleChapter() = native(seed = false) { _, scenario ->
+        org.junit.Assume.assumeTrue(context.packageName.endsWith(".pairingqa"))
+        var chapter = ""
+        val question = "Explain this teaching step: " + UUID.randomUUID()
+        fun input(view: View): EditText? = when (view) {
+            is EditText -> view
+            is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { input(view.getChildAt(it)) }
+            else -> null
+        }
+        val monitor = instrumentation.addMonitor(HealthAtlasDiscussionActivity::class.java.name, null, false)
+        var discussion: Activity? = null
+        try {
+            scenario.onActivity {
+                it.view("atlas-tab-1").performClick()
+                it.view("atlas-function-next").performClick()
+                it.view("atlas-function-next").performClick()
+                chapter = (it.view("atlas-function-chapter") as TextView).text.toString()
+                it.view("atlas-ask").performClick()
+            }
+            instrumentation.waitForIdleSync()
+            instrumentation.runOnMainSync {
+                val roots = WindowInspector.getGlobalWindowViews()
+                assertTrue(roots.firstNotNullOf { it.findViewById<TextView>(android.R.id.message) }.text.contains(chapter))
+                roots.firstNotNullOf(::input).setText(question)
+                roots.firstNotNullOf { it.findViewById<View>(android.R.id.button1) }.performClick()
+            }
+            discussion = requireNotNull(instrumentation.waitForMonitorWithTimeout(monitor, 20_000))
+            val chat = discussion as HealthAtlasDiscussionActivity
+            val store = chat.agentTranscriptStore
+            val id = store.activeConversation().id
+            assertEquals("body-atlas:heart", store.conversation(id)?.globalTopicKey)
+            await { store.list(id).any { it.role == AgentTranscriptRole.USER &&
+                it.text.contains(question) && it.text.contains(chapter) } }
+            instrumentation.runOnMainSync { chat.onBackPressed() }
+            await { scenario.state == Lifecycle.State.RESUMED }
+            scenario.onActivity { assertEquals(chapter, (it.view("atlas-function-chapter") as TextView).text.toString()) }
+        } finally {
+            discussion?.let { instrumentation.runOnMainSync { if (!it.isFinishing) it.finish() } }
+            instrumentation.removeMonitor(monitor)
+        }
+    }
+
     @Test fun pinnedValuesActionOpensOnlyCurrentMetricAndPeriodWithoutSendingAnything() = native { names, scenario ->
         scenario.onActivity { it.view("atlas-tab-2").performClick(); it.view("atlas-period-0").performClick() }
         ready(scenario)

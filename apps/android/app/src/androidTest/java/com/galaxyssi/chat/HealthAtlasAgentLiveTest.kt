@@ -22,7 +22,7 @@ class HealthAtlasAgentLiveTest {
         assumeFalse(context.getSystemService(KeyguardManager::class.java).isKeyguardLocked)
         val atlas = HealthBodyAtlas.load(context)
         val prompt = HealthAtlasAgentContext.prompt(context, atlas, atlas["heart"], HealthAtlasSimulation(100, 70, .5f))
-        val intent = HealthAtlasAgentHandoff.prepare(context, "Atlas public teaching acceptance", prompt)
+        val intent = HealthAtlasAgentHandoff.prepare(context, "Atlas public teaching acceptance", prompt, "heart")
         val conversation = requireNotNull(intent.getStringExtra("galaxyssi_agent_conversation_id"))
         val transcript = AgentTranscriptStore(context)
         val report = JSONObject().put("conversation", conversation).put("prompt", prompt)

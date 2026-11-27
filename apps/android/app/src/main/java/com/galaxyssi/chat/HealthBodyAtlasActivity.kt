@@ -564,11 +564,28 @@ class HealthBodyAtlasActivity : Activity() {
         val prompt = HealthAtlasAgentContext.prompt(this, atlas!!, item, simulation?.snapshot,
             simulation?.quantitativeSnapshot, researchTopic, research?.elimination, research?.drugState,
             item?.let { artworkViews[it.id] }, aging = aging?.selection, functionPhase = functionPlayer?.phase,
-            functionStory = functionPlayer?.story)
+            functionStory = functionPlayer?.story) + if (researchTopic == null && tab in setOf(HealthAtlasTab.STRUCTURE, HealthAtlasTab.FUNCTION)) {
+                val labels = if (tab == HealthAtlasTab.FUNCTION) listOf("atlas-function-chapter")
+                    else listOf("atlas-structure-step", "atlas-art-caption")
+                labels.mapNotNull {
+                    content.findViewWithTag<android.widget.TextView>(it)?.text?.toString()?.takeIf(String::isNotBlank)
+                }.joinToString(separator = " · ", prefix = "\n").trimEnd()
+            } else ""
+        val question = android.widget.EditText(this).apply {
+            hint = getString(R.string.health_atlas_question_hint)
+            maxLines = 3
+            filters = arrayOf(android.text.InputFilter.LengthFilter(500))
+        }
+        val input = ui.column().apply { setPadding(ui.dp(20), 0, ui.dp(20), 0); addView(question) }
         dialog = AlertDialog.Builder(this).setTitle(R.string.health_atlas_ask_ready).setMessage(prompt)
+            .setView(input)
             .setNegativeButton(android.R.string.cancel, null).setPositiveButton(R.string.health_atlas_ask) { _, _ ->
+                val userQuestion = question.text.toString().trim()
+                val request = if (userQuestion.isEmpty()) prompt else prompt + "\n\n" +
+                    getString(R.string.health_atlas_user_question, userQuestion)
                 worker.execute {
-                    val result = runCatching { HealthAtlasAgentHandoff.prepare(applicationContext, item?.name ?: getString(R.string.health_body_title), prompt) }
+                    val result = runCatching { HealthAtlasAgentHandoff.prepare(applicationContext,
+                        item?.name ?: getString(R.string.health_body_title), request, item?.id ?: "whole") }
                     runOnUiThread { if (!isDestroyed && started) result.onSuccess(::startActivity)
                         .onFailure { Toast.makeText(this, R.string.health_storage_error, Toast.LENGTH_LONG).show() } }
                 }
