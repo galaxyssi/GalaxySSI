@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, streams, tools, transport or native fixtures executed.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
+const base = 'c1e1529ed1160a34564eb57606dfd209fc7a61ba';
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -42,15 +42,15 @@ function retained(file, source) {
     .replace('    collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil,\n    connectorFailureEvidence: AgentConnectorModelFailureEvidence? = nil',
       '    collaborationPublish: ((AgentMcpJSONObject) async -> AgentMcpJSONObject?)? = nil')
     .replace('    connectorFailureEvidence?.markPossibleEffects()\n', '');
-  if (file.endsWith('check-desktop-probe-owner-scope.cjs')) return source
-    .replace("const read = file => require('./check-model-failure-evidence-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
-      "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
+  if (file.endsWith('check-knowledge-primary-partitions-scope.cjs')) return source
+    .replace("const read = file => require('./check-model-failure-evidence-scope.cjs').retained(file,\n  require('./check-connector-acceptance-evidence-scope.cjs').retained(file,\n    fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n')));",
+      "const read = file => require('./check-connector-acceptance-evidence-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));")
     .replace("  source = require('./check-model-failure-evidence-scope.cjs').retained(file, source);\n", '');
   return source;
 }
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'CloudConversationStreamEngine.swift',
-    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-desktop-probe-owner-scope.cjs'])
+    'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', 'apps/ios/tools/check-knowledge-primary-partitions-scope.cjs'])
     assert.equal(retained(file, read(file)), old(file), file);
   const service = section(read(app + 'GalaxySSIServices.swift'), '  private func dispatchQueuedNativeConnector(', '  private func nativeConnectorResponseOutbox(');
   for (const token of ['failureEvidence.beginPhoneInference()', 'failureEvidence.beginCloudInference()',

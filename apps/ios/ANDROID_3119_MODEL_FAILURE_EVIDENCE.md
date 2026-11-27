@@ -1,7 +1,8 @@
 # Android #3119: observed model-only connector failures
 
 Android reference: `e7c6af6ef3eed21c7fb697b4458d1cf742833dc4`.
-Independent main baseline: `8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
+Synchronized main baseline: `c1e1529ed1160a34564eb57606dfd209fc7a61ba`.
+The merge retains existing connector and knowledge increments and their source checks.
 This is a new known-backend-failure increment, not a duplicate active-observation,
 transport-acceptance or storage change, and not full #3119 completion.
 

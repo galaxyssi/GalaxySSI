@@ -180,6 +180,64 @@ enum AgentConnectorTimingPolicy {
   )
 }
 
+enum AgentNativeConnectorObservationWakePolicy {
+  struct Wake: Equatable {
+    let stage: AgentConnectorTimeoutStage
+    let startedAt: Int64
+    let deadlineMillis: Int64
+    let delayMillis: Int64
+    var clock: String { "\(stage.rawValue)|\(startedAt)|\(deadlineMillis)" }
+  }
+
+  static func next(metadata: [String: String], nowMillis: Int64, lastWakeMillis: Int64? = nil) -> Wake? {
+    guard metadata["awaiting_response"] == "true", nowMillis > 0 else { return nil }
+    var clock = metadata
+    let status = AgentRemoteTaskStatusPolicy.normalize(metadata["remote_task_status"] ?? "")
+    if let raw = metadata["remote_task_status_seq"] {
+      guard let sequence = Int64(raw), (0...9_007_199_254_740_991).contains(sequence) else { return nil }
+    }
+    if clock["transport_accepted_at"] == nil {
+      if metadata["remote_task_status_seq"] != nil,
+         let observedAt = Int64(metadata["remote_task_status_updated_at"] ?? ""), observedAt > 0 {
+        // Read-time fallback for legacy receipts; never persist inferred acceptance.
+        clock["transport_accepted_at"] = String(observedAt)
+      } else if status == "queued", metadata["remote_task_status_seq"] == nil {
+        // Old local preparation used remote queued without any remote observation.
+        clock["remote_task_status"] = ""
+      }
+    }
+    let resolved = AgentRemoteTaskStatusPolicy.normalize(clock["remote_task_status"] ?? "")
+    let stage: AgentConnectorTimeoutStage
+    if clock["transport_accepted_at"] == nil {
+      guard resolved.isEmpty else { return nil }
+      stage = .notAccepted
+    } else if resolved == "running" {
+      guard clock["routing_requires_live_data"] == "true" else { return nil }
+      stage = .readOnlyStale
+    } else {
+      guard ["", "accepted", "queued", "starting"].contains(resolved) else { return nil }
+      stage = .notRunning
+    }
+    let start = AgentConnectorTimingPolicy.deadlineStartMillis(stage: stage, metadata: clock)
+    guard start > 0, nowMillis >= start else { return nil }
+    let schedule = AgentConnectorTimingPolicy.deadlines(hasAttachments: clock["has_attachments"] == "true")
+    let deadline: Int64
+    switch stage {
+    case .notAccepted: deadline = schedule.acceptedMs
+    case .notRunning: deadline = schedule.runningMs
+    case .readOnlyStale: deadline = schedule.liveStaleMs
+    }
+    let remaining = AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(deadlineMillis: deadline,
+      startedAtMillis: start, nowMillis: nowMillis)
+    let throttle = lastWakeMillis.flatMap { last -> Int64? in
+      guard last > 0, nowMillis >= last else { return nil }
+      return AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(deadlineMillis: AgentDesktopReplyRecoveryRecord.probeInterval,
+        startedAtMillis: last, nowMillis: nowMillis)
+    } ?? 0
+    return Wake(stage: stage, startedAt: start, deadlineMillis: deadline, delayMillis: max(remaining, throttle))
+  }
+}
+
 enum AgentProactiveTaskError: LocalizedError, Equatable {
   case invalid(String)
 
