@@ -3,7 +3,7 @@ const fs = require('node:fs'), path = require('node:path'), cp = require('node:c
 const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '../../..');
 const base = '55c4f7a3e199c1c7c9b480140b442f4188ce5ad5';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-web-network-assurance-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 function retainedProvider(source) {
   source = require('./check-image-source-adapters-scope.cjs').retainedProvider(source);
   const hook = `      if imageSearch {
