@@ -10,6 +10,7 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retainedFailureMedia(source) {
+  source = require('./check-baidu-search-request-scope.cjs').retainedBaiduProvider(source);
   const hook = '    if let urlError = error as? URLError, urlError.code == .timedOut {\n      throw AgentIOSURLSessionWebError.timeout\n    }\n';
   return source.includes(hook) ? once(source, hook, '') : source;
 }

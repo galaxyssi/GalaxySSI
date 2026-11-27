@@ -15,6 +15,7 @@ function replaceOnce(value, before, after) {
   return value.replace(before, after);
 }
 function retainedJSONProvider(source) {
+  source = require('./check-baidu-search-request-scope.cjs').retainedBaiduProvider(source);
   if (source.includes('          if endpoint.localIndex {')) {
     source = require('./check-additional-search-adapters-scope.cjs').retainedAdditionalProvider(source);
   }
