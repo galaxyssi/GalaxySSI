@@ -5,8 +5,46 @@ Incremental main base: `8a794e82ebe8f09790e41139295ffb7ac1ee9701`.
 The eight changed Android production files are individually pinned and
 dispositioned in `ANDROID_3037_SOURCE_INVENTORY.json`. Android version changes,
 instrumentation infrastructure and device measurements are not copied or claimed
-as iOS acceptance. This is a substantive storage integration, not full #3037
-completion.
+as iOS acceptance. This is a substantive storage integration, not native #3037
+acceptance.
+
+## Integration follow-up after #3036
+
+The branch now integrates #4625 (`bf3933c65`), including the unmerged
+#4623/#4621/#4619/#4616 source staging, prepared generation fences, committed
+lexical/vector views, checked import feedback and source-stage tracing. These
+are explicit prerequisites in the complete `main` diff, not new #3037 features.
+The separate key-memo and later primary compaction/copy/metadata branches remain
+outside this update. Do not merge or approve prerequisites automatically.
+
+The new targeted source writer also owns a physical batch. Its begin/end share
+the catalog transaction lifetime, and physical prepare precedes the final
+single-use/lifecycle-checked catalog COMMIT. Rollback cannot publish staged
+primary references or observation receipts. It may leave already durable,
+unreachable frames, as documented for the existing bulk writer.
+
+Every production committed read view now acquires a physical snapshot lease
+before pinning the catalog. This covers candidate/current validation views,
+outside-writer source preparation and the committed vector read adapters, not
+just the original search/export entry points. Close during an active callback
+defers release; final close rolls back, finalizes leftover owned cursors and
+closes SQLite before releasing the lease, avoiding a zombie-handle gap.
+
+Eight additional synthetic integration methods cover actual targeted primary
+write/reopen/search/outbox, rollback plus subsequent reuse, active candidate
+validation/reclamation, explicit close, close inside read, initialization
+failure, prepared generation conflicts and leaked-cursor finalization. They
+are authored only and not compiled or executed. The three legacy ciphertext
+fixtures in read admission/source generation tests explicitly seed the old
+physical format so their existing assertions still target authenticated data,
+not primary catalog sentinel bytes.
+
+The exact retained-source guard compares against pinned #4625 rather than
+claiming unrelated prerequisite changes equal original `main`. It still
+restores only declared primary hooks and compares complete retained files.
+The new integration guard additionally checks batch ordering, every-view lease
+ownership and close ordering. Source checks do not establish SQLite/Darwin
+flock/crash, power-loss, native concurrency, performance or scale acceptance.
 
 ## Actual read/write integration
 
@@ -45,7 +83,8 @@ this is not a raw cross-platform database format or key transfer protocol.
 
 ## Publication and migration
 
-Both production append owners (whole-store replacement and each migration page)
+All three production append owners (whole-store replacement, targeted source
+replacement and each migration page)
 begin an owned physical write batch inside their existing catalog transaction.
 Immutable frame transactions commit with SQLite FULL synchronization at rotation
 or the batch prepare barrier, before catalog reference publication. The outer
@@ -82,7 +121,7 @@ and its original old-format behavior remains covered by explicit legacy fixtures
   fifteen-minute earliest date is not an exact or guaranteed execution interval.
 - Unknown primary orphan discovery and mixed-live compaction were not delivered
   by the pinned Android PR either.
-- Physical commits are batched for both production append paths; native fault,
+- Physical commits are batched for all three production append paths; native fault,
   throughput/latency and connection-bound acceptance remain unexecuted. No measured
   performance improvement or universal resource-bound claim is made.
 - Complete record encoding/materialization, FTS and logical catalog work still
@@ -216,7 +255,7 @@ Scheduling reference: [Apple earliestBeginDate documentation](https://developer.
 
 ## Owned batch publication
 
-`replaceAll` and `maintainPrimaryPayloads` explicitly begin/prepare/end a physical
+`replaceAll`, `commitSourceReplacement` and `maintainPrimaryPayloads` explicitly begin/prepare/end a physical
 batch; generic SQL execution and unrelated vector/read transactions are unchanged.
 The catalog connection and synchronous thread identify the owner. Up to four
 bucket writers keep physical transactions open across records. Catalog reference
