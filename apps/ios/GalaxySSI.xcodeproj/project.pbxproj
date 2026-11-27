@@ -766,6 +766,7 @@
     C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
     C43070000000000000000021 /* PublicNewsBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000022 /* PublicNewsBudgetTests.swift */; };
     C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */; };
+    C46110000000000000000001 /* GalaxySSIDesktopHistoryDeletionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46110000000000000000002 /* GalaxySSIDesktopHistoryDeletionView.swift */; };
     C43060000000000000000021 /* GalaxySSIDesktopDisconnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */; };
     C43040000000000000000051 /* GalaxySSIHealthMotionLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */; };
     C43040000000000000000071 /* GalaxySSIHealthGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */; };
@@ -3244,6 +3245,7 @@
     C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
     C43070000000000000000022 /* PublicNewsBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudgetTests.swift; sourceTree = "<group>"; };
     C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectView.swift; sourceTree = "<group>"; };
+    C46110000000000000000002 /* GalaxySSIDesktopHistoryDeletionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopHistoryDeletionView.swift; sourceTree = "<group>"; };
     C43060000000000000000022 /* GalaxySSIDesktopDisconnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIDesktopDisconnectTests.swift; sourceTree = "<group>"; };
     C43040000000000000000052 /* GalaxySSIHealthMotionLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMotionLedgerTests.swift; sourceTree = "<group>"; };
     C43040000000000000000072 /* GalaxySSIHealthGuidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthGuidanceTests.swift; sourceTree = "<group>"; };
@@ -6654,6 +6656,7 @@
         C43070000000000000000012 /* PublicNewsBudget.swift */,
         C43030000000000000000022 /* GalaxySSIHealthOverviewMetricRow.swift */,
         C43060000000000000000012 /* GalaxySSIDesktopDisconnectView.swift */,
+        C46110000000000000000002 /* GalaxySSIDesktopHistoryDeletionView.swift */,
         C43040000000000000000012 /* GalaxySSIHealthMotionState.swift */,
         C43140000000000000000012 /* GalaxySSIHealthActivityComparison.swift */,
         C43140000000000000000022 /* GalaxySSIHealthActivityHistoryStore.swift */,
@@ -9244,6 +9247,7 @@
         C43070000000000000000011 /* PublicNewsBudget.swift in Sources */,
         C43030000000000000000021 /* GalaxySSIHealthOverviewMetricRow.swift in Sources */,
         C43060000000000000000011 /* GalaxySSIDesktopDisconnectView.swift in Sources */,
+        C46110000000000000000001 /* GalaxySSIDesktopHistoryDeletionView.swift in Sources */,
         C43040000000000000000011 /* GalaxySSIHealthMotionState.swift in Sources */,
         C43140000000000000000011 /* GalaxySSIHealthActivityComparison.swift in Sources */,
         C43140000000000000000021 /* GalaxySSIHealthActivityHistoryStore.swift in Sources */,

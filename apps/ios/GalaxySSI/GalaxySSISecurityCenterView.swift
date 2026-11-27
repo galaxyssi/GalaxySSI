@@ -339,7 +339,6 @@ struct GalaxySSIDeviceSecurityDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
           if let link {
             deviceContent(link)
-            GalaxySSIDesktopDisconnectView(link: link)
           } else {
             revokedContent
           }
@@ -442,10 +441,14 @@ struct GalaxySSIDeviceSecurityDetailView: View {
     }
     GalaxySSISecuritySectionTitle(title: t("galaxyssi.security_center.section_danger", "Danger"))
     GalaxySSISecurityNavigationRow(
+      title: t("galaxyssi.desktop_history.scan", "Scan to reconnect"),
+      subtitle: "", systemImage: "qrcode.viewfinder", tint: .galaxySSIAccent, badge: ""
+    ) { AddContactView(autoOpenScanner: true) }
+    GalaxySSISecurityNavigationRow(
       title: t("galaxyssi.security_center.revoke_this_pc", "Revoke this computer"),
       subtitle: t(
         "galaxyssi.security_center.revoke_this_pc_subtitle",
-        "Delete this computer's Agent trust and sessions; scan again to connect"
+        "Remove trust and stop communication. Local chats are kept."
       ),
       systemImage: "trash",
       tint: .red,
@@ -453,6 +456,7 @@ struct GalaxySSIDeviceSecurityDetailView: View {
     ) {
       GalaxySSIRevokeDevicePairingView(desktopId: link.desktopId)
     }
+    GalaxySSIDesktopHistoryDeletionView(link: link)
   }
 
   private var revokedContent: some View {
@@ -520,7 +524,7 @@ struct GalaxySSIRevokeDevicePairingView: View {
             title: link?.desktopName.ifBlank(t("galaxyssi.security_center.pc", "PC")) ?? t("galaxyssi.security_center.pc", "PC"),
             subtitle: t(
               "galaxyssi.security_center.revoke_device_subtitle",
-              "After revocation, you must scan again and confirm fingerprints before communication."
+              "This phone keeps its chats. Update Desktop first to keep its copy. Scan again to reconnect."
             ),
             systemImage: "trash",
             tint: .red,
@@ -531,7 +535,7 @@ struct GalaxySSIRevokeDevicePairingView: View {
             subtitle: String(format: t("galaxyssi.security_center.count_pc_connector_agents", "%d PC connector Agents"), agents.count),
             systemImage: "person.3",
             tint: .purple,
-            badge: t("galaxyssi.common.delete", "Delete")
+            badge: t("galaxyssi.security_center.revoke", "Revoke")
           )
           GalaxySSISecurityStatusRow(
             title: t("galaxyssi.security.desktop_fingerprint", "Computer Fingerprint"),
@@ -608,7 +612,7 @@ struct GalaxySSIRevokeAllPCPairingsView: View {
             title: t("galaxyssi.security_center.revoke_all_pc_title", "Revoke all PCs"),
             subtitle: t(
               "galaxyssi.security_center.revoke_all_pc_hero_subtitle",
-              "Delete all computer and Agent trust relationships; scan again to connect."
+              "Unpair all computers and keep local chats. Update each Desktop first to keep its copy."
             ),
             systemImage: "trash",
             tint: .red,

@@ -1006,6 +1006,7 @@ final class GalaxySSIStore: ObservableObject {
       let removedContactIds = removeDesktopPairing(
         desktopId: deviceDesktopId,
         deleteMessages: deleteMessages,
+        preserveHistory: !deleteMessages,
         now: now
       )
       return !removedContactIds.isEmpty
@@ -2460,7 +2461,9 @@ final class GalaxySSIStore: ObservableObject {
     }
     for contactIndex in contacts.indices {
       guard contacts[contactIndex].desktopId == desktopId,
-            contacts[contactIndex].type == "agent" else {
+            contacts[contactIndex].type == "agent",
+            GalaxySSIPairingLifecycle.canRestoreHistory(contacts[contactIndex],
+              pairedFingerprint: serverLinks[index].desktopFingerprint) else {
         continue
       }
       contacts[contactIndex].trustState = .verified
@@ -2513,9 +2516,11 @@ final class GalaxySSIStore: ObservableObject {
       .ifBlank(link?.desktopFingerprint ?? "")
     let now = Date()
     let existingContact = contact(id: desktopId)
-    if existingContact?.isDesktopHistoryOnly == true &&
-        !serverLinks.contains(where: { $0.desktopId == desktopId && $0.paired &&
-          $0.desktopFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame }) { return false }
+    if let existingContact, existingContact.isDesktopHistoryOnly {
+      guard let current = GalaxySSIPairingLifecycle.disconnectTarget(desktopId: desktopId, fingerprint: fingerprint, links: serverLinks),
+        link == nil || (link?.desktopId == desktopId && link?.routes == current.routes),
+        GalaxySSIPairingLifecycle.canRestoreHistory(existingContact, pairedFingerprint: current.desktopFingerprint) else { return false }
+    }
     let storedDefaultName = deviceDefaultDisplayName(for: desktopId)
     let previousDefaultName = storedDefaultName
       .ifBlank(existingContact?.desktopName ?? "")
@@ -2674,8 +2679,8 @@ final class GalaxySSIStore: ObservableObject {
   @discardableResult
   func removeDesktopPairing(
     desktopId: String,
-    deleteMessages: Bool = true,
-    preserveHistory: Bool = false,
+    deleteMessages: Bool = false,
+    preserveHistory: Bool = true,
     now: Date = Date()
   ) -> Set<String> {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2748,6 +2753,40 @@ final class GalaxySSIStore: ObservableObject {
     }
     save()
     return removedIds
+  }
+
+  @discardableResult
+  func clearPairedDesktopLocalHistory(_ expected: ServerLink, owner: String) -> Bool {
+    guard !runtimePlaintextCleared, !owner.isBlank, profile.identityFingerprint == owner,
+      let current = GalaxySSIPairingLifecycle.disconnectTarget(desktopId: expected.desktopId,
+        fingerprint: expected.desktopFingerprint, links: serverLinks), current.routes == expected.routes else { return false }
+    let prefix = current.desktopId + ":"
+    let ids = Set(contacts.filter { $0.id != "hermes" && $0.id != "system" &&
+      GalaxySSIPairingLifecycle.canRestoreHistory($0, pairedFingerprint: current.desktopFingerprint) && (
+      $0.desktopId == current.desktopId || $0.id == current.desktopId || $0.id.hasPrefix(prefix) ||
+      $0.galaxySSIId == current.desktopId || $0.galaxySSIId.hasPrefix(prefix))
+    }.flatMap { [$0.id, $0.galaxySSIId] }.filter { !$0.isEmpty && $0 != "hermes" && $0 != "system" })
+    let messages = ids.flatMap { chatHistoryDatabase.messages(contactId: $0) }
+    do { try chatHistoryDatabase.deleteContactHistories(ids) } catch { return false }
+    let previous = suppressMessageDatabaseSync
+    suppressMessageDatabaseSync = true
+    defer { suppressMessageDatabaseSync = previous }
+    for id in ids {
+      messagesByContact.removeValue(forKey: id); readAtByContact.removeValue(forKey: id); pinnedContactIds.remove(id)
+    }
+    for message in messages {
+      agentReplyUnreadStore.remove(message)
+      if AgentCompletedReplyPlayback.shared.selection?.messageID == message.id { AgentCompletedReplyPlayback.shared.stop() }
+      if message.isMine {
+        researchCheckpointStore.removeLocalDisclosure(conversation: message.conversationId,
+          turn: message.turnId.ifBlank(message.id.uuidString), source: message.id)
+        researchCheckpointStore.remove(conversation: message.conversationId,
+          turn: message.turnId.ifBlank(message.id.uuidString), source: message.id)
+      }
+    }
+    deletePrivateAttachmentCopies(in: messages)
+    _ = save()
+    return true
   }
 
   @discardableResult
@@ -2871,10 +2910,11 @@ final class GalaxySSIStore: ObservableObject {
         createdAt: now,
         updatedAt: now
       )
-      if contact.isDesktopHistoryOnly && !(isPaired && serverLinks.contains(where: {
-        $0.desktopId == desktopId && $0.paired && $0.routes == link?.routes &&
-          $0.desktopFingerprint == link?.desktopFingerprint
-      })) { return }
+      if contact.isDesktopHistoryOnly {
+        guard isPaired, let current = GalaxySSIPairingLifecycle.disconnectTarget(desktopId: desktopId,
+          fingerprint: desktopFingerprint, links: serverLinks), link?.desktopId == desktopId, current.routes == link?.routes,
+          GalaxySSIPairingLifecycle.canRestoreHistory(contact, pairedFingerprint: current.desktopFingerprint) else { return }
+      }
       contact.desktop_disconnected = nil
       contact.galaxySSIId = contactId
       contact.name = displayName
