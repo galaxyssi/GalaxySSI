@@ -23,6 +23,38 @@ class AutoGoalTeamDeviceTest {
 
     @Test fun explicitLlamaCppLoopbackRequestsAPlanSchema() = runTableFixture(hardPlanSchema = true)
 
+    @Test fun missingRequestedFinalReviewStopsAfterOneLocalRequest() = runBlocking {
+        MockWebServer().use { server ->
+            val plan = """{"roles":[{"kind":"WORK","parents":[],"task":"Compare totals"}],"synthesis":"Report totals"}"""
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(
+                JSONObject().put("choices", JSONArray().put(JSONObject().put("message",
+                    JSONObject().put("role", "assistant").put("content", plan)))).toString()))
+            server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
+            val id = UUID.randomUUID().toString()
+            val c = JSONObject().put("cloud_provider", "Custom").put("cloud_api_style", "openai")
+                .put("cloud_model", "fixture").put("cloud_api_key", "synthetic")
+                .put("cloud_endpoint", "http://127.0.0.1:${server.port}/v1/chat/completions")
+            val route = GoalRoute(id, "fixture", ConversationGoalRunner.fingerprint(c))
+            var calls = 0
+            try {
+                runAutoGoalTeam("请比较两份虚构日程，并独立审核最后的答复。", { s, p ->
+                    check(++calls == 1) { "Unexpected model call after incomplete plan" }
+                    withContext(Dispatchers.IO) {
+                        ConversationGoalRunner.text(ctx, route, id, id, calls, s, p,
+                            AgentNativeToolCancellationToken.NONE) { _, _, _ -> c }
+                    }
+                })
+                fail("Do not publish a draft without the requested final reviewer")
+            } catch (_: TeamFinalAuditMissing) { }
+            assertEquals(1, calls)
+            assertEquals(1, server.requestCount)
+            val messages = JSONObject(server.takeRequest().body.readUtf8()).getJSONArray("messages")
+            val payload = JSONObject(messages.getJSONObject(messages.length() - 1).getString("content"))
+            assertEquals("plan", payload.getString("stage"))
+            assertTrue(payload.getBoolean("final_review_required"))
+        }
+    }
+
     private fun runTableFixture(hardPlanSchema: Boolean) = runBlocking {
         val id = UUID.randomUUID().toString()
         val calls = AtomicInteger()
