@@ -2369,6 +2369,7 @@
     C3007000000000000000000F /* AgentMarkdownImageStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000010 /* AgentMarkdownImageStoreTests.swift */; };
     C30070000000000000000015 /* AgentIOSImageSearchAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000016 /* AgentIOSImageSearchAdapterTests.swift */; };
     C3007D000000000000000005 /* AgentIOSIndexedWebSourceCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */; };
+    C46750000000000000000001 /* AgentImmutableWebSourceRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46750000000000000000002 /* AgentImmutableWebSourceRoutingTests.swift */; };
     C3007E000000000000000003 /* AgentIOSJSONWebSearchAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */; };
     C3007F000000000000000007 /* AgentIOSAdditionalWebSearchAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */; };
     C3007A100000000000000003 /* AgentIOSWebSearchFusionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */; };
@@ -4851,6 +4852,7 @@
     C30070000000000000000010 /* AgentMarkdownImageStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMarkdownImageStoreTests.swift; sourceTree = "<group>"; };
     C30070000000000000000016 /* AgentIOSImageSearchAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSImageSearchAdapterTests.swift; sourceTree = "<group>"; };
     C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSIndexedWebSourceCatalogTests.swift; sourceTree = "<group>"; };
+    C46750000000000000000002 /* AgentImmutableWebSourceRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentImmutableWebSourceRoutingTests.swift; sourceTree = "<group>"; };
     C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSJSONWebSearchAdapterTests.swift; sourceTree = "<group>"; };
     C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSAdditionalWebSearchAdapterTests.swift; sourceTree = "<group>"; };
     C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebSearchFusionTests.swift; sourceTree = "<group>"; };
@@ -7375,6 +7377,7 @@
         C30070000000000000000010 /* AgentMarkdownImageStoreTests.swift */,
         C30070000000000000000016 /* AgentIOSImageSearchAdapterTests.swift */,
         C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */,
+        C46750000000000000000002 /* AgentImmutableWebSourceRoutingTests.swift */,
         C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */,
         C3007B100000000000000004 /* AgentIOSHTMLSearchRequestTests.swift */,
         C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */,
@@ -9967,6 +9970,7 @@
         C3007000000000000000000F /* AgentMarkdownImageStoreTests.swift in Sources */,
         C30070000000000000000015 /* AgentIOSImageSearchAdapterTests.swift in Sources */,
         C3007D000000000000000005 /* AgentIOSIndexedWebSourceCatalogTests.swift in Sources */,
+        C46750000000000000000001 /* AgentImmutableWebSourceRoutingTests.swift in Sources */,
         C3007E000000000000000003 /* AgentIOSJSONWebSearchAdapterTests.swift in Sources */,
         C3007B100000000000000003 /* AgentIOSHTMLSearchRequestTests.swift in Sources */,
         C3007F000000000000000007 /* AgentIOSAdditionalWebSearchAdapterTests.swift in Sources */,

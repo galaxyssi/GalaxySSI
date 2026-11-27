@@ -160,6 +160,7 @@ const hooks = {
   ]
 };
 function retainedMixedSource(source) {
+  source = require('./check-immutable-source-routing.cjs').retainedImmutableRouting(source);
   source = require('./check-web-cache-index-scope.cjs').retainedMetadataProvider(source);
   source = require('./check-public-address-policy-scope.cjs').retainedAddressProvider(source);
   let kind;
