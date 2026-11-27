@@ -1621,64 +1621,74 @@ final class AgentKnowledgeDatabase {
   // The producer is consumed once before acquiring the catalog writer. The
   // returned scratch belongs to the caller until cache publication completes.
   func replaceSource(_ source: String, next: () throws -> AgentKnowledgeItem?,
+    timing: AgentKnowledgeSourceWriteTiming = .disabled,
     beforeCommit: (AgentKnowledgeSourceStaging) throws -> Void = { _ in },
     afterMutation: (Int) throws -> Void = { _ in }) throws -> (stage: AgentKnowledgeSourceStaging, changed: Int) {
-    let prepared = try prepareSourceReplacement(source, next: next)
+    let prepared = try prepareSourceReplacement(source, next: next, timing: timing)
     defer { prepared.close() }
-    return try commitSourceReplacement(prepared, beforeCommit: beforeCommit, afterMutation: afterMutation)
+    return try commitSourceReplacement(prepared, timing: timing, beforeCommit: beforeCommit, afterMutation: afterMutation)
   }
 
   func prepareSourceReplacement(_ source: String, next: () throws -> AgentKnowledgeItem?,
+    timing: AgentKnowledgeSourceWriteTiming = .disabled,
     onPage: (Int64) throws -> Void = { _ in }) throws -> AgentKnowledgePreparedSourceReplacement {
     guard !source.isBlank, source == source.trimmingCharacters(in: .whitespacesAndNewlines) else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
-    let stage = try AgentKnowledgeSourceStaging(source: source)
-    do {
-      guard let token = nativeFiles.readToken() else { throw CancellationError() }
-      while let item = try next() {
-        guard nativeFiles.readToken() == token else { throw CancellationError() }
-        try stage.accept(item)
-      }
-      try stage.finishIncoming()
-      let result = try readCommitted { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in
-        guard nativeFiles.readToken() == token else { throw CancellationError() }
-        let sourceHash = keyedHash(source)
-        let revision = try sourceGeneration(hash: sourceHash, on: connection)
-        var after = "", count: Int64 = 0, policy: AgentKnowledgePreparedSourceReplacement.Policy?
-        while true {
+    guard let token = nativeFiles.readToken() else { throw CancellationError() }
+    let stage = try timing.measure(.stage) {
+      let stage = try AgentKnowledgeSourceStaging(source: source)
+      do {
+        while let item = try next() {
           try Task.checkCancellation()
           guard nativeFiles.readToken() == token else { throw CancellationError() }
-          guard let page = prepare("SELECT item_hash FROM knowledge_items WHERE source_hash=? AND item_hash>? ORDER BY item_hash LIMIT 64", on: connection) else {
-            throw AgentKnowledgeDatabaseError.unavailable
-          }
-          bind(sourceHash, at: 1, to: page); bind(after, at: 2, to: page)
-          var keys: [String] = []
-          var status = sqlite3_step(page)
-          while status == SQLITE_ROW {
-            guard let text = sqlite3_column_text(page, 0) else { sqlite3_finalize(page); throw AgentKnowledgeDatabaseError.corruptRecord }
-            keys.append(String(cString: text)); status = sqlite3_step(page)
-          }
-          sqlite3_finalize(page)
-          guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
-          if keys.isEmpty { break }
-          for key in keys {
-            guard key > after, let old = try sourceRecord(hash: key, on: connection), old.source.utf8.elementsEqual(source.utf8) else {
-              throw AgentKnowledgeDatabaseError.corruptRecord
-            }
-            try stage.rememberPrevious(old)
-            if policy == nil || old.updatedAtMillis < policy!.updatedAtMillis ||
-              (old.updatedAtMillis == policy!.updatedAtMillis && key < policy!.itemKey) {
-              policy = AgentKnowledgePreparedSourceReplacement.Policy(old, key: key)
-            }
-            after = key
-          }
-          guard count <= Int64.max - Int64(keys.count) else { throw AgentKnowledgeDatabaseError.corruptRecord }
-          count += Int64(keys.count); try onPage(count)
+          try stage.accept(item)
         }
-        guard count == 0 || revision > 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-        try stage.finishPrevious()
-        return (revision, policy)
+        try stage.finishIncoming()
+        return stage
+      } catch { stage.close(); throw error }
+    }
+    do {
+      let result = try timing.measure(.prepare) {
+        try readCommitted { connection -> (Int64, AgentKnowledgePreparedSourceReplacement.Policy?) in
+          guard nativeFiles.readToken() == token else { throw CancellationError() }
+          let sourceHash = keyedHash(source)
+          let revision = try sourceGeneration(hash: sourceHash, on: connection)
+          var after = "", count: Int64 = 0, policy: AgentKnowledgePreparedSourceReplacement.Policy?
+          while true {
+            try Task.checkCancellation()
+            guard nativeFiles.readToken() == token else { throw CancellationError() }
+            guard let page = prepare("SELECT item_hash FROM knowledge_items WHERE source_hash=? AND item_hash>? ORDER BY item_hash LIMIT 64", on: connection) else {
+              throw AgentKnowledgeDatabaseError.unavailable
+            }
+            bind(sourceHash, at: 1, to: page); bind(after, at: 2, to: page)
+            var keys: [String] = []
+            var status = sqlite3_step(page)
+            while status == SQLITE_ROW {
+              guard let text = sqlite3_column_text(page, 0) else { sqlite3_finalize(page); throw AgentKnowledgeDatabaseError.corruptRecord }
+              keys.append(String(cString: text)); status = sqlite3_step(page)
+            }
+            sqlite3_finalize(page)
+            guard status == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+            if keys.isEmpty { break }
+            for key in keys {
+              guard key > after, let old = try sourceRecord(hash: key, on: connection), old.source.utf8.elementsEqual(source.utf8) else {
+                throw AgentKnowledgeDatabaseError.corruptRecord
+              }
+              try stage.rememberPrevious(old)
+              if policy == nil || old.updatedAtMillis < policy!.updatedAtMillis ||
+                (old.updatedAtMillis == policy!.updatedAtMillis && key < policy!.itemKey) {
+                policy = AgentKnowledgePreparedSourceReplacement.Policy(old, key: key)
+              }
+              after = key
+            }
+            guard count <= Int64.max - Int64(keys.count) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+            count += Int64(keys.count); try onPage(count)
+          }
+          guard count == 0 || revision > 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+          try stage.finishPrevious()
+          return (revision, policy)
+        }
       }
       guard nativeFiles.readToken() == token else { throw CancellationError() }
       return AgentKnowledgePreparedSourceReplacement(owner: self, stage: stage, revision: result.0, token: token, policy: result.1)
@@ -1686,78 +1696,87 @@ final class AgentKnowledgeDatabase {
   }
 
   func commitSourceReplacement(_ prepared: AgentKnowledgePreparedSourceReplacement,
+    timing: AgentKnowledgeSourceWriteTiming = .disabled,
     beforeCommit: (AgentKnowledgeSourceStaging) throws -> Void = { _ in },
     afterMutation: (Int) throws -> Void = { _ in }) throws -> (stage: AgentKnowledgeSourceStaging, changed: Int) {
-    let stage = try prepared.claim(for: self)
-    do {
-      let changed = try locked { () throws -> Int in
-        try prepared.checkActive()
-        guard execute("BEGIN IMMEDIATE") else { throw AgentKnowledgeDatabaseError.unavailable }
-        var committed = false
-        defer { if !committed { _ = execute("ROLLBACK") } }
-        let source = prepared.source, sourceHash = keyedHash(source), policy = prepared.policy
-        guard try sourceGeneration(hash: sourceHash) == prepared.revision else { throw AgentKnowledgeDatabaseError.sourceReplacementChanged }
-        // Reject ownership conflicts before any canonical row, FTS or vector edit.
-        try stage.scan(.incoming) { item in
+    try timing.measure(.commit) {
+      let stage = try prepared.claim(for: self)
+      do {
+        let changed = try locked { () throws -> Int in
           try prepared.checkActive()
-          try validatePreparedIdentity(item.id, sourceHash: sourceHash, stage: stage)
-        }
-        var changed = 0, latest: AgentKnowledgeItem?
-        try stage.scan(.previous) { old in
-          try prepared.checkActive()
-          if try stage.item(old.id, side: .incoming) == nil {
-            try removeSourceRecord(old); changed += 1; try afterMutation(changed)
+          guard execute("BEGIN IMMEDIATE") else { throw AgentKnowledgeDatabaseError.unavailable }
+          var committed = false
+          defer { if !committed { _ = execute("ROLLBACK") } }
+          let source = prepared.source, sourceHash = keyedHash(source), policy = prepared.policy
+          guard try sourceGeneration(hash: sourceHash) == prepared.revision else { throw AgentKnowledgeDatabaseError.sourceReplacementChanged }
+          // Reject ownership conflicts before any canonical row, FTS or vector edit.
+          try timing.measure(.ownership) {
+            try stage.scan(.incoming) { item in
+              try prepared.checkActive()
+              try validatePreparedIdentity(item.id, sourceHash: sourceHash, stage: stage)
+            }
           }
-        }
-        try stage.scan(.incoming) { candidate in
-          try prepared.checkActive()
-          var item = candidate
-          if let policy {
-            item.cloudAccess = policy.cloudAccess; item.agentAccess = policy.agentAccess
-            item.allowedAgentIds = policy.allowedAgentIds
+          var changed = 0, latest: AgentKnowledgeItem?
+          try timing.measure(.apply) {
+            try stage.scan(.previous) { old in
+              try prepared.checkActive()
+              if try stage.item(old.id, side: .incoming) == nil {
+                try removeSourceRecord(old); changed += 1; try afterMutation(changed)
+              }
+            }
+            try stage.scan(.incoming) { candidate in
+              try prepared.checkActive()
+              var item = candidate
+              if let policy {
+                item.cloudAccess = policy.cloudAccess; item.agentAccess = policy.agentAccess
+                item.allowedAgentIds = policy.allowedAgentIds
+              }
+              if item.summary.isBlank { item.summary = String(item.content.prefix(700)) }
+              let old = try stage.item(item.id, side: .previous)
+              var comparable = item; comparable.updatedAtMillis = old?.updatedAtMillis ?? item.updatedAtMillis
+              if comparable == old { item = old! }
+              else {
+                if let old { try removeSourceRecord(old) }
+                guard insert(item) else { throw AgentKnowledgeDatabaseError.unavailable }
+                try sourceStatement("INSERT OR IGNORE INTO knowledge_vector_queue(model_hash,item_hash) SELECT model_hash,? FROM knowledge_vector_enrollment", keyedHash(item.id))
+                changed += 1; try afterMutation(changed)
+              }
+              try stage.normalized(item)
+              if latest == nil || item.updatedAtMillis > latest!.updatedAtMillis ||
+                (item.updatedAtMillis == latest!.updatedAtMillis && keyedHash(item.id) < keyedHash(latest!.id)) { latest = item }
+            }
+            if changed > 0 {
+              try sourceStatement("DELETE FROM knowledge_source_headers WHERE source_hash=?", sourceHash)
+              if let latest {
+                let group = AgentKnowledgeSourceGroup(source: source,
+                  title: latest.title.replacingOccurrences(of: "\\s+\\[[0-9]+/[0-9]+\\]$", with: "", options: .regularExpression),
+                  itemIds: [], chunkCount: Int(stage.incomingCount), cloudAccess: latest.cloudAccess,
+                  agentAccess: latest.agentAccess, allowedAgentIds: latest.allowedAgentIds, updatedAtMillis: latest.updatedAtMillis)
+                guard insertSourceHeader(group) else { throw AgentKnowledgeDatabaseError.unavailable }
+              }
+              guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {
+                throw AgentKnowledgeDatabaseError.unavailable
+              }
+            }
+            try stage.finishMutation()
           }
-          if item.summary.isBlank { item.summary = String(item.content.prefix(700)) }
-          let old = try stage.item(item.id, side: .previous)
-          var comparable = item; comparable.updatedAtMillis = old?.updatedAtMillis ?? item.updatedAtMillis
-          if comparable == old { item = old! }
-          else {
-            if let old { try removeSourceRecord(old) }
-            guard insert(item) else { throw AgentKnowledgeDatabaseError.unavailable }
-            try sourceStatement("INSERT OR IGNORE INTO knowledge_vector_queue(model_hash,item_hash) SELECT model_hash,? FROM knowledge_vector_enrollment", keyedHash(item.id))
-            changed += 1; try afterMutation(changed)
+          if changed > 0 {
+            try timing.measure(.observe) {
+              for event in try GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(stage: stage) {
+                try enqueueSourceObservation(event)
+              }
+            }
           }
-          try stage.normalized(item)
-          if latest == nil || item.updatedAtMillis > latest!.updatedAtMillis ||
-            (item.updatedAtMillis == latest!.updatedAtMillis && keyedHash(item.id) < keyedHash(latest!.id)) { latest = item }
-        }
-        if changed > 0 {
-          try sourceStatement("DELETE FROM knowledge_source_headers WHERE source_hash=?", sourceHash)
-          if let latest {
-            let group = AgentKnowledgeSourceGroup(source: source,
-              title: latest.title.replacingOccurrences(of: "\\s+\\[[0-9]+/[0-9]+\\]$", with: "", options: .regularExpression),
-              itemIds: [], chunkCount: Int(stage.incomingCount), cloudAccess: latest.cloudAccess,
-              agentAccess: latest.agentAccess, allowedAgentIds: latest.allowedAgentIds, updatedAtMillis: latest.updatedAtMillis)
-            guard insertSourceHeader(group) else { throw AgentKnowledgeDatabaseError.unavailable }
+          try beforeCommit(stage)
+          try prepared.commitCanonical {
+            guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
           }
-          guard execute("UPDATE knowledge_browse_revision SET revision = revision + 1 WHERE id = 1") else {
-            throw AgentKnowledgeDatabaseError.unavailable
-          }
+          committed = true
+          return changed
         }
-        try stage.finishMutation()
-        if changed > 0 {
-          for event in try GlobalPersistentContextObservationExtractor.knowledgeSourceMutation(stage: stage) {
-            try enqueueSourceObservation(event)
-          }
-        }
-        try beforeCommit(stage)
-        try prepared.commitCanonical {
-          guard execute("COMMIT") else { throw AgentKnowledgeDatabaseError.unavailable }
-        }
-        committed = true
-        return changed
-      }
-      return (stage, changed)
-    } catch { prepared.failed(); throw error }
+        return (stage, changed)
+      } catch { prepared.failed(); throw error }
+    }
   }
 
   // Preparation already authenticated every old identity/body in a committed

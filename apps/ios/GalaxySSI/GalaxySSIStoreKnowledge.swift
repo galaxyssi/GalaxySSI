@@ -139,6 +139,15 @@ extension GalaxySSIStore {
 
   private func replaceAgentKnowledgeSourceResult(title: String, content: String, source: String,
     kind: AgentKnowledgeKind, tags: [String]) throws -> (items: [AgentKnowledgeItem], count: Int) {
+    let timing = AgentKnowledgeSourceWriteTiming()
+    return try timing.measure(.total) {
+      try replaceAgentKnowledgeSourceResult(title: title, content: content, source: source,
+        kind: kind, tags: tags, timing: timing)
+    }
+  }
+
+  private func replaceAgentKnowledgeSourceResult(title: String, content: String, source: String,
+    kind: AgentKnowledgeKind, tags: [String], timing: AgentKnowledgeSourceWriteTiming) throws -> (items: [AgentKnowledgeItem], count: Int) {
     let sourceKey = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let cleanContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
     let assessment = AgentKnowledgeImportPolicy.assess(cleanContent)
@@ -169,7 +178,7 @@ extension GalaxySSIStore {
         chunkCount: chunkCount,
         updatedAtMillis: now
       )
-    }, beforeCommit: { stage in
+    }, timing: timing, beforeCommit: { stage in
       // This legacy UI adapter still needs an array. Read it before commit so
       // decode/cancellation failure cannot leave a committed catalog and stale UI.
       try stage.scan(.incoming) { imported.append($0) }
