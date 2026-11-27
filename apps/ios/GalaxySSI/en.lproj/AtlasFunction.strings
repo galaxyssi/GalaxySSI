@@ -184,7 +184,9 @@
 "health_atlas_artery_layers_media_detail" = "Smooth muscle and elastic components help the artery withstand and respond to changes in pressure. Their proportions vary by artery type.";
 "health_atlas_ask" = "Ask Agent";
 "health_atlas_ask_context" = "Explain “%1$@”. Function: %2$@. Related teaching process: %3$@. Source: %4$@. Explain the mechanism and evidence limits. This is general learning, not personal health data; do not infer my diagnosis or treatment.";
-"health_atlas_ask_ready" = "Open this question in a new conversation?";
+"health_atlas_ask_ready" = "Ask about this lesson";
+"health_atlas_question_hint" = "Your question about the structure or current chapter";
+"health_atlas_user_question" = "My question: %@";
 "health_atlas_ask_whole_context" = "Explain how the systems, organs and cells of the human body cooperate. Start with an overview and suggest a learning path. Use reliable sources and explain evidence limits. This is general learning, not my health data; do not infer my diagnosis or treatment.";
 "health_atlas_astrocyte_story_astrocyte" = "Astrocyte";
 "health_atlas_astrocyte_story_balance" = "The astrocyte steadies the surroundings";

@@ -10,6 +10,7 @@ struct GalaxySSIHealthAtlasDetail: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
   @State private var principleExpanded = false
+  @State private var agentReturnOffset: Double = 0
   private var usesInlineModels: Bool { GalaxySSIHealthAtlasState.usesInlineModels(entry) }
   private var currentTab: GalaxySSIHealthAtlasState.Tab { selection.wrappedValue.tab == .simulation ? .function : selection.wrappedValue.tab }
   private var standalone: Binding<Bool> {
@@ -94,10 +95,11 @@ struct GalaxySSIHealthAtlasDetail: View {
     .safeAreaInset(edge: .bottom) {
       if selection.wrappedValue.tab != .values {
         GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: state.functionSnapshot(entry, depth: depth),
-          selectionSnapshot: { state.functionSnapshot(entry, depth: depth) }, onPreviewStateChange: {
-            if $0 { state.playback.pause() }
+          selectionSnapshot: { state.questionSnapshot(entry, depth: depth) },
+          structurePosition: { state.questionStructurePosition(atlas: atlas, entry: entry) }, onPreviewStateChange: {
+            if $0 { agentReturnOffset = scrollMemory.offset; state.playback.pause() }
             state.previewPresented = $0
-          })
+          }, onDiscussionReturn: { scrollMemory.restore(agentReturnOffset) })
           .padding(.horizontal)
       }
     }

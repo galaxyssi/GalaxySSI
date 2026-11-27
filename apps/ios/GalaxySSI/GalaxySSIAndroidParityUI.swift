@@ -298,7 +298,7 @@ struct AgentHomeView: View {
               screenAssistantRecoveryRequests.insert(key).inserted else { return }
         coordinator.resumePendingAgentDelivery()
       }
-      .navigationBarHidden(true)
+      .navigationBarHidden(atlasHandoffToken == nil)
       .background(GalaxySSIScreenPagePDFImporter(isPresented: $screenPagePickerPresented,
         requestID: screenPageImportRequestID,
         isPDF: screenPageImportIsPDF,
