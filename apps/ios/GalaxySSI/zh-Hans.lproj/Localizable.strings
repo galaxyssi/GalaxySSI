@@ -7892,3 +7892,13 @@
 "mqtt_diagnostics_ms" = "%lld 毫秒";
 "mqtt_diagnostics_insufficient_samples" = "样本不足";
 "mqtt_diagnostics_delivery_detail" = "%d 个对端确认样本 · p50 %@ · p95 %@";
+"galaxyssi.health.answer_basis.count" = "回答依据 · %d 项来源";
+"galaxyssi.health.answer_basis.expanded" = "已展开";
+"galaxyssi.health.answer_basis.collapsed" = "已折叠";
+"galaxyssi.health.answer_basis.scope" = "仅含本轮批准的数据与本机核验的检索来源，不采用模型自行生成的引用。";
+"galaxyssi.health.answer_basis.measurement" = "测量记录";
+"galaxyssi.health.answer_basis.context" = "已确认的测量条件";
+"galaxyssi.health.answer_basis.profile" = "选定的自述健康资料";
+"galaxyssi.health.answer_basis.guideline" = "指南参考";
+"galaxyssi.health.answer_basis.target" = "已确认的个人目标";
+"galaxyssi.health.answer_basis.retrieved" = "本机检索的公开来源";
