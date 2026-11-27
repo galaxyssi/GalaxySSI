@@ -8,6 +8,12 @@ Original implementation #4535 merged through `1497fc0171a0cbedde5e3d52de1cead10a
 The image-presentation follow-up starts from fetched main `7e91ac6862e59fdf5a168fee89c925db281d4919`; its PR diff contains only that follow-up. The inventory/checker's older baseline remains the historical cumulative Android comparison, not this new PR's diff base.
 This is a partial port, NOT completion of all #3007 behavior.
 
+Unplanned native dispatch follow-up: ANDROID_3007_UNPLANNED_NATIVE_DISPATCH.md
+connects plan-less sequential native actions to a task-owned execution envelope and
+mandatory pre-effect checkpoint/journal claim. The older remaining-scope statements
+about unplanned sequential actions below are historical; browser/cloud-loop execution,
+full audit batching and native runtime acceptance remain incomplete.
+
 Research source-membership follow-up: see ANDROID_3007_RESEARCH_SOURCE_FOLLOWUP.md for optional complete declared sources, dual queue selection, current dispatch/response gates and source-only verification. Missing legacy/autonomous/evalops source proof remains untrusted; selected-context provenance and full Android parity are NOT complete.
 
 Autonomous source-membership follow-up: see ANDROID_3007_AUTONOMOUS_SOURCE_FOLLOWUP.md for newly planned run provenance, eligible work claims, current dispatch/result gates and complete-source research queue production. Legacy missing proof and evalops research remain untrusted; no full runtime/privacy acceptance or #3007 completion is claimed.

@@ -13,6 +13,7 @@ function section(source) {
   return source.slice(begin, end);
 }
 function retainedApprovedCaptureServices(source) {
+  source = require('./check-unplanned-native-dispatch.cjs').retainedUnplannedDispatchServices(source);
   if (!source.includes('AgentApprovedCaptureDispatch.prepare(')) return source;
   return source.replace(section(source), section(old(app + 'GalaxySSIServices.swift')));
 }

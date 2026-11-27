@@ -27,7 +27,7 @@ function validateSequentialPlanDispatch() {
   const execute = section(services, '  private func executeLocalNativeAction(\n', '  private func refreshAutomaticConnectorAction(');
   for (const token of ['permitsEffectRecoveryActions', 'rejectReadOnlyAnalysisAction', 'AgentSequentialPlanNodeDispatch.replay(',
     'replay?.result ?? runtime.nativeActionExecutor.observedConnectorDispatch', 'replay?.action ??',
-    'if priorDispatch == nil, task.activePlan != nil || executionAction.kind == .callConnector',
+    'if priorDispatch == nil {',
     'checkpointSequentialPlanNodeDispatch(executionAction', 'AgentSequentialPlanNodeDispatch.execute(dispatch,',
     'AgentSupervisorRecoveryPolicy.stopReason', 'checkpointSequentialPlanNodeDispatch(fallbackAction',
     'AgentSequentialPlanNodeDispatch.execute(fallbackDispatch,', 'finishLocalNativeAction(']) assert(execute.includes(token), token);
