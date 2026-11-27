@@ -161,6 +161,7 @@ struct SettingsView: View {
   @State private var settingsStats = GalaxySSISettingsSummarySnapshot()
   @State private var settingsStatsOwner = ""
   @State private var settingsRefreshRevision: UInt64 = 0
+  @State private var settingsVisible = false
   var showsBackButton = true
   var onBackToAgent: (() -> Void)? = nil
 
@@ -214,16 +215,17 @@ struct SettingsView: View {
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
       }
-      .onAppear(perform: refreshLinkDiagnostics)
+      .onAppear { settingsVisible = true; refreshLinkDiagnostics() }
       .onReceive(NotificationCenter.default.publisher(for: .galaxySSIAgentRoutingDidUpdate).receive(on: RunLoop.main)) { _ in
-        if scenePhase == .active { settingsRefreshRevision &+= 1 }
+        if settingsVisible, scenePhase == .active { settingsRefreshRevision &+= 1 }
       }
       .onDisappear {
+        settingsVisible = false
         navigationContentGate.invalidate()
       }
       .task(id: settingsStatsTaskID) {
-        guard scenePhase == .active else { return }
-        while !Task.isCancelled {
+        guard settingsVisible, scenePhase == .active else { return }
+        while !Task.isCancelled, settingsVisible, scenePhase == .active {
           await prepareSettingsStats()
           do { try await Task.sleep(nanoseconds: 30_000_000_000) } catch { return }
         }
@@ -256,7 +258,7 @@ struct SettingsView: View {
   }
 
   private var settingsStatsTaskID: String {
-    "\(GalaxySSISettingsSummaryCache.key(for: store))|\(scenePhase == .active)|\(settingsRefreshRevision)"
+    "\(GalaxySSISettingsSummaryCache.key(for: store))|\(settingsVisible)|\(scenePhase == .active)|\(settingsRefreshRevision)"
   }
 
   private func prepareSettingsStats() async {
@@ -273,7 +275,8 @@ struct SettingsView: View {
       settingsStatsLoading = false
     }
     let prepared = await GalaxySSISettingsSummaryCache.prepare(store: store)
-    guard !Task.isCancelled, navigationContentGate.isCurrent(generation), store.profile.identityFingerprint == owner else { return }
+    guard !Task.isCancelled, settingsVisible, scenePhase == .active,
+          navigationContentGate.isCurrent(generation), store.profile.identityFingerprint == owner else { return }
     settingsStats = prepared
     settingsStatsLoading = false
   }
