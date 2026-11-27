@@ -66,6 +66,20 @@ final class GalaxySSIHealthAtlasState: ObservableObject {
     else { next.tab = .simulation }
     entries[entry.id] = next
   }
+
+  func questionSnapshot(_ entry: GalaxySSIHealthAtlas.Entry, depth: Int? = nil) -> Selection {
+    var snapshot = functionSnapshot(entry, depth: depth)
+    // Artwork uses the shared view selection even inside nested lessons.
+    snapshot.artworkView = binding(entry).wrappedValue.artworkView
+    return snapshot
+  }
+
+  func questionStructurePosition(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?) -> Int {
+    let view = entry.map { binding($0).wrappedValue.artworkView } ?? nil
+    guard let plate = atlas.plate(for: entry?.id, viewKey: view) else { return 0 }
+    return structureSteps.position(owner: entry?.id ?? "", view: plate.viewKey ?? "",
+      count: GalaxySSIHealthAtlasLandmarks.list(plate, atlas: atlas).count)
+  }
   func closeStandaloneModel(_ entry: GalaxySSIHealthAtlas.Entry, destination: Tab = .function) {
     playback.pause()
     var next = functionSnapshot(entry)
@@ -242,8 +256,10 @@ struct GalaxySSIHealthAtlasView: View {
     .navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       if let atlas {
-        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: kind == "whole" ? state.wholeEntry(in: atlas) : nil,
-          selection: .init()).padding(.horizontal)
+        GalaxySSIHealthAtlasAsk(atlas: atlas, entry: nil, selection: .init(),
+          structurePosition: { state.questionStructurePosition(atlas: atlas, entry: nil) },
+          onPreviewStateChange: { if $0 { state.playback.pause() }; state.previewPresented = $0 })
+          .padding(.horizontal)
       }
     }
     .background(NavigationLink(isActive: Binding(get: { quickTarget != nil }, set: { if !$0 { quickTarget = nil; state.clearLessonNavigation() } })) {

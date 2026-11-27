@@ -9,6 +9,7 @@ struct GalaxySSIHealthAtlasResearch: View {
   let depth: Int
   @StateObject private var scrollMemory = GalaxySSIHealthAtlasScrollMemory()
   @State private var admeStage = 0
+  @State private var agentReturnOffset: Double = 0
   @ScaledMetric(relativeTo: .footnote) private var explanationSize: CGFloat = 14
   @ScaledMetric(relativeTo: .caption) private var noteSize: CGFloat = 11
   @Environment(\.galaxySSIInterfaceLanguage) private var language
@@ -56,9 +57,9 @@ struct GalaxySSIHealthAtlasResearch: View {
     .safeAreaInset(edge: .bottom) {
       GalaxySSIHealthAtlasAsk(atlas: atlas, entry: entry, selection: selection.wrappedValue, includesResearch: true,
         selectionSnapshot: { selection.wrappedValue }, onPreviewStateChange: {
-          if $0 { state.playback.pause() }
+          if $0 { agentReturnOffset = scrollMemory.offset; state.playback.pause() }
           state.previewPresented = $0
-        })
+        }, onDiscussionReturn: { scrollMemory.restore(agentReturnOffset) })
         .padding(.horizontal)
     }
     .onAppear {

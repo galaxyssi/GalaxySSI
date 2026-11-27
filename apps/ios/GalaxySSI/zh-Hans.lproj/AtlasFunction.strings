@@ -184,7 +184,9 @@
 "health_atlas_artery_layers_media_detail" = "平滑肌和弹性成分帮助血管承受并适应压力变化。两者比例会随动脉类型变化。";
 "health_atlas_ask" = "询问 Agent";
 "health_atlas_ask_context" = "请解释“%1$@”。功能：%2$@。关联教学过程：%3$@。参考来源：%4$@。请说明机制及证据局限。这是一般学习内容，不是我的健康数据，不要推断我的诊断或治疗。";
-"health_atlas_ask_ready" = "在新会话中打开这个问题？";
+"health_atlas_ask_ready" = "询问当前课程";
+"health_atlas_question_hint" = "关于当前结构或章节，你想问什么？";
+"health_atlas_user_question" = "我的问题：%@";
 "health_atlas_ask_whole_context" = "请解释人体的系统、器官和细胞如何协同工作，先概述并建议学习路径。请使用可靠来源，说明证据局限。这是一般学习内容，不是我的健康数据，不要推断我的诊断或治疗。";
 "health_atlas_astrocyte_story_astrocyte" = "星形胶质细胞";
 "health_atlas_astrocyte_story_balance" = "星形胶质细胞稳定周围环境";

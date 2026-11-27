@@ -9,14 +9,16 @@ final class GalaxySSIHealthAtlasAgentHandoff {
     let conversation: String
     let prompt: String
     let created: TimeInterval
+    let topic: String
   }
   static let shared = GalaxySSIHealthAtlasAgentHandoff()
   private var pending: [UUID: Request] = [:]
-  func prepare(owner: String, conversation: String, prompt: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> UUID? {
+  func prepare(owner: String, conversation: String, prompt: String, now: TimeInterval = ProcessInfo.processInfo.systemUptime,
+               topic: String = "") -> UUID? {
     pending = pending.filter { now >= $0.value.created && now - $0.value.created <= 120 }
     guard !owner.isEmpty, !conversation.isEmpty, !prompt.isEmpty, prompt.utf8.count <= 32_000, pending.count < 8 else { return nil }
     let token = UUID()
-    pending[token] = Request(owner: owner, conversation: conversation, prompt: prompt, created: now)
+    pending[token] = Request(owner: owner, conversation: conversation, prompt: prompt, created: now, topic: topic)
     return token
   }
   func consume(_ token: UUID, owner: String, conversation: String,
@@ -30,6 +32,15 @@ final class GalaxySSIHealthAtlasAgentHandoff {
 
 enum GalaxySSIHealthAtlasQuestion {
   static func build(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
+                    selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String,
+                    structurePosition: Int? = nil) -> String {
+    let prompt = base(atlas: atlas, entry: entry, selection: selection, research: research, language: language)
+    guard !prompt.isEmpty, !research, selection.tab == .structure else { return prompt }
+    let structure = GalaxySSIHealthAtlasDiscussion.structureContext(atlas: atlas, entry: entry,
+      selection: selection, position: structurePosition, language: language)
+    return structure.isEmpty ? prompt : prompt + "\n" + structure
+  }
+  private static func base(atlas: GalaxySSIHealthAtlas, entry: GalaxySSIHealthAtlas.Entry?,
                     selection: GalaxySSIHealthAtlasState.Selection, research: Bool, language: String) -> String {
     guard research || selection.tab != .values else { return "" }
     func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
@@ -187,25 +198,57 @@ struct GalaxySSIHealthAtlasAsk: View {
   let selection: GalaxySSIHealthAtlasState.Selection
   var includesResearch = false
   var selectionSnapshot: (() -> GalaxySSIHealthAtlasState.Selection)? = nil
+  var structurePosition: (() -> Int)? = nil
   var onPreviewStateChange: ((Bool) -> Void)? = nil
+  var onDiscussionReturn: (() -> Void)? = nil
   @EnvironmentObject private var store: GalaxySSIStore
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @State private var preview: String?
   @State private var token: UUID?
   @State private var failed = false
+  @State private var userQuestion = ""
+  @State private var previewOwner = ""
+  @State private var previewGeneration: UInt64 = 0
+  @State private var prepared: Prepared?
+  @State private var previousConversation: String?
+  @State private var discussionConversation: String?
+  @State private var discussionOwner: String?
+  @State private var discussionGeneration: UInt64?
+  private struct Prepared {
+    let token: UUID
+    let session: AgentConversation
+    let owner: String
+    let generation: UInt64
+  }
   private var isPreviewPresented: Binding<Bool> { Binding(get: { preview != nil }, set: { if !$0 { preview = nil } }) }
   var body: some View {
     Button(t("ask")) {
+      guard store.canReadAgentTranscript, UIApplication.shared.isProtectedDataAvailable else { failed = true; return }
       onPreviewStateChange?(true)
       let question = GalaxySSIHealthAtlasQuestion.build(atlas: atlas, entry: entry, selection: selectionSnapshot?() ?? selection,
-        research: includesResearch, language: language)
+        research: includesResearch, language: language, structurePosition: structurePosition?())
+      previewOwner = store.profile.identityFingerprint
+      previewGeneration = store.runtimePlaintextGeneration
+      userQuestion = ""
       if question.isEmpty { onPreviewStateChange?(false) } else { preview = question }
     }.frame(maxWidth: .infinity, minHeight: 48).disabled(scene != .active)
     .buttonStyle(GalaxySSIHealthCommandStyle())
-    .sheet(isPresented: isPreviewPresented) {
+    .sheet(isPresented: isPreviewPresented, onDismiss: presentDiscussion) {
       NavigationView {
-        ScrollView { Text(preview ?? "").frame(maxWidth: .infinity, alignment: .leading).padding() }
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            Text(preview ?? "").frame(maxWidth: .infinity, alignment: .leading)
+            TextField(t("question_hint"), text: $userQuestion)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("atlas-agent-question")
+              .onChange(of: userQuestion) { value in
+                if value.utf16.count > GalaxySSIHealthAtlasDiscussion.maximumQuestionUTF16 {
+                  userQuestion = GalaxySSIHealthAtlasDiscussion.limitQuestion(value)
+                }
+              }
+          }.padding()
+        }
           .navigationTitle(t("ask_ready")).navigationBarTitleDisplayMode(.inline)
           .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -217,30 +260,69 @@ struct GalaxySSIHealthAtlasAsk: View {
       }.navigationViewStyle(.stack)
     }
     .background(NavigationLink(isActive: Binding(get: { token != nil }, set: { active in
-      if !active { if let token { GalaxySSIHealthAtlasAgentHandoff.shared.discard(token) }; token = nil }
+      if !active { closeDiscussion() }
     })) {
       if let token { AgentHomeView(atlasHandoffToken: token) }
     } label: { EmptyView() }.hidden())
     .alert(t("load_error"), isPresented: $failed) { Button(t("retry")) { failed = false } }
-    .onChange(of: scene) { value in if value != .active { preview = nil } }
+    .onChange(of: scene) { value in if value != .active { clearPreview() } }
+    .onChange(of: store.profile.identityFingerprint) { _ in clearPreview(); closeDiscussion() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      clearPreview(); closeDiscussion()
+    }
     .onChange(of: preview != nil) { onPreviewStateChange?($0) }
     .onDisappear { onPreviewStateChange?(false) }
   }
   private func open() {
     guard scene == .active, UIApplication.shared.isProtectedDataAvailable, let prompt = preview,
-      !store.profile.identityFingerprint.isBlank else { failed = true; return }
-    let session = store.createAgentSession(title: entry.map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? t("whole"), globalTopicKey: "body-atlas")
-    guard store.switchAgentSession(session.id),
-      let ticket = GalaxySSIHealthAtlasAgentHandoff.shared.prepare(owner: store.profile.identityFingerprint, conversation: session.id, prompt: prompt)
+      store.canReadAgentTranscript, !previewOwner.isBlank, previewOwner == store.profile.identityFingerprint,
+      previewGeneration == store.runtimePlaintextGeneration,
+      let request = GalaxySSIHealthAtlasDiscussion.request(context: prompt, question: userQuestion, language: language),
+      let session = GalaxySSIHealthAtlasDiscussion.conversation(store: store, itemID: entry?.id ?? "whole",
+        title: entry.map { GalaxySSIHealthAtlasText.get($0.name, language) } ?? t("whole")),
+      let ticket = GalaxySSIHealthAtlasAgentHandoff.shared.prepare(owner: previewOwner, conversation: session.id,
+        prompt: request, topic: session.globalTopicKey)
     else { failed = true; return }
+    prepared = Prepared(token: ticket, session: session, owner: previewOwner, generation: previewGeneration)
     preview = nil
-    // Let the confirmation sheet finish dismissing before pushing the existing Agent page.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-      guard scene == .active, store.activeAgentConversationId == session.id else {
-        GalaxySSIHealthAtlasAgentHandoff.shared.discard(ticket); return
-      }
-      token = ticket
+    userQuestion = ""
+  }
+  private func presentDiscussion() {
+    guard let ready = prepared else { userQuestion = ""; return }
+    prepared = nil
+    guard scene == .active, UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript,
+          ready.owner == store.profile.identityFingerprint, ready.generation == store.runtimePlaintextGeneration,
+          let fresh = store.agentConversationDatabase.read(ready.session.id),
+          GalaxySSIHealthAtlasDiscussion.reusable(fresh, topic: ready.session.globalTopicKey) else {
+      GalaxySSIHealthAtlasAgentHandoff.shared.discard(ready.token)
+      failed = true
+      return
     }
+    previousConversation = store.activeAgentConversationId
+    guard store.switchAgentSession(fresh.id) else {
+      GalaxySSIHealthAtlasAgentHandoff.shared.discard(ready.token); failed = true; return
+    }
+    discussionConversation = fresh.id
+    discussionOwner = ready.owner
+    discussionGeneration = ready.generation
+    token = ready.token
+  }
+  private func clearPreview() {
+    if let prepared { GalaxySSIHealthAtlasAgentHandoff.shared.discard(prepared.token) }
+    prepared = nil; preview = nil; userQuestion = ""; previewOwner = ""
+  }
+  private func closeDiscussion() {
+    if let token { GalaxySSIHealthAtlasAgentHandoff.shared.discard(token) }
+    let wasPresented = token != nil
+    token = nil
+    if wasPresented, store.canReadAgentTranscript, store.profile.identityFingerprint == discussionOwner,
+       store.runtimePlaintextGeneration == discussionGeneration, store.activeAgentConversationId == discussionConversation,
+       let previousConversation, let previous = store.agentSession(id: previousConversation), previous.status == .active,
+       previous.mergedIntoConversationId.isBlank {
+      _ = store.switchAgentSession(previous.id)
+    }
+    previousConversation = nil; discussionConversation = nil; discussionOwner = nil; discussionGeneration = nil
+    if wasPresented { onDiscussionReturn?() }
   }
   private func t(_ key: String) -> String { GalaxySSIHealthAtlasText.get("health_atlas_" + key, language) }
 }
@@ -248,12 +330,17 @@ struct GalaxySSIHealthAtlasAsk: View {
 extension AgentHomeView {
   func consumeHealthAtlasHandoff() {
     guard let atlasHandoffToken, homeVisible, scenePhase == .active, UIApplication.shared.isProtectedDataAvailable,
-      store.agentSession(id: store.activeAgentConversationId)?.globalTopicKey == "body-atlas",
+      store.canReadAgentTranscript,
       let request = GalaxySSIHealthAtlasAgentHandoff.shared.consume(atlasHandoffToken,
-        owner: store.profile.identityFingerprint, conversation: store.activeAgentConversationId) else { return }
+        owner: store.profile.identityFingerprint, conversation: store.activeAgentConversationId),
+      let session = store.agentConversationDatabase.read(request.conversation),
+      GalaxySSIHealthAtlasDiscussion.reusable(session, topic: request.topic) else { return }
     Task { @MainActor in
       guard homeVisible, scenePhase == .active, UIApplication.shared.isProtectedDataAvailable,
-        request.owner == store.profile.identityFingerprint, request.conversation == store.activeAgentConversationId else { return }
+        store.canReadAgentTranscript, request.owner == store.profile.identityFingerprint,
+        request.conversation == store.activeAgentConversationId,
+        let fresh = store.agentConversationDatabase.read(request.conversation),
+        GalaxySSIHealthAtlasDiscussion.reusable(fresh, topic: request.topic) else { return }
       attachments.wipeSensitive()
       draft = ""
       let sent = await coordinator.send(request.prompt, to: contact, attachments: [],
