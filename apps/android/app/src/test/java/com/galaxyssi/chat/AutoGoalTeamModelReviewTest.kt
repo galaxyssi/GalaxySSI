@@ -80,4 +80,20 @@ class AutoGoalTeamModelReviewTest {
         assertTrue(eligibleTeamRoutes(manual, listOf(local)).isEmpty())
         assertEquals(listOf(local, cloud), eligibleTeamRoutes(AgentModelSelection(), listOf(local, cloud)))
     }
+
+    @Test fun neitherNullNorAnotherModelOrEndpointCanClaimTheOriginatingCloudTurn() {
+        val draft = TeamReviewDraft()
+        val route = GoalRoute("chosen", "chosen-model", "endpoint-digest", "fixture.invalid")
+        draft.bind(draft.revision, chat.id, "turn-1", route)
+        assertFalse(draft.claim(chat.id, "turn-1"))
+        assertFalse(draft.claim(chat.id, "turn-1", route.copy(endpointHash = "changed")))
+        assertFalse(draft.claim(chat.id, "turn-1", route.copy(model = "other")))
+        assertFalse(draft.claim("other", "turn-1", route))
+        assertFalse(draft.claim(chat.id, "turn-2", route))
+        assertTrue(draft.claim(chat.id, "turn-1", route))
+        assertFalse(draft.claim(chat.id, "turn-1", route))
+        draft.bind(draft.revision, chat.id, "local")
+        assertFalse(draft.claim(chat.id, "local", route))
+        assertTrue(draft.claim(chat.id, "local"))
+    }
 }

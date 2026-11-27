@@ -79,11 +79,13 @@ struct AgentPreparedOutboundAttachment: Equatable {
   var requiresValidatedNetwork: Bool
   var scope: AgentAttachmentTransferScope
   var historicalSourceTurnId: String?
+  var fileRetryGeneration: Int = 0
   fileprivate var chunkDirectoryURL: URL
   fileprivate var cipher: any GalaxySSILocalAttachmentStoring
 
   func matchesStoredReceipt(_ payload: [String: Any]) -> Bool {
-    guard payload.string("status") == "stored",
+    guard AgentFileRetryPolicy.generation(payload) == fileRetryGeneration,
+          payload.string("status") == "stored",
           payload.string("transfer_id").lowercased() == transferId,
           payload.string("sha256").lowercased() == sha256,
           payload.string("client_route_id") == scope.clientRouteId,
@@ -163,6 +165,12 @@ struct AgentPreparedOutboundAttachment: Equatable {
       throw AgentAttachmentTransferError.contentUnavailable
     }
     return chunk
+  }
+
+  func verifyOriginalChunks() throws {
+    var hash = SHA256()
+    for index in 0..<chunkCount { hash.update(data: try plaintextChunk(index: index)) }
+    guard Data(hash.finalize()).hexString() == sha256 else { throw AgentAttachmentTransferError.contentUnavailable }
   }
 
   static func == (lhs: Self, rhs: Self) -> Bool {
@@ -452,9 +460,11 @@ final class AgentOutboundAttachmentTransferStore {
   }
 
   @MainActor
-  func acknowledgeStored(payload: [String: Any], deliveryStore: GalaxySSILinkDeliveryStore) -> StoredAcknowledgement? {
+  func acknowledgeStored(payload: [String: Any], deliveryStore: GalaxySSILinkDeliveryStore, generation: Int = 0) -> StoredAcknowledgement? {
     let transferId = payload.string("transfer_id").lowercased()
-    guard let transfer = find(transferId), transfer.matchesStoredReceipt(payload) else {
+    guard var transfer = find(transferId) else { return nil }
+    transfer.fileRetryGeneration = generation
+    guard transfer.matchesStoredReceipt(payload) else {
       return nil
     }
     let release = deliveryStore.releaseAttachmentDependencyResult(transfer.transferId)

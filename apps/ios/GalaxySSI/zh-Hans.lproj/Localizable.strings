@@ -7989,3 +7989,16 @@
 "galaxyssi.health.local_lab.pattern_month" = "下个?月";
 "galaxyssi.health.local_lab.pattern_week" = "下周|下星期";
 "galaxyssi.health.local_lab.pattern_tomorrow" = "明天";
+"galaxyssi.agent.file.read_named" = "仅重新识别 %@";
+"galaxyssi.agent.file.recognized" = "模型自述：已识别";
+"galaxyssi.agent.file.unreadable" = "模型自述：无法解读";
+"galaxyssi.agent.file.requested" = "已请求识别，尚无模型自述结果";
+"galaxyssi.agent.file.resume" = "继续传输此文件";
+"galaxyssi.agent.file.read_one" = "仅重新识别此文件";
+"galaxyssi.agent.file.unavailable" = "此文件或当前模型路由不可用，未重新发送原问题。";
+"galaxyssi.agent.file.uploading" = "传输中";
+"galaxyssi.agent.file.retrying" = "正在恢复传输";
+"galaxyssi.agent.file.failed" = "传输失败，已暂停";
+"galaxyssi.agent.file.stored" = "对端已确认保存文件";
+"galaxyssi.agent.file.closed" = "传输已关闭，未核实送达";
+"galaxyssi.agent.file.unknown" = "尚无文件送达回执";

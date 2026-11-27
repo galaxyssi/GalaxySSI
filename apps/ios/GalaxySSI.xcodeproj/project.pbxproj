@@ -1375,6 +1375,16 @@
     A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F6 /* AppSpokenMediaSession.swift */; };
     A100000000000000000009F9 /* VoiceAppContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009F9 /* VoiceAppContext.swift */; };
     A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000000000000000009FA /* VoiceAppNativeTools.swift */; };
+    C46280000000000000000001 /* AgentFileReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000002 /* AgentFileReceipt.swift */; };
+    C46280000000000000000003 /* AgentFileRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000004 /* AgentFileRetryPolicy.swift */; };
+    C46280000000000000000005 /* AgentFileRecoveryCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000006 /* AgentFileRecoveryCoordinator.swift */; };
+    C46280000000000000000007 /* AgentAttachmentReadingTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000008 /* AgentAttachmentReadingTool.swift */; };
+    C46280000000000000000009 /* AgentFileReceiptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000010 /* AgentFileReceiptTests.swift */; };
+    C46280000000000000000011 /* AgentSingleFileRead.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000012 /* AgentSingleFileRead.swift */; };
+    C46280000000000000000013 /* GalaxySSIAgentFileReceiptsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000014 /* GalaxySSIAgentFileReceiptsView.swift */; };
+    C46280000000000000000015 /* AgentSingleFileReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000016 /* AgentSingleFileReadTests.swift */; };
+    C46280000000000000000017 /* AgentSingleFileDesktopIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000018 /* AgentSingleFileDesktopIntent.swift */; };
+    C46280000000000000000019 /* AgentSingleFileDesktopIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46280000000000000000020 /* AgentSingleFileDesktopIntentTests.swift */; };
     C46270000000000000000001 /* VoiceMessageDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000002 /* VoiceMessageDraft.swift */; };
     C46270000000000000000003 /* VoiceMessageSpeechEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */; };
     C46270000000000000000005 /* VoiceMessageNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46270000000000000000006 /* VoiceMessageNativeTools.swift */; };
@@ -3749,6 +3759,16 @@
     A200000000000000000009F6 /* AppSpokenMediaSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSpokenMediaSession.swift; sourceTree = "<group>"; };
     A200000000000000000009F9 /* VoiceAppContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppContext.swift; sourceTree = "<group>"; };
     A200000000000000000009FA /* VoiceAppNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAppNativeTools.swift; sourceTree = "<group>"; };
+    C46280000000000000000002 /* AgentFileReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFileReceipt.swift; sourceTree = "<group>"; };
+    C46280000000000000000004 /* AgentFileRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFileRetryPolicy.swift; sourceTree = "<group>"; };
+    C46280000000000000000006 /* AgentFileRecoveryCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFileRecoveryCoordinator.swift; sourceTree = "<group>"; };
+    C46280000000000000000008 /* AgentAttachmentReadingTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentReadingTool.swift; sourceTree = "<group>"; };
+    C46280000000000000000010 /* AgentFileReceiptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFileReceiptTests.swift; sourceTree = "<group>"; };
+    C46280000000000000000012 /* AgentSingleFileRead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleFileRead.swift; sourceTree = "<group>"; };
+    C46280000000000000000014 /* GalaxySSIAgentFileReceiptsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIAgentFileReceiptsView.swift; sourceTree = "<group>"; };
+    C46280000000000000000016 /* AgentSingleFileReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleFileReadTests.swift; sourceTree = "<group>"; };
+    C46280000000000000000018 /* AgentSingleFileDesktopIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleFileDesktopIntent.swift; sourceTree = "<group>"; };
+    C46280000000000000000020 /* AgentSingleFileDesktopIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSingleFileDesktopIntentTests.swift; sourceTree = "<group>"; };
     C46270000000000000000002 /* VoiceMessageDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageDraft.swift; sourceTree = "<group>"; };
     C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageSpeechEvidence.swift; sourceTree = "<group>"; };
     C46270000000000000000006 /* VoiceMessageNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMessageNativeTools.swift; sourceTree = "<group>"; };
@@ -6386,6 +6406,13 @@
         A200000000000000000009F6 /* AppSpokenMediaSession.swift */,
         A200000000000000000009F9 /* VoiceAppContext.swift */,
         A200000000000000000009FA /* VoiceAppNativeTools.swift */,
+        C46280000000000000000002 /* AgentFileReceipt.swift */,
+        C46280000000000000000004 /* AgentFileRetryPolicy.swift */,
+        C46280000000000000000006 /* AgentFileRecoveryCoordinator.swift */,
+        C46280000000000000000008 /* AgentAttachmentReadingTool.swift */,
+        C46280000000000000000012 /* AgentSingleFileRead.swift */,
+        C46280000000000000000014 /* GalaxySSIAgentFileReceiptsView.swift */,
+        C46280000000000000000018 /* AgentSingleFileDesktopIntent.swift */,
         C46270000000000000000002 /* VoiceMessageDraft.swift */,
         C46270000000000000000004 /* VoiceMessageSpeechEvidence.swift */,
         C46270000000000000000006 /* VoiceMessageNativeTools.swift */,
@@ -7165,6 +7192,9 @@
         C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */,
         82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */,
         C4618000000000000000000C /* AgentTurnReceiptTests.swift */,
+        C46280000000000000000010 /* AgentFileReceiptTests.swift */,
+        C46280000000000000000016 /* AgentSingleFileReadTests.swift */,
+        C46280000000000000000020 /* AgentSingleFileDesktopIntentTests.swift */,
         C46270000000000000000008 /* VoiceMessageDraftTests.swift */,
         C46360000000000000000004 /* GalaxySSIHealthAgentLabTests.swift */,
         C4636000000000000000000A /* GalaxySSIHealthAgentLabIntentTests.swift */,
@@ -8930,6 +8960,13 @@
         A100000000000000000009F6 /* AppSpokenMediaSession.swift in Sources */,
         A100000000000000000009F9 /* VoiceAppContext.swift in Sources */,
         A100000000000000000009FA /* VoiceAppNativeTools.swift in Sources */,
+        C46280000000000000000001 /* AgentFileReceipt.swift in Sources */,
+        C46280000000000000000003 /* AgentFileRetryPolicy.swift in Sources */,
+        C46280000000000000000005 /* AgentFileRecoveryCoordinator.swift in Sources */,
+        C46280000000000000000007 /* AgentAttachmentReadingTool.swift in Sources */,
+        C46280000000000000000011 /* AgentSingleFileRead.swift in Sources */,
+        C46280000000000000000013 /* GalaxySSIAgentFileReceiptsView.swift in Sources */,
+        C46280000000000000000017 /* AgentSingleFileDesktopIntent.swift in Sources */,
         C46270000000000000000001 /* VoiceMessageDraft.swift in Sources */,
         C46270000000000000000003 /* VoiceMessageSpeechEvidence.swift in Sources */,
         C46270000000000000000005 /* VoiceMessageNativeTools.swift in Sources */,
@@ -9703,6 +9740,9 @@
         C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */,
         E05B7B1440408F5D1480CDE3 /* GalaxySSIHealthAtlasAgentContextTests.swift in Sources */,
         C4618000000000000000000B /* AgentTurnReceiptTests.swift in Sources */,
+        C46280000000000000000009 /* AgentFileReceiptTests.swift in Sources */,
+        C46280000000000000000015 /* AgentSingleFileReadTests.swift in Sources */,
+        C46280000000000000000019 /* AgentSingleFileDesktopIntentTests.swift in Sources */,
         C46270000000000000000007 /* VoiceMessageDraftTests.swift in Sources */,
         C46360000000000000000003 /* GalaxySSIHealthAgentLabTests.swift in Sources */,
         C46360000000000000000009 /* GalaxySSIHealthAgentLabIntentTests.swift in Sources */,

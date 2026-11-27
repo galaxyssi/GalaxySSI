@@ -210,6 +210,8 @@ enum AgentBlobProtocol {
     var payload = attachment.manifestPayload(resume: false)
     payload["type"] = "input_attachment_blob_offer"
     payload["blob_offer"] = offer
+    guard (0...3).contains(attachment.fileRetryGeneration) else { throw AgentBlobFailure.invalid("invalid_file_retry_generation") }
+    if attachment.fileRetryGeneration > 0 { payload["file_retry_generation"] = attachment.fileRetryGeneration }
     payload.removeValue(forKey: "resume")
     payload.removeValue(forKey: "eager_chunks")
     payload.removeValue(forKey: "time")

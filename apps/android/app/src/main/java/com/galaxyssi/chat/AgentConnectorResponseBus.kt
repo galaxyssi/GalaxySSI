@@ -104,7 +104,8 @@ object AgentConnectorResponseBus {
 
     fun publish(context: Context, response: AgentConnectorResponse): Boolean = publishWithReceipt(context, response, null)
 
-    internal fun publishWithReceipt(context: Context, response: AgentConnectorResponse, receipt: AgentResultReceipt?): Boolean {
+    internal fun publishWithReceipt(context: Context, response: AgentConnectorResponse, receipt: AgentResultReceipt?,
+        onOrdinaryDelivery: (() -> Unit)? = null): Boolean {
         if (response.sourceMessageId <= 0L) return false
         AgentGlobalRunSlotStore(context).releaseBySourceMessageId(response.sourceMessageId)
         val richOutput = AgentRichContentMaterializer.materialize(context, response.richOutputJson)
@@ -127,12 +128,17 @@ object AgentConnectorResponseBus {
                 .onFailure { android.util.Log.w("GalaxySSICollaboration", "Team wake-up enqueue failed", it) }
             return true
         }
-        val durable = if (AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)) normalized
+        val appended = AgentConnectorResponseStore.appendWithReceipt(context, normalized, receipt)
+        val durable = if (appended) normalized
             else AgentConnectorResponseStore.find(context, normalized)
         if (durable != null) {
+            if (appended && durable.success && SupervisedTeamReview.hasPendingDelivery(durable.turnId)) {
+                AgentConversationWindows.markFreshSupervisedTeamDelivery(durable)
+            }
             runCatching { AgentConnectorBackgroundRecovery.enqueue(context, durable) }
                 .onFailure { android.util.Log.w("GalaxySSIRecovery", "Connector wake-up enqueue failed", it) }
             consumers.dispatch(durable)
+            if (appended && normalized.success) onOrdinaryDelivery?.invoke()
         }
         return false
     }

@@ -1,6 +1,9 @@
 import Foundation
 
 struct AgentTurnReceipt: Codable, Equatable {
+  var files: [String: AgentFileReceipt]?
+  var fileReadSource: AgentFileReadSource?
+  var fileReadDesktop: AgentSingleFileDesktopIntent?
   var sent: Int64?, body: Int64?, bodyMillis: Int64?, desktopReceived: Int64?, resultAt: Int64?
   var mode: String?, requested: String?, effort: String?, wire: String?, wireEffort: String?, taskSHA: String?
   var generation: Int64?, attempt: Int?, provider: String?, submitted: String?, submittedEffort: String?

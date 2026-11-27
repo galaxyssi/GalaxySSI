@@ -1491,6 +1491,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             var successfulReply = ""
             var successfulUsage = CloudModelUsage()
             var successfulModel: JSONObject? = null
+            var successfulReview: (() -> Unit)? = null
+            var armAcceptedReview: (() -> Unit)? = null
             var successfulContactId = ""
             var lastError: Throwable? = cloudImages.exceptionOrNull()
             var publicationAssistanceRequested = false
@@ -1539,6 +1541,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 dispatchLease.checkActive()
                 streamAttemptOrdinal += 1
                 val currentStreamAttemptOrdinal = streamAttemptOrdinal
+                val review = if (currentStreamAttemptOrdinal == 1 && candidateId == preferredContactId &&
+                    observed.isEmpty() && !managedTeamAction && previouslyAttempted.isEmpty()) runCatching {
+                    PinnedCloudTeamAdmission.invitation(appContext, action, conversationId, connectorTurnId, candidateId, model)
+                }.getOrNull() else null
+                var proposed: String? = null
                 val startedAt = SystemClock.elapsedRealtime()
                 val requestId = "agent-cloud-$messageId-${UUID.randomUUID()}"
                 attempts.start(requestId, candidateId, model.optString("cloud_provider"),
@@ -1589,6 +1596,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                             citationPreviewEnabled = !managedTeamAction,
                             collaborationEvidence = collaborationEvidence,
                             supervisedControl = supervisedProject && !managedTeamAction,
+                            onTeamReviewAnswer = if (review == null) null else ({ answer -> proposed = answer }),
                             recoveryScope = if (conversationId.isNotBlank() && connectorTurnId.isNotBlank())
                                 AgentModelLoopScope(candidateId, conversationId, connectorTurnId, connectorTaskId,
                                     connectorTurnId, "cloud-research:${model.optString("cloud_model")}", action.id)
@@ -1708,6 +1716,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     successfulUsage = usage
                     successfulModel = model
                     successfulContactId = candidateId
+                    if (review != null) proposed?.let { answer ->
+                        if (supervisedProject) armAcceptedReview = {
+                            AgentConversationWindows.armSupervisedTeamReview(conversationId, connectorTurnId, review.pin, answer)
+                        } else successfulReview = review.offer
+                    }
                     resourceHealth.record("target:$candidateId", true, elapsedMillis)
                     Log.i(
                         "GalaxySSILatency",
@@ -1726,6 +1739,11 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     )
                     if (providerError?.code == CollaborationPublicationAssistanceException.CODE) {
                         publicationAssistanceRequested = true
+                        attempts.finish(elapsedMillis)
+                        break@candidateLoop
+                    }
+                    if (providerError?.code == PinnedCloudTeamOffer.INVALID) {
+                        // A malformed invitation is not an outage or authority for a repair generation.
                         attempts.finish(elapsedMillis)
                         break@candidateLoop
                     }
@@ -1779,6 +1797,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
             val succeeded = successfulModel != null
             if (!dispatchLease.claimCompletion()) throw kotlinx.coroutines.CancellationException("Cloud dispatch cancelled")
+            armAcceptedReview?.invoke()
             journal?.finish(attempts.report)
             if (succeeded) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
             val reply = successfulReply.ifBlank {
@@ -1788,7 +1807,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         ?: appContext.getString(R.string.cloud_unknown_error)
                 )
             }
-            AgentConnectorResponseBus.publish(
+            AgentConnectorResponseBus.publishWithReceipt(
                 appContext,
                 AgentConnectorResponse(
                     sourceMessageId = messageId,
@@ -1803,7 +1822,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     costMicros = successfulUsage.costMicros,
                     resolvedContactId = successfulContactId,
                     providerAttempts = attempts.report
-                )
+                ), receipt = null, onOrdinaryDelivery = successfulReview
             )
             outgoingHistoryWrite?.let { historyWrite ->
                 val outgoingPersisted = runCatching {

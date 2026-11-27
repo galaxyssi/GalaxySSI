@@ -32,7 +32,8 @@ enum AgentAttachmentDeliveryFailureContract {
     attachment: AgentPreparedOutboundAttachment
   ) -> Bool {
     let code = receipt.string("error_code")
-    guard receipt.string("status") == "failed",
+    guard AgentFileRetryPolicy.generation(receipt) == attachment.fileRetryGeneration,
+          receipt.string("status") == "failed",
           isTerminal(code),
           receipt.string("transfer_id").lowercased() == attachment.transferId,
           receipt.string("sha256").lowercased() == attachment.sha256,

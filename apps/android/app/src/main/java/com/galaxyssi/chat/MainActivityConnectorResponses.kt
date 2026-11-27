@@ -850,18 +850,25 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                     conversationId = conversationId,
                     turnId = turnId
                 )
-                var state = try {
+                val originalPlan = runtime.currentPlan
+                val review = conversationWindow.teamReview.takeFresh(response, runtime)?.takeIf {
+                    conversationId == it.chat && turnId == it.turn && expectedSourceMessageId == response.sourceMessageId &&
+                        it.awaiting(runtime.phase, runtime.lastActionResult, originalPlan?.actions?.singleOrNull(),
+                            response.sourceMessageId)
+                }
+                val accepted = try {
                     runtime.acceptConnectorOutcome(
                         response = response,
                         conversationId = responseIdentity.conversationId,
                         turnId = responseIdentity.turnId,
                         taskId = responseIdentity.taskId,
                         expectedSourceMessageId = expectedSourceMessageId
-                    ) ?: runtime.snapshot()
+                    )
                 } catch (failure: Throwable) {
                     agentConnectorResponsesInFlight.remove(responseKey)
                     throw failure
                 }
+                var state = accepted ?: runtime.snapshot()
                 com.galaxyssi.chat.metrics.AgentLatencyTelemetry.bindReply(
                     conversationId, turnId, state.sessionId, response.taskId
                 )
@@ -869,6 +876,9 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                     this@resumeAgentConnectorResponse, response.taskId, "phone_final_accepted"
                 )
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                val completedReview = review?.takeIf {
+                    it.finalized(originalPlan, accepted, state, response.sourceMessageId)
+                }
                 com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyStage(
                     this@resumeAgentConnectorResponse, response.taskId, "phone_finalized"
                 )
@@ -885,7 +895,7 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                     AgentConnectorReplyCommit.run(
                         checkpoint = { persistAgentWorkspaceSnapshot(turnId, state, runtime, required = true) },
                         project = {
-                            syncAgentTranscript(state, conversationId, turnId)
+                            persistAgentTranscript(state, conversationId, turnId, agentTranscriptStore, completedReview)
                             agentTranscriptStore.recordConnectorUsage(conversationId, response)
                         },
                         completeDelivery = {
@@ -919,6 +929,9 @@ internal fun MainActivity.resumeAgentConnectorResponse(
                         turnId = turnId,
                         responseKey = responseKey
                     )
+                    if (completedReview?.persisted == true && !context.cancellationSource.isCancellationRequested) {
+                        offerModelTeamReview(conversationId, turnId, completedReview.pin, completedReview, context.cancellationSource)
+                    }
                 }
                 when (state.phase) {
                     AgentPhase.WAITING_CONFIRMATION -> context.waitForConfirmation(

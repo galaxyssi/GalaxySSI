@@ -50,10 +50,24 @@ internal object AgentConversationWindows {
     }
 
     fun register(controller: AgentConversationWindowController) { windows[controller.key] = WeakReference(controller) }
-    fun localTeamReview(chat: String, turn: String): (() -> Unit)? {
-        val owner = windows.values.firstOrNull { it.get()?.teamReview?.modelTurn == (chat to turn) } ?: return null
-        return { main.post { owner.get()?.activity?.offerModelTeamReview(chat, turn) }; Unit }
+    fun modelTeamReview(chat: String, turn: String, pin: GoalRoute? = null): (() -> Unit)? {
+        val owner = windows.values.firstOrNull { it.get()?.teamReview?.owns(chat, turn, pin) == true } ?: return null
+        return { main.post { owner.get()?.activity?.offerModelTeamReview(chat, turn, pin) }; Unit }
     }
+    fun armSupervisedTeamReview(chat: String, turn: String, pin: GoalRoute, answer: String) {
+        val owner = windows.values.asSequence().mapNotNull { it.get() }
+            .firstOrNull { it.teamReview.owns(chat, turn, pin) } ?: return
+        val origin = owner.activity.agentRuntimeTurnIds.entries.singleOrNull { (runtime, id) ->
+            id == turn && owner.activity.agentRuntimeConversationIds[runtime] == chat
+        }?.key ?: return
+        owner.teamReview.arm(chat, turn, pin, answer, origin)
+    }
+
+    // Only the first durable append, before dispatch, may mark the in-memory response instance.
+    fun markFreshSupervisedTeamDelivery(response: AgentConnectorResponse) {
+        SupervisedTeamReview.markDelivery(response)
+    }
+
     fun screenAssistantForeground(controller: AgentConversationWindowController) {
         if (controller.activity is ScreenAssistantChatActivity) return
         lastForegroundWindowKey = controller.key
