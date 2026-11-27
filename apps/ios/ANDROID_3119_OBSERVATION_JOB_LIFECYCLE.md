@@ -37,6 +37,18 @@ These are source contracts, not executed Swift scheduling or concurrency tests.
 No Swift/native build, XCTest, full repository check, CI inspection, live network,
 simulator/device execution, IPA or private evidence upload is included.
 
+Local integration with the thirteen pending branches (#4664 and #4671-#4682)
+had no text conflict. All nineteen focused source guards, `npm run check:ios`
+and `git diff --check` passed on the combined tree. The pairing-history guard
+recognizes only this exact independent lifecycle delta through its exported
+normalizer. It adds no lifecycle feature code or blanket assertion exception.
+
+The historical `check-active-native-observation-scope.cjs` still fails its old
+whole-Services snapshot comparison. Applying that guard's retained projection
+to unchanged main reproduces the exact same Services mismatch; this change's
+normalized projection equals that main projection. Original assertions remain,
+and the full historical guard is not reported as passing.
+
 ## Limits
 
 Cancellation stops the observation task, not an already sent external operation.
