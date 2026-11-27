@@ -55,7 +55,8 @@ final class AgentKnowledgeRetrievalAdmission {
 
 final class AgentKnowledgeSemanticSearch {
   private let database: AgentKnowledgeDatabase
-  private let runtime: GalaxySSIEmbeddingRuntime
+  private let embedQuery: (String) async throws -> [Float]
+  private let beforePublication: () -> Void
   private let provenance: AgentKnowledgeVectorProvenance
   private let queue = DispatchQueue(label: "com.galaxyssi.knowledge-native", qos: .utility)
   private let ttlMillis: Int64
@@ -66,31 +67,46 @@ final class AgentKnowledgeSemanticSearch {
   private var activeRequest: UUID?
   private var cancelledRequests = Set<UUID>()
 
-  init(database: AgentKnowledgeDatabase, runtime: GalaxySSIEmbeddingRuntime,
+  convenience init(database: AgentKnowledgeDatabase, runtime: GalaxySSIEmbeddingRuntime,
     provenance: AgentKnowledgeVectorProvenance, ttlMillis: Int64 = 30_000,
     admission: AgentKnowledgeRetrievalAdmission = AgentKnowledgeRetrievalAdmission()) {
+    self.init(database: database, provenance: provenance, ttlMillis: ttlMillis, admission: admission,
+      embedQuery: { try await runtime.embed($0) })
+  }
+
+  // Synthetic callers can hold the exact publication boundary without a model,
+  // native graph or timing-dependent sleep. Production keeps the default no-op.
+  init(database: AgentKnowledgeDatabase, provenance: AgentKnowledgeVectorProvenance,
+    ttlMillis: Int64 = 30_000, admission: AgentKnowledgeRetrievalAdmission = AgentKnowledgeRetrievalAdmission(),
+    nativeFactory: AgentKnowledgeNativeIndex.Factory? = nil, beforePublication: @escaping () -> Void = {},
+    embedQuery: @escaping (String) async throws -> [Float]) {
     self.database = database
-    self.runtime = runtime
+    self.embedQuery = embedQuery
+    self.beforePublication = beforePublication
     self.provenance = provenance
     self.ttlMillis = max(ttlMillis, 1_000)
     self.admission = admission
-    index = AgentKnowledgeNativeIndex(database: database, provenance: provenance)
+    index = AgentKnowledgeNativeIndex(database: database, provenance: provenance, factory: nativeFactory)
   }
 
   func search(query: String, lexicalHits: [AgentKnowledgeHit], limit: Int = 24,
     nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) async throws -> [AgentKnowledgeHit] {
     let limit = min(max(limit, 0), 256)
     guard limit > 0 else { return [] }
+    try Task.checkCancellation()
     guard let token = database.nativeFiles.activeToken() else { throw CancellationError() }
     guard let lease = admission.acquire() else {
-      return try await freshLexical(lexicalHits, limit: limit, token: token)
+      let results = try await freshLexical(lexicalHits, limit: limit, token: token)
+      try Task.checkCancellation()
+      try active(token)
+      return results
     }
     defer { lease.release() }
     let requestId = UUID()
     defer { finishRequest(requestId) }
-    return try await withTaskCancellationHandler(operation: {
+    let results: [AgentKnowledgeHit] = try await withTaskCancellationHandler(operation: {
       try Task.checkCancellation()
-      let queryVector = try await runtime.embed(query)
+      let queryVector = try await embedQuery(query)
       try Task.checkCancellation()
       return try await withCheckedThrowingContinuation { continuation in
         queue.async { [self] in
@@ -125,6 +141,7 @@ final class AgentKnowledgeSemanticSearch {
             guard try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
               throw AgentKnowledgeDatabaseError.staleCursor
             }
+            beforePublication()
             try active(token)
             if finishRequest(requestId) {
               index.close()
@@ -139,6 +156,9 @@ final class AgentKnowledgeSemanticSearch {
         }
       }
     }, onCancel: { self.cancelRequest(requestId) })
+    try Task.checkCancellation()
+    try active(token)
+    return results
   }
 
   // True means another bounded replay slice is required, not that replay failed.
@@ -171,6 +191,7 @@ final class AgentKnowledgeSemanticSearch {
           guard try database.vectorFeedStamp(modelSHA256: provenance.modelSHA256) == stamp else {
             throw AgentKnowledgeDatabaseError.staleCursor
           }
+          beforePublication()
           try active(token)
           continuation.resume(returning: Array(fresh.prefix(limit)))
         } catch { continuation.resume(throwing: error) }
