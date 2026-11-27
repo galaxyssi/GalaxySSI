@@ -58,12 +58,22 @@ enum GlobalAutonomousSourceScope {
   }
 
   @MainActor
-  static func resourceAuthorized(_ id: String, store: GalaxySSIStore) -> Bool {
-    if id == "phone-local-model" { return true }
+  static func resourceAuthorized(_ id: String, transport: GlobalResearchResourceTransport?, store: GalaxySSIStore) -> Bool {
+    guard let transport else { return false }
+    if transport == .onDeviceModel { return id == "phone-local-model" }
+    guard id != "phone-local-model" else { return false }
     guard let contact = store.contact(id: id), !contact.deleted else { return false }
-    if contact.deliveryMode == .cloudAPI { return store.globalAgentSettings.allowCloudCognition }
+    if transport == .cloudModel {
+      return store.globalAgentSettings.allowCloudCognition && contact.deliveryMode == .cloudAPI
+    }
     return store.globalAgentSettings.allowPairedAgentCognition && contact.trustState == .verified &&
       contact.deliveryMode.isGalaxySSILinkFamily
+  }
+
+  static func transport(for response: AgentConnectorResponse, run: GlobalAutonomousRun) -> GlobalResearchResourceTransport? {
+    guard matches(response, run: run) else { return nil }
+    if run.status == .replanning { return run.review.resourceTransport }
+    return run.actions.first { $0.status == .running && $0.sourceMessageId == response.sourceMessageId }?.resourceTransport
   }
 }
 
@@ -118,6 +128,7 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
       content: "", conversationId: request.conversationId, turnId: request.turnId, taskId: request.runId,
       receivedAtMillis: 0)
     guard GlobalAutonomousSourceScope.matches(response, run: run),
+          GlobalAutonomousSourceScope.transport(for: response, run: run) == request.transport,
           (request.actionId.isEmpty ? run.status == .replanning : request.actionId == request.turnId) else { return false }
     if request.transport == .onDeviceModel {
       return request.resourceId == "phone-local-model" && request.contactId.isEmpty

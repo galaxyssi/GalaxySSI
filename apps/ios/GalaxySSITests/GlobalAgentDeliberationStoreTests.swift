@@ -4,6 +4,123 @@ import XCTest
 final class GlobalAgentDeliberationStoreTests: XCTestCase {
   private var fileURL: URL!
 
+  func testAutonomousActionTransportRoundtripAndLegacyAbsence() throws {
+    for transport in GlobalResearchResourceTransport.allCases {
+      var step = action("prepare"); step.resourceTransport = transport
+      let bytes = try JSONEncoder().encode(step)
+      XCTAssertEqual(try JSONDecoder().decode(GlobalAutonomousAction.self, from: bytes), step)
+      var json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+      json.removeValue(forKey: "resourceTransport")
+      XCTAssertNil(try JSONDecoder().decode(GlobalAutonomousAction.self,
+        from: JSONSerialization.data(withJSONObject: json)).resourceTransport)
+    }
+  }
+
+  func testAutonomousReviewTransportRoundtripAndLegacyAbsence() throws {
+    for transport in GlobalResearchResourceTransport.allCases {
+      var review = GlobalAutonomousRunReview(status: .running); review.resourceTransport = transport
+      let bytes = try JSONEncoder().encode(review)
+      XCTAssertEqual(try JSONDecoder().decode(GlobalAutonomousRunReview.self, from: bytes), review)
+      var json = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+      json.removeValue(forKey: "resourceTransport")
+      XCTAssertNil(try JSONDecoder().decode(GlobalAutonomousRunReview.self,
+        from: JSONSerialization.data(withJSONObject: json)).resourceTransport)
+    }
+  }
+
+  func testAutonomousTransportLookupRejectsUnownedAndAmbiguousResponses() {
+    var step = action("prepare", status: .running, resourceId: "model")
+    step.sourceMessageId = 123; step.resourceTransport = .cloudModel
+    var candidate = run("owner", actions: [step], status: .running)
+    var response = AgentConnectorResponse(sourceMessageId: 123, contactId: "model", content: "Result", receivedAtMillis: 200)
+    XCTAssertEqual(GlobalAutonomousSourceScope.transport(for: response, run: candidate), .cloudModel)
+    response.taskId = "foreign"
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+    response.taskId = ""; response.sourceMessageId = 0
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+    response.sourceMessageId = 123; candidate.actions.append(step)
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+  }
+
+  func testAutonomousReviewTransportRequiresMatchingRevisionAndCurrentOwner() {
+    var candidate = run("review", actions: [], status: .replanning)
+    candidate.review.status = .running; candidate.review.sourceMessageId = 123
+    candidate.review.resourceId = "model"; candidate.review.resourceTransport = .pairedAgent
+    var response = AgentConnectorResponse(sourceMessageId: 123, contactId: "model", content: "Review",
+      conversationId: "global-autonomous-review:review", turnId: "revision:2", taskId: "review", receivedAtMillis: 200)
+    XCTAssertEqual(GlobalAutonomousSourceScope.transport(for: response, run: candidate), .pairedAgent)
+    response.turnId = "revision:1"
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+    response.turnId = "revision:2"; candidate.review.status = .completed
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+  }
+
+  func testAutonomousLegacyCorrelationDoesNotManufactureTransportProof() {
+    var step = action("prepare", status: .running, resourceId: "model"); step.sourceMessageId = 123
+    let candidate = run("legacy", actions: [step], status: .running)
+    let response = AgentConnectorResponse(sourceMessageId: 123, contactId: "model", content: "Result", receivedAtMillis: 200)
+    XCTAssertTrue(GlobalAutonomousSourceScope.matches(response, run: candidate))
+    XCTAssertNil(GlobalAutonomousSourceScope.transport(for: response, run: candidate))
+  }
+
+  func testAutonomousTransportSurvivesReopenWithoutChangingOtherActions() throws {
+    var step = action("prepare", status: .running, resourceId: "model")
+    step.sourceMessageId = 123; step.resourceTransport = .cloudModel
+    var candidate = run("persisted", actions: [step, action("untouched")], status: .running)
+    candidate.review.resourceTransport = .pairedAgent
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    store.saveAutonomousRuns([candidate]); XCTAssertTrue(store.lastErrorDescription.isEmpty)
+    XCTAssertEqual(GlobalAgentDeliberationStore(fileURL: fileURL).autonomousRuns(), [candidate])
+    let updated = store.updateAutonomousRun(runId: candidate.id) { current in
+      var next = current; next.actions[0].resourceTransport = .onDeviceModel; return next
+    }
+    XCTAssertEqual(updated?.actions[0].resourceTransport, .onDeviceModel)
+    XCTAssertNil(updated?.actions[1].resourceTransport)
+    XCTAssertEqual(updated?.review.resourceTransport, .pairedAgent)
+  }
+
+  func testAutonomousUpdateRefusesUnreadableStateWithoutCallingTransform() throws {
+    try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let bytes = Data("unreadable state".utf8); try bytes.write(to: fileURL)
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL)
+    var transformed = false
+    XCTAssertNil(store.updateAutonomousRun(runId: "missing") { current in transformed = true; return current })
+    XCTAssertFalse(transformed); XCTAssertFalse(store.lastErrorDescription.isEmpty)
+    XCTAssertEqual(try Data(contentsOf: fileURL), bytes)
+  }
+
+  func testAutonomousUpdateDoesNotReturnAnUncommittedAttempt() throws {
+    let manager = AutonomousTransportFailureFileManager()
+    let store = GlobalAgentDeliberationStore(fileURL: fileURL, fileManager: manager)
+    let original = run("persisted", actions: [action("prepare")])
+    store.saveAutonomousRuns([original]); XCTAssertTrue(store.lastErrorDescription.isEmpty)
+    manager.failDirectories = true
+    XCTAssertNil(store.updateAutonomousRun(runId: original.id) { current in
+      var next = current; next.actions[0].resourceTransport = .cloudModel; return next
+    })
+    XCTAssertFalse(store.lastErrorDescription.isEmpty)
+    XCTAssertEqual(GlobalAgentDeliberationStore(fileURL: fileURL).autonomousRuns(), [original])
+  }
+
+  @MainActor
+  func testAutonomousCurrentResourceCannotChangeTheOriginalTransportGrant() throws {
+    let suite = "autonomous-transport-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = GalaxySSIStore(defaults: defaults, secrets: InMemorySecretStore())
+    let contact = try store.addCloudModelContact(displayName: "Synthetic", provider: "Synthetic",
+      modelId: "synthetic", endpoint: "https://example.invalid/v1/chat/completions",
+      apiKey: "synthetic-test-key", apiStyle: .openAICompatible)
+    store.updateGlobalAgentSettings { $0.allowCloudCognition = true; $0.allowPairedAgentCognition = true }
+    XCTAssertTrue(GlobalAutonomousSourceScope.resourceAuthorized(contact.id, transport: .cloudModel, store: store))
+    XCTAssertFalse(GlobalAutonomousSourceScope.resourceAuthorized(contact.id, transport: .pairedAgent, store: store))
+    XCTAssertFalse(GlobalAutonomousSourceScope.resourceAuthorized(contact.id, transport: nil, store: store))
+    XCTAssertFalse(GlobalAutonomousSourceScope.resourceAuthorized(contact.id, transport: .onDeviceModel, store: store))
+    XCTAssertTrue(GlobalAutonomousSourceScope.resourceAuthorized("phone-local-model", transport: .onDeviceModel, store: store))
+    XCTAssertFalse(GlobalAutonomousSourceScope.resourceAuthorized("phone-local-model", transport: .cloudModel, store: store))
+    store.updateGlobalAgentSettings { $0.allowCloudCognition = false }
+    XCTAssertFalse(GlobalAutonomousSourceScope.resourceAuthorized(contact.id, transport: .cloudModel, store: store))
+  }
+
   func testAutonomousSourcesIncludeMetadataAndSelectedCognitionContext() {
     var source = task("source", status: .completed)
     source.sourceEvent.metadata["source_conversation_ids"] = "secondary, conversation,secondary"
@@ -374,6 +491,15 @@ private func run(
     createdAtMillis: 100,
     updatedAtMillis: 100
   )
+}
+
+private final class AutonomousTransportFailureFileManager: FileManager, @unchecked Sendable {
+  var failDirectories = false
+  override func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                                attributes: [FileAttributeKey: Any]? = nil) throws {
+    if failDirectories { throw CocoaError(.fileWriteNoPermission) }
+    try super.createDirectory(at: url, withIntermediateDirectories: createIntermediates, attributes: attributes)
+  }
 }
 
 private extension Array {

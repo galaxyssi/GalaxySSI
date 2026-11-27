@@ -622,6 +622,7 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
   var confirmationGranted: Bool
   var status: GlobalAutonomousActionStatus
   var resourceId: String
+  var resourceTransport: GlobalResearchResourceTransport?
   var attemptedResourceIds: [String]
   var sourceMessageId: Int64
   var attemptCount: Int
@@ -662,7 +663,8 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     verificationStatus: GlobalActionVerificationStatus = .pending,
     lastError: String = "",
     startedAtMillis: Int64 = 0,
-    completedAtMillis: Int64 = 0
+    completedAtMillis: Int64 = 0,
+    resourceTransport: GlobalResearchResourceTransport? = nil
   ) {
     self.id = id
     self.planKey = planKey
@@ -689,6 +691,7 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     self.verificationContract = verificationContract
     self.evidence = Array(evidence.prefix(24))
     self.verificationStatus = verificationStatus
+    self.resourceTransport = resourceTransport
     self.lastError = lastError
     self.startedAtMillis = max(startedAtMillis, 0)
     self.completedAtMillis = max(completedAtMillis, 0)
@@ -712,6 +715,7 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     case confirmationGranted
     case status
     case resourceId
+    case resourceTransport
     case attemptedResourceIds
     case sourceMessageId
     case attemptCount
@@ -758,7 +762,8 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
       verificationStatus: try container.decodeIfPresent(GlobalActionVerificationStatus.self, forKey: .verificationStatus) ?? .pending,
       lastError: try container.decodeIfPresent(String.self, forKey: .lastError) ?? "",
       startedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .startedAtMillis) ?? 0,
-      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0,
+      resourceTransport: try container.decodeIfPresent(GlobalResearchResourceTransport.self, forKey: .resourceTransport)
     )
   }
 
@@ -781,6 +786,7 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     try container.encode(confirmationGranted, forKey: .confirmationGranted)
     try container.encode(status, forKey: .status)
     try container.encode(resourceId, forKey: .resourceId)
+    try container.encodeIfPresent(resourceTransport, forKey: .resourceTransport)
     try container.encode(attemptedResourceIds, forKey: .attemptedResourceIds)
     try container.encode(sourceMessageId, forKey: .sourceMessageId)
     try container.encode(attemptCount, forKey: .attemptCount)
@@ -871,6 +877,7 @@ struct GlobalAutonomousRunReview: Codable, Equatable {
   var status: GlobalRunReviewStatus
   var reason: String
   var resourceId: String
+  var resourceTransport: GlobalResearchResourceTransport?
   var attemptedResourceIds: [String]
   var sourceMessageId: Int64
   var attemptCount: Int
@@ -893,7 +900,8 @@ struct GlobalAutonomousRunReview: Codable, Equatable {
     lastError: String = "",
     decision: GlobalRunReplanDecision = GlobalRunReplanDecision(),
     createdAtMillis: Int64 = 0,
-    updatedAtMillis: Int64 = 0
+    updatedAtMillis: Int64 = 0,
+    resourceTransport: GlobalResearchResourceTransport? = nil
   ) {
     self.status = status
     self.reason = reason
@@ -905,6 +913,7 @@ struct GlobalAutonomousRunReview: Codable, Equatable {
     self.leaseExpiresAtMillis = max(leaseExpiresAtMillis, 0)
     self.lastError = lastError
     self.decision = decision
+    self.resourceTransport = resourceTransport
     self.createdAtMillis = max(createdAtMillis, 0)
     self.updatedAtMillis = max(updatedAtMillis, 0)
   }
