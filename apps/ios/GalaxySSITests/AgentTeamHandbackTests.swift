@@ -138,4 +138,60 @@ final class AgentTeamHandbackTests: XCTestCase {
       XCTAssertThrowsError(try AgentTeamDraftAudit.parse(raw, draft: "Disputed draft", sheet: nil, labels: .english))
     }
   }
+  func testExplicitRequestChangesUsesOneWriterAndSameEditorWithoutAnAnswerField() async throws {
+    let wire = SyntheticHandbackWire(audit: #"{"verdict":"request_changes","objection":"Original reservation"}"#)
+    let result = try await run(wire), inputs = await wire.inputs()
+    XCTAssertEqual(result.answer, "Corrected answer"); XCTAssertEqual(result.calls, 7)
+    XCTAssertEqual(inputs.filter { $0["stage"] == .string("rewrite") }.count, 1)
+    XCTAssertEqual(inputs.filter { $0["stage"] == .string("recheck") }.count, 1)
+    XCTAssertEqual(inputs.last?["objection"], .string("Original reservation"))
+  }
+  func testRequestChangesRejectsAnswerFieldsMissingReasonsAndWrongTypes() {
+    for raw in [#"{"verdict":"request_changes","objection":"Reason","answer":"Ambiguous"}"#,
+      #"{"verdict":"request_changes"}"#, #"{"verdict":"request_changes","objection":true}"#,
+      #"{"verdict":"request_changes","objection":""}"#] {
+      XCTAssertThrowsError(try AgentTeamDraftAudit.parse(raw, draft: "Draft", sheet: nil, labels: .english))
+    }
+  }
+  func testPlaceholderAuditReasonsUseLocalizedReceiptAndRetainContributorDissent() async {
+    for verdict in ["request_changes", "withhold", "revise"] {
+      var object: AgentMcpJSONObject = ["verdict": .string(verdict), "objection": .string("Brief error in draft.")]
+      if verdict == "revise" { object["answer"] = .string("Another answer") }
+      let wire = SyntheticHandbackWire(audit: AgentMcpJSONCodec.stringify(object))
+      let labels = AgentTeamDraftAudit.Labels(passing: "Pass", none: "None", limitation: "Limit", noReviewReason: "Localized missing reason")
+      do {
+        _ = try await AgentConversationalTeamEngine.run(objective: "Compare synthetic assumptions", labels: labels, ask: { try await wire.ask($0, $1) })
+        XCTFail("Placeholder is not an audit")
+      } catch let rejected as AgentTeamDraftAudit.Rejected {
+        guard case .withheld(let reason) = rejected.issue else { return XCTFail("Expected withholding") }
+        XCTAssertEqual(reason, "Localized missing reason"); XCTAssertEqual(rejected.objections.count, 2)
+      } catch { XCTFail("Expected public rejection") }
+      let inputs = await wire.inputs()
+      XCTAssertFalse(inputs.contains { $0["stage"] == .string("rewrite") })
+    }
+  }
+  func testRecheckRequestChangesIsATerminalVetoAndPlaceholderFallsBackToOriginal() async {
+    await assertWithheld(SyntheticHandbackWire(recheck: #"{"verdict":"request_changes","objection":"Replacement still uses a failed measurement"}"#),
+      reason: "Replacement still uses a failed measurement")
+    for reason in ["brief reason", "what the writer must correct", "specific reason in the language of the objective"] {
+      let raw = AgentMcpJSONCodec.stringify(["verdict": .string("request_changes"), "objection": .string(reason)])
+      await assertWithheld(SyntheticHandbackWire(recheck: raw))
+    }
+  }
+  func testPlaceholderRecognitionDoesNotDiscardActualSpecificObjections() {
+    for reason in ["Brief error in draft.", "brief reason...", "WHAT THE WRITER MUST CORRECT", "specific reason in the language of the objective"] {
+      XCTAssertTrue(AgentTeamDraftAudit.isReviewPlaceholder(reason))
+    }
+    XCTAssertFalse(AgentTeamDraftAudit.isReviewPlaceholder("The brief reason is that the reporter failed."))
+    XCTAssertFalse(AgentTeamDraftAudit.isReviewPlaceholder("The writer must distinguish measurement failure from counterevidence."))
+  }
+  func testEveryJudgmentRoleGetsPredictionCheckWithoutChangingPlannerAuthority() {
+    let check = AgentConversationalTeamProtocol.predictionCheck
+    for system in [AgentConversationalTeamProtocol.worker, AgentConversationalTeamProtocol.synthesizer,
+      AgentTeamDraftAudit.system, AgentTeamDraftAudit.rewriteSystem, AgentTeamDraftAudit.recheckSystem] {
+      XCTAssertTrue(system.contains(check)); XCTAssertTrue(system.contains(AgentConversationalTeamProtocol.boundary))
+    }
+    XCTAssertFalse(AgentConversationalTeamProtocol.planner.contains(check))
+    XCTAssertTrue(check.contains("uninterpretable observation")); XCTAssertTrue(check.contains("Do not invent data."))
+  }
 }
