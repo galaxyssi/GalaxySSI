@@ -1,0 +1,23 @@
+<resources>
+    <string name="goal_title">Conversation goal</string>
+    <string name="goal_help">/goal &lt;objective&gt; starts a background writing or reasoning goal.\n/goal status: view progress\n/goal pause: pause\n/goal resume [clarification]: continue from saved work\n/goal stop: end this goal and keep its results</string>
+    <string name="goal_round">Round %1$d · %2$s</string>
+    <string name="goal_running">Running</string>
+    <string name="goal_paused">Paused</string>
+    <string name="goal_blocked">Needs input</string>
+    <string name="goal_done">Completed</string>
+    <string name="goal_stopped">Stopped</string>
+    <string name="goal_chat_unavailable">Use a regular one-to-one Agent chat without attachments or mentions.</string>
+    <string name="goal_interrupted">The last request was interrupted. Its result is unknown; it was not automatically repeated. Use /goal resume to continue.</string>
+    <string name="goal_invalid">The model did not return a usable checkpoint. Previous work was kept.</string>
+    <string name="goal_provider_error">Could not finish this round with %1$s. Check the model connection and permission, then resume.</string>
+    <string name="goal_save_error">Goal state or conversation changed, or the operation failed. Check /goal status.</string>
+    <string name="goal_command_receipt">Goal: %1$s · %2$s</string>
+    <string name="goal_confirm">%1$s\n\nModel: %2$s\nUp to %3$d rounds this time. Only the objective, saved work and clarifications go to this model. Cloud calls may incur charges. No tools or other chat history are available.</string>
+    <string name="goal_run">Run</string>
+    <string name="goal_existing">Pause, resume or stop the existing goal before starting another one.</string>
+    <string name="goal_no_provider">No eligible on-device or direct cloud text model. Configure one in model settings. Paired Desktop agents are not used for unattended goals.</string>
+    <string name="goal_choose">Choose a model for this goal</string>
+    <string name="goal_not_resumable">Only paused or blocked goals can resume. Use /goal status to check.</string>
+    <string name="goal_budget">Round limit reached. Use /goal resume to authorize more work.</string>
+</resources>
