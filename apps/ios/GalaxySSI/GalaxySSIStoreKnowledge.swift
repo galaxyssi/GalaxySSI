@@ -116,41 +116,44 @@ extension GalaxySSIStore {
     let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Private knowledge")
     let chunks = chunkKnowledgeContent(assessment.indexedContent)
     let existingItems = agentKnowledgeItems
-      .filter { $0.source == sourceKey }
+      .filter { $0.source.utf8.elementsEqual(sourceKey.utf8) }
       .sorted { $0.chunkIndex < $1.chunkIndex }
-    let previousPolicy = existingItems.first.map {
-      (cloudAccess: $0.cloudAccess, agentAccess: $0.agentAccess, allowedAgentIds: $0.allowedAgentIds)
-    }
     let now = Int64(Date().timeIntervalSince1970 * 1_000)
-    let imported = chunks.enumerated().map { index, chunk in
-      let existing = existingItems.first { $0.chunkIndex == index }
-      let candidate = AgentKnowledgeItem(
-        id: existing?.id ?? UUID().uuidString,
-        kind: kind,
-        title: chunks.count > 1 ? "\(cleanTitle) [\(index + 1)/\(chunks.count)]" : cleanTitle,
-        content: chunk,
-        source: sourceKey,
-        tags: tags,
-        summary: String(chunk.prefix(700)),
-        cloudAccess: previousPolicy?.cloudAccess ?? .summaryOnly,
-        agentAccess: previousPolicy?.agentAccess ?? .localOnly,
-        allowedAgentIds: previousPolicy?.allowedAgentIds ?? [],
-        chunkIndex: index,
-        chunkCount: chunks.count,
-        updatedAtMillis: now
-      )
-      if let existing, knowledgeItemEquivalent(existing, candidate) { return existing }
-      return candidate
-    }
-    let incomingIds = Set(imported.map(\.id))
-    guard !agentKnowledgeItems.contains(where: {
-      incomingIds.contains($0.id) && $0.source != sourceKey
-    }) else { return [] }
-    let retained = agentKnowledgeItems.filter { $0.source != sourceKey }
-    let next = retained + imported
-    guard next != agentKnowledgeItems else { return imported }
-    agentKnowledgeItems = next
-    return imported
+    var chunksIterator = chunks.enumerated().makeIterator()
+    var imported: [AgentKnowledgeItem] = []
+    do {
+      let mutation = try agentKnowledgeDatabase.replaceSource(sourceKey, next: {
+        guard let (index, chunk) = chunksIterator.next() else { return nil }
+        let existing = existingItems.first { $0.chunkIndex == index }
+        return AgentKnowledgeItem(
+          id: existing?.id ?? UUID().uuidString,
+          kind: kind,
+          title: chunks.count > 1 ? "\(cleanTitle) [\(index + 1)/\(chunks.count)]" : cleanTitle,
+          content: chunk,
+          source: sourceKey,
+          tags: tags,
+          summary: String(chunk.prefix(700)),
+          cloudAccess: .summaryOnly,
+          agentAccess: .localOnly,
+          chunkIndex: index,
+          chunkCount: chunks.count,
+          updatedAtMillis: now
+        )
+      }, beforeCommit: { stage in
+        // This legacy UI adapter still needs an array. Read it before commit so
+        // decode/cancellation failure cannot leave a committed catalog and stale UI.
+        try stage.scan(.incoming) { imported.append($0) }
+      })
+      defer { mutation.stage.close() }
+      imported.sort { $0.chunkIndex == $1.chunkIndex ? $0.id < $1.id : $0.chunkIndex < $1.chunkIndex }
+      guard mutation.changed > 0 else { return imported }
+      publishingCommittedKnowledgeCache = true
+      agentKnowledgeItems = agentKnowledgeItems.filter { !$0.source.utf8.elementsEqual(sourceKey.utf8) } + imported
+      publishingCommittedKnowledgeCache = false
+      AgentKnowledgeSemanticController.shared(database: agentKnowledgeDatabase).startIndexing()
+      save()
+      return imported
+    } catch { return [] }
   }
 
   @discardableResult
