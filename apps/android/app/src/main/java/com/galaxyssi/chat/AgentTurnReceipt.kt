@@ -55,6 +55,10 @@ internal object AgentTurnReceipt {
     fun observeBody(chat: String, turn: String): Boolean =
         synchronized(live) { live[Key(chat, turn)]?.painted == false }
 
+    fun isReplyText(entry: AgentTranscriptEntry) = entry.role == AgentTranscriptRole.ASSISTANT &&
+        entry.text.isNotBlank() && !AgentReplyWaitingIndicatorPolicy.isIndicator(entry) &&
+        !entry.id.startsWith("agent-stream-preview-") && !entry.dedupeKey.startsWith("delivery-failed:")
+
     fun painted(c: Context, chat: String, turn: String) {
         val elapsed = synchronized(live) {
             val state = live[Key(chat, turn)] ?: return
