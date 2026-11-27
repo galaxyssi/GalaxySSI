@@ -562,6 +562,12 @@ struct GalaxySSIConversationHubView: View {
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
       suspendHubContentForBackground()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      closeSearch(); suspendHubContentForBackground()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+      closeSearch(); suspendHubContentForBackground()
+    }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIReplyUnreadDidChange)) { _ in
       hubRefreshToken = UUID()
     }
@@ -625,6 +631,10 @@ struct GalaxySSIConversationHubView: View {
     let visible = preparedHubContent.conversations
 
     return LazyVStack(alignment: .leading, spacing: 8) {
+      if searchExpanded, !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        GalaxySSILocalMessageSearchView(query: searchText, archived: showingArchived,
+          enabled: scenePhase == .active && !backgroundSuspended)
+      }
       if showingArchived {
         hubActionRow(
           title: t("galaxyssi.conversation_hub.back_to_conversations", "Back to conversations"),

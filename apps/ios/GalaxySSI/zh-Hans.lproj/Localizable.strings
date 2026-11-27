@@ -7908,3 +7908,14 @@
 "public_news_event_sources" = "同一事件的报道";
 "public_news_event_removed" = "这篇报道已不在本机存档中。";
 "public_news_event_no_body" = "本机尚未下载这篇报道的原文。";
+"galaxyssi.chat_search.heading" = "消息与附件";
+"galaxyssi.chat_search.attachment" = "附件";
+"galaxyssi.chat_search.query_limit" = "请输入不超过 256 个字符的关键词。";
+"galaxyssi.chat_search.empty" = "没有匹配的消息";
+"galaxyssi.chat_search.failed" = "搜索未能完成，结果可能不完整。";
+"galaxyssi.chat_search.retry" = "重新搜索";
+"galaxyssi.chat_search.more" = "更多匹配消息";
+"galaxyssi.chat_search.gone" = "这条消息已无法在普通历史中查看。";
+"galaxyssi.chat_search.earlier" = "更早的消息";
+"galaxyssi.chat_search.later" = "更晚的消息";
+"galaxyssi.chat_search.back" = "返回搜索";

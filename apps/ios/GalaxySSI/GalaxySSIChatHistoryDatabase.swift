@@ -603,6 +603,55 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     return await withTaskCancellationHandler(operation: { await read.value }, onCancel: { read.cancel() })
   }
 
+  // Search remains an on-demand encrypted read, not an FTS/plaintext side index.
+  func localSearchPage(contactId: String?, conversationId: String?,
+      before: GalaxySSIChatHistoryCursor? = nil, after: GalaxySSIChatHistoryCursor? = nil,
+      pageSize: Int = 32) throws -> GalaxySSIChatHistoryPage {
+    try locked {
+      try Task.checkCancellation()
+      guard rowCachingEnabled, database != nil, (contactId != nil || conversationId?.isBlank == false),
+            before == nil || after == nil else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+      let size = min(max(1, pageSize), 32)
+      var clauses: [String] = [], values: [SQLiteValue] = []
+      if let contactId { clauses.append("contact_id = ?"); values.append(.text(contactId)) }
+      if let conversationId { clauses.append("conversation_id = ?"); values.append(.text(conversationId)) }
+      if let cursor = before ?? after {
+        let comparison = after == nil ? "<" : ">"
+        clauses.append("(created_at \(comparison) ? OR (created_at = ? AND message_id \(comparison) ?))")
+        values += [.int64(cursor.createdAtMillis), .int64(cursor.createdAtMillis), .text(cursor.messageId)]
+      }
+      let order = after == nil ? "DESC" : "ASC"
+      guard let statement = prepare("SELECT message_id, encrypted_payload FROM chat_messages WHERE \(clauses.joined(separator: " AND ")) ORDER BY created_at \(order), message_id \(order) LIMIT ?")
+      else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+      defer { sqlite3_finalize(statement) }
+      values.append(.int(Int32(size + 1)))
+      for (offset, value) in values.enumerated() {
+        switch value {
+        case .text(let text): bind(text, at: Int32(offset + 1), to: statement)
+        case .int(let number): sqlite3_bind_int(statement, Int32(offset + 1), number)
+        case .int64(let number): sqlite3_bind_int64(statement, Int32(offset + 1), number)
+        }
+      }
+      var rows: [ChatMessage] = []
+      var step = sqlite3_step(statement)
+      while step == SQLITE_ROW {
+        try Task.checkCancellation()
+        guard let rawID = sqlite3_column_text(statement, 0) else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+        let id = String(cString: rawID)
+        guard let row = decode(statement, id: id, payloadColumn: 1, cache: false), row.id.uuidString == id,
+              contactId.map({ row.contactId == $0 }) ?? true,
+              conversationId.map({ row.conversationId == $0 }) ?? true else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+        rows.append(row)
+        step = sqlite3_step(statement)
+      }
+      guard step == SQLITE_DONE, rowCachingEnabled else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+      let kept = Array(rows.prefix(size)), more = rows.count > size
+      let next = more ? kept.last.map(GalaxySSIChatHistoryCursor.init) : nil
+      let visible = kept.filter(admitsAgentTurn)
+      return .init(messages: after == nil ? Array(visible.reversed()) : visible, nextCursor: next, hasMore: more)
+    }
+  }
+
   private func turnTimingKey(_ message: ChatMessage) -> String? {
     guard message.isMine, !message.isSystem, !message.conversationId.isBlank else { return "" }
     return try? cipher.chatTurnTimingIndex(conversationId: message.conversationId,
@@ -1268,7 +1317,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     return try? cipher.encrypt(data, purpose: purpose(message.id.uuidString))
   }
 
-  private func decode(_ statement: OpaquePointer?, id: String, payloadColumn: Int32) -> ChatMessage? {
+  private func decode(_ statement: OpaquePointer?, id: String, payloadColumn: Int32, cache: Bool = true) -> ChatMessage? {
     let count = Int(sqlite3_column_bytes(statement, payloadColumn))
     guard count > 0, let bytes = sqlite3_column_blob(statement, payloadColumn) else { return nil }
     let encrypted = Data(bytes: bytes, count: count)
@@ -1280,7 +1329,7 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
       return (message, plaintext.count)
     }
     // Reads within a write transaction may observe rows that later roll back.
-    guard rowCachingEnabled, let database, sqlite3_get_autocommit(database) != 0 else { return decrypt()?.message }
+    guard cache, rowCachingEnabled, let database, sqlite3_get_autocommit(database) != 0 else { return decrypt()?.message }
     return rowCache.read(id: id, ciphertext: encrypted, decode: decrypt)
   }
 
