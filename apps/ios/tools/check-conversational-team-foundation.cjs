@@ -25,8 +25,8 @@ assert(!/GalaxySSIHealthRecords|MessageCoordinator|enqueueDesktop|AgentNativeToo
 const event = engine.slice(engine.indexOf('  enum Event:'), engine.indexOf('  struct Outcome:'));
 assert(!/String|objective|assignment|finding/.test(event), 'Progress must contain only bounded metadata');
 const project = read('GalaxySSI.xcodeproj/project.pbxproj');
-for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamEngine',
-  'AgentConversationalTeamProtocolTests', 'AgentConversationalTeamEngineTests']) {
+for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamEngine', 'AgentConversationalTeamCommand',
+  'AgentConversationalTeamProtocolTests', 'AgentConversationalTeamEngineTests', 'AgentConversationalTeamCommandTests']) {
   const file = `${name.endsWith('Tests') ? 'GalaxySSITests' : 'GalaxySSI'}/${name}.swift`;
   const source = read(file);
   assert(!/\p{Script=Han}/u.test(source), name + ' localized resource placement');
@@ -35,4 +35,20 @@ for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamE
 }
 assert.equal((read('GalaxySSITests/AgentConversationalTeamProtocolTests.swift').match(/func test/g) || []).length, 8);
 assert.equal((read('GalaxySSITests/AgentConversationalTeamEngineTests.swift').match(/func test/g) || []).length, 7);
-console.log('Conversational team protocol/engine source contracts passed; command, confirmation, persistence and background integration pending; no native execution.');
+assert.equal((read('GalaxySSITests/AgentConversationalTeamCommandTests.swift').match(/func test/g) || []).length, 8);
+const command = read('GalaxySSI/AgentConversationalTeamCommand.swift');
+for (const token of ['case start(String), stop, help, tooLong, privateObjective', 'text.hasPrefix("/")',
+  'text.prefix(5).lowercased() == "/team"', 'quoted.stringByReplacingMatches', 'NSRange(prefix.startIndex..., in: prefix)',
+  'matches(visible, key: "negative"', '!matches(value, key: "meta"', 'requested ? makeStart(text) : nil',
+  'objective.utf16.count <= 4_000', 'key: "health"', 'language: LanguagePolicySettings.zhCN']) assert(command.includes(token), token);
+const strings = read('GalaxySSI/zh-Hans.lproj/Localizable.strings');
+const keys = new Set();
+for (const match of strings.matchAll(/^"galaxyssi\.conversation_team\.([^"\n]+)" = ("(?:[^"\\]|\\.)*");$/gm)) {
+  assert(!keys.has(match[1]), 'Duplicate team resource: ' + match[1]); keys.add(match[1]);
+  const value = JSON.parse(match[2]);
+  if (match[1].startsWith('pattern_')) new RegExp(value, 'i');
+}
+for (const key of ['help_alias', 'stop_alias', 'pattern_stop', 'pattern_negative', 'pattern_meta', 'pattern_request', 'pattern_with_team', 'pattern_health']) {
+  assert(keys.has(key), 'Localized command rule: ' + key);
+}
+console.log('Conversational team command/protocol/engine source contracts passed; confirmation, persistence and background integration pending; no native execution.');

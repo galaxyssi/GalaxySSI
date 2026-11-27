@@ -7997,6 +7997,14 @@
 "galaxyssi.health.local_lab.pattern_one_hour" = "[饭餐]后[1一]个?小时";
 "galaxyssi.health.local_lab.pattern_non_fasting" = "不是空腹|非空腹";
 "galaxyssi.health.local_lab.pattern_negative" = "不|没";
+"galaxyssi.conversation_team.help_alias" = "帮助";
+"galaxyssi.conversation_team.stop_alias" = "停止";
+"galaxyssi.conversation_team.pattern_stop" = "(?:请|麻烦)?(?:帮我)?(?:停止|取消|结束|终止)(?:这次|本次|当前|这个)?(?:的)?(?:(?:临时|自动|智能体|多智能体)?(?:团队|小组|组队)(?:协作|合作|任务|运行)?|多智能体协作)(?:吧)?[。！!]*";
+"galaxyssi.conversation_team.pattern_negative" = "(?:不要|不用|无需|不必|别|禁止|不需要)(?:再|你|让|用|请|找|安排|进行|自动|临时|多个|几个|一个|任何){0,5}(?:组队|组建|组织|团队|小组|智能体|多智能体|独立|分工)";
+"galaxyssi.conversation_team.pattern_meta" = "什么是|是什么意思|是什么|有什么|有哪些|怎么样|好不好|有用吗|如何|怎么|为什么|能否介绍|请问|^(?:请|帮我)?(?:解释|介绍|翻译|举例)";
+"galaxyssi.conversation_team.pattern_request" = "(?:^|(?:请(?:你|帮我)?|麻烦你?|帮我|我希望|我需要|我想请你|希望你|需要你|能不能|能否|可以)|再|然后)(?:帮我)?(?:自动)?(?:组(?:个|一?个临时)?队|(?:组建|组织|组|建|成立|组个|拉个)(?:一个|一支|个)?(?:临时|自动|智能体|多智能体)?(?:团队|小组)(?!建设)|(?:让|找|请|用|由|安排|组织)(?:一个|一支|个)?(?:(?:临时|自动|智能体|多智能体)?(?:团队|小组)|(?:多(?:个|名|位)?|几个|几名|不同(?:的)?)(?:智能体|助手|[Aa]gent))(?:来|帮我|(?:一起|协作|合作|分工)|从不同角度|分别|独立|评审|分析|审查|比较)|(?:做(?:一次|个)?|进行|安排)?独立(?:复核|复审|审核|审查|评审|审阅|检查|验证)(?!的|是))|(?:请(?:你|帮我)?|麻烦你?|帮我|我希望|我需要|我想请你|希望你|需要你|能不能|能否|可以)(?:临时|自动|智能体|多智能体)?(?:团队|小组)(?:一起|协作|合作|分工)";
+"galaxyssi.conversation_team.pattern_with_team" = "(?!)";
+"galaxyssi.conversation_team.pattern_health" = "(?:我的?|患者的?|病人的?)(?:最近的?|上次的?|这次的?|最新的?)?(?:健康档案|病历|体检|化验|检验报告|血压|血糖|处方|诊断结果)|血压[ ]*[:：=为是]?[ ]*[0-9]{2,3}[ ]*/[ ]*[0-9]{2,3}";
 "galaxyssi.agent.file.read_named" = "仅重新识别 %@";
 "galaxyssi.agent.file.recognized" = "模型自述：已识别";
 "galaxyssi.agent.file.unreadable" = "模型自述：无法解读";
