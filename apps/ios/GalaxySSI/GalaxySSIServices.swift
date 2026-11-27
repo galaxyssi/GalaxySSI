@@ -15020,6 +15020,7 @@ final class MessageCoordinator: ObservableObject {
       updated.blocked = true
       updated.verification = localizedReply("galaxyssi.agent.desktop_result_unavailable",
         fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
+      updated.result = updated.verification
     } else {
       updated.verification = localizedReply("galaxyssi.agent.desktop_status_unavailable",
         fallback: "The Desktop task status could not be confirmed. Check the connection before retrying.")
