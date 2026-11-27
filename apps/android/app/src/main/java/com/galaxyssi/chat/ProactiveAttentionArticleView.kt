@@ -38,6 +38,7 @@ internal class ProactiveAttentionArticleView(
     private var sourceLine: TextView? = null
     private var statusLine: TextView? = null
     private var eventLine: TextView? = null
+    private var eventExcerpt: TextView? = null
     private var bookmark: ImageButton? = null
     private var sourceName = ""
     private var knowledge = false
@@ -131,6 +132,12 @@ internal class ProactiveAttentionArticleView(
         val thumbnail = column().apply { visibility = View.GONE }
         if (!next.expanded) titleRow.addView(thumbnail, LayoutParams(dp(92), dp(76)).apply { leftMargin = dp(12) })
         intro.addView(titleRow)
+        eventExcerpt = if (showEvent != null && !next.expanded) label("", 13f).apply {
+            tag = "attention-event-excerpt:${item.key}"
+            maxLines = 2; ellipsize = TextUtils.TruncateAt.END
+            setOnClickListener { row?.item?.newsSummary?.event?.let(showEvent) }
+            intro.addView(this)
+        } else null
         val status = horizontal()
         statusLine = label("", 11f, secondary = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         status.addView(statusLine, LayoutParams(0, -2, 1f))
@@ -224,6 +231,11 @@ internal class ProactiveAttentionArticleView(
 
     fun updateStatus(next: AttentionReaderRow) {
         row = next
+        eventExcerpt?.apply {
+            val quote = next.item.newsSummary?.event?.newExcerpt
+            visibility = if (quote == null) View.GONE else View.VISIBLE
+            text = quote?.let { context.getString(R.string.attention_event_excerpt, it.first, it.second) }.orEmpty()
+        }
         eventLine?.apply {
             val event = next.item.newsSummary?.event
             visibility = if (event == null) View.GONE else View.VISIBLE

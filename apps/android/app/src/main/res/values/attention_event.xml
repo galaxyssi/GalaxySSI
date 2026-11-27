@@ -3,5 +3,6 @@
     <string name="attention_event_new_count"> · %1$d new</string>
     <string name="attention_event_sources">Coverage of this event</string>
     <string name="attention_event_new">New since last read</string>
+    <string name="attention_event_excerpt">New coverage · %1$s: %2$s</string>
     <string name="attention_event_no_body">Offline article unavailable</string>
 </resources>

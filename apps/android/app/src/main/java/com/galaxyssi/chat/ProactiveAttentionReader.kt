@@ -57,7 +57,8 @@ internal class ProactiveAttentionReader(
         val dates = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
         val labels = event.reports.map { r ->
             val added = if (event.arrivedSinceRead(r)) activity.getString(R.string.attention_event_new) + " · " else ""
-            "$added${r.source} · ${dates.format(java.util.Date(r.date))}\n${r.title}"
+            "$added${r.source} · ${dates.format(java.util.Date(r.date))}\n${r.title}" +
+                r.excerpts.firstOrNull()?.let { "\n$it" }.orEmpty()
         }.toTypedArray()
         android.app.AlertDialog.Builder(activity).setTitle(R.string.attention_event_sources)
             .setItems(labels) { _, index ->

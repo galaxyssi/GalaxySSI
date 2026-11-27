@@ -33,6 +33,15 @@ class AttentionNewsEventsTest {
         for (other in others) assertTrue(AttentionNewsEvents.group(listOf(a, other)).isEmpty())
         assertTrue(AttentionNewsEvents.group(listOf(article(1, 0, headline = "$title 6.1"), article(2, 0, headline = "$title 6.2"))).isEmpty())
     }
+    @Test fun attributesANewStatementWithoutMergingOpposingReportsOrRepeatingPreviouslyReadText() {
+        val before = article(1, 0, read = base + hour).copy(content = "研究团队表示，目前尚未正式公布发射日期。")
+        val after = article(2, 2).copy(content = "研究团队表示，目前尚未正式公布发射日期。第二家报道援引公告称，发射日期已确定。")
+        val group = AttentionNewsEvents.group(listOf(before, after)).getValue(before.key)
+        assertEquals("source-2" to "第二家报道援引公告称，发射日期已确定。", group.newExcerpt)
+        assertTrue(group.reports.single { it.source == "source-1" }.excerpts.single().contains("尚未"))
+        assertNull(AttentionNewsEvents.group(listOf(before, after.copy(content = before.content))).getValue(before.key).newExcerpt)
+        assertNull(AttentionNewsEvents.group(listOf(before.copy(content = ""), after)).getValue(before.key).newExcerpt)
+    }
     @Test fun groupingIsDeterministicAndCannotBridgeAcrossDaysOrFromTranslatedTitles() {
         val a = article(1, 0); val b = article(2, 30); val c = article(3, 60)
         val group = AttentionNewsEvents.group(listOf(c, b, a))
