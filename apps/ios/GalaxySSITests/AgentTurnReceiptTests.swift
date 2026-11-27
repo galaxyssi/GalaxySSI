@@ -5,6 +5,19 @@ final class AgentTurnReceiptTests: XCTestCase {
   typealias Store = AgentTurnReceiptStore
   private let key = Store.Key(owner: "owner", conversation: "chat", turn: "turn")
 
+  func testInputOriginRemainsUnknownForOldRowsAndCannotBeOverwritten() throws {
+    let store = try fixture()
+    store.recordInputOrigin(key, voice: true)
+    XCTAssertNil(store.read(key))
+    store.begin(key, choice: .init(), wall: 1, uptime: 1)
+    XCTAssertNil(store.read(key)?.voiceInput)
+    store.recordInputOrigin(key, voice: true)
+    store.recordInputOrigin(key, voice: false)
+    XCTAssertEqual(store.read(key)?.voiceInput, true)
+    let legacy = try JSONDecoder().decode(AgentTurnReceipt.self, from: Data("{}".utf8))
+    XCTAssertNil(legacy.voiceInput)
+  }
+
   func testFirstVisibleUsesOnlySameProcessMonotonicTimeAndIsOneShot() throws {
     let store = try fixture()
     store.begin(key, choice: .init(), wall: 10_000, uptime: 1_000_000)

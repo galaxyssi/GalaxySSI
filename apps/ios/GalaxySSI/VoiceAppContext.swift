@@ -9,6 +9,7 @@ struct VoiceAppCaptureAnchor: Equatable {
   let surface: Surface
   let playbackState: String
   let expiresAt: TimeInterval
+  var draftSession: UUID? = nil
 }
 
 struct VoiceAppNavigationRequest {
@@ -42,9 +43,16 @@ final class VoiceAppContextStore {
   private var navigationOwner: UUID?
   private var navigation: ((VoiceAppNavigationRequest) -> AgentNativeToolExecutionResult)?
   private var voiceEntry: ((VoiceAppEntryContext) -> Void)?
+  let messageDraft: VoiceMessageDraft
+  private var draftSession: UUID?
+  private var draftConversation = ""
+  private var draftWindow: UUID?
+  private var draftSurface: VoiceAppCaptureAnchor.Surface?
+  private var speechEvidence: [UUID: VoiceMessageSpeechEvidence] = [:]
 
   init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
     self.now = now
+    messageDraft = VoiceMessageDraft(now: now)
   }
 
   func capture(
@@ -52,11 +60,15 @@ final class VoiceAppContextStore {
     surface: VoiceAppCaptureAnchor.Surface, playbackState: String = "stopped"
   ) -> VoiceAppCaptureAnchor? {
     guard !conversationID.isBlank else { return nil }
+    if draftSession == nil || draftConversation != conversationID || draftWindow != navigationOwner || draftSurface != surface {
+      messageDraft.clear(); draftSession = UUID(); draftConversation = conversationID; draftWindow = navigationOwner; draftSurface = surface
+    }
     let owner = UUID()
+    speechEvidence.removeAll()
     activeOwner = owner
     return VoiceAppCaptureAnchor(owner: owner, conversationID: conversationID, contactID: contactID,
       articleID: PublicNewsSpeechBookmark.isKey(articleID) ? articleID : "",
-      surface: surface, playbackState: playbackState, expiresAt: now() + 600)
+      surface: surface, playbackState: playbackState, expiresAt: now() + 600, draftSession: draftSession)
   }
 
   func bind(_ anchor: VoiceAppCaptureAnchor, conversationID: String, turnID: String) {
@@ -75,12 +87,27 @@ final class VoiceAppContextStore {
   }
 
   func isForegroundOwner(_ anchor: VoiceAppCaptureAnchor) -> Bool {
-    anchor.owner == activeOwner && anchor.expiresAt > now()
+    anchor.owner == activeOwner && anchor.expiresAt > now() &&
+      (anchor.draftSession == nil || anchor.draftSession == draftSession)
   }
 
-  func invalidate(_ anchor: VoiceAppCaptureAnchor?) {
+  func invalidate(_ anchor: VoiceAppCaptureAnchor?, preserveDraft: Bool = false) {
+    if let anchor, anchor.owner != activeOwner { return }
+    if !preserveDraft { clearMessageDraft() }
     guard let anchor, anchor.owner == activeOwner else { return }
     activeOwner = nil
+  }
+  func captureSpoken(_ spoken: String, anchor: VoiceAppCaptureAnchor?) {
+    guard let anchor, isForegroundOwner(anchor) else { return }
+    speechEvidence[anchor.owner] = .capture(spoken)
+  }
+  func spoken(_ anchor: VoiceAppCaptureAnchor) -> VoiceMessageSpeechEvidence? {
+    isForegroundOwner(anchor) ? speechEvidence[anchor.owner] : nil
+  }
+  private func clearMessageDraft() {
+    messageDraft.clear(); draftSession = nil; draftConversation = ""; draftWindow = nil
+    draftSurface = nil
+    speechEvidence.removeAll()
   }
 
   func recordObservedContacts(_ ids: [String], anchor: VoiceAppCaptureAnchor) {
@@ -96,6 +123,7 @@ final class VoiceAppContextStore {
 
   func installNavigation(owner: UUID, handle: @escaping (VoiceAppNavigationRequest) -> AgentNativeToolExecutionResult,
                          openVoice: ((VoiceAppEntryContext) -> Void)? = nil) {
+    if navigationOwner != owner { clearMessageDraft() }
     navigationOwner = owner
     navigation = handle
     voiceEntry = openVoice
@@ -103,6 +131,7 @@ final class VoiceAppContextStore {
 
   func removeNavigation(owner: UUID) {
     guard navigationOwner == owner else { return }
+    clearMessageDraft()
     navigationOwner = nil
     navigation = nil
     voiceEntry = nil
@@ -118,6 +147,7 @@ final class VoiceAppContextStore {
   }
 
   func clear() {
+    clearMessageDraft()
     activeOwner = nil
     turns.removeAll()
     order.removeAll()
@@ -128,13 +158,17 @@ final class VoiceAppContextStore {
     let time = now()
     order.removeAll {
       if let anchor = turns[$0], anchor.expiresAt > time { return false }
-      if let anchor = turns.removeValue(forKey: $0) { observedContacts.removeValue(forKey: anchor.owner) }
+      if let anchor = turns.removeValue(forKey: $0) {
+        observedContacts.removeValue(forKey: anchor.owner); speechEvidence.removeValue(forKey: anchor.owner)
+      }
       return true
     }
     if order.count > 64 {
       let excess = order.count - 64
       for key in order.prefix(excess) {
-        if let anchor = turns.removeValue(forKey: key) { observedContacts.removeValue(forKey: anchor.owner) }
+        if let anchor = turns.removeValue(forKey: key) {
+          observedContacts.removeValue(forKey: anchor.owner); speechEvidence.removeValue(forKey: anchor.owner)
+        }
       }
       order.removeFirst(excess)
     }

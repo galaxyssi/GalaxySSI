@@ -62,6 +62,9 @@ extension AgentHomeView {
       attachmentError = ""
       return
     }
+    if let spoken = submission.spokenText {
+      coordinator.voiceAppContexts.captureSpoken(spoken, anchor: voiceAppAnchor)
+    }
     let risk = DefaultVoiceCommandRiskClassifier.classify(cleanTranscript)
     let sessionId = registerAgentVoiceExecution(submission, risk: risk)
     persistAgentVoiceCorrection(submission.correctionReview, risk: risk)
@@ -160,7 +163,7 @@ extension AgentHomeView {
 
   func beginAgentVoiceCapture() {
     composerSubmissionID = nil
-    invalidateVoiceAppAnchor()
+    invalidateVoiceAppAnchor(preserveDraft: true)
     voiceAppCaptureInvalidated = false
     voiceAttachmentSnapshot.removeAll()
     agentVoiceCaptureDictationOnly = !screenAssistantConversationID.isEmpty &&
@@ -188,9 +191,9 @@ extension AgentHomeView {
     attachments.removeAll { capturedIDs.contains($0.id) }
   }
 
-  func invalidateVoiceAppAnchor() {
+  func invalidateVoiceAppAnchor(preserveDraft: Bool = false) {
     if voiceAppAnchor != nil { voiceAppCaptureInvalidated = true }
-    coordinator.voiceAppContexts.invalidate(voiceAppAnchor)
+    coordinator.voiceAppContexts.invalidate(voiceAppAnchor, preserveDraft: preserveDraft)
     voiceAppAnchor = nil
   }
 

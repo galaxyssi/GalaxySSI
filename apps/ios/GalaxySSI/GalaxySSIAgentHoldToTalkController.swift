@@ -299,7 +299,8 @@ final class GalaxySSIAgentHoldToTalkController: ObservableObject {
       correctionReview: correctionReview,
       sessionId: sessionId,
       audioData: audioData,
-      audioDurationMillis: audioSnapshot?.durationMs ?? 0
+      audioDurationMillis: audioSnapshot?.durationMs ?? 0,
+      spokenText: correctionReview?.diff.fastText ?? cleanText
     ))
     return true
   }

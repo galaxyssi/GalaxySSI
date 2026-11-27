@@ -148,6 +148,8 @@ struct VoiceTranscriptCorrectionReview: Codable, Equatable {
 }
 
 struct GalaxySSIVoiceTranscriptSubmission: Equatable {
+  // Set only by the capture controller; edited or legacy submissions carry no speech authority.
+  var spokenText: String?
   var text: String
   var correctionReview: VoiceTranscriptCorrectionReview?
   var sessionId: String
@@ -165,9 +167,11 @@ struct GalaxySSIVoiceTranscriptSubmission: Equatable {
     audioDurationMillis: Int64 = 0,
     audioMimeType: String = "audio/wav",
     audioFileExtension: String = "wav",
-    audioSourceURL: URL? = nil
+    audioSourceURL: URL? = nil,
+    spokenText: String? = nil
   ) {
     self.text = text
+    self.spokenText = spokenText
     self.correctionReview = correctionReview
     self.sessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank(correctionReview?.sessionId ?? "")

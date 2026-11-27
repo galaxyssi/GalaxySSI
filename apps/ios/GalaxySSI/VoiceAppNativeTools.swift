@@ -3,9 +3,10 @@ import UIKit
 enum VoiceAppNativeTools {
   enum Operation: String, CaseIterable {
     case context, contacts, news, readArticle = "read_article", playback, navigate, sendMessage = "send_message"
+    case voiceMessage = "voice_message"
 
     var id: String { "galaxyssi.app.\(rawValue)" }
-    var changesApp: Bool { [.playback, .navigate, .sendMessage].contains(self) }
+    var changesApp: Bool { [.playback, .navigate, .sendMessage, .voiceMessage].contains(self) }
   }
 
   static let playbackConsent = "voice_app.playback"
@@ -21,7 +22,7 @@ enum VoiceAppNativeTools {
         id: operation.id, version: AgentPhoneNativeToolCatalog.version, title: "GalaxySSI \(operation.rawValue)",
         description: description(operation), location: .application, inputSchema: schema(operation),
         outputSchema: AgentNativeToolDescriptor.objectSchema(),
-        risk: operation == .sendMessage ? .high : operation == .contacts || operation.changesApp ? .medium : .low,
+        risk: [.sendMessage, .voiceMessage].contains(operation) ? .high : operation == .contacts || operation.changesApp ? .medium : .low,
         capabilities: ["app_control", "voice_interaction"],
         requiredConsents: consents(operation),
         timeoutMillis: 15_000,
@@ -49,9 +50,11 @@ enum VoiceAppNativeTools {
     case .navigate:
       return [AgentNativeConsentRequirement(id: navigationConsent, title: "Open a GalaxySSI page",
         description: "Allows this voice request to open the selected page or create a conversation with the supplied message.")]
-    case .sendMessage:
+    case .sendMessage, .voiceMessage:
       return [AgentNativeConsentRequirement(id: sendConsent, title: "Send this exact message",
-        description: "Confirms sending the specified text to the exact verified contact.")]
+        description: "Allows a transient message draft. Sending still requires a later explicit spoken confirmation."),
+        AgentNativeConsentRequirement(id: contactsConsent, title: "Resolve paired recipients",
+          description: "Allows exact-name lookup and numbered disambiguation of verified paired contacts.")]
     default: return []
     }
   }
@@ -64,7 +67,8 @@ enum VoiceAppNativeTools {
     case .readArticle: return "Read the cached original text of a downloaded article using an exact article ID."
     case .playback: return "Play ordered downloaded articles, pause, resume, skip, or stop news reading. Requires the original foreground voice owner."
     case .navigate: return "Open Agent, an exact observed contact, News, Phone, or a new conversation in the original voice window."
-    case .sendMessage: return "Queue exact text to an observed verified phone contact ID. Returns queued or published, not delivered."
+    case .sendMessage: return "Prepare a voice draft for an observed verified contact. Never sends immediately. Read back the recipient and body, then wait for a new spoken confirmation through voice_message."
+    case .voiceMessage: return "Manage a transient 180-second voice message draft. prepare requires text and an exact recipient query or observed contact_id. change_recipient preserves the body and replaces the revision. Read native numbered choices before choose; choose requires a new spoken option and its exact contact_id. Read back the final recipient and body and wait for a later explicit spoken confirmation before confirm. Never invent confirmation. Pass revision for changes, choice, confirm or cancel. Queued, published and dispatch_uncertain cannot be recalled or automatically resent; none proves delivery."
     }
   }
 
@@ -99,6 +103,12 @@ enum VoiceAppNativeTools {
     case .sendMessage:
       properties = ["contact_id": text, "text": .object(["type": .string("string"), "minLength": .int(1), "maxLength": .int(10_000)])]
       required = ["contact_id", "text"]
+    case .voiceMessage:
+      properties = ["operation": .object(["type": .string("string"), "enum": .array(
+        ["prepare", "status", "change_recipient", "choose", "confirm", "cancel"].map(AgentMcpJSONValue.string))]),
+        "query": text, "contact_id": text, "revision": text,
+        "text": .object(["type": .string("string"), "maxLength": .int(10_000)])]
+      required = ["operation"]
     }
     return ["type": .string("object"), "properties": .object(properties),
       "required": .array(required.map(AgentMcpJSONValue.string)), "additionalProperties": .bool(false)]
@@ -197,7 +207,9 @@ extension MessageCoordinator {
       guard voiceAppContexts.hasObservedContact(contactID, anchor: anchor) else {
         return .failure(code: "contact_not_observed", message: "Choose an exact contact ID observed in this turn.")
       }
-      return enqueueVoicePeerText(input["text"]?.stringValue ?? "", contactID: contactID, context: context)
+      return executeVoiceMessageDraft(invocation, anchor: anchor, store: store, legacy: true)
+    case .voiceMessage:
+      return executeVoiceMessageDraft(invocation, anchor: anchor, store: store)
     }
   }
 
