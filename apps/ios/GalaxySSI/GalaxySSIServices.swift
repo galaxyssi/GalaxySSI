@@ -4037,8 +4037,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if now < managedDesktopProbeAt || now - managedDesktopProbeAt >= 30_000 { managedDesktopProbeAt = now; managedDesktopProbes = 0 }
-    guard managedNativeRecoveryMayQuery(source),
-          mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
+    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
           let payload = desktopReplyRecovery.request(binding, online: true, now: now) ?? desktopResultRecovery.request(record, now: now),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return false }
@@ -4501,7 +4500,8 @@ final class MessageCoordinator: ObservableObject {
       managedDesktopProbeAt = now
       managedDesktopProbes = 0
     }
-    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
+    guard managedNativeRecoveryMayQuery(source),
+          mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
           let payload = desktopReplyRecovery.request(binding, online: true, now: now) ?? desktopResultRecovery.request(record, now: now),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
