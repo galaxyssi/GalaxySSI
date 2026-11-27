@@ -51,6 +51,7 @@ enum GalaxySSIHealthCareFollowUp {
     var journalReview: JournalReview? = nil
     var appointment: GalaxySSIHealthAppointmentReminder.Reference? = nil
     var appointmentState: GalaxySSIHealthAppointmentReminder.State? = nil
+    var labReview: GalaxySSIHealthAgentLab.Recheck? = nil
 
     var identifier: String { GalaxySSIHealthCareFollowUp.prefix + id.uuidString }
   }

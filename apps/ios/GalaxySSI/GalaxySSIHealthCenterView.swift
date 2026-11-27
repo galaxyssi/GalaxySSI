@@ -38,10 +38,11 @@ struct GalaxySSIHealthCenterView: View {
     var id: String { rawValue }
   }
 
-  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil, initialRecordID: UUID? = nil) {
+  init(records: GalaxySSIHealthRecords, initialRecordMetric: GalaxySSIHealthMetric? = nil, initialRecordID: UUID? = nil, initialPrivacy: Bool = false) {
     self.records = records
     _initialRecordMetric = State(initialValue: initialRecordMetric)
     _initialRecordID = State(initialValue: initialRecordID)
+    _overviewDestination = State(initialValue: initialPrivacy ? .privacy : nil)
   }
   @State private var sourceRecovery: GalaxySSIHealthSourceAttention.Incident?
 
@@ -193,6 +194,19 @@ struct GalaxySSIHealthCenterView: View {
             }
           }
           if requests.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+        }
+        if let uses = archive.localLabReadAudit, !uses.isEmpty {
+          Section(GalaxySSIHealthAgentLab.text("audit_title", "Local lab access history", language)) {
+            ForEach(Array(uses.reversed().prefix(privacyLimit)), id: \.id) { entry in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(entry.at, format: .dateTime)
+                Text(entry.through, style: .date).font(.caption)
+                Text(GalaxySSIHealthAgentLab.text(entry.allowed ? (entry.once ? "audit_once" : "audit_allowed") : "audit_blocked",
+                  entry.allowed ? (entry.once ? "One local read" : "Allowed") : "Blocked", language))
+              }
+            }
+            if uses.count > privacyLimit { Button(t("more", "Show more")) { privacyLimit += 20 } }
+          }
         }
         if let uses = archive.atlasReadAudit, !uses.isEmpty {
           Section(t("privacy.atlas_history", "Body Atlas access history")) {

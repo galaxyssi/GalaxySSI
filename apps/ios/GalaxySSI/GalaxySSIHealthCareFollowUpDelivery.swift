@@ -18,6 +18,7 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     let metric: GalaxySSIHealthMetric
     let visit: UUID?
     var appointment = false
+    var lab: GalaxySSIHealthAgentLab.Launch? = nil
   }
 
   func body(content: Content) -> some View {
@@ -67,7 +68,9 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
         generation = UUID()
       }
       .sheet(item: $destination) { route in
-        if route.appointment, let visit = route.visit {
+        if let lab = route.lab {
+          GalaxySSIHealthAgentLabView(launch: lab)
+        } else if route.appointment, let visit = route.visit {
           appointment(route, visit: visit)
         } else if let visit = route.visit {
           GalaxySSIHealthVisitJournalView(records: .init(owner: route.owner, secrets: store.secrets),
@@ -182,6 +185,14 @@ struct GalaxySSIHealthCareFollowUpLifecycle: ViewModifier {
     defaults.removeObject(forKey: key)
     guard permitted, let token = UUID(uuidString: raw),
           let reminder = try? records.localCareFollowUpTarget(token: token, now: now) else { return }
+    if let lab = reminder.labReview {
+      guard let session = store.agentSession(id: lab.conversation), session.status == .active,
+        session.collaborationRoster == nil, session.globalTopicKey.isBlank, session.mergedIntoConversationId.isBlank,
+        store.switchAgentSession(session.id) else { return }
+      destination = .init(id: reminder.id, concern: reminder.concernID, owner: records.owner, metric: reminder.metric,
+        visit: nil, lab: .init(owner: records.owner, conversation: lab.conversation, mode: .results, through: lab.through))
+      return
+    }
     destination = .init(id: reminder.id, concern: reminder.concernID, owner: records.owner, metric: reminder.metric,
       visit: reminder.appointment?.visit ?? reminder.journalReview?.visit, appointment: reminder.appointment != nil)
   }

@@ -1,4 +1,6 @@
 import com.galaxyssi.chat.AutoGoalTeamEngineKt;
+import com.galaxyssi.chat.AutoGoalTeamCommand;
+import com.galaxyssi.chat.TeamAnswerWithheld;
 import java.net.*;
 import java.net.http.*;
 import java.time.Duration;
@@ -13,6 +15,21 @@ import org.json.*;
 
 /** Opt-in host smoke test. Only a fixed, public, synthetic task is sent to a loopback model. */
 class LocalTeamAcceptance {
+    // No candidate name, mechanism, comparison table or expected winning idea is supplied.
+    static final String CONCEPT_TURN = """
+        请自动组队，为苯丙酮尿症（PKU）的体外研究提出一个候选蛋白的功能构想，并独立审核最后的答复。
+        公开背景：PKU 会使血中苯丙氨酸升高。没有提供任何候选蛋白或实测数据。
+        请自行提出一个不进入人体的研究用读数构想：它要报告什么，什么现象会让你放弃这个解释？
+        用中文区分已知背景、设计目标和仍缺的证据。不要给序列、制备或实验步骤，不作诊疗或新颖性声明。
+        """.strip();
+
+    static String admittedConcept() {
+        var command = AutoGoalTeamCommand.Companion.parse(CONCEPT_TURN);
+        require(command instanceof AutoGoalTeamCommand.Start, "The ordinary Chinese turn did not request a team");
+        String objective = ((AutoGoalTeamCommand.Start)command).getObjective();
+        require(CONCEPT_TURN.equals(objective), "Chat admission changed the objective");
+        return objective;
+    }
     static String task(boolean swapped) {
         return "Evaluate fictional Phe-Buffer, a hypothetical protein function for PKU. "
         + "The proposed function is to reduce excess phenylalanine (Phe) while sparing low Phe. "
@@ -29,22 +46,25 @@ class LocalTeamAcceptance {
     final List<JSONObject> calls = new CopyOnWriteArrayList<>();
     final URI endpoint;
     final String model;
+    final boolean schemaPlan;
 
-    LocalTeamAcceptance(int port, String model) {
+    LocalTeamAcceptance(int port, String model, boolean schemaPlan) {
         endpoint = URI.create("http://127.0.0.1:" + port + "/v1/chat/completions");
         this.model = model;
+        this.schemaPlan = schemaPlan;
     }
 
     Object ask(String system, String input, Continuation<? super String> continuation) {
         JSONObject call = new JSONObject(input);
         calls.add(call);
+        var planWire = AutoGoalTeamEngineKt.teamPlanWire(system, endpoint.toString(), schemaPlan ? "llama.cpp-json-schema" : "openai");
         JSONArray messages = new JSONArray()
-            .put(new JSONObject().put("role", "system").put("content", system))
+            .put(new JSONObject().put("role", "system").put("content", planWire == null ? system : planWire.getSystem()))
             .put(new JSONObject().put("role", "user").put("content", input));
         JSONObject body = new JSONObject().put("model", model).put("messages", messages)
             .put("temperature", 0).put("seed", 42).put("stream", false).put("max_tokens", 850)
             .put("chat_template_kwargs", new JSONObject().put("enable_thinking", false));
-        body.putOpt("response_format", AutoGoalTeamEngineKt.teamAuditOutputFormat(system, endpoint.toString()));
+        body.putOpt("response_format", planWire == null ? AutoGoalTeamEngineKt.teamAuditOutputFormat(system, endpoint.toString()) : planWire.getRequestFormat());
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(Duration.ofSeconds(110))
             .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body.toString())).build();
         var requestFuture = client.sendAsync(request, HttpResponse.BodyHandlers.ofString());
@@ -53,8 +73,15 @@ class LocalTeamAcceptance {
             JSONObject reply = new JSONObject(response.body());
             require(ids.add(reply.getString("id")), "Model reused a completion ID");
             JSONObject choice = reply.getJSONArray("choices").getJSONObject(0);
-            require("stop".equals(choice.getString("finish_reason")), "Incomplete generation");
-            String content = choice.getJSONObject("message").getString("content");
+            String finish = choice.optString("finish_reason");
+            JSONObject usage = reply.optJSONObject("usage");
+            require("stop".equals(finish), "Incomplete " + call.getString("stage") +
+                " generation (length limit=" + "length".equals(finish) + ", completion tokens=" +
+                (usage == null ? -1 : usage.optInt("completion_tokens", -1)) + ")");
+            JSONObject message = choice.getJSONObject("message");
+            require(!message.has("tool_calls") && !message.has("function_call"), "Unexpected tool request");
+            String raw = message.getString("content");
+            String content = planWire == null ? raw : planWire.decode(raw);
             String stage = call.getString("stage");
             // Log the shape, never thoughts or the raw response to a malformed call.
             String shape = content.lines().limit(14).map(line -> {
@@ -99,10 +126,19 @@ class LocalTeamAcceptance {
         return table.toString();
     }
 
-    void run(boolean swapped) throws Exception {
-        String answer = BuildersKt.<String>runBlocking(EmptyCoroutineContext.INSTANCE,
-            (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(task(swapped), this::ask,
-                event -> { System.out.println(event); return Unit.INSTANCE; }, cont));
+    void run(boolean swapped, boolean concept) throws Exception {
+        String objective = concept ? admittedConcept() : task(swapped);
+        String answer;
+        boolean withheld = false;
+        try {
+            answer = BuildersKt.<String>runBlocking(EmptyCoroutineContext.INSTANCE,
+                (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(objective, this::ask,
+                    event -> { System.out.println(event); return Unit.INSTANCE; }, cont));
+        } catch (TeamAnswerWithheld e) {
+            if (!concept) throw e;
+            withheld = true;
+            answer = e.getReservation() + e.getPublicObjections();
+        }
         var roles = calls.stream().filter(c -> Set.of("role","audit").contains(c.getString("stage"))).toList();
         require(roles.size() >= 2 && roles.size() <= 10 && ids.size() == roles.size()+2, "Expected real independent calls");
         require(roles.stream().anyMatch(r -> Set.of("reviewer","dissent").contains(r.getString("kind"))), "No independent check");
@@ -136,8 +172,15 @@ class LocalTeamAcceptance {
                 "Audit did not receive exactly the originating role's public objection");
         }
         require(expectedObjections.isEmpty(), "Missing non-parent objection");
-        System.out.println("Final public answer:\n" + answer);
+        System.out.println((withheld ? "Review withheld the draft:\n" : "Final public answer:\n") + answer);
         System.out.println("Transport verified: " + roles.size() + " model-chosen roles, " + ids.size() + " distinct completions.");
+        if (concept) {
+            require(calls.stream().allMatch(c -> objective.equals(c.getString("objective")) && !c.has("verified_table")),
+                "The open-ended fixture changed or received a precomputed answer");
+            require(!withheld, "Collaboration verified, but no concept was released");
+            System.out.println("Inspect the proposed readout, its falsifier and missing evidence. No molecule or clinical claim is validated.");
+            return;
+        }
         System.out.println("Numerical reference (fictional model only): " + reference(swapped));
         // A returned paragraph alone is not evidence of scientific or even arithmetic correctness.
         String finalBody = answer.split("\n\n(?:Reviewer correction:|Reported disagreements:)", 2)[0];
@@ -168,6 +211,7 @@ class LocalTeamAcceptance {
 
     public static void main(String[] args) throws Exception {
         if (Arrays.equals(args, new String[]{"--check-rubric"})) {
+            admittedConcept();
             String good = "B meets both toy gates. No clinical evidence.";
             screenVerdict(good, false);
             screenVerdict("A meets both toy gates. No clinical evidence.", true);
@@ -178,8 +222,12 @@ class LocalTeamAcceptance {
             System.out.println("Rubric regressions passed (no model called).");
             return;
         }
-        if (args.length != 2 && !(args.length == 3 && args[2].equals("--swap")))
-            throw new IllegalArgumentException("Expected loopback port, local model ID, optional --swap");
-        new LocalTeamAcceptance(Integer.parseInt(args[0]), args[1]).run(args.length == 3);
+        if (args.length < 2) throw new IllegalArgumentException("Expected loopback port and local model ID");
+        var extra = List.of(args).subList(2, args.length);
+        var opts = Set.copyOf(extra);
+        require(opts.size() == extra.size() && Set.of("--swap", "--concept", "--schema-plan").containsAll(opts) &&
+            !(opts.contains("--swap") && opts.contains("--concept")), "Invalid fixture options");
+        new LocalTeamAcceptance(Integer.parseInt(args[0]), args[1], opts.contains("--schema-plan"))
+            .run(opts.contains("--swap"), opts.contains("--concept"));
     }
 }

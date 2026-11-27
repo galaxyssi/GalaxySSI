@@ -1263,7 +1263,7 @@ final class GalaxySSIStore: ObservableObject {
       at: createdAt
     )
     if sourceTrace != AgentConversationSchedule.occurrenceStage, sourceTrace != AgentSingleFileRead.stage,
-      sourceTrace != AgentConversationGoalRuntime.stage {
+      sourceTrace != AgentConversationGoalRuntime.stage, sourceTrace != GalaxySSIHealthAgentLab.stage {
       captureExplicitAgentCoreMemory(content, conversationId: conversationId, contactId: contactId, eventId: message.id.uuidString)
     }
     if !readOnlyAnalysis, (contactId == "hermes" || contact(id: contactId)?.type.caseInsensitiveCompare("agent") == .orderedSame),
