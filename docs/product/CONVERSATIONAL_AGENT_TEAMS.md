@@ -258,6 +258,14 @@ no domain variable or measured result. Qualitative answers remain available
 where this comparison does not fit. The independent editor sees the exact
 rendered text; a disputed structured claim cannot be replaced by unaudited
 prose. None of this validates the physical hypothesis.
+
+For the Custom/OpenAI loopback route, a successfully decoded plan from a
+server identifying itself as llama.cpp enables constrained writer output for
+that endpoint and run only. No extra request is needed. The schema allows
+both directions and does not prescribe any quantity or mechanism. Synthesis
+can still choose prose; revision of a structured claim cannot. Other servers,
+remote routes and tools do not receive the writer schema.
+
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 

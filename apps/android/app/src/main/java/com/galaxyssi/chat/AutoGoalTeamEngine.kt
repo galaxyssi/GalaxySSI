@@ -105,7 +105,7 @@ private val auditSystem = """
     Use the language of the objective. No text outside the object.
 """.trimIndent()
 
-private val contrastWriterSystem = """
+internal val contrastWriterSystem = """
     Answer the original objective using the brief and public reports. For a directional hypothesis,
     choose the independent quantity and a different observable quantity. Propose the function yourself.
     Return one flat JSON object with these seven string fields and no other keys:
@@ -179,11 +179,7 @@ internal fun teamAuditOutputFormat(system: String, endpoint: String): JSONObject
 /** The selectable Custom/OpenAI preset can request JSON without assuming server-side schema support. */
 internal fun teamPlanWire(system: String, endpoint: String, apiStyle: String): TeamPlanWire? {
     if ((system != plannerSystem && system != finalReviewPlannerSystem) || apiStyle !in setOf("openai", "llama.cpp-json-schema")) return null
-    val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return null
-    if (uri.scheme !in setOf("http", "https") || uri.host !in setOf("127.0.0.1", "[::1]") ||
-        uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null ||
-        uri.rawPath != "/v1/chat/completions" || (uri.port != -1 && uri.port !in 1..65535) ||
-        uri.rawAuthority.endsWith(':')) return null
+    if (canonicalTeamLoopback(endpoint) == null) return null
     return TeamPlanWire(constrained = apiStyle == "llama.cpp-json-schema", finalReview = system == finalReviewPlannerSystem)
 }
 

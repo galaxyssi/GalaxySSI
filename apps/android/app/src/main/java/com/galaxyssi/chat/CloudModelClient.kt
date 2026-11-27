@@ -293,8 +293,9 @@ object CloudModelClient {
         contact: JSONObject,
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String = "",
-        textOnlyResponseFormat: JSONObject? = null
-    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null, textOnlyResponseFormat)
+        textOnlyResponseFormat: JSONObject? = null,
+        onTextServer: ((String, String?) -> Unit)? = null
+    ): AgentModelAdapter = createNativeToolAdapter(context, contact, catalog, catalogFingerprint, null, textOnlyResponseFormat, onTextServer)
 
     internal fun nativeToolAdapter(context: Context, contact: JSONObject, initial: AgentNativeToolCatalogView,
         catalogProvider: (AgentModelRequest) -> AgentNativeToolCatalogView): AgentModelAdapter =
@@ -306,7 +307,8 @@ object CloudModelClient {
         catalog: List<AgentNativeToolDescriptor>,
         catalogFingerprint: String,
         catalogProvider: ((AgentModelRequest) -> AgentNativeToolCatalogView)?,
-        textOnlyResponseFormat: JSONObject? = null
+        textOnlyResponseFormat: JSONObject? = null,
+        onTextServer: ((String, String?) -> Unit)? = null
     ): AgentModelAdapter {
         val contact = JSONObject(contactValue.toString())
         validateContact(context, contact)
@@ -399,7 +401,8 @@ object CloudModelClient {
                                 endpoint,
                                 openAiHeaders(contact),
                                 body,
-                                request.cancellationToken
+                                request.cancellationToken,
+                                onTextServer.takeIf { toolCatalog.descriptors.isEmpty() }
                             )
                             AgentModelToolProvider.ANTHROPIC -> postJson(
                                 context,
@@ -1827,7 +1830,8 @@ object CloudModelClient {
         url: String,
         headers: Map<String, String>,
         body: JSONObject,
-        cancellationToken: AgentNativeToolCancellationToken = CloudBlockingRequestCancellation.token()
+        cancellationToken: AgentNativeToolCancellationToken = CloudBlockingRequestCancellation.token(),
+        onSuccessServer: ((String, String?) -> Unit)? = null
     ): String {
         val client = SharedCloudModelHttpClient.client.newBuilder()
             .readTimeout(60, TimeUnit.SECONDS)
@@ -1872,6 +1876,8 @@ object CloudModelClient {
             if (responseCode !in 200..299) {
                 throw CloudHttpException(responseCode, response)
             }
+            if (httpResponse.priorResponse == null)
+                onSuccessServer?.invoke(httpResponse.request.url.toString(), httpResponse.header("Server"))
             response
         }
     }

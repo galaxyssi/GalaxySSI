@@ -118,6 +118,7 @@ internal object AutoGoalTeamJobs {
             routeJson.optString("host"))
         val calls = AtomicInteger()
         val roles = AtomicInteger()
+        val writerSession = TeamWriterFormatSession()
         val answer = try {
             runBlocking {
                 val labels = TeamResultLabels(ctx.getString(R.string.auto_team_correction), ctx.getString(R.string.auto_team_objections),
@@ -141,7 +142,7 @@ internal object AutoGoalTeamJobs {
                             "role", "audit" -> roles.incrementAndGet()
                         }
                         ConversationGoalRunner.text(ctx, route, chat, id, round,
-                            instructions, payload, call.token)
+                            instructions, payload, call.token, writerSession)
                     } } finally { guard.cancel(); registration.dispose() }
                 } })
             }.also { check(it.isNotBlank() && it.length <= 64_000) }.let { result ->
