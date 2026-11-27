@@ -4481,6 +4481,7 @@ final class MessageCoordinator: ObservableObject {
       persistRecoveredManagedDesktopResult(payload, record: record)
       return false
     }
+    guard managedNativeRecoveryMayQuery(source) else { return false }
     if let reason = record.expiryReason(now: now),
        !preserveNativeConnectorObservation(source) {
       if source.state == .pending {
@@ -4500,8 +4501,7 @@ final class MessageCoordinator: ObservableObject {
       managedDesktopProbeAt = now
       managedDesktopProbes = 0
     }
-    guard managedNativeRecoveryMayQuery(source),
-          mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
+    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
           let payload = desktopReplyRecovery.request(binding, online: true, now: now) ?? desktopResultRecovery.request(record, now: now),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }),
