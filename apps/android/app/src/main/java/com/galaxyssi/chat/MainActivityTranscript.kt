@@ -1212,6 +1212,7 @@ internal fun MainActivity.agentReplyWaitingTranscriptRow(): View = LinearLayout(
 }
 
 internal fun MainActivity.agentAssistantTranscriptRow(entry: AgentTranscriptEntry): View {
+    localHealthAnswerLink(entry)?.let { return it }
     if (AgentStableAssistantRow.supports(entry)) return AgentStableAssistantRow(this, entry)
     val progressiveText = entry.textChunkCount > 0 && entry.richOutputChunkCount == 0
     val richContent = if (progressiveText) {

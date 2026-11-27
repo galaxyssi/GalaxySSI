@@ -1776,13 +1776,45 @@ struct GalaxySSIHealthRecords {
       feedbackHistoryAllowed: approval.feedbackCursor == nil ? nil : true,
       relatedMeasurements: approval.relatedMeasurements.isEmpty ? nil : approval.relatedMeasurements,
       execution: persistExecution ? try .init(approval: approval,
-        agentConversationID: thread.agentConversationID, startedAt: now) : nil))
+        agentConversationID: thread.agentConversationID, startedAt: now) : nil,
+      answerBasis: GalaxySSIHealthAnswerBasis.capture(approval, concern: concern, thread: thread, archive: archive)))
     archive.localCareDiscussions?[approval.concernID.uuidString] = thread
     if let job = approval.research {
       try archive.localCareResearch?.transition(job, concern: approval.concernID, to: .dispatched,
         process: GalaxySSIHealthCareResearch.process)
     }
     try persist(archive)
+  }
+
+  func localCareAnswerBasis(conversation: String, turn: UUID, expanded: Bool, now: Date = Date()) throws
+      -> GalaxySSIHealthAnswerBasis.Display? {
+    let archive = try load()
+    guard !conversation.isBlank, let thread = archive.localCareDiscussions?.values.first(where: {
+      $0.agentConversationID == conversation && $0.archivedAt == nil
+    }), let saved = thread.turns.first(where: { $0.id == turn }), saved.retainedAnswer?.isBlank == false,
+      let grant = saved.answerBasis, grant.conversation == conversation,
+      grant.binding.owner == owner, grant.binding.thread == thread.id, grant.binding.turn == turn,
+      grant.binding.concern == thread.concernID, saved.destination == grant.binding.destination,
+      now >= grant.reviewedAt, now < grant.until,
+      archive.healthOnlinePermission == grant.binding.onlinePermission,
+      archive.matchesLocalCarePermission(grant.binding.carePermission)
+    else { return nil }
+    let concern = try currentDiscussionConcern(id: thread.concernID, metric: grant.metric, archive: archive, now: now)
+    guard concern.revision == grant.binding.revision, concern.profileScope == grant.profileScope,
+      concern.profileScopeEpoch == grant.profileEpoch, localCareProfileIsCurrent(grant.profileScope),
+      GalaxySSIHealthCareRelatedContext.current(grant.related, primary: grant.metric, archive: archive, now: now),
+      grant.researchAuthorization.map({ archive.localCareResearch?.authorizations[thread.concernID.uuidString]?.id == $0 }) ?? true,
+      grant.sources.count <= 256 else { return nil }
+    var rows = grant.sources
+    rows += GalaxySSIHealthAnswerBasis.retrieved(archive.localCareEvidence?[turn.uuidString] ?? [], grant: grant, now: now)
+    if expanded {
+      let resolved = try GalaxySSIHealthAnswerBasis.localNames(rows, archive: archive, originals: visitOriginalStore)
+      guard try localCareAnswerBasis(conversation: conversation, turn: turn, expanded: false, now: now)?.sources == rows
+      else { return nil }
+      rows = resolved
+    }
+    guard !rows.isEmpty else { return nil }
+    return .init(sources: rows, until: grant.until)
   }
 
   func validateLocalCareDiscussionTurn(_ approval: GalaxySSIHealthCareDiscussion.Approval, now: Date = Date()) throws {

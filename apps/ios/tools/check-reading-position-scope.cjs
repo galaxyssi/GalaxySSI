@@ -6,7 +6,7 @@ const cp = require('node:child_process');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../..');
 const app = 'apps/ios/GalaxySSI/';
-const base = '20bb51f10021351bd4ea62ae1fc37e9ed65e5752';
+const base = 'eb970a6ac3ac5883f011991957bb776d40b0ab48';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const old = f => cp.execFileSync('git', ['show', `${base}:${f}`], {
   cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024

@@ -85,6 +85,9 @@ struct GalaxySSIHealthCareAgentTranscriptView: View {
             }
             reply(row.reply)
               .background(GalaxySSIReadingParagraphAnchor.RowMarker())
+            if case .answer = row.reply {
+              GalaxySSIHealthAnswerBasisRow(records: records, conversation: conversation, turn: row.id, visible: canRead)
+            }
           }
           .padding(.vertical, 8)
           .frame(maxWidth: .infinity, alignment: .leading)

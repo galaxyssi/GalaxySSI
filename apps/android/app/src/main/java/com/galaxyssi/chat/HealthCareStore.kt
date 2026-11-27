@@ -735,6 +735,21 @@ internal class HealthCareStore(context: Context, private val name: String = DEFA
             action.instruction?.let { !instructionAvailable(it) } == true) throw HealthCareConflict()
         HealthCareFollowUpPolicy.schedule(issue, action, settings(), privacy, sourceVersion, at, now).also { writeReminder(it) }
     }
+    fun scheduleLocalRecheck(id: String, ref: HealthCareRecordRef, key: String, chat: String, version: String,
+        privacy: HealthPrivacyPolicy, due: Long, label: String) = transaction(true) {
+        val now = System.currentTimeMillis()
+        val before = concern(id) ?: throw HealthCareConflict()
+        if (before.assessment.record != ref || before.inputVersion != version) throw HealthCareConflict()
+        val previous = before.actions.find { it.id == key }
+        if (previous != null && previous.state != HealthCareActionState.CONFIRMED) throw HealthCareConflict()
+        val action = HealthCareAction(key, HealthCareActionKind.RECHECK, label, label, "local-conversation:$chat",
+            HealthCareActionState.CONFIRMED, confirmedAt = previous?.confirmedAt ?: now, basis = HealthCareFollowUpPolicy.basis(before))
+        val next = if (action == previous) before else before.copy(revision = before.revision + 1,
+            updatedAt = maxOf(now, before.updatedAt), actions = before.actions.filterNot { it.id == key } + action)
+        val reminder = HealthCareFollowUpPolicy.schedule(next, action, settings(), privacy, version, due, now)
+        if (next != before) persist(next, "local_conversation_recheck")
+        writeReminder(reminder)
+    }
     fun cancelReminder(actionId: String, expectedToken: String, now: Long) = transaction(true) {
         val value = reminder(actionId) ?: return@transaction
         if (value.token != expectedToken) throw HealthCareConflict()

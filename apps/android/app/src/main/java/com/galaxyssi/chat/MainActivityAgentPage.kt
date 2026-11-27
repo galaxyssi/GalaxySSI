@@ -1371,6 +1371,8 @@ internal fun MainActivity.submitAgentGoal(
         ?: agentTranscriptStore.activeConversation()
     if (fileReadSource != null && (conversation.id != fileReadSource.chat || conversation.globalTopicKey.isNotBlank() ||
             attachments.singleOrNull()?.id != fileReadSource.item)) return
+    if (goalOverride == null && handleConversationGoal(conversation, goal,
+            attachments.isNotEmpty() || explicitMembers.isNotEmpty())) return
     if (healthCareSubmission == null && conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) {
         healthCareDiscussion.confirm(conversation, goal, attachments) { approved ->
             if (isSubmissionCancelled()) return@confirm
@@ -1388,6 +1390,11 @@ internal fun MainActivity.submitAgentGoal(
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
+    if (healthCareSubmission == null && goalOverride == null && attachments.isEmpty() && conversation.globalTopicKey.isBlank()) {
+        if (CollaborationGroupStore.cached(conversation.id) != null || requestedMembers.isNotEmpty()) {
+            if (offerPrivateLabQuery(conversation.id, goal)) return
+        } else if (submitLocalHealthQuery(conversation.id, goal)) return
+    }
     if (fileReadSource != null && requestedMembers.isNotEmpty()) {
         Toast.makeText(this, R.string.agent_file_group_unavailable, Toast.LENGTH_SHORT).show()
         return
