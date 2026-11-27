@@ -30,9 +30,16 @@ enum AgentConversationGoalInference {
     guard let data = try? encoder.encode(profile) else { return "" }
     return AgentBlobProtocol.sha256(data)
   }
-  static func isolatedRequest(_ prepared: ModelStreamRequest, system: String) throws -> ModelStreamRequest {
+  static func isolatedRequest(_ prepared: ModelStreamRequest, system: String, prompt: String? = nil) throws -> ModelStreamRequest {
     var request = try AgentSingleFileRead.isolatedRequest(prepared, system: system)
     guard var body = try JSONSerialization.jsonObject(with: Data(request.bodyJson.utf8)) as? [String: Any] else { throw AgentConversationGoal.Failure.invalid }
+    if let prompt {
+      switch request.provider {
+      case .openAICompatible: body["messages"] = [["role": "system", "content": system], ["role": "user", "content": prompt]]
+      case .anthropic: body["messages"] = [["role": "user", "content": prompt]]
+      case .gemini: body["contents"] = [["role": "user", "parts": [["text": prompt]]]]
+      }
+    }
     switch request.provider {
     case .gemini:
       var config = body["generationConfig"] as? [String: Any] ?? [:]; config["maxOutputTokens"] = 3_000
@@ -90,8 +97,20 @@ enum AgentConversationGoalInference {
     let system = system(review: goal.review, language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage))
     let prompt = try prompt(goal)
     let requestID = "conversation-goal-\(goal.id.uuidString)-\(goal.generation)-\(goal.rounds)"
-    if goal.route.kind == .local {
-      guard let profile = LocalModelRuntimeSettings.activeProfiles(defaults: store.defaults).first(where: { $0.id == goal.route.model }),
+    return try await text(route: goal.route, conversation: goal.conversation, taskID: goal.id.uuidString, requestID: requestID,
+      system: system, prompt: prompt, purpose: "Confirmed conversation text goal", historyCount: goal.checkpoints.count,
+      store: store, valid: valid)
+  }
+  @MainActor static func text(route: AgentConversationGoal.Route, conversation: String, taskID: String, requestID: String,
+    system: String, prompt: String, purpose: String, historyCount: Int = 0, store: GalaxySSIStore,
+    valid: () -> Bool) async throws -> String {
+    guard valid(), route.valid, isCurrent(route, store: store), !conversation.isBlank, conversation.utf8.count <= 512,
+      UUID(uuidString: taskID) != nil, !requestID.isBlank, requestID.utf8.count <= 512,
+      !system.isBlank, system.utf16.count <= 8_000, !prompt.isBlank, prompt.utf16.count <= 100_000 else {
+      throw AgentConversationGoal.Failure.unavailable
+    }
+    if route.kind == .local {
+      guard let profile = LocalModelRuntimeSettings.activeProfiles(defaults: store.defaults).first(where: { $0.id == route.model }),
         LocalModelInferenceRuntime.shared.readyForBackground(profile: profile) else { throw AgentConversationGoal.Failure.unavailable }
       let cancellation = AgentModelToolLoopCancellationSource()
       return try await withTaskCancellationHandler(operation: {
@@ -102,8 +121,8 @@ enum AgentConversationGoalInference {
         return result.text
       }, onCancel: { cancellation.cancel() })
     }
-    guard let contact = store.contact(id: goal.route.target), contact.deliveryMode == .cloudAPI, !contact.deleted,
-      let model = contact.cloudModels.first(where: { $0.modelId == goal.route.model && fingerprint(contact: contact, model: $0) == goal.route.endpointSHA }),
+    guard let contact = store.contact(id: route.target), contact.deliveryMode == .cloudAPI, !contact.deleted,
+      let model = contact.cloudModels.first(where: { $0.modelId == route.model && fingerprint(contact: contact, model: $0) == route.endpointSHA }),
       let key = store.apiKey(for: model), CloudModelCredentialPolicy.isStoredCredential(key) else { throw AgentConversationGoal.Failure.unavailable }
     let probe = AgentMediaNetworkDetector.shared.currentProbe
     let budget = AgentTaskBudgetPolicy.evaluate(budget: store.agentTaskBudget,
@@ -114,13 +133,13 @@ enum AgentConversationGoalInference {
     let disclosure = FileAgentDataDisclosureStore(fileURL: AgentDataDisclosureStorePaths.ledgerURL())
     var selected = contact; selected.cloudModels = [model]; selected.selectedCloudModelId = model.modelId
     let ticket = AgentDataDisclosureLedger.beginCloudRequest(store: disclosure, destination: .init(contact: selected),
-      text: system + "\n" + prompt, historyCount: goal.checkpoints.count, systemInstructions: true,
-      purpose: "Confirmed conversation text goal", conversationId: goal.conversation, taskId: goal.id.uuidString, turnId: requestID)
+      text: system + "\n" + prompt, historyCount: historyCount, systemInstructions: true,
+      purpose: purpose, conversationId: conversation, taskId: taskID, turnId: requestID)
     guard ticket.allowed else { throw AgentDataDisclosureBlockedError(destination: contact.displayName) }
-    let only = ChatMessage(contactId: "hermes", content: prompt, isMine: true, conversationId: goal.conversation, turnId: requestID)
+    let only = ChatMessage(contactId: "hermes", content: prompt, isMine: true, conversationId: conversation, turnId: requestID)
     let prepared = try CloudModelClient().conversationStreamingRequest(model: model, apiKey: key, turns: [only],
       systemPrompt: system, requestId: requestID, images: [])
-    let request = try isolatedRequest(prepared, system: system)
+    let request = try isolatedRequest(prepared, system: system, prompt: prompt)
     let client = URLSessionCloudModelStreamClient()
     return try await withTaskCancellationHandler(operation: {
       var body = "", completed = false

@@ -26,6 +26,7 @@ const event = engine.slice(engine.indexOf('  enum Event:'), engine.indexOf('  st
 assert(!/String|objective|assignment|finding/.test(event), 'Progress must contain only bounded metadata');
 const project = read('GalaxySSI.xcodeproj/project.pbxproj');
 for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamEngine', 'AgentConversationalTeamCommand',
+  'AgentConversationalTeamJob', 'AgentConversationalTeamStore', 'AgentConversationalTeamJobTests',
   'AgentConversationalTeamProtocolTests', 'AgentConversationalTeamEngineTests', 'AgentConversationalTeamCommandTests']) {
   const file = `${name.endsWith('Tests') ? 'GalaxySSITests' : 'GalaxySSI'}/${name}.swift`;
   const source = read(file);
@@ -51,4 +52,15 @@ for (const match of strings.matchAll(/^"galaxyssi\.conversation_team\.([^"\n]+)"
 for (const key of ['help_alias', 'stop_alias', 'pattern_stop', 'pattern_negative', 'pattern_meta', 'pattern_request', 'pattern_with_team', 'pattern_health']) {
   assert(keys.has(key), 'Localized command rule: ' + key);
 }
-console.log('Conversational team command/protocol/engine source contracts passed; confirmation, persistence and background integration pending; no native execution.');
+const job = read('GalaxySSI/AgentConversationalTeamJob.swift');
+const store = read('GalaxySSI/AgentConversationalTeamStore.swift');
+for (const token of ['case queued, running, finished, stopped', 'state == .queued', 'state == .running',
+  'calls < AgentConversationalTeamProtocol.maximumCalls', 'value.calls += 1', 'answer.utf16.count <= 64_000']) assert(job.includes(token), token);
+for (const token of ['NSRecursiveLock()', 'AgentTurnReceiptEvidence.hash(owner)', 'AgentTurnReceiptEvidence.hash(conversation)',
+  'try read(job.conversation) == expected', 'job.objective == expected.objective, job.route == expected.route',
+  'job.revision == expected.revision + 1', 'guard !expected.active, job.state == .queued',
+  'GalaxySSIEncryptedUserDefaultsStore.load', 'GalaxySSIEncryptedUserDefaultsStore.write', '".deleted"']) assert(store.includes(token), token);
+const wire = read('GalaxySSI/AgentConversationGoalInference.swift');
+assert(wire.includes('prompt: String? = nil') && wire.includes('system: system, prompt: prompt'), 'Exact shared text payload path');
+assert.equal((read('GalaxySSITests/AgentConversationalTeamJobTests.swift').match(/func test/g) || []).length, 5);
+console.log('Conversational team command/protocol/engine/job source contracts passed; confirmation, worker and background integration pending; no native execution.');
