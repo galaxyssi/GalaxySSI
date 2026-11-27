@@ -74,17 +74,22 @@ internal class HealthRecordStore(context: Context, private val name: String = "h
         return HealthRecordPage(visible, if (rows.size > PAGE_SIZE) visible.last().let { HealthPageCursor(it.draft.measuredAt, it.id) } else null)
     }
     fun measurementPage(from: Long, until: Long, after: HealthPageCursor? = null, limit: Int = PAGE_SIZE,
-        check: () -> Unit = {}): HealthRecordPage {
+        labReport: Boolean? = null, check: () -> Unit = {}): HealthRecordPage {
         require(from >= 0 && limit in 1..PAGE_SIZE)
         if (until <= from) return HealthRecordPage(emptyList(), null)
         val found = arrayListOf<HealthObservation>(); var cursor = after
         while (true) {
             check()
             val args = arrayListOf(from.toString(), until.toString(), HealthMetric.STEPS.name)
+            val labFilter = if (labReport == null) "" else {
+                val labs = HealthAgentLab.metrics
+                args.addAll(labs.map { it.name })
+                " AND metric IN (${labs.joinToString(",") { "?" }})" + if (labReport) " AND original_id IS NOT NULL" else ""
+            }
             val older = cursor?.let { args += listOf(it.measuredAt.toString(), it.measuredAt.toString(), it.id)
                 " AND (measured_at<? OR (measured_at=? AND id<?))" }.orEmpty()
             val rows = helper.readableDatabase.rawQuery("SELECT id,revision,payload,metric,measured_at FROM observations " +
-                "WHERE deleted=0 AND measured_at>=? AND measured_at<? AND metric<>?$older " +
+                "WHERE deleted=0 AND measured_at>=? AND measured_at<? AND metric<>?$labFilter$older " +
                 "ORDER BY measured_at DESC,id DESC LIMIT ${limit + 1}", args.toTypedArray()).use { c -> buildList {
                     while (c.moveToNext()) { check(); add(decode(c)) }
                 } }

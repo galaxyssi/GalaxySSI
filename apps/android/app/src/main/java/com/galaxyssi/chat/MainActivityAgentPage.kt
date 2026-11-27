@@ -1388,6 +1388,11 @@ internal fun MainActivity.submitAgentGoal(
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
+    if (healthCareSubmission == null && goalOverride == null && attachments.isEmpty() && conversation.globalTopicKey.isBlank()) {
+        if (CollaborationGroupStore.cached(conversation.id) != null || requestedMembers.isNotEmpty()) {
+            if (offerPrivateLabQuery(conversation.id, goal)) return
+        } else if (submitLocalHealthQuery(conversation.id, goal)) return
+    }
     if (fileReadSource != null && requestedMembers.isNotEmpty()) {
         Toast.makeText(this, R.string.agent_file_group_unavailable, Toast.LENGTH_SHORT).show()
         return

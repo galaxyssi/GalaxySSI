@@ -43,6 +43,7 @@ internal enum class HealthAccessPurpose(val permission: HealthPrivacyOption? = n
     WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     SAVE_WEEKLY_REPORT(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS(HealthPrivacyOption.CONFIRMED_METRICS),
+    LOCAL_LAB_READ_ONCE(HealthPrivacyOption.CONFIRMED_METRICS),
     PROACTIVE_CARE(HealthPrivacyOption.CONFIRMED_METRICS),
     HEALTH_ANALYSIS_ONLINE(HealthPrivacyOption.ONLINE_ANALYSIS),
     HEALTH_REPORT_VISION(HealthPrivacyOption.ONLINE_ANALYSIS),
@@ -75,7 +76,7 @@ internal data class HealthAccessScope(
             HealthAccessPurpose.OVERVIEW -> require(metrics.isNotEmpty() && fields.isEmpty() && baselineFrom == null && format == null)
             HealthAccessPurpose.WEEKLY_REPORT, HealthAccessPurpose.SAVE_WEEKLY_REPORT ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && format == if (purpose == HealthAccessPurpose.SAVE_WEEKLY_REPORT) HealthAccessFormat.PDF else null)
-            HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.PROACTIVE_CARE ->
+            HealthAccessPurpose.LOCAL_LAB_READ_ONCE, HealthAccessPurpose.HEALTH_ANALYSIS, HealthAccessPurpose.HEALTH_ANALYSIS_ONLINE, HealthAccessPurpose.PROACTIVE_CARE ->
                 require(metrics.isNotEmpty() && fields.isEmpty() && !annotations && !reportRecords && format == null)
             HealthAccessPurpose.HEALTH_REPORT_VISION -> require(metrics.isEmpty() && fields.isEmpty() && !annotations &&
                 !reportRecords && source == HealthAccessSource.ORIGINAL && count == 1L && format == null)
