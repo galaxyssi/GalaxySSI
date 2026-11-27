@@ -3,7 +3,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'a08d14423c650da7fef28d24800f755323909eef';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => {
+  const s = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  const audit = path.join(__dirname, 'check-home-audit-worker-scope.cjs');
+  return fs.existsSync(audit) ? require(audit).retained(f, s) : s;
+};
 function show(ref, f) {
   const key = ref + ':' + f;
   if (!memo.has(key)) memo.set(key, clean(cp.execFileSync('git', ['show', key], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})));
