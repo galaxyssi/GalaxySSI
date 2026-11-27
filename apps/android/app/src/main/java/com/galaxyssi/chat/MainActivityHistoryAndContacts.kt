@@ -262,6 +262,8 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
         )
     }
     if (stored.isMine && !stored.isSystem) onPeerChatMessageSent(stored.contact.id)
+    if (isVisibleIncoming && !peerChatViewport.followLatest && peerChatViewport.contactId == stored.contact.id)
+        readingArrow(R.id.peerReadingLatest, true)
     refreshVisibleMessages(stored.contact.id)
     refreshDirectoryContacts()
 }
@@ -353,7 +355,10 @@ internal fun MainActivity.refreshVisibleMessages(contactId: String) {
         if (!runtimePlaintextCleared && chatPage.visibility == View.VISIBLE && selectedContact?.id == contactId) {
             val anchor = if (peerChatViewport.followLatest) null else capturePeerChatScrollAnchor()
             messageAdapter?.syncMessages(currentMessages)
-            if (peerChatViewport.followLatest) scrollToBottom() else restorePeerChatScrollAnchor(anchor)
+            if (peerChatViewport.followLatest) {
+                readingArrow(R.id.peerReadingLatest, false)
+                scrollToBottom()
+            } else if (messageList.scrollState == RecyclerView.SCROLL_STATE_IDLE) restorePeerChatScrollAnchor(anchor)
         }
     }
 }

@@ -159,8 +159,10 @@ internal class HealthOverviewView(private val activity: HealthCenterActivity, pr
             bindState()
         }
         measurementBinding = { update ->
+            val reading = if (update == null) HealthMetricReadingAnchor.capture(metrics) else null
             if (update != null) { measurementSnapshot = update; displayedPeriod = activity.measurementPeriod; pending = false }
             bindMeasurements()
+            reading?.restore(abnormalFilter)
         }
         measurementPendingBinding = { value -> pending = value; bindState() }
         bindMeasurements()

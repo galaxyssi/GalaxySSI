@@ -192,9 +192,9 @@ internal open class AgentTranscriptRecyclerAdapter(
         notifyItemRangeRemoved(0, count)
     }
 
-    fun entryIdAt(position: Int): String? = entries.getOrNull(position)?.id
+    fun entryIdAt(position: Int): String? = entries.getOrNull(position)?.let(AgentTranscriptRenderPolicy::identity)
 
-    fun indexOfEntry(entryId: String): Int = entries.indexOfFirst { it.id == entryId }
+    fun indexOfEntry(entryId: String): Int = entries.indexOfFirst { it.id == entryId || AgentTranscriptRenderPolicy.identity(it) == entryId }
 
     fun artifactAvailable(uri: String) {
         if (!uri.startsWith("galaxyssi-artifact://")) return

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageButton xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:layout_gravity="bottom|end"
+    android:layout_margin="12dp"
+    android:background="@drawable/reading_latest_background"
+    android:contentDescription="@string/reading_latest"
+    android:tooltipText="@string/reading_latest"
+    android:padding="12dp"
+    android:src="@drawable/ic_chevron_down"
+    android:tint="@color/text_primary"
+    android:visibility="gone" />

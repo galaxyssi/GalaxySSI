@@ -31,6 +31,7 @@ internal class HealthOverviewMetricView(private val activity: HealthCenterActivi
             ?: item.ranges.firstOrNull()
         return ui.column().apply {
             tag = "health-overview-${metric.name}-${item.freshness.name}"
+            setTag(R.id.healthReadingKey, record?.id ?: metric.name)
             setPadding(ui.dp(12), ui.dp(8), ui.dp(10), ui.dp(8))
             minimumHeight = ui.dp(52)
             isFocusable = true
