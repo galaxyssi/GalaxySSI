@@ -1820,6 +1820,7 @@
     A10000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */; };
     A10000000000000000003274 /* AgentManagedResponseDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003274 /* AgentManagedResponseDatabase.swift */; };
     A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002001 /* AgentConnectorResponseResolver.swift */; };
+    C46870000000000000000001 /* AgentNativeConnectorObservationExpiry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46870000000000000000002 /* AgentNativeConnectorObservationExpiry.swift */; };
     A10000000000000000000402 /* AgentReputationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000402 /* AgentReputationModels.swift */; };
     A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000403 /* AgentResourceProfileModels.swift */; };
     A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000404 /* AgentProviderProfileCatalog.swift */; };
@@ -2319,6 +2320,7 @@
     A10000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */; };
     A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */; };
     A10000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */; };
+    C46870000000000000000003 /* AgentNativeConnectorObservationExpiryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46870000000000000000004 /* AgentNativeConnectorObservationExpiryTests.swift */; };
     A10000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */; };
     A10000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */; };
     A10000000000000000000245 /* AgentTaskLivenessTranscriptPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000245 /* AgentTaskLivenessTranscriptPolicyTests.swift */; };
@@ -4159,6 +4161,7 @@
     A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDefaultsAgentManagedResponseLedger.swift; sourceTree = "<group>"; };
     A20000000000000000003274 /* AgentManagedResponseDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedResponseDatabase.swift; sourceTree = "<group>"; };
     A20000000000000000002001 /* AgentConnectorResponseResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseResolver.swift; sourceTree = "<group>"; };
+    C46870000000000000000002 /* AgentNativeConnectorObservationExpiry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorObservationExpiry.swift; sourceTree = "<group>"; };
     A20000000000000000000402 /* AgentReputationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReputationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000403 /* AgentResourceProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResourceProfileModels.swift; sourceTree = "<group>"; };
     A20000000000000000000404 /* AgentProviderProfileCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderProfileCatalog.swift; sourceTree = "<group>"; };
@@ -4801,6 +4804,7 @@
     A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTaskStatusRecorderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTransportReceiptRecorderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTimeoutResolverTests.swift; sourceTree = "<group>"; };
+    C46870000000000000000004 /* AgentNativeConnectorObservationExpiryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorObservationExpiryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorSteeredResultResolverTests.swift; sourceTree = "<group>"; };
     A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskWatchdogTimeoutResolverTests.swift; sourceTree = "<group>"; };
     A20000000000000000000245 /* AgentTaskLivenessTranscriptPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskLivenessTranscriptPolicyTests.swift; sourceTree = "<group>"; };
@@ -5819,6 +5823,7 @@
         A20000000000000000002003 /* UserDefaultsAgentManagedResponseLedger.swift */,
         A20000000000000000003274 /* AgentManagedResponseDatabase.swift */,
         A20000000000000000002001 /* AgentConnectorResponseResolver.swift */,
+        C46870000000000000000002 /* AgentNativeConnectorObservationExpiry.swift */,
         A20000000000000000000402 /* AgentReputationModels.swift */,
         A20000000000000000000403 /* AgentResourceProfileModels.swift */,
         A20000000000000000000404 /* AgentProviderProfileCatalog.swift */,
@@ -7229,6 +7234,7 @@
         A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */,
         A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */,
         A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */,
+        C46870000000000000000004 /* AgentNativeConnectorObservationExpiryTests.swift */,
         A20000000000000000003E3B /* AgentConnectorModelFailureEvidenceTests.swift */,
         A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */,
         A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */,
@@ -8356,6 +8362,7 @@
         A1000000000000000000E351 /* GalaxySSIRuntimeCache.swift in Sources */,
         A10000000000000000002002 /* UserDefaultsAgentConnectorResponseStore.swift in Sources */,
         A10000000000000000002001 /* AgentConnectorResponseResolver.swift in Sources */,
+        C46870000000000000000001 /* AgentNativeConnectorObservationExpiry.swift in Sources */,
         A10000000000000000000402 /* AgentReputationModels.swift in Sources */,
         A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */,
         A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */,
@@ -9812,6 +9819,7 @@
         A10000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift in Sources */,
         A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */,
         A10000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift in Sources */,
+        C46870000000000000000003 /* AgentNativeConnectorObservationExpiryTests.swift in Sources */,
         A10000000000000000003E3B /* AgentConnectorModelFailureEvidenceTests.swift in Sources */,
         A10000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift in Sources */,
         A10000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift in Sources */,

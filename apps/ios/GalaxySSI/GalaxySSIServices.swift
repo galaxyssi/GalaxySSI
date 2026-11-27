@@ -4482,7 +4482,7 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if let reason = record.expiryReason(now: now),
-       !preserveNativeConnectorObservation(source) {
+       !preserveNativeConnectorObservation(source, observation: record, nowMillis: now) {
       if source.state == .pending {
         let detail = reason == "desktop_result_unavailable"
           ? localizedReply("galaxyssi.agent.desktop_result_unavailable", fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
@@ -4994,7 +4994,7 @@ final class MessageCoordinator: ObservableObject {
       }
       if record.expiryReason(now: now) != nil {
         guard let managed = currentManagedDesktopReply(record.binding),
-              preserveNativeConnectorObservation(managed) else { continue }
+              preserveNativeConnectorObservation(managed, observation: record, nowMillis: now) else { continue }
       }
       let terminal = AgentDesktopReplyRecovery.terminalStatuses.contains(record.status)
       if terminal, record.acceptedReply != nil, completeAcceptedDesktopReply(record) != .missing { continue }
@@ -14979,7 +14979,8 @@ final class MessageCoordinator: ObservableObject {
     guard store.commitOwnedAgentTaskState(expected: task, updated: saved) else { throw MqttChunkStorageError.databaseFailure }
   }
 
-  private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord) -> Bool {
+  private func preserveNativeConnectorObservation(_ record: AgentManagedResponseRecord,
+    observation: AgentDesktopReplyRecoveryRecord, nowMillis: Int64) -> Bool {
     guard record.state == .pending, let task = store.agentTask(id: record.turnId),
           task.sessionId == record.conversationId,
           let waiting = task.activePlan?.actions.first(where: { action in
@@ -14990,13 +14991,22 @@ final class MessageCoordinator: ObservableObject {
           let outgoing = store.persistedMessage(id: dispatch.outgoingId, contactId: "hermes"),
           AgentNativeConnectorContinuation.waitingAction(waiting, result: pending, task: task, outgoing: outgoing) != nil,
           record.correlates(dispatch.response("", success: false)) else { return false }
-    // A query deadline is not proof that the external task failed. Keep its owner queryable.
-    guard pending.metadata["native_connector_observation_overdue"] != "true",
+    // Ownership is recognized before policy checks: a deferred native update must not become a synthetic remote failure.
+    guard UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript,
+          desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+          desktopReplyRecovery.record(for: observation.binding) == observation,
+          currentManagedDesktopReply(observation.binding) == record,
+          !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+          task.phase == .waitingResponse ||
+            (task.phase == .blocked && pending.metadata["native_connector_dispatch_uncertain"] == "true"),
+          task.lastNativeActionResult?.actionId == pending.actionId,
+          task.lastNativeActionResult?.metadata["control_plane_run_id"] == record.ownerRunId,
+          let session = store.agentSession(id: task.sessionId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let expiry = AgentNativeConnectorObservationExpiry.project(pending: pending, managed: record,
+            observation: observation, nowMillis: nowMillis),
           var plan = task.activePlan, let index = plan.actions.firstIndex(where: { $0.id == waiting.id }) else { return true }
-    var observed = pending
-    observed.metadata["native_connector_observation_overdue"] = "true"
-    observed.metadata.merge(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: pending.metadata,
-      nowMillis: AgentControlPlaneClock.nowMillis())) { _, latest in latest }
+    let observed = expiry.pending
     guard let retained = AgentNativeConnectorContinuation.waitingAction(waiting, result: observed,
       task: task, outgoing: outgoing) else { return true }
     var updated = task
@@ -15005,9 +15015,16 @@ final class MessageCoordinator: ObservableObject {
     updated.planContext = AgentTaskPlanContext(plan: plan)
     updated.lastNativeActionResult = observed
     if updated.pendingAction?.id == waiting.id { updated.pendingAction = retained }
-    updated.verification = localizedReply("galaxyssi.agent.desktop_status_unavailable",
-      fallback: "The Desktop task status could not be confirmed. Check the connection before retrying.")
-    updated.updatedAtMillis = AgentControlPlaneClock.nowMillis()
+    if expiry.missingResult {
+      updated.phase = .blocked
+      updated.blocked = true
+      updated.verification = localizedReply("galaxyssi.agent.desktop_result_unavailable",
+        fallback: "The Desktop task finished, but its result could not be delivered. The task was not run again.")
+    } else {
+      updated.verification = localizedReply("galaxyssi.agent.desktop_status_unavailable",
+        fallback: "The Desktop task status could not be confirmed. Check the connection before retrying.")
+    }
+    updated.updatedAtMillis = max(task.updatedAtMillis, nowMillis)
     _ = store.commitOwnedAgentTaskState(expected: task, updated: updated)
     return true
   }
