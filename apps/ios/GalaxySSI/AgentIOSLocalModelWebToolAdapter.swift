@@ -4,6 +4,7 @@ struct AgentIOSLocalModelWebToolCompletion {
   var text: String
   var inference: LocalModelInferenceResult?
   var researchDisclosure = AgentLocalResearchDisclosure()
+  var proposedTeamReview = false
 }
 
 enum AgentIOSLocalModelWebToolError: LocalizedError {
@@ -37,8 +38,10 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let beforeInference: (() throws -> Void)?
   private let inferenceCancellation: AgentModelToolLoopCancellationToken
   private let goalAssessmentOnly: Bool
+  private let offerTeamReview: Bool
   private let beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)?
   private(set) var lastInference: LocalModelInferenceResult?
+  private(set) var proposedTeamReview = false
 
   init(
     catalog: [AgentNativeToolDescriptor],
@@ -50,6 +53,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     beforeInference: (() throws -> Void)? = nil,
     inferenceCancellation: AgentModelToolLoopCancellationToken = .none,
     goalAssessmentOnly: Bool = false,
+    offerTeamReview: Bool = false,
     currentCatalog: ((AgentModelRequest) throws -> [AgentNativeToolDescriptor])? = nil,
     beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil
   ) {
@@ -63,6 +67,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     self.beforeInference = beforeInference
     self.inferenceCancellation = inferenceCancellation
     self.goalAssessmentOnly = goalAssessmentOnly
+    self.offerTeamReview = offerTeamReview
     self.beforeDesktopEvidenceRecall = beforeDesktopEvidenceRecall
   }
 
@@ -70,16 +75,17 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     try beforeInference?()
     if request.cancellationToken.isCancellationRequested { throw CancellationError() }
     let available = try currentCatalog?(request) ?? catalog
+    let allowReview = offerTeamReview && request.round == 1 && !goalAssessmentOnly
     let inference = try await infer(
       systemPrompt: AgentIOSLocalModelWebToolProtocol.systemPrompt(
         catalog: AgentModelObservationHistory.modelCatalog(available, manifest: request.toolManifestJson),
         basePrompt: baseSystemPrompt,
-        goalAssessmentOnly: goalAssessmentOnly
+        goalAssessmentOnly: goalAssessmentOnly, offerTeamReview: allowReview
       ),
       userPrompt: AgentIOSLocalModelWebToolProtocol.turnPrompt(request.messages), cancellation: request.cancellationToken
     )
     try beforeInference?()
-    var response = try AgentIOSLocalModelWebToolProtocol.decode(inference.text, inference: inference)
+    var response = try AgentIOSLocalModelWebToolProtocol.decode(inference.text, inference: inference, offerTeamReview: allowReview)
     if let beforeDesktopEvidenceRecall, available.contains(where: { $0.id == AgentIOSLocalModelWebToolRunner.collaborationRecallId }),
        let read = response.toolCalls.first(where: { $0.toolId == AgentIOSLocalModelWebToolRunner.collaborationRecallId &&
          ["desktop_evidence_list", "desktop_evidence"].contains($0.arguments.string("mode")) }) {
@@ -127,6 +133,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
         response.assistantText, encodedToolResults: evidence
       ).text
     }
+    proposedTeamReview = response.providerMetadata[AgentLocalTeamReviewProposal.field] == .bool(true)
     return response
   }
 
@@ -352,7 +359,8 @@ enum AgentIOSLocalModelWebToolRunner {
     goalCoordinator: GoalCoordinator? = nil,
     goalWorkMilestone: GoalWorkMilestone? = nil,
     workInputPublisher: AgentCollaborationWorkInputBindings.Publisher? = nil,
-    desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil
+    desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil,
+    offerTeamReview: Bool = false
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
     let owner = collaborationOwner ?? collaborationRecallScope
     let effectiveTurn = turnID.ifBlank(taskID)
@@ -463,6 +471,9 @@ enum AgentIOSLocalModelWebToolRunner {
       beforeInference: verifyOwner,
       inferenceCancellation: goalWorkMilestone?.cancellation ?? workInputPublisher?.cancellation ?? .none,
       goalAssessmentOnly: goalCoordinator != nil,
+      offerTeamReview: offerTeamReview && !hasAttachments && !readOnlyAnalysis && owner == nil &&
+        managedBrowser == nil && managedInput == nil && managedJournal == nil && goalCoordinator == nil &&
+        goalWorkMilestone == nil && workInputPublisher == nil,
       currentCatalog: catalogSession.map { view in { try view.providerCatalog($0) } },
       beforeDesktopEvidenceRecall: collaborationRecallScope.flatMap { scope -> ((AgentMcpJSONObject) async -> Void)? in
         guard let desktopEvidenceRefresh else { return nil }
@@ -485,7 +496,7 @@ enum AgentIOSLocalModelWebToolRunner {
       )
     }
     return AgentIOSLocalModelWebToolCompletion(text: outcome.assistantText, inference: session.lastInference,
-      researchDisclosure: .restored(outcome.messages))
+      researchDisclosure: .restored(outcome.messages), proposedTeamReview: session.proposedTeamReview)
   }
 
   static func runPeerWork(prompt: String, profile: LocalModelRuntimeProfile, systemPrompt: String,
@@ -616,7 +627,8 @@ enum AgentIOSLocalModelWebToolProtocol {
     "Rewrite the complete answer using only the supplied verified web evidence. Return normal user-facing prose " +
     "with Markdown source links. Do not return JSON or call tools."
 
-  static func systemPrompt(catalog: [AgentNativeToolDescriptor], basePrompt: String, goalAssessmentOnly: Bool = false) -> String {
+  static func systemPrompt(catalog: [AgentNativeToolDescriptor], basePrompt: String, goalAssessmentOnly: Bool = false,
+    offerTeamReview: Bool = false) -> String {
     var prompt = basePrompt + "\n\n" +
       "You are the currently selected GalaxySSI on-device model. You decide whether public web evidence is needed; " +
       "the host does not decide from keywords. For stable knowledge or ordinary conversation, answer without tools. " +
@@ -648,6 +660,7 @@ enum AgentIOSLocalModelWebToolProtocol {
       prompt += "This list shows readiness now, not new permissions. After setup or a readiness failure, call " +
         "\(AgentLocalModelToolCatalog.discoveryID) with {} to list blockers or {\"tool_id\":\"exact ID\"} to inspect a contract.\n"
     }
+    if offerTeamReview && !goalAssessmentOnly { prompt += AgentLocalTeamReviewProposal.instruction + "\n" }
     let header = prompt
     for descriptor in catalog {
       let contract: AgentMcpJSONObject = [
@@ -679,10 +692,13 @@ enum AgentIOSLocalModelWebToolProtocol {
     ])
   }
 
-  static func decode(_ raw: String, inference: LocalModelInferenceResult) throws -> AgentModelResponse {
+  static func decode(_ raw: String, inference: LocalModelInferenceResult, offerTeamReview: Bool = false) throws -> AgentModelResponse {
     let clean = afterThinking(raw).trimmingCharacters(in: .whitespacesAndNewlines)
-    let root = extractJSONObject(clean)
-    let calls = decodeCalls(root?["tool_calls"]?.arrayValue ?? [])
+    let whole = offerTeamReview ? AgentLocalTeamReviewProposal.envelope(raw) : nil
+    let root = whole ?? extractJSONObject(clean)
+    let reviewEnvelope = root?[AgentLocalTeamReviewProposal.field] != nil && root?[AgentLocalTeamReviewProposal.field] != .bool(false)
+    let calls = reviewEnvelope ? [] : decodeCalls(root?["tool_calls"]?.arrayValue ?? [])
+    let proposed = offerTeamReview && AgentLocalTeamReviewProposal.proposed(whole)
     let answer = (root?["answer"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       .ifBlank((root?["message"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines))
       .ifBlank(root == nil || calls.isEmpty ? clean : "")
@@ -691,17 +707,17 @@ enum AgentIOSLocalModelWebToolProtocol {
         "The local model returned neither an answer nor a valid tool call"
       )
     }
+    var metadata: AgentMcpJSONObject = [
+      "provider": .string("local_model"), "profile_id": .string(inference.profileId),
+      "backend": .string(inference.backend), "elapsed_ms": .int(inference.elapsedMillis),
+      "sme_available": .bool(inference.smeAvailable)
+    ]
+    if proposed { metadata[AgentLocalTeamReviewProposal.field] = .bool(true) }
     return AgentModelResponse(
       assistantText: answer,
       toolCalls: calls,
       usage: AgentModelUsage(),
-      providerMetadata: [
-        "provider": .string("local_model"),
-        "profile_id": .string(inference.profileId),
-        "backend": .string(inference.backend),
-        "elapsed_ms": .int(inference.elapsedMillis),
-        "sme_available": .bool(inference.smeAvailable)
-      ]
+      providerMetadata: metadata
     )
   }
 

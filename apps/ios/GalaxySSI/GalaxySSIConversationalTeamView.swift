@@ -7,6 +7,7 @@ struct AgentConversationalTeamLaunch: Identifiable {
   let revision: UUID
   let command: AgentConversationalTeamCommand
   let selection: AgentModelSelection
+  var source: AgentLocalTeamReviewSource? = nil
 }
 
 @MainActor
@@ -47,6 +48,10 @@ struct GalaxySSIConversationalTeamView: View {
       launch.owner == store.profile.identityFingerprint && launch.conversation == store.activeAgentConversationId &&
       launch.selection == AgentModelSelectionSettings.selection(for: launch.conversation, defaults: store.defaults) &&
       AgentConversationGoalRuntime.eligible(store.agentSession(id: launch.conversation))
+      && (launch.source == nil || {
+        guard case .start(let objective) = launch.command else { return false }
+        return launch.source?.matches(store, conversation: launch.conversation, objective: objective) == true
+      }())
   }
   var body: some View {
     NavigationView {
@@ -119,13 +124,16 @@ struct GalaxySSIConversationalTeamView: View {
         guard !actual.active, AgentConversationalTeamRuntime.shared.publish(actual, store: store) else { throw AgentConversationalTeamJob.Failure.stale }
       }
       guard available else { throw AgentConversationalTeamJob.Failure.stale }
-      let next = AgentConversationalTeamJob(conversation: launch.conversation, objective: objective, route: route)
+      var next = AgentConversationalTeamJob(conversation: launch.conversation, objective: objective, route: route)
+      next.source = launch.source
       try repository.replace(next, expected: nil)
-      _ = store.appendOutgoing(objective, to: "hermes", status: .delivered, turnId: next.id.uuidString, readOnlyAnalysis: true,
-        conversationOverride: launch.conversation, sourceTrace: AgentConversationalTeamRuntime.stage)
+      if launch.source == nil {
+        _ = store.appendOutgoing(objective, to: "hermes", status: .delivered, turnId: next.id.uuidString, readOnlyAnalysis: true,
+          conversationOverride: launch.conversation, sourceTrace: AgentConversationalTeamRuntime.stage)
+      }
       _ = store.appendIncoming(t("queued", "Team queued on the confirmed model.") + " / " + AgentConversationGoalText.route(route, language: language),
         from: "hermes", remoteMessageId: "conversation-team:\(next.id):queued", traceStage: AgentConversationalTeamRuntime.stage,
-        conversationId: launch.conversation, turnId: next.id.uuidString)
+        conversationId: launch.conversation, turnId: next.source?.turn ?? next.id.uuidString)
       AgentConversationalTeamRuntime.shared.setForeground(true, store: store)
       applied(); dismiss()
     } catch { failed = true }
@@ -159,6 +167,30 @@ struct GalaxySSIConversationalTeamView: View {
 }
 
 extension AgentHomeView {
+  func bindModelTeamReview(_ outgoing: ChatMessage, expectedRevision: UUID, hasExtras: Bool) {
+    guard expectedRevision == teamDraftRevision, !hasExtras, outgoing.contactId == "hermes", !outgoing.readOnlyAnalysis,
+      outgoing.sourceConversationId.isBlank, homeVisible, scenePhase == .active, draft.isBlank, attachments.isEmpty,
+      AgentConversationGoalRuntime.eligible(activeAgentSession),
+      AgentConversationalTeamCommand.allowsModelReview(outgoing.content, language: interfaceLanguage) else { return }
+    let candidate = AgentLocalTeamReviewWindow.Candidate(owner: store.profile.identityFingerprint,
+      conversation: outgoing.conversationId, source: .init(message: outgoing.id, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString)),
+      objective: outgoing.content, revision: expectedRevision,
+      selection: AgentModelSelectionSettings.selection(for: outgoing.conversationId, defaults: store.defaults))
+    modelTeamReview.bind(candidate) {
+      homeVisible && scenePhase == .active && store.canReadAgentTranscript && UIApplication.shared.isProtectedDataAvailable &&
+        expectedRevision == teamDraftRevision && draft.isBlank && attachments.isEmpty &&
+        candidate.owner == store.profile.identityFingerprint && candidate.conversation == store.activeAgentConversationId &&
+        candidate.selection == AgentModelSelectionSettings.selection(for: candidate.conversation, defaults: store.defaults) &&
+        AgentConversationGoalRuntime.eligible(activeAgentSession) &&
+        candidate.source.matches(store, conversation: candidate.conversation, objective: candidate.objective)
+    }
+  }
+  func offerModelTeamReview() {
+    guard let candidate = modelTeamReview.claim(), conversationalTeamLaunch == nil, conversationGoalLaunch == nil,
+      localLabLaunch == nil, healthCareSubmission == nil else { return }
+    conversationalTeamLaunch = .init(owner: candidate.owner, conversation: candidate.conversation,
+      revision: candidate.revision, command: .start(candidate.objective), selection: candidate.selection, source: candidate.source)
+  }
   func teamLaunchIsCurrent(_ launch: AgentConversationalTeamLaunch) -> Bool {
     homeVisible && scenePhase == .active && launch.revision == teamDraftRevision && attachments.isEmpty &&
       launch.owner == store.profile.identityFingerprint && launch.conversation == store.activeAgentConversationId &&

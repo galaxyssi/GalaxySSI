@@ -13,7 +13,7 @@ for (const token of ['maximumRoles = 10', 'maximumParallel = 3', 'maximumCalls =
   'AgentSkillManifestValidator.topologicalSteps', 'fields.count == 5', 'tail.count == 2',
   'rows.count == 3', 'rows[2] == "END"', 'raw.utf16.count <= 6_000',
   '(1...2_000).contains(finding.utf16.count)', '(1...600).contains(dissent.utf16.count)',
-  'body.utf16.count <= 8_000', 'never private reasoning', 'No tools, commands, file access, or further delegation']) assert(contract.includes(token), token);
+  'body.utf16.count <= 8_000', 'Return public results, not reasoning traces', 'No tools, external actions or private records']) assert(contract.includes(token), token);
 for (const token of ['calls < Contract.maximumCalls', 'running.count == Contract.maximumParallel',
   'role.parents.allSatisfy({ reports[$0] != nil })', 'role.parents.map { parent',
   'withThrowingTaskGroup(of: Contract.Report.self)', 'let report = try await group.next()',
@@ -35,7 +35,7 @@ for (const name of ['AgentConversationalTeamProtocol', 'AgentConversationalTeamE
   assert(Buffer.byteLength(source) < 32_768, name + ' scoped file size');
   assert.equal(project.split(name + '.swift in Sources').length - 1, 2, name + ' registration');
 }
-assert.equal((read('GalaxySSITests/AgentConversationalTeamProtocolTests.swift').match(/func test/g) || []).length, 8);
+assert.equal((read('GalaxySSITests/AgentConversationalTeamProtocolTests.swift').match(/func test/g) || []).length, 13);
 assert.equal((read('GalaxySSITests/AgentConversationalTeamEngineTests.swift').match(/func test/g) || []).length, 7);
 assert.equal((read('GalaxySSITests/AgentConversationalTeamCommandTests.swift').match(/func test/g) || []).length, 8);
 const command = read('GalaxySSI/AgentConversationalTeamCommand.swift');
@@ -85,9 +85,9 @@ for (const token of ['valid() && scene == .active', 'launch.selection == AgentMo
   'try repository.replace(next, expected: nil)', 'AgentConversationalTeamRuntime.shared.publish(actual',
   'launch.revision == teamDraftRevision', 'AgentMentionText.parse(text, targets: targets).requestedMembers.isEmpty']) assert(ui.includes(token), token);
 const home = read('GalaxySSI/GalaxySSIAndroidParityUI.swift');
-assert(home.includes('if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil }'), 'Every draft edit invalidates consent');
+assert(home.includes('if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil; modelTeamReview.invalidate() }'), 'Every draft edit invalidates consent');
 assert(home.includes('draft: Binding(get: { draft }, set: { draft = $0 })'), 'Composer edits use the revision-tracked setter');
-assert(home.includes('.onChange(of: attachments.map(\\.id)) { _ in conversationalTeamLaunch = nil }'), 'Extras invalidate consent');
+assert(home.includes('.onChange(of: attachments.map(\\.id)) { _ in conversationalTeamLaunch = nil; modelTeamReview.invalidate() }'), 'Extras invalidate consent');
 const submit = read('GalaxySSI/GalaxySSIAgentHomeMessageSubmission.swift');
 assert(submit.indexOf('if offerConversationalTeam(') < submit.indexOf('if offerConversationGoal('), 'Local command intercept precedes ordinary dispatch');
 const app = read('GalaxySSI/GalaxySSIViews.swift');
@@ -101,4 +101,4 @@ assert(hostStore.includes('AgentConversationalTeamStore.destroyAll') && hostStor
 for (const key of ['title', 'help', 'objective', 'model', 'no_provider', 'consent', 'background', 'authorize', 'stop', 'close',
   'changed', 'unavailable', 'refused', 'queued', 'calls', 'receipt', 'disagreements', 'interrupted', 'failed', 'stopped',
   'state_queued', 'state_running', 'state_finished', 'state_stopped']) assert(keys.has(key), key);
-console.log('Conversational team protocol, command, consent, persistence, worker and lifecycle source contracts passed; 34 native test methods authored but not executed.');
+console.log('Conversational team protocol, command, consent, persistence, worker and lifecycle source contracts passed; native test sources not executed.');

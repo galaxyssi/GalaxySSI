@@ -73,7 +73,7 @@ enum AgentConversationalTeamEngine {
             try reserveCall(); running.insert(role.id)
             onEvent(.roleStarted(index + 1, plan.roles.count, role.kind))
             group.addTask {
-              try Contract.report(await call(Contract.worker, input: payload, limit: 2_632, ask: ask), role: role)
+              try Contract.report(await call(Contract.worker, input: payload, limit: 5_264, ask: ask), role: role)
             }
           }
           guard !running.isEmpty, let report = try await group.next(), running.remove(report.role.id) != nil else { throw Contract.Failure.stalled }
@@ -90,7 +90,7 @@ enum AgentConversationalTeamEngine {
       try Task.checkCancellation()
       onEvent(.synthesizing); try reserveCall()
       let payload = try input("synthesis", objective: objective, fields: ["brief": plan.synthesis, "reports": ordered.map(\.json)])
-      let answer = try Contract.synthesis(await call(Contract.synthesizer, input: payload, limit: 8_008, ask: ask))
+      let answer = try Contract.synthesis(await call(Contract.synthesizer, input: payload, limit: 16_064, ask: ask))
       try Task.checkCancellation()
       onEvent(.completed)
       return Outcome(answer: answer, reports: ordered, calls: calls)

@@ -8407,6 +8407,9 @@ final class MessageCoordinator: ObservableObject {
         throw AgentIOSLocalModelWebToolError.unavailable
       }
       let disclosureOwner = store.profile.identityFingerprint
+      let offerTeamReview = !outgoing.readOnlyAnalysis && attachments.isEmpty && recall == nil && collaborationRecallScope == nil &&
+        AgentLocalTeamReviewWindow.request(owner: disclosureOwner, conversation: outgoing.conversationId,
+          turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), objective: outgoing.content, profile: profile.id)
       let completion = try await AgentIOSLocalModelWebToolRunner.run(
         prompt: prompt,
         profile: profile,
@@ -8421,7 +8424,8 @@ final class MessageCoordinator: ObservableObject {
         collaborationRecallScope: recall,
         collaborationOwner: collaborationRecallScope,
         collaborationConversationDatabase: store.agentConversationDatabase,
-        collaborationOriginalsOnly: true
+        collaborationOriginalsOnly: true,
+        offerTeamReview: offerTeamReview
       )
       store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8466,6 +8470,12 @@ final class MessageCoordinator: ObservableObject {
         conversationId: outgoing.conversationId,
         turnId: outgoing.turnId
       )
+      if completion.proposedTeamReview, completion.inference?.profileId == profile.id {
+        AgentLocalTeamReviewWindow.mark(owner: disclosureOwner, conversation: outgoing.conversationId,
+          turn: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+        AgentLocalTeamReviewWindow.delivered(owner: disclosureOwner, conversation: outgoing.conversationId,
+          turn: outgoing.turnId.ifBlank(outgoing.id.uuidString))
+      }
     } catch {
       if store.agentTask(id: task.taskId)?.phase == .cancelled {
         return
@@ -13701,6 +13711,8 @@ final class MessageCoordinator: ObservableObject {
       turnId: outgoing.turnId,
       richOutputJson: visual?.richOutput ?? ""
     )
+    AgentLocalTeamReviewWindow.delivered(owner: store.profile.identityFingerprint,
+      conversation: outgoing.conversationId, turn: outgoing.turnId.ifBlank(outgoing.id.uuidString))
     return true
   }
 

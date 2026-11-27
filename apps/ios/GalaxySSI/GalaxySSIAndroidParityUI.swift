@@ -115,10 +115,11 @@ struct AgentHomeView: View {
   @StateObject var agentReplySpeechRuntime = AgentReplySpeechRuntime()
   @SceneStorage("galaxyssi.agent.draft") private var storedDraft = ""
   @State var teamDraftRevision = UUID()
+  @StateObject var modelTeamReview = AgentLocalTeamReviewWindow()
   var draft: String {
     get { storedDraft }
     nonmutating set {
-      if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil }
+      if storedDraft != newValue { teamDraftRevision = UUID(); conversationalTeamLaunch = nil; modelTeamReview.invalidate() }
       storedDraft = newValue
     }
   }
@@ -383,6 +384,8 @@ struct AgentHomeView: View {
         consumeHealthAtlasHandoff()
       }
       .onDisappear {
+        modelTeamReview.invalidate()
+        conversationalTeamLaunch = nil
         cancelScreenPagePDFImport()
         invalidateVoiceAppAnchor()
         homeVisible = false
@@ -394,6 +397,7 @@ struct AgentHomeView: View {
         AgentIOSAgentHomeSwipeBridge.shared.removeHandler()
       }
       .onChange(of: scenePhase) { phase in
+        if phase != .active { modelTeamReview.invalidate() }
         guard phase == .active else {
           clearAgentRuntimePlaintextPresentation()
           return
@@ -516,9 +520,18 @@ struct AgentHomeView: View {
       }
       .modifier(GalaxySSIHealthCareComposerSheet(submission: $healthCareSubmission))
       .modifier(GalaxySSIConversationalTeamSheet(launch: $conversationalTeamLaunch, valid: teamLaunchIsCurrent) { launch in
-        if teamLaunchIsCurrent(launch) { draft = "" }
+        if launch.source == nil, teamLaunchIsCurrent(launch) { draft = "" }
       })
-      .onChange(of: attachments.map(\.id)) { _ in conversationalTeamLaunch = nil }
+      .onChange(of: attachments.map(\.id)) { _ in conversationalTeamLaunch = nil; modelTeamReview.invalidate() }
+      .onChange(of: store.profile.identityFingerprint) { _ in modelTeamReview.invalidate() }
+      .onChange(of: store.activeAgentConversationId) { _ in modelTeamReview.invalidate() }
+      .onReceive(modelTeamReview.$proposal) { value in
+        if value != nil { Task { @MainActor in await Task.yield(); offerModelTeamReview() } }
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in modelTeamReview.invalidate() }
+      .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
+        modelTeamReview.invalidate(); conversationalTeamLaunch = nil
+      }
       .modifier(GalaxySSIConversationGoalSheet(launch: $conversationGoalLaunch) { launch in
         if store.profile.identityFingerprint == launch.owner, store.activeAgentConversationId == launch.conversation,
           AgentTurnReceiptEvidence.hash(draft.trimmingCharacters(in: .whitespacesAndNewlines)) == launch.draftSHA { draft = "" }
