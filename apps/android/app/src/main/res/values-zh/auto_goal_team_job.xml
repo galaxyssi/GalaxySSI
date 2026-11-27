@@ -4,4 +4,11 @@
     <string name="auto_team_job_interrupted">协作已中断，末次请求结果未知，未自动重发。可以重新发起协作。</string>
     <string name="auto_team_job_failed">%1$s 未能完成协作：模型调用、分工计划或成员回复未通过检查。没有切换模型。</string>
     <string name="auto_team_job_stopped">协作已停止。本次任务的迟到结果不会写回。</string>
+    <string name="auto_team_job_withheld">审核未通过，草稿未发布。原因：%1$s</string>
+    <string name="auto_team_correction">审核修正：</string>
+    <string name="auto_team_objections">保留的异议：</string>
+    <string name="auto_team_passing">符合全部门槛：</string>
+    <string name="auto_team_none">无</string>
+    <string name="auto_team_limitation">证据局限：</string>
+    <string name="auto_team_table_mismatch">审核者未确认表格结论，仅展示按原表复算的结果。\n\n%1$s</string>
 </resources>
