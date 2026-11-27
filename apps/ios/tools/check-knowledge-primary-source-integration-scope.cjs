@@ -4,7 +4,8 @@ const path = require('node:path');
 require('./check-knowledge-primary-partitions-scope.cjs').validate();
 require('./check-knowledge-source-timing-scope.cjs');
 const root = path.resolve(__dirname, '..');
-const read = file => fs.readFileSync(path.join(root, file), 'utf8');
+const read = file => require('./check-knowledge-statements-scope.cjs').retained('apps/ios/' + file,
+  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const database = read('GalaxySSI/AgentKnowledgeDatabase.swift');
 const start = database.indexOf('  func commitSourceReplacement(');
 const commit = database.slice(start, database.indexOf('  private func validatePreparedIdentity(', start));

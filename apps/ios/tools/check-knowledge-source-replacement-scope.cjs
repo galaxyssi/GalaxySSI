@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const read = name => fs.readFileSync(path.join(root, 'GalaxySSI', name), 'utf8');
+const read = name => require('./check-knowledge-statements-scope.cjs').retained('apps/ios/GalaxySSI/' + name,
+  fs.readFileSync(path.join(root, 'GalaxySSI', name), 'utf8').replace(/\r\n/g, '\n'));
 const database = read('AgentKnowledgeDatabase.swift');
 const replacement = database.slice(database.indexOf('  func replaceSource('), database.indexOf('  private func insert(_ item:'));
 assert.ok(replacement.length > 1000);

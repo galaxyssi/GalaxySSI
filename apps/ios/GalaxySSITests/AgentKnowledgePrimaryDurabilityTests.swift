@@ -11,10 +11,10 @@ final class AgentKnowledgePrimaryDurabilityTests: XCTestCase {
     init(memory: Bool = false) throws {
       try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
       guard sqlite3_open(memory ? ":memory:" : url.path, &database) == SQLITE_OK else {
-        if let database { sqlite3_close_v2(database) }; throw AgentKnowledgePrimaryDurability.Failure.sqlite
+        if let database { AgentKnowledgeSQLiteStatements.shared.close(database) }; throw AgentKnowledgePrimaryDurability.Failure.sqlite
       }
     }
-    deinit { if let database { sqlite3_close_v2(database) }; try? FileManager.default.removeItem(at: root) }
+    deinit { if let database { AgentKnowledgeSQLiteStatements.shared.close(database) }; try? FileManager.default.removeItem(at: root) }
     func sql(_ sql: String) throws {
       guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgePrimaryDurability.Failure.sqlite }
     }
@@ -46,7 +46,7 @@ final class AgentKnowledgePrimaryDurabilityTests: XCTestCase {
     try AgentKnowledgePrimaryDurability.configure(f.database, role: .primary)
     var reader: OpaquePointer?
     XCTAssertEqual(sqlite3_open_v2(f.url.path, &reader, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
-    defer { sqlite3_close_v2(reader) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(reader) }
     XCTAssertThrowsError(try AgentKnowledgePrimaryDurability.configure(reader, role: .primary))
     XCTAssertThrowsError(try AgentKnowledgePrimaryDurability.verify(reader, role: .primary))
   }

@@ -54,7 +54,7 @@ final class AgentKnowledgeSourceStaging {
   func close() {
     if activeStatements > 0 { closing = true; return }
     guard phase != .closed else { return }; phase = .closed
-    if let database { sqlite3_close_v2(database); self.database = nil }
+    if let database { AgentKnowledgeSQLiteStatements.shared.close(database); self.database = nil }
     cipherKey = nil; tokenKey = nil
     try? FileManager.default.removeItem(at: directory)
   }
@@ -286,11 +286,12 @@ final class AgentKnowledgeSourceStaging {
   private func statement<T>(_ sql: String, _ work: (OpaquePointer) throws -> T) throws -> T {
     guard let database, !closing else { throw AgentKnowledgeDatabaseError.unavailable }
     var raw: OpaquePointer?
-    guard sqlite3_prepare_v2(database, sql, -1, &raw, nil) == SQLITE_OK, let row = raw else {
-      if let raw { sqlite3_finalize(raw) }; throw AgentKnowledgeDatabaseError.unavailable
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(database, sql, -1, &raw, nil) == SQLITE_OK, let row = raw else {
+      if let raw { AgentKnowledgeSQLiteStatements.shared.release(raw) }; throw AgentKnowledgeDatabaseError.unavailable
     }
     activeStatements += 1
-    defer { sqlite3_finalize(row); activeStatements -= 1; if closing { close() } }
-    return try work(row)
+    defer { AgentKnowledgeSQLiteStatements.shared.release(row); activeStatements -= 1; if closing { close() } }
+    do { return try work(row) }
+    catch { AgentKnowledgeSQLiteStatements.shared.markFailed(row); throw error }
   }
 }

@@ -25,10 +25,10 @@ final class AgentKnowledgeCommittedReadView {
         guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
       }
       var row: OpaquePointer?
-      guard sqlite3_prepare_v2(database, "SELECT revision FROM knowledge_browse_revision WHERE id=1", -1, &row, nil) == SQLITE_OK, let row else {
-        if let row { sqlite3_finalize(row) }; throw AgentKnowledgeDatabaseError.unavailable
+      guard AgentKnowledgeSQLiteStatements.shared.prepare(database, "SELECT revision FROM knowledge_browse_revision WHERE id=1", -1, &row, nil) == SQLITE_OK, let row else {
+        if let row { AgentKnowledgeSQLiteStatements.shared.release(row) }; throw AgentKnowledgeDatabaseError.unavailable
       }
-      defer { sqlite3_finalize(row) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(row) }
       guard sqlite3_step(row) == SQLITE_ROW, sqlite3_column_type(row, 0) == SQLITE_INTEGER else { throw AgentKnowledgeDatabaseError.unavailable }
       revision = sqlite3_column_int64(row, 0)
       guard revision >= 0, sqlite3_step(row) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -50,9 +50,8 @@ final class AgentKnowledgeCommittedReadView {
     if activeReads > 0 { closing = true; return }
     if let database {
       _ = sqlite3_exec(database, "ROLLBACK", nil, nil, nil)
-      // No active callback remains; do not release retention on a zombie handle.
-      while let statement = sqlite3_next_stmt(database, nil) { sqlite3_finalize(statement) }
-      sqlite3_close_v2(database); self.database = nil
+      // This private view owns the handle, including any escaped raw cursors.
+      AgentKnowledgeSQLiteStatements.shared.close(database, finalizingUnmanaged: true); self.database = nil
     }
     // Release physical retention only after statements, WAL and handle are closed.
     primarySnapshotLease = nil

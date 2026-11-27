@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const read = name => fs.readFileSync(path.join(root, 'GalaxySSI', name), 'utf8');
+const read = name => require('./check-knowledge-statements-scope.cjs').retained('apps/ios/GalaxySSI/' + name,
+  fs.readFileSync(path.join(root, 'GalaxySSI', name), 'utf8').replace(/\r\n/g, '\n'));
 const database = read('AgentKnowledgeDatabase.swift');
 const search = database.slice(database.indexOf('  func searchCandidates('), database.indexOf('  private func committedReadView('));
 assert.equal((search.match(/try committedReadView\(\)/g) || []).length, 2);

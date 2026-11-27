@@ -13,7 +13,7 @@ func seedLegacyKnowledgePayloads(_ items: [AgentKnowledgeItem], url: URL, secret
   let namespace = SHA256.hash(data: Data(url.standardizedFileURL.path.utf8)).map { String(format: "%02x", $0) }.joined()
   var raw: OpaquePointer?
   guard sqlite3_open(url.path, &raw) == SQLITE_OK, let database = raw else { throw AgentKnowledgeDatabaseError.unavailable }
-  defer { sqlite3_close_v2(database) }
+  defer { AgentKnowledgeSQLiteStatements.shared.close(database) }
   guard sqlite3_exec(database, "BEGIN IMMEDIATE TRANSACTION", nil, nil, nil) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
   var committed = false
   defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
@@ -78,7 +78,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     }
     deinit {
       store = nil
-      if let catalog { sqlite3_close_v2(catalog) }
+      if let catalog { AgentKnowledgeSQLiteStatements.shared.close(catalog) }
       try? FileManager.default.removeItem(at: directory)
     }
     func sql(_ sql: String) throws {
@@ -152,7 +152,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var raw: OpaquePointer?
     XCTAssertEqual(sqlite3_open_v2(f.url.path, &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
     let snapshot = try XCTUnwrap(raw)
-    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(snapshot) }
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
     XCTAssertEqual(sqlite3_exec(snapshot, "BEGIN", nil, nil, nil), SQLITE_OK)
     let keys = (0..<16).map { String(format: "%02x", $0) + String(repeating: "a", count: 62) }
     try f.batch {
@@ -239,7 +239,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var raw: OpaquePointer?
     XCTAssertEqual(sqlite3_open_v2(f.url.path, &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
     let snapshot = try XCTUnwrap(raw)
-    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(snapshot) }
+    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil); AgentKnowledgeSQLiteStatements.shared.close(snapshot) }
     XCTAssertEqual(sqlite3_exec(snapshot, "BEGIN", nil, nil, nil), SQLITE_OK)
     XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: snapshot), old)
     XCTAssertThrowsError(try f.batch(afterPrepare: {
@@ -257,7 +257,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var raw: OpaquePointer?
     XCTAssertEqual(sqlite3_open(f.url.path, &raw), SQLITE_OK)
     let foreign = try XCTUnwrap(raw)
-    defer { sqlite3_close_v2(foreign) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(foreign) }
     let body = Data("valid".utf8)
     try f.batch(afterPrepare: {
       XCTAssertThrowsError(try f.store.append(Data("late".utf8), itemHash: f.key, catalog: f.catalog))
@@ -281,7 +281,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     XCTAssertEqual(sqlite3_open(f.partitionURL(old).path, &raw), SQLITE_OK)
     let physical = try XCTUnwrap(raw)
     XCTAssertEqual(sqlite3_exec(physical, "INSERT INTO frames VALUES('unreferenced',0,zeroblob(131072))", nil, nil, nil), SQLITE_OK)
-    sqlite3_close_v2(physical)
+    AgentKnowledgeSQLiteStatements.shared.close(physical)
     XCTAssertLessThan(try f.scalar("SELECT bytes FROM knowledge_primary_partitions"), 64 * 1_024)
     let other = "0e" + String(repeating: "b", count: 62)
     try f.write(body, key: other)
@@ -351,7 +351,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var snapshot: OpaquePointer?
     XCTAssertEqual(sqlite3_open_v2(f.url.path, &snapshot, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
     let handle = try XCTUnwrap(snapshot)
-    defer { sqlite3_exec(handle, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(handle) }
+    defer { sqlite3_exec(handle, "ROLLBACK", nil, nil, nil); AgentKnowledgeSQLiteStatements.shared.close(handle) }
     XCTAssertEqual(sqlite3_exec(handle, "BEGIN", nil, nil, nil), SQLITE_OK)
     XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: handle), old)
     try f.write(replacement)
@@ -370,7 +370,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       var snapshot: OpaquePointer?
       XCTAssertEqual(sqlite3_open_v2(f.url.path, &snapshot, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil), SQLITE_OK)
       let handle = try XCTUnwrap(snapshot)
-      defer { sqlite3_exec(handle, "ROLLBACK", nil, nil, nil); sqlite3_close_v2(handle) }
+      defer { sqlite3_exec(handle, "ROLLBACK", nil, nil, nil); AgentKnowledgeSQLiteStatements.shared.close(handle) }
       XCTAssertEqual(sqlite3_exec(handle, "BEGIN", nil, nil, nil), SQLITE_OK)
       XCTAssertEqual(try f.store.read(itemHash: f.key, catalog: handle), old)
       try f.write(fresh)
@@ -620,7 +620,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
       let path = f.store.root.appendingPathComponent(id + ".sqlite")
       XCTAssertEqual(sqlite3_open(path.path, &raw), SQLITE_OK)
       XCTAssertEqual(sqlite3_exec(raw, mutation, nil, nil, nil), SQLITE_OK)
-      sqlite3_close_v2(raw)
+      AgentKnowledgeSQLiteStatements.shared.close(raw)
       XCTAssertThrowsError(try f.store.read(itemHash: f.key, catalog: f.catalog))
     }
   }
@@ -630,7 +630,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     let data = Data("relocated logical database".utf8)
     try f.write(data)
     f.store = nil
-    sqlite3_close_v2(f.catalog)
+    AgentKnowledgeSQLiteStatements.shared.close(f.catalog)
     f.catalog = nil
     let destination = f.directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: destination) }
@@ -639,7 +639,7 @@ final class AgentKnowledgePrimaryPartitionsTests: XCTestCase {
     var raw: OpaquePointer?
     XCTAssertEqual(sqlite3_open(url.path, &raw), SQLITE_OK)
     let catalog = try XCTUnwrap(raw)
-    defer { sqlite3_close_v2(catalog) }
+    defer { AgentKnowledgeSQLiteStatements.shared.close(catalog) }
     let moved = AgentKnowledgePrimaryPartitions(catalogURL: url, secrets: f.secrets)
     try AgentKnowledgePrimaryDurability.configure(catalog, role: .catalog)
     try moved.setup(catalog: catalog)

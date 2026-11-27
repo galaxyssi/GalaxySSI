@@ -89,7 +89,7 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   deinit {
-    writers.values.forEach { sqlite3_close_v2($0.database) }
+    writers.values.forEach { AgentKnowledgeSQLiteStatements.shared.close($0.database) }
     if accessDescriptor >= 0 { Darwin.close(accessDescriptor) }
     if directoryDescriptor >= 0 { Darwin.close(directoryDescriptor) }
   }
@@ -132,7 +132,7 @@ final class AgentKnowledgePrimaryPartitions {
       "INSERT OR IGNORE INTO knowledge_primary_migration(id) VALUES(1)"
     ] { try execute(catalog, sql) }
     let marker = try prepare(catalog, "SELECT sealed FROM knowledge_primary_namespace WHERE id=1")
-    defer { sqlite3_finalize(marker) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(marker) }
     let state = sqlite3_step(marker)
     let resolved: String
     if state == SQLITE_ROW {
@@ -142,7 +142,7 @@ final class AgentKnowledgePrimaryPartitions {
     } else if state == SQLITE_DONE {
       resolved = UUID().uuidString.lowercased()
       let insert = try prepare(catalog, "INSERT INTO knowledge_primary_namespace(id,sealed) VALUES(1,?)")
-      defer { sqlite3_finalize(insert) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
       try bind(cipher.encrypt(Data(resolved.utf8), purpose: namespacePurpose), index: 1, statement: insert)
       guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     } else { throw AgentKnowledgeDatabaseError.unavailable }
@@ -185,7 +185,7 @@ final class AgentKnowledgePrimaryPartitions {
     guard let batch = writeBatch, batch.catalog == catalog, batch.thread === Thread.current else { return }
     for writer in writers.values {
       if batch.pending.contains(writer.id) { try? execute(writer.database, "ROLLBACK") }
-      sqlite3_close_v2(writer.database)
+      AgentKnowledgeSQLiteStatements.shared.close(writer.database)
     }
     writers.removeAll()
     writeBatch = nil
@@ -228,7 +228,7 @@ final class AgentKnowledgePrimaryPartitions {
       var committed = false
       defer { if batch == nil && !committed { try? execute(database, "ROLLBACK") } }
       let statement = try prepare(database, "INSERT INTO frames(entry_id,ordinal,sealed) VALUES(?,?,?)")
-      defer { sqlite3_finalize(statement) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       while offset < plain.count {
         try Task.checkCancellation()
         try checkActive()
@@ -256,7 +256,7 @@ final class AgentKnowledgePrimaryPartitions {
         committed = true
       }
     } catch {
-      if batch == nil { writers.removeValue(forKey: bucket); sqlite3_close_v2(database) }
+      if batch == nil { writers.removeValue(forKey: bucket); AgentKnowledgeSQLiteStatements.shared.close(database) }
       throw error
     }
     batch?.hasWrites = true
@@ -269,13 +269,13 @@ final class AgentKnowledgePrimaryPartitions {
     let sealedReference = try cipher.encrypt(JSONEncoder().encode(reference), purpose: referencePurpose(itemHash))
     guard sealedReference.count <= 8 * 1_024 else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let insert = try prepare(catalog, "INSERT INTO knowledge_primary_refs(item_hash,partition_id,sealed_ref) VALUES(?,?,?)")
-    defer { sqlite3_finalize(insert) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
     try bind(itemHash, index: 1, statement: insert)
     try bind(id, index: 2, statement: insert)
     try bind(sealedReference, index: 3, statement: insert)
     guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     let update = try prepare(catalog, "UPDATE knowledge_primary_partitions SET bytes=bytes+?,records=records+1 WHERE partition_id=? AND bytes<=? AND records<?")
-    defer { sqlite3_finalize(update) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(update) }
     sqlite3_bind_int64(update, 1, storedBytes)
     try bind(id, index: 2, statement: update)
     sqlite3_bind_int64(update, 3, Int64.max - storedBytes)
@@ -299,7 +299,7 @@ final class AgentKnowledgePrimaryPartitions {
     }
     guard Self.digest(itemHash) else { throw AgentKnowledgeDatabaseError.corruptRecord }
     let lookup = try prepare(catalog, "SELECT partition_id,sealed_ref FROM knowledge_primary_refs WHERE item_hash=?")
-    defer { sqlite3_finalize(lookup) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(lookup) }
     try bind(itemHash, index: 1, statement: lookup)
     let status = sqlite3_step(lookup)
     if status == SQLITE_DONE { return nil }
@@ -323,9 +323,9 @@ final class AgentKnowledgePrimaryPartitions {
     else { readerLease = nil }
     defer { readerLease?.end() }
     let database = try pending ?? open(partition, create: false, readOnly: true)
-    defer { if pending == nil { sqlite3_close_v2(database) } }
+    defer { if pending == nil { AgentKnowledgeSQLiteStatements.shared.close(database) } }
     let frames = try prepare(database, "SELECT ordinal,sealed FROM frames WHERE entry_id=? ORDER BY ordinal")
-    defer { sqlite3_finalize(frames) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(frames) }
     try bind(reference.entry, index: 1, statement: frames)
     var result = Data(), ordinal = 0
     while true {
@@ -399,7 +399,7 @@ final class AgentKnowledgePrimaryPartitions {
     leaseLock.lock()
     defer { leaseLock.unlock() }
     guard accessDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.unavailable }
-    writers.values.forEach { sqlite3_close_v2($0.database) }
+    writers.values.forEach { AgentKnowledgeSQLiteStatements.shared.close($0.database) }
     writers.removeAll()
     // flock conversion may release SH even when nonblocking EX fails; all I/O rechecks SH.
     sharedLease = false
@@ -418,14 +418,14 @@ final class AgentKnowledgePrimaryPartitions {
       var committed = false
       defer { if !committed { try? execute(catalog, "ROLLBACK") } }
       let state = try prepare(catalog, "SELECT after_item_hash FROM knowledge_primary_legacy_reclaim WHERE id=1")
-      defer { sqlite3_finalize(state) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(state) }
       guard sqlite3_step(state) == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.corruptRecord }
       let cursor = try text(state, column: 0)
       guard cursor.isEmpty || Self.digest(cursor) else { throw AgentKnowledgeDatabaseError.corruptRecord }
       let select = try prepare(catalog, """
         SELECT item_hash FROM knowledge_external_payloads WHERE item_hash>? ORDER BY item_hash LIMIT ?
         """)
-      defer { sqlite3_finalize(select) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(select) }
       try bind(cursor, index: 1, statement: select)
       sqlite3_bind_int(select, 2, Int32(pageSize + 1))
       var keys: [String] = []
@@ -442,7 +442,7 @@ final class AgentKnowledgePrimaryPartitions {
         // Do not discard the last usable copy on a malformed reference, missing file or bad frame.
         if try readPayload(itemHash: key, catalog: catalog, checkActive: checkActive) == nil { continue }
         let remove = try prepare(catalog, "DELETE FROM knowledge_external_payloads WHERE item_hash=?")
-        defer { sqlite3_finalize(remove) }
+        defer { AgentKnowledgeSQLiteStatements.shared.release(remove) }
         try bind(key, index: 1, statement: remove)
         guard sqlite3_step(remove) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else {
           throw AgentKnowledgeDatabaseError.unavailable
@@ -451,7 +451,7 @@ final class AgentKnowledgePrimaryPartitions {
       }
       let visited = min(keys.count, pageSize), finished = keys.count <= pageSize
       let advance = try prepare(catalog, "UPDATE knowledge_primary_legacy_reclaim SET after_item_hash=? WHERE id=1")
-      defer { sqlite3_finalize(advance) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(advance) }
       try bind(finished ? "" : (keys.prefix(pageSize).last ?? cursor), index: 1, statement: advance)
       guard sqlite3_step(advance) == SQLITE_DONE, sqlite3_changes(catalog) == 1 else { throw AgentKnowledgeDatabaseError.unavailable }
       try checkActive()
@@ -473,7 +473,7 @@ final class AgentKnowledgePrimaryPartitions {
       WHERE NOT EXISTS(SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id)
       ORDER BY p.partition_id LIMIT MAX(0, ? - (SELECT COUNT(*) FROM knowledge_primary_retired))
       """)
-    defer { sqlite3_finalize(retire) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(retire) }
     sqlite3_bind_int(retire, 1, Int32(pageSize))
     guard sqlite3_step(retire) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     try execute(catalog, """
@@ -485,7 +485,7 @@ final class AgentKnowledgePrimaryPartitions {
     try execute(catalog, "COMMIT")
     committed = true
     let queued = try prepare(catalog, "SELECT partition_id FROM knowledge_primary_retired ORDER BY partition_id LIMIT ?")
-    defer { sqlite3_finalize(queued) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(queued) }
     sqlite3_bind_int(queued, 1, Int32(pageSize))
     var ids: [String] = []
     while true {
@@ -500,7 +500,7 @@ final class AgentKnowledgePrimaryPartitions {
       try Task.checkCancellation()
       try checkActive()
       let live = try prepare(catalog, "SELECT 1 FROM knowledge_primary_refs WHERE partition_id=? LIMIT 1")
-      defer { sqlite3_finalize(live) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(live) }
       try bind(id, index: 1, statement: live)
       let state = sqlite3_step(live)
       guard state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.corruptRecord }
@@ -509,7 +509,7 @@ final class AgentKnowledgePrimaryPartitions {
       try unlinkRetired(id)
       try afterRetiredUnlink()
       let remove = try prepare(catalog, "DELETE FROM knowledge_primary_retired WHERE partition_id=?")
-      defer { sqlite3_finalize(remove) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(remove) }
       try bind(id, index: 1, statement: remove)
       guard sqlite3_step(remove) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     }
@@ -522,7 +522,7 @@ final class AgentKnowledgePrimaryPartitions {
       SELECT 1 FROM knowledge_primary_partitions p WHERE NOT EXISTS(
         SELECT 1 FROM knowledge_primary_refs r WHERE r.partition_id=p.partition_id) LIMIT 1
       """)
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     let state = sqlite3_step(statement)
     guard state == SQLITE_ROW || state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     return state == SQLITE_ROW
@@ -566,7 +566,7 @@ final class AgentKnowledgePrimaryPartitions {
       SELECT 1 FROM knowledge_primary_refs WHERE partition_id=?
       \(retired) LIMIT 1
       """)
-    defer { sqlite3_finalize(statement) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(statement) }
     try bind(id, index: 1, statement: statement)
     try bind(id, index: 2, statement: statement)
     if includeRetired { try bind(id, index: 3, statement: statement) }
@@ -634,12 +634,12 @@ final class AgentKnowledgePrimaryPartitions {
       batch.pending.remove(writer.id)
     }
     writers.removeValue(forKey: bucket)
-    sqlite3_close_v2(writer.database)
+    AgentKnowledgeSQLiteStatements.shared.close(writer.database)
   }
 
   private func partition(catalog: OpaquePointer, bucket: Int, checkActive: () throws -> Void) throws -> String {
     let lookup = try prepare(catalog, "SELECT partition_id,bytes,records FROM knowledge_primary_partitions WHERE bucket=? AND sealed=0")
-    defer { sqlite3_finalize(lookup) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(lookup) }
     sqlite3_bind_int(lookup, 1, Int32(bucket))
     let status = sqlite3_step(lookup)
     if status == SQLITE_ROW {
@@ -649,7 +649,7 @@ final class AgentKnowledgePrimaryPartitions {
       if bytes < partitionBytes, records < partitionRecords, try physicalBytes(id) < partitionBytes { return id }
       try flushWriter(bucket: bucket, checkActive: checkActive)
       let seal = try prepare(catalog, "UPDATE knowledge_primary_partitions SET sealed=1 WHERE partition_id=?")
-      defer { sqlite3_finalize(seal) }
+      defer { AgentKnowledgeSQLiteStatements.shared.release(seal) }
       try bind(id, index: 1, statement: seal)
       guard sqlite3_step(seal) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
     } else if status != SQLITE_DONE { throw AgentKnowledgeDatabaseError.unavailable }
@@ -658,11 +658,11 @@ final class AgentKnowledgePrimaryPartitions {
     try allocations.remember(id, syncParent: syncRoot)
     try afterAllocationIntent(id)
     let database = try open(id, create: true, readOnly: false)
-    sqlite3_close_v2(database)
+    AgentKnowledgeSQLiteStatements.shared.close(database)
     try syncRoot()
     try afterAllocationFile(id)
     let insert = try prepare(catalog, "INSERT INTO knowledge_primary_partitions(partition_id,bucket,bytes,records,sealed) VALUES(?,?,0,0,0)")
-    defer { sqlite3_finalize(insert) }
+    defer { AgentKnowledgeSQLiteStatements.shared.release(insert) }
     try bind(id, index: 1, statement: insert)
     sqlite3_bind_int(insert, 2, Int32(bucket))
     guard sqlite3_step(insert) == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
@@ -674,7 +674,7 @@ final class AgentKnowledgePrimaryPartitions {
     if let prior = writers[bucket] {
       guard writeBatch?.pending.contains(prior.id) != true else { throw AgentKnowledgeDatabaseError.corruptRecord }
       writers.removeValue(forKey: bucket)
-      sqlite3_close_v2(prior.database)
+      AgentKnowledgeSQLiteStatements.shared.close(prior.database)
     }
     let database = try open(id, create: false, readOnly: false)
     writers[bucket] = (id, database)
@@ -713,10 +713,10 @@ final class AgentKnowledgePrimaryPartitions {
     var handle: OpaquePointer?
     let flags = (readOnly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE) | SQLITE_OPEN_FULLMUTEX | (create ? SQLITE_OPEN_CREATE : 0)
     guard sqlite3_open_v2(url.path, &handle, flags, nil) == SQLITE_OK, let database = handle else {
-      if let handle { sqlite3_close_v2(handle) }; throw AgentKnowledgeDatabaseError.unavailable
+      if let handle { AgentKnowledgeSQLiteStatements.shared.close(handle) }; throw AgentKnowledgeDatabaseError.unavailable
     }
     var ready = false
-    defer { if !ready { sqlite3_close_v2(database) } }
+    defer { if !ready { AgentKnowledgeSQLiteStatements.shared.close(database) } }
     sqlite3_busy_timeout(database, 5_000)
     try execute(database, "PRAGMA cache_size=-1024")
     try execute(database, "PRAGMA mmap_size=0")
@@ -738,8 +738,8 @@ final class AgentKnowledgePrimaryPartitions {
 
   private func prepare(_ database: OpaquePointer, _ sql: String) throws -> OpaquePointer {
     var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let result = statement else {
-      if let statement { sqlite3_finalize(statement) }
+    guard AgentKnowledgeSQLiteStatements.shared.prepare(database, sql, -1, &statement, nil) == SQLITE_OK, let result = statement else {
+      if let statement { AgentKnowledgeSQLiteStatements.shared.release(statement) }
       throw AgentKnowledgeDatabaseError.unavailable
     }
     return result
@@ -749,12 +749,16 @@ final class AgentKnowledgePrimaryPartitions {
   }
   private func bind(_ value: String, index: Int32, statement: OpaquePointer) throws {
     guard value.withCString({ sqlite3_bind_text(statement, index, $0, -1, Self.transient) }) == SQLITE_OK else {
+      AgentKnowledgeSQLiteStatements.shared.markFailed(statement)
       throw AgentKnowledgeDatabaseError.unavailable
     }
   }
   private func bind(_ value: Data, index: Int32, statement: OpaquePointer) throws {
     guard let count = Int32(exactly: value.count), value.withUnsafeBytes({ sqlite3_bind_blob(statement, index,
-      $0.baseAddress, count, Self.transient) }) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+      $0.baseAddress, count, Self.transient) }) == SQLITE_OK else {
+      AgentKnowledgeSQLiteStatements.shared.markFailed(statement)
+      throw AgentKnowledgeDatabaseError.unavailable
+    }
   }
   private func text(_ statement: OpaquePointer, column: Int32) throws -> String {
     guard let value = sqlite3_column_text(statement, column) else { throw AgentKnowledgeDatabaseError.corruptRecord }
