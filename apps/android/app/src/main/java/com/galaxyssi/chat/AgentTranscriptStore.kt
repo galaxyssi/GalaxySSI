@@ -1265,6 +1265,13 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         }
     }
 
+    internal fun messageSearchPage(conversationId: String, entryId: String): AgentTranscriptPage? {
+        val c = conversation(conversationId)?.takeIf(LocalMessageSearch::ordinary) ?: return null
+        val page = entryDatabase.pageAtEntry(c.id, entryId) ?: return null
+        val visible = ownedEntries(page.entries)
+        return page.copy(entries = visible).takeIf { visible.any { e -> e.id == entryId && e.sourceConversationId.isBlank() } }
+    }
+
     internal fun clearRuntimeDecodeCache() {
         entryDatabase.clearRuntimeDecodeCache()
         preparedContextCache.clear()
