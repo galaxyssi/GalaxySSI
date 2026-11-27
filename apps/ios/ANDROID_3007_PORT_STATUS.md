@@ -292,6 +292,12 @@ locking/backup acceptance and measured performance remain unverified.
 
 ## Remaining Work
 
+Approved capture follow-up: ANDROID_3007_APPROVED_CAPTURE_DISPATCH.md now connects
+the separate system-permission resume path to owned task commit and plan-node
+journaling, including legacy no-plan capture. The later historical remaining-scope
+line's capture item is superseded by that source increment, not native acceptance.
+General unplanned, browser/cloud-loop persistence and full audit batching remain.
+
 The following incremental subsections retain their historical scope at the time
 of each change. The current remaining scope is summarized after those records.
 
