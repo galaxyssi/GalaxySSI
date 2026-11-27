@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_basis_count">Sources (%1$d)</string>
+    <string name="health_basis_scope">Records shared with this turn and sources actually retrieved. This does not verify the answer.</string>
+    <string-array name="health_basis_kinds">
+        <item>Measurement</item><item>Confirmed sampling context</item><item>Selected profile</item><item>Reference checked</item>
+        <item>Confirmed target</item><item>Selected instruction excerpt</item><item>Selected follow-up record</item><item>Source retrieved</item>
+    </string-array>
+</resources>

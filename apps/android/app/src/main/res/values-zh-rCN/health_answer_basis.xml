@@ -1,0 +1,8 @@
+<resources>
+    <string name="health_basis_count">依据 %1$d 项</string>
+    <string name="health_basis_scope">本轮获准使用的记录和实际读取的资料，不代表回答已经核实。</string>
+    <string-array name="health_basis_kinds">
+        <item>测量记录</item><item>已确认的采样信息</item><item>所选健康档案</item><item>参考资料核对</item>
+        <item>已确认的个人目标</item><item>所选医嘱原文</item><item>所选随访记录</item><item>实际读取的资料</item>
+    </string-array>
+</resources>

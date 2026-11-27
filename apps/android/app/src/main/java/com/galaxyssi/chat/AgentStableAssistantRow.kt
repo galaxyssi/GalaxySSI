@@ -13,6 +13,7 @@ internal class AgentStableAssistantRow(
     private val content = activity.agentAssistantRichContent(entry, entry)
     private val footer = LinearLayout(activity).apply { orientation = VERTICAL }
     private var speechFooter: View? = null
+    private var basisChecked = false
 
     init {
         orientation = VERTICAL
@@ -20,6 +21,7 @@ internal class AgentStableAssistantRow(
         addView(content)
         addView(footer, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         refreshReplySpeechFooter()
+        attachBasis()
     }
 
     fun bind(next: AgentTranscriptEntry): Boolean {
@@ -27,7 +29,15 @@ internal class AgentStableAssistantRow(
             !activity.updateAgentAssistantRichContent(content, next)) return false
         entry = next
         refreshReplySpeechFooter()
+        attachBasis()
         return true
+    }
+
+    private fun attachBasis() {
+        if (!basisChecked && activity.healthCareSurface != null && AgentTurnReceipt.isReplyText(entry)) {
+            basisChecked = true
+            activity.healthAnswerFooter(entry)?.let { addView(it) }
+        }
     }
 
     override fun refreshReplySpeechFooter() {
