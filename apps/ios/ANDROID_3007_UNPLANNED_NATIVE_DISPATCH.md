@@ -42,5 +42,11 @@ fallback, lifecycle and result paths. Journal, effect, Store and executor kernel
 frozen. The prior capture guard uses this explicit three-hook normalizer without losing
 any capture assertions. Eight synthetic XCTest methods are authored but not executed.
 
+Independent capture-queue follow-up #4673 exports a legacy-envelope normalizer. When
+that follow-up is present, the unplanned-dispatch guard uses it only for the capture
+helper before comparing with this PR's baseline. Without the follow-up, comparison
+remains exact. The capture guard separately freezes permission/checkpoint/ticket logic
+outside its declared envelope block; no journal, Store or effect assertion is removed.
+
 Only JS/source/project checks and whitespace checks are run. No Swift/native build,
 XCTest execution, device/restart/fault acceptance, full check, CI monitoring or IPA.

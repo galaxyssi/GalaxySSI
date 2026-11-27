@@ -44,7 +44,12 @@ if (require.main === module) {
   assert(!/AgentPlanFactory|\.execute\(|URLSession|grantedPermissions|grantedConsents|UUID\(/.test(helper), 'Envelope does not rewrite actions, execute, route or grant');
   for (const name of ['AgentPlanNodeJournal', 'AgentSequentialPlanNodeDispatch', 'AgentPlanRunModels', 'AgentActionEffectExecutor',
     'AgentApprovedCaptureDispatch', 'AgentIOSNativeActionExecutor', 'AgentModelToolLoop', 'GalaxySSIStore',
-    'AgentExecutionContinuity', 'AgentPlanLifecyclePolicy']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    'AgentExecutionContinuity', 'AgentPlanLifecyclePolicy']) {
+    const source = read(app + name + '.swift');
+    const captureEnvelope = require('./check-approved-capture-dispatch.cjs').retainedCaptureEnvelope;
+    const retained = name === 'AgentApprovedCaptureDispatch' && captureEnvelope ? captureEnvelope(source) : source;
+    assert.equal(retained, old(app + name + '.swift'), name);
+  }
   const tests = read('apps/ios/GalaxySSITests/AgentUnplannedNativeDispatchTests.swift');
   assert.equal((tests.match(/func test/g) || []).length, 8);
   for (const token of ['testNextActionRetainsTheOriginalEnvelopeAndIndependentNodeIdentity',
