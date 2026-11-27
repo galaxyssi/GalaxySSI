@@ -4,7 +4,9 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'a08d14423c650da7fef28d24800f755323909eef';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => {
-  const s = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  let s = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  const mcp = path.join(__dirname, 'check-mcp-readiness-preparation-scope.cjs');
+  if (fs.existsSync(mcp)) s = require(mcp).retained(f, s);
   const audit = path.join(__dirname, 'check-home-audit-worker-scope.cjs');
   return fs.existsSync(audit) ? require(audit).retained(f, s) : s;
 };
