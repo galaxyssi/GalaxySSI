@@ -18361,6 +18361,83 @@ final class MessageCoordinator: ObservableObject {
     }
   }
 
+  func readAgentFile(messageID: UUID, itemID: String) async -> Bool {
+    let owner = store.profile.identityFingerprint
+    guard UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
+      let original = store.persistedMessage(id: messageID, contactId: "hermes"),
+      original.conversationId == store.activeAgentConversationId,
+      let session = store.agentSession(id: original.conversationId), session.status == .active,
+      !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank, session.globalTopicKey.isBlank,
+      let contact = store.contact(id: "hermes"),
+      let key = store.turnReceiptKey(conversation: original.conversationId, turn: original.turnId),
+      AgentFileReceipt.originals(original).count >= 2,
+      let block = AgentFileReceipt.originals(original).first(where: { $0.id == itemID }) else { return false }
+    let operation = "read:\(messageID.uuidString):\(itemID)"
+    guard fileRecoveriesInFlight.insert(operation).inserted else { return false }
+    defer { fileRecoveriesInFlight.remove(operation) }
+    let sourceHash = AgentTurnReceiptEvidence.hash(original.richOutputJson)
+    func valid() -> Bool {
+      guard !Task.isCancelled, UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
+        store.profile.identityFingerprint == owner, store.activeAgentConversationId == original.conversationId,
+        let session = store.agentSession(id: original.conversationId), session.status == .active,
+        !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank, session.globalTopicKey.isBlank,
+        let current = store.persistedMessage(id: messageID, contactId: "hermes"), current.conversationId == original.conversationId,
+        current.turnId == original.turnId, AgentTurnReceiptEvidence.hash(current.richOutputJson) == sourceHash else { return false }
+      return true
+    }
+    var attachment = await Task.detached(priority: .userInitiated) {
+      AgentAttachmentWorkspaceStager.restore(conversationId: original.conversationId, turnId: original.turnId,
+        blocks: [block], matchExactIDs: true).first?.attachment
+    }.value
+    defer { attachment?.wipeSensitive() }
+    guard valid(), let file = attachment, file.id == itemID, !file.data.isEmpty,
+      Int64(file.data.count) <= AgentOutboundAttachmentTransferStore.maxAttachmentBytes else { return false }
+    let childID = UUID(), childTurn = childID.uuidString
+    let childKey = AgentTurnReceiptStore.Key(owner: owner, conversation: original.conversationId, turn: childTurn)
+    store.turnReceiptStore.begin(childKey, choice: AgentModelSelectionSettings.selection(for: original.conversationId, defaults: store.defaults))
+    guard store.turnReceiptStore.bindFileRead(childKey, source: .init(turn: original.turnId, digest: AgentTurnReceiptEvidence.hash(itemID))),
+      store.turnReceiptStore.changeFile(key, item: itemID, { $0.beginRead(turn: childTurn, now: AgentControlPlaneClock.nowMillis()) }) else { return false }
+    let label = String(format: localizedReply("galaxyssi.agent.file.read_named", fallback: "Read %@ only"), file.displayName)
+    let outgoing = store.appendOutgoing(label, to: "hermes", turnId: childTurn,
+      richOutputJson: outgoingAttachmentRichOutput([file], source: "user_attachment"), messageId: childID,
+      readOnlyAnalysis: true, conversationOverride: original.conversationId, sourceTrace: AgentSingleFileRead.stage)
+    beginPendingAgentReply(for: outgoing)
+    defer { finishPendingAgentReply(for: outgoing) }
+    do {
+      let staged = await stageAgentAttachments(conversationId: original.conversationId, turnId: childTurn, attachments: [file])
+      guard valid(), staged.count == 1 else { throw AgentSingleFileRead.Failure.sourceChanged }
+      let goal = AgentSingleFileRead.instructions(language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage))
+      let raw: String
+      if let profile = selectedLocalModel(for: contact, conversationId: original.conversationId, goal: goal) {
+        raw = try await AgentSingleFileRead.local(profile: profile, attachment: file, source: outgoing,
+          language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage),
+          valid: { valid() && LocalModelRuntimeSettings.isProfileEnabled(profile) })
+      } else if let cloud = selectedCloudModelContact(for: contact, conversationId: original.conversationId, goal: goal) {
+        let resolved = CloudModelRequestRoutingPolicy.resolve(contact: cloud, requestedModelId: cloud.selectedCloudModelId, hasImageInput: file.isImage)
+        raw = try await AgentSingleFileRead.cloud(contact: resolved, store: store, disclosure: disclosureStore,
+          source: outgoing, attachment: file,
+          valid: { valid() && !self.disclosureStore.blockedDestinationIds().contains(resolved.id) })
+      } else { throw AgentSingleFileRead.Failure.unavailable }
+      guard valid() else { throw AgentSingleFileRead.Failure.sourceChanged }
+      let report = try AgentSingleFileRead.parse(raw)
+      let saved = store.reportAttachmentReading(["ordinal": .int(1), "result": .string(report.result.rawValue)],
+        conversation: original.conversationId, turn: childTurn)
+      guard saved.isSuccess, valid() else { throw AgentSingleFileRead.Failure.sourceChanged }
+      let rich = AgentRichContentCodec.encode([AgentRichBlock(id: "file-read-" + childTurn, type: .text, text: report.reply)])
+      let reply = store.appendIncoming(report.reply, from: "hermes", remoteMessageId: "file-read-" + childTurn,
+        status: .delivered, traceStage: "attachment_file_read_report", conversationId: original.conversationId,
+        turnId: childTurn, richOutputJson: rich)
+      onIncomingMessage?(reply)
+      return true
+    } catch {
+      if valid() {
+        store.appendDeliveryTrace(childID, contactId: "hermes", stage: "attachment_file_read_incomplete",
+          detail: "The single-file interpretation did not produce a verified structured model report.", status: .failed)
+      }
+      return false
+    }
+  }
+
   func resumeAgentFile(messageID: UUID, itemID: String) async -> Bool {
     guard UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
       let original = store.persistedMessage(id: messageID, contactId: "hermes"),

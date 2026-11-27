@@ -48,13 +48,35 @@ const retry = services.slice(start, end);
 assert(!retry.includes('await send('), 'Transport retry must not submit the original question');
 assert(retry.indexOf('$0.restart(') < retry.indexOf('activateFileRetry('), 'Persist the receipt generation before activation');
 has('MqttSignalStateJournal', ['func expireFileRetry(identity:', 'try MqttAttachmentBodyIdentity.matches(body, transfer: transfer, bodyID: bodyID)']);
+const interpretation = services.slice(services.indexOf('  func readAgentFile('), services.indexOf('  func resumeAgentFile('));
+for (const token of ['blocks: [block], matchExactIDs: true', 'bindFileRead(childKey', 'richOutputJson: outgoingAttachmentRichOutput([file]',
+  'sourceTrace: AgentSingleFileRead.stage', 'AgentSingleFileRead.parse(raw)', 'store.reportAttachmentReading(',
+  'AgentTurnReceiptEvidence.hash(current.richOutputJson) == sourceHash']) assert(interpretation.includes(token), token);
+for (const token of ['await send(', 'original.content', 'recentLocalConversationContext(', 'conversationContext:']) {
+  assert(!interpretation.includes(token), 'Single-file read must not use ' + token);
+}
+has('AgentSingleFileRead', ['turns: [only]', 'only.richOutputJson = ""', 'request = try isolatedRequest(prepared, system: system)',
+  'Set(object.keys) == ["result", "reply"]', 'case .toolCallDelta: throw Failure.format',
+  'messages.count == 2', 'contents.count == 1', 'body.removeValue(forKey: key)',
+  'Text extraction only; original layout and non-text visual content are not supplied.',
+  'AgentModelToolLoopCancellationSource()', 'onCancel: { cancellation.cancel() }']);
+has('GalaxySSIStore', ['sourceTrace != AgentSingleFileRead.stage']);
+has('GalaxySSIAgentTranscriptMessagesView', ['.environment(\\.agentFileReceiptSource, message.isMine']);
+has('GalaxySSIRichContentView', ['@Environment(\\.agentFileReceiptSource)', 'fileReceiptCaption', 'onlyItemID: block.id']);
+has('GalaxySSIAgentFileReceiptsView', ['originals.filter { onlyItemID == nil || $0.id == onlyItemID }',
+  'No file delivery receipt', 'Model reports: recognized', 'Model reports: unreadable',
+  'coordinator.resumeAgentFile(messageID: message.id, itemID: block.id)',
+  'coordinator.readAgentFile(messageID: message.id, itemID: block.id)',
+  'work.values.forEach { $0.cancel() }', '.galaxySSIRuntimePlaintextWillClear']);
 for (const name of ['GalaxySSISignalEngine', 'AgentNativeToolCore', 'AgentNativeToolExecutionModels',
   'GalaxySSIEncryptedUserDefaultsStore']) assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name + ' retained');
 const project = read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj');
-for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool', 'AgentFileReceiptTests']) {
+for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool', 'AgentFileReceiptTests',
+  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView', 'AgentSingleFileReadTests']) {
   assert.equal(project.split(name + '.swift in Sources').length - 1, 2, name + ' project registration');
 }
-for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool']) {
+for (const name of ['AgentFileReceipt', 'AgentFileRetryPolicy', 'AgentFileRecoveryCoordinator', 'AgentAttachmentReadingTool',
+  'AgentSingleFileRead', 'GalaxySSIAgentFileReceiptsView']) {
   assert(!/\p{Script=Han}/u.test(read(app + name + '.swift')), name + ': localized strings only in resources');
 }
-console.log('iOS file recovery foundation source contracts passed; UI/read-isolation integration is not asserted.');
+console.log('iOS file recovery and cloud/local read source contracts passed; Desktop interpretation remains pending, no native execution.');

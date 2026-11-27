@@ -24,14 +24,17 @@ enum AgentAttachmentReadingTool {
 
 extension GalaxySSIStore {
   func reportAttachmentReading(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
-    let context = invocation.context
+    reportAttachmentReading(invocation.input, conversation: invocation.context.conversationId, turn: invocation.context.turnId)
+  }
+  func reportAttachmentReading(_ input: AgentMcpJSONObject, conversation: String, turn: String) -> AgentNativeToolExecutionResult {
+    let context = (conversationId: conversation, turnId: turn)
     guard UIApplication.shared.applicationState == .active, activeAgentConversationId == context.conversationId, canReadAgentTranscript,
       let session = agentSession(id: context.conversationId), session.status == .active,
       !session.privateMode, !session.trackingPaused,
       let sourceID = UUID(uuidString: context.turnId), let source = persistedMessage(id: sourceID, contactId: "hermes"),
       source.conversationId == context.conversationId, source.turnId == context.turnId,
-      let ordinal = invocation.input["ordinal"]?.intValue, (1...10).contains(ordinal),
-      let result = invocation.input["result"]?.stringValue, ["recognized", "unreadable"].contains(result),
+      let ordinal = input["ordinal"]?.intValue, (1...10).contains(ordinal),
+      let result = input["result"]?.stringValue, ["recognized", "unreadable"].contains(result),
       let childKey = turnReceiptKey(conversation: context.conversationId, turn: context.turnId) else {
       return .failure(code: "attachment_reading_scope_missing", message: "The original local attachment turn is unavailable.")
     }

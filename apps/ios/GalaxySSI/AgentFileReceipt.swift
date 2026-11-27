@@ -44,7 +44,7 @@ struct AgentFileReceipt: Codable, Equatable {
   }
 
   mutating func beginRead(turn: String, now: Int64) -> Bool {
-    guard !turn.isBlank, now > 0, reading != .recognized,
+    guard !turn.isBlank, now > 0, reading != .recognized, wire != .uploading, wire != .retrying, wire != .failed,
       readStarted.map({ now >= $0 && now - $0 >= 30_000 }) ?? true else { return false }
     readTurn = turn; readStarted = now; reading = nil
     return true

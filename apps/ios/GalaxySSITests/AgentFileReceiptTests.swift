@@ -62,6 +62,7 @@ final class AgentFileReceiptTests: XCTestCase {
   }
   func testOnlyCurrentReadTurnCanReportAndRecentClicksCannotStartAgain() {
     var receipt = started()
+    XCTAssertTrue(receipt.fold(transfer: transfer, state: .stored))
     XCTAssertTrue(receipt.beginRead(turn: "read-one", now: 100))
     XCTAssertFalse(receipt.beginRead(turn: "read-two", now: 200))
     XCTAssertFalse(receipt.beginRead(turn: "read-two", now: 99))
