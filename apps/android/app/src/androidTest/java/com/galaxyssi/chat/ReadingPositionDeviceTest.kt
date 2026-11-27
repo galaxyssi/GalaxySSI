@@ -93,7 +93,7 @@ class ReadingPositionDeviceTest {
                 transcripts.append(AgentTranscriptRole.USER, "Fixture $i\nReading position\nOnly synthetic text.",
                     conversationId = chat, turnId = if (i == 23) turn else UUID.randomUUID().toString())
             }
-            val launch = android.content.Intent(ctx, MainActivity::class.java)
+            val launch = android.content.Intent.makeMainActivity(android.content.ComponentName(ctx, MainActivity::class.java))
                 .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", chat)
             ActivityScenario.launch<MainActivity>(launch).use { screen ->
                 fun await(hint: String, test: (MainActivity) -> Boolean) {
