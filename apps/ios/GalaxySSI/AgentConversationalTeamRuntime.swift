@@ -101,7 +101,7 @@ final class AgentConversationalTeamRuntime: ObservableObject {
       (original.source == nil || original.source?.matches(store, conversation: original.conversation, objective: original.objective) == true)
   }
   private func ask(_ system: String, prompt: String, original: AgentConversationalTeamJob,
-    store: GalaxySSIStore, epoch: UUID) async throws -> String {
+    store: GalaxySSIStore, epoch: UUID, writerSession: AgentTeamWriterFormatSession) async throws -> String {
     guard current(original, store: store, epoch: epoch), let previous = try repository(store).read(original.conversation) else {
       throw AgentConversationalTeamJob.Failure.stale
     }
@@ -109,7 +109,7 @@ final class AgentConversationalTeamRuntime: ObservableObject {
     try repository(store).replace(next, expected: previous)
     return try await AgentConversationGoalInference.text(route: original.route, conversation: original.conversation,
       taskID: original.id.uuidString, requestID: "conversation-team-\(original.id)-\(next.calls)",
-      system: system, prompt: prompt, purpose: "Confirmed temporary text team", store: store,
+      system: system, prompt: prompt, purpose: "Confirmed temporary text team", writerSession: writerSession, store: store,
       valid: { self.current(original, store: store, epoch: epoch) })
   }
   private func run(_ store: GalaxySSIStore, epoch: UUID) async {
@@ -145,9 +145,10 @@ final class AgentConversationalTeamRuntime: ObservableObject {
             noReviewReason: text("review_reason_missing", "The reviewer did not give a specific reason.", store),
             contrast: .init(format: text("contrast_format", AgentTeamPredictionContrast.Text.english.format, store),
               higher: text("contrast_higher", "higher", store), lower: text("contrast_lower", "lower", store)))
+          let writerSession = AgentTeamWriterFormatSession()
           let outcome = try await AgentConversationalTeamEngine.run(objective: running.objective, labels: labels, ask: { [weak self, weak store] system, prompt in
             guard let self, let store else { throw CancellationError() }
-            return try await self.ask(system, prompt: prompt, original: running, store: store, epoch: epoch)
+            return try await self.ask(system, prompt: prompt, original: running, store: store, epoch: epoch, writerSession: writerSession)
           }, onEvent: { event in
             guard self.ticket == epoch, self.identity(store) else { return }
             self.progress[running.id] = event

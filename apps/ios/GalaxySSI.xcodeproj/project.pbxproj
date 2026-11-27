@@ -7,6 +7,9 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C46690000000000000000001 /* AgentTeamWriterFormatSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46690000000000000000002 /* AgentTeamWriterFormatSession.swift */; };
+    C46690000000000000000003 /* CloudTextServerObservation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46690000000000000000004 /* CloudTextServerObservation.swift */; };
+    C46690000000000000000005 /* AgentTeamWriterFormatSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46690000000000000000006 /* AgentTeamWriterFormatSessionTests.swift */; };
     F30050000000000000000001 /* GalaxySSIMemory in Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; };
     F30050000000000000000002 /* GalaxySSIMemory in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
     C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */; };
@@ -2455,6 +2458,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C46690000000000000000002 /* AgentTeamWriterFormatSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamWriterFormatSession.swift; sourceTree = "<group>"; };
+    C46690000000000000000004 /* CloudTextServerObservation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudTextServerObservation.swift; sourceTree = "<group>"; };
+    C46690000000000000000006 /* AgentTeamWriterFormatSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamWriterFormatSessionTests.swift; sourceTree = "<group>"; };
     F30050000000000000000003 /* GalaxySSIMemory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GalaxySSIMemory.framework; sourceTree = BUILT_PRODUCTS_DIR; };
     C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSConnectorDispatch.swift; sourceTree = "<group>"; };
     A20000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModelFailureEvidence.swift; sourceTree = "<group>"; };
@@ -6529,6 +6535,8 @@
         C46440000000000000000002 /* AgentTeamComparisonSheet.swift */,
         C46440000000000000000004 /* AgentTeamDraftAudit.swift */,
         C46660000000000000000002 /* AgentTeamPredictionContrast.swift */,
+        C46690000000000000000002 /* AgentTeamWriterFormatSession.swift */,
+        C46690000000000000000004 /* CloudTextServerObservation.swift */,
         C46490000000000000000002 /* AgentTeamPlanWire.swift */,
         C46490000000000000000004 /* AgentTeamPlanJSONPreflight.swift */,
         C46460000000000000000002 /* AgentPinnedCloudTeamOffer.swift */,
@@ -7327,6 +7335,7 @@
         C46510000000000000000002 /* AgentModelAuthoredFinalReviewTests.swift */,
         C46590000000000000000002 /* AgentTeamHandbackTests.swift */,
         C46660000000000000000004 /* AgentTeamPredictionContrastTests.swift */,
+        C46690000000000000000006 /* AgentTeamWriterFormatSessionTests.swift */,
         C46470000000000000000002 /* AgentTeamPublicObjectionTests.swift */,
         C46460000000000000000006 /* AgentPinnedCloudTeamOfferTests.swift */,
         C46140000000000000000004 /* GalaxySSIHealthAtlasDiscussionTests.swift */,
@@ -9127,6 +9136,8 @@
         C46440000000000000000001 /* AgentTeamComparisonSheet.swift in Sources */,
         C46440000000000000000003 /* AgentTeamDraftAudit.swift in Sources */,
         C46660000000000000000001 /* AgentTeamPredictionContrast.swift in Sources */,
+        C46690000000000000000001 /* AgentTeamWriterFormatSession.swift in Sources */,
+        C46690000000000000000003 /* CloudTextServerObservation.swift in Sources */,
         C46490000000000000000001 /* AgentTeamPlanWire.swift in Sources */,
         C46490000000000000000003 /* AgentTeamPlanJSONPreflight.swift in Sources */,
         C46460000000000000000001 /* AgentPinnedCloudTeamOffer.swift in Sources */,
@@ -9919,6 +9930,7 @@
         C46510000000000000000001 /* AgentModelAuthoredFinalReviewTests.swift in Sources */,
         C46590000000000000000001 /* AgentTeamHandbackTests.swift in Sources */,
         C46660000000000000000003 /* AgentTeamPredictionContrastTests.swift in Sources */,
+        C46690000000000000000005 /* AgentTeamWriterFormatSessionTests.swift in Sources */,
         C46470000000000000000001 /* AgentTeamPublicObjectionTests.swift in Sources */,
         C46460000000000000000005 /* AgentPinnedCloudTeamOfferTests.swift in Sources */,
         C46140000000000000000003 /* GalaxySSIHealthAtlasDiscussionTests.swift in Sources */,

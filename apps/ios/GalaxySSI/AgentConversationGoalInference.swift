@@ -107,7 +107,8 @@ enum AgentConversationGoalInference {
       store: store, valid: valid)
   }
   @MainActor static func text(route: AgentConversationGoal.Route, conversation: String, taskID: String, requestID: String,
-    system: String, prompt: String, purpose: String, historyCount: Int = 0, store: GalaxySSIStore,
+    system: String, prompt: String, purpose: String, historyCount: Int = 0,
+    writerSession: AgentTeamWriterFormatSession? = nil, store: GalaxySSIStore,
     valid: () -> Bool) async throws -> String {
     guard valid(), route.valid, isCurrent(route, store: store), !conversation.isBlank, conversation.utf8.count <= 512,
       UUID(uuidString: taskID) != nil, !requestID.isBlank, requestID.utf8.count <= 512,
@@ -148,8 +149,12 @@ enum AgentConversationGoalInference {
     let prepared = try CloudModelClient().conversationStreamingRequest(model: model, apiKey: key, turns: [only],
       systemPrompt: actualSystem, requestId: requestID, images: [])
     let isolated = try isolatedRequest(prepared, system: actualSystem, prompt: prompt)
-    let request = try wire?.apply(to: isolated) ?? isolated
-    let client = URLSessionCloudModelStreamClient()
+    var request = try wire?.apply(to: isolated) ?? isolated
+    if wire == nil, let writerSession {
+      let stage = (try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(prompt.utf8)))?["stage"]?.strictStringValue ?? ""
+      request = try writerSession.apply(to: request, system: actualSystem, stage: stage)
+    }
+    let client = URLSessionCloudModelStreamClient(observesTextServer: wire != nil && writerSession != nil)
     return try await withTaskCancellationHandler(operation: {
       var body = "", completed = false
       do {
@@ -172,6 +177,9 @@ enum AgentConversationGoalInference {
         }
         guard valid(), completed, !Task.isCancelled else { throw CancellationError() }
         let decoded = try wire?.decode(body) ?? body
+        if wire != nil, let advertisement = client.textServerAdvertisement(requestId: requestID) {
+          writerSession?.observe(endpoint: model.endpoint, responseURL: advertisement.responseURL, server: advertisement.server)
+        }
         AgentDataDisclosureLedger.update(store: disclosure, ticket: ticket, status: .sent)
         return decoded
       } catch {
