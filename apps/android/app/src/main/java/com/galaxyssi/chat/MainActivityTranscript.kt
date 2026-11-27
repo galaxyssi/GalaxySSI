@@ -543,7 +543,8 @@ internal fun Context.persistAgentTranscript(
     state: AgentUiState,
     conversationId: String,
     turnId: String,
-    agentTranscriptStore: AgentTranscriptStore
+    agentTranscriptStore: AgentTranscriptStore,
+    completedReview: SupervisedTeamReview? = null
 ) {
     val transcriptTurnId = AgentFinalResponseIdentity.resolveTurnId(
         explicitTurnId = turnId,
@@ -673,16 +674,15 @@ internal fun Context.persistAgentTranscript(
         !AgentSupervisedProjectControlPayload.isControlPayloadFragment(result) &&
         (settledConnectorResult || terminal) && !isTransientAgentResult(result)
     ) {
-        val actionId = state.lastActionResult?.actionId.orEmpty()
-        agentTranscriptStore.upsert(
+        val finalKey = AgentFinalResponseIdentity.dedupeKey(
+            turnId = transcriptTurnId,
+            sourceMessageId = connectorMetadata["source_message_id"]?.toLongOrNull() ?: 0L,
+            taskId = connectorMetadata["remote_task_id"].orEmpty().ifBlank { state.sessionId }
+        )
+        val written = agentTranscriptStore.upsert(
             AgentTranscriptRole.ASSISTANT,
             result,
-            dedupeKey = AgentFinalResponseIdentity.dedupeKey(
-                turnId = transcriptTurnId,
-                sourceMessageId = connectorMetadata["source_message_id"]?.toLongOrNull() ?: 0L,
-                taskId = connectorMetadata["remote_task_id"].orEmpty()
-                    .ifBlank { state.sessionId }
-            ),
+            dedupeKey = finalKey,
             conversationId = conversationId,
             turnId = transcriptTurnId,
             taskId = state.sessionId,
@@ -694,6 +694,14 @@ internal fun Context.persistAgentTranscript(
                 )
             )
         )
+        if (completedReview != null) {
+            // A live UI projector may already have written this exact final row.
+            val text = result.trim()
+            if (written || runCatching { agentTranscriptStore.entriesForTurn(transcriptTurnId).any {
+                    it.conversationId == conversationId && it.turnId == transcriptTurnId && it.taskId == state.sessionId &&
+                        it.role == AgentTranscriptRole.ASSISTANT && it.dedupeKey == finalKey && it.text == text
+                } }.getOrDefault(false)) completedReview.finalBody(conversationId, transcriptTurnId, text)
+        }
     }
     if (healthResearch) HealthCareResearchWork.projected(this, conversationId, transcriptTurnId, state)
 }

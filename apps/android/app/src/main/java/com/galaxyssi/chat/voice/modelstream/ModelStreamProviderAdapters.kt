@@ -77,7 +77,8 @@ private class OpenAiModelStreamAdapter : ModelStreamProviderAdapter {
                         callId = call.optString("id"),
                         index = call.optInt("index", index),
                         nameDelta = function?.optString("name").orEmpty(),
-                        argumentsDelta = function?.optString("arguments").orEmpty()
+                        argumentsDelta = function?.optString("arguments").orEmpty(),
+                        singleNativeFunction = singleFunction(json, calls, call, function)
                     )
                 )
             }
@@ -111,7 +112,8 @@ private class OpenAiModelStreamAdapter : ModelStreamProviderAdapter {
                         call.optString("id"),
                         call.optInt("index", index),
                         function?.optString("name").orEmpty(),
-                        function?.optString("arguments").orEmpty()
+                        function?.optString("arguments").orEmpty(),
+                        singleNativeFunction = singleFunction(json, calls, call, function)
                     )
                 )
             }
@@ -124,6 +126,14 @@ private class OpenAiModelStreamAdapter : ModelStreamProviderAdapter {
             terminal = true
         )
     }
+    // Only a typed Chat Completions function fragment can contribute to an optional final answer.
+    // The ordinary tool decoder remains compatible with less strict provider encodings.
+    private fun singleFunction(root: JSONObject, calls: JSONArray, call: JSONObject, fn: JSONObject?): Boolean =
+        root.optJSONArray("choices")?.length() == 1 && calls.length() == 1 && fn != null &&
+            (!call.has("index") || call.opt("index") == 0) &&
+            (!call.has("type") || call.opt("type") == "function") &&
+            (!call.has("id") || call.opt("id") is String) &&
+            (!fn.has("name") || fn.opt("name") is String) && (!fn.has("arguments") || fn.opt("arguments") is String)
 }
 
 private class AnthropicModelStreamAdapter : ModelStreamProviderAdapter {

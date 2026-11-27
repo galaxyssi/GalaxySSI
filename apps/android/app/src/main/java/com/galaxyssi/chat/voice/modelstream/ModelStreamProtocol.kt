@@ -47,7 +47,8 @@ data class ToolCallPayload(
     val index: Int,
     val nameDelta: String = "",
     val argumentsDelta: String = "",
-    val argumentsMode: ToolCallArgumentsMode = ToolCallArgumentsMode.DELTA
+    val argumentsMode: ToolCallArgumentsMode = ToolCallArgumentsMode.DELTA,
+    val singleNativeFunction: Boolean = false
 )
 
 enum class ToolCallArgumentsMode { DELTA, SNAPSHOT }

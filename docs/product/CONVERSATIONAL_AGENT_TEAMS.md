@@ -6,6 +6,11 @@ This is a product contract, not a claim of implementation or scientific
 validation. Unlike a [persistent Agent team](MULTI_AGENT_COLLABORATION_ARCHITECTURE.md),
 the turn creates no team conversation, saved roster, or reusable worker.
 
+As in [Codex subagent orchestration](https://developers.openai.com/codex/subagents/),
+the coordinator delegates distinct assignments, waits for their results and
+returns a consolidated answer. The ten-role cap and per-turn cloud approval
+are GalaxySSI policies, not Codex defaults.
+
 ## When to use workers
 
 "Have a team compare these two arguments and have someone challenge the
@@ -20,8 +25,22 @@ model** (`local-llm`), its first answer can also suggest a temporary team. For
 example, "Compare the two transit plans below, find assumptions that could
 reverse the ranking, and recommend one" needs no teamwork wording. The model
 returns its normal answer and an optional review signal together. The app does
-not make a separate planning call. Cloud, peer and desktop replies do not
-currently initiate these proposals.
+not make a separate call to decide whether to offer review.
+
+A manually selected OpenAI-compatible direct-cloud model can also offer
+review as part of its ordinary first answer. A native final-answer function
+returns the answer and invitation together. It is not an executable tool.
+Plain text, quoted instructions, a failed or replayed attempt, and a response
+from a different model cannot authorize a team. The user can decline and
+keep the original answer without incurring any team calls. If confirmed,
+only the current typed request goes to workers, not earlier messages. The
+phone rechecks the selected contact, endpoint, model and disclosure settings
+before dispatch. In the ordinary phone planning loop the native answer is
+passed back as a response, not as proof of task completion. An invitation is
+eligible only when the phone has accepted and recorded that same final answer
+in the originating turn, never while evaluating a plan or following a tool step.
+A private or restricted budget is not overridden. Desktop
+and peer replies do not initiate these invitations.
 
 The suggestion is available only in the originating, unlocked, active chat,
 not for private or tracking-paused chats, health discussions or recognized
@@ -29,7 +48,8 @@ personal health requests, groups, member mentions, voice turns or attachments.
 Editing the composer or leaving the window invalidates the pending review.
 Where an eligible destination exists, the phone shows the exact typed objective,
 the model and host (or this device), and the limit of twelve model requests.
-If there are multiple eligible routes, choose one before confirming. A manual
+An invitation from a pinned cloud provider has only that destination. For an
+explicit team request with multiple eligible routes, choose one before confirming. A manual
 model selection is never replaced. **Cancel** keeps the ordinary answer and
 starts nothing; only **Confirm and run** authorizes the pinned team run.
 
