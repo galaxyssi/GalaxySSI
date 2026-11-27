@@ -13,6 +13,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 private const val MAX_ROLES = 10
+private const val MAX_CALLS = MAX_ROLES + 2
 private const val MAX_PARALLEL = 3
 private const val MAX_LINKS = 3
 private const val MAX_BRIEF = 400
@@ -104,6 +105,24 @@ private val tableAuditSystem = """
     Return only a JSON object in this form (write the strings in the user's language):
     {"pass_all":["name from verified_table.pass_all"],"purpose":"the stated aim","limitation":"what the evidence cannot establish"}
     Use an empty array if none pass. Do not write the placeholders. No Markdown or other keys.
+""".trimIndent()
+
+private val rewriteSystem = """
+    You wrote the draft. The final editor raised a specific objection and did not supply a correction.
+    Using the original objective, brief and reports, write the corrected public answer, not a promise to fix it.
+    Check whether the objection is supported. For predictions, test whether the proposed counterexample
+    contradicts the prediction under the same assumptions rather than restating it. Do not invent evidence.
+    $TEXT_ONLY
+    Return only {"answer":"complete replacement in the language of the objective"}.
+""".trimIndent()
+
+private val recheckSystem = """
+    As the same independent editor, compare draft (the proposed replacement) with rejected_draft,
+    the original objective and your objection. Do not accept a paraphrase that leaves the error intact.
+    Verify that each claimed counterexample is incompatible with its prediction under the same assumptions.
+    $TEXT_ONLY
+    Return only {"verdict":"accept"} if the replacement resolves the objection and meets the objective.
+    Otherwise return {"verdict":"withhold","objection":"specific reason in the language of the objective"}.
 """.trimIndent()
 
 /** Only opt a loopback OpenAI-compatible table audit into constrained decoding. The schema never supplies a winning series. */
@@ -277,11 +296,20 @@ private fun parseAutoPlan(text: String): AutoPlan {
     return AutoPlan(roles, last[1], finalEditor)
 }
 
-private fun completeObject(text: String): JSONObject? {
+private val draftWhitespace = Regex("""[\s\p{Z}\u0085]+""")
+private fun sameTeamDraft(left: String, right: String) =
+    left.replace(draftWhitespace, " ").trim() == right.replace(draftWhitespace, " ").trim()
+
+private fun completeObject(text: String, strict: Boolean = false): JSONObject? {
     val raw = text.trim().replace("\r\n", "\n")
     val json = if (raw.startsWith("```json\n") && raw.endsWith("\n```"))
         raw.removePrefix("```json\n").removeSuffix("\n```").trim() else raw
     if (!json.startsWith('{')) return null
+    // Android's JSONObject otherwise accepts duplicate keys, including two conflicting verdicts.
+    if (strict) {
+        McpJson.parseObject(json, McpJsonLimits(maxDepth = 4, maxNodes = 64, maxContainerEntries = 32, maxStringLength = MAX_ANSWER))
+        return JSONObject(json)
+    }
     val reader = JSONTokener(json)
     val obj = reader.nextValue() as? JSONObject
     check(obj != null && json.endsWith('}') && reader.nextClean() == '\u0000') { "Malformed team response object." }
@@ -415,7 +443,7 @@ internal suspend fun runAutoGoalTeam(
             if (additional.length() != 0) payload.put("additional_objections", additional)
             onEvent("${label(editor)} auditing draft.")
             val review = completeObject(call("audit", if (sheet == null) auditSystem else tableAuditSystem,
-                payload, (MAX_ANSWER + MAX_DISSENT) * 2 + 100))
+                payload, (MAX_ANSWER + MAX_DISSENT) * 2 + 100), strict = true)
             checkNotNull(review) { "Missing final review." }
             val keys = review.keys().asSequence().toSet()
             fun field(name: String, max: Int) = (review.opt(name) as? String)?.trim()
@@ -438,7 +466,38 @@ internal suspend fun runAutoGoalTeam(
                     check(keys == setOf("verdict", "objection", "answer")) { "Incomplete final revision." }
                     correction = field("objection", MAX_DISSENT)
                     answer = field("answer", MAX_ANSWER)
-                    check(answer != body) { "Review did not revise the disputed draft." }
+                    if (sameTeamDraft(answer, body)) {
+                        // Planning + synthesis + one call per role have already run; fund both turns or neither.
+                        fun withhold(reason: String): Nothing = throw TeamAnswerWithheld(reason, publicObjections)
+                        val objection = correction
+                        if (plan.roles.size + 2 + 2 > MAX_CALLS) withhold(objection)
+                        // A missing model reply cannot erase an existing objection. User cancellation still wins.
+                        suspend fun handback(stage: String, system: String, data: JSONObject, limit: Int) = try {
+                            completeObject(call(stage, system, data, limit), strict = true)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            withhold(objection)
+                        }
+                        onEvent("Revising disputed draft.")
+                        val rewrite = handback("rewrite", rewriteSystem, input("rewrite")
+                            .put("brief", plan.synthesis).put("reports", allReports)
+                            .put("draft", body).put("objection", objection), MAX_ANSWER * 2 + 64)
+                        val candidate = (rewrite?.opt("answer") as? String)?.trim()
+                        if (rewrite?.length() != 1 || candidate == null || candidate.length !in 1..MAX_ANSWER ||
+                            sameTeamDraft(candidate, body)) withhold(objection)
+                        onEvent("${label(editor)} rechecking revision.")
+                        val recheck = handback("recheck", recheckSystem, payload.put("stage", "recheck")
+                            .put("draft", candidate).put("rejected_draft", body).put("objection", objection),
+                            MAX_DISSENT * 2 + 100)
+                        if (recheck?.length() != 1 || recheck.opt("verdict") != "accept") {
+                            val reason = (recheck?.opt("objection") as? String)?.trim()?.takeIf {
+                                recheck.length() == 2 && recheck.opt("verdict") == "withhold" && it.length in 1..MAX_DISSENT
+                            }
+                            withhold(reason ?: objection)
+                        }
+                        answer = candidate
+                    }
                 }
                 "withhold" -> {
                     check(keys == setOf("verdict", "objection")) { "Invalid withheld review." }

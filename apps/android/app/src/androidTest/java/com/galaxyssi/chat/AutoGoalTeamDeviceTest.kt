@@ -55,7 +55,11 @@ class AutoGoalTeamDeviceTest {
         }
     }
 
-    @Test fun modelAuthoredIndependentFinalReviewOnPhoneLoopbackRevisesTheActualDraft() = runBlocking {
+    @Test fun modelAuthoredIndependentFinalReviewOnPhoneLoopbackRevisesTheActualDraft() = runReviewFixture(false, false)
+    @Test fun writerHandbackReachesSamePhoneReviewerBeforePublication() = runReviewFixture(true, false)
+    @Test fun phoneReviewerCanRejectWriterHandback() = runReviewFixture(true, true)
+
+    private fun runReviewFixture(handback: Boolean, reject: Boolean) = runBlocking {
         val objective = "Compare schedules, then independently audit the final answer."
         val assignment = "Verify the claim about the Friday handover against the stated limitation."
         val draft = "The Friday handover is fixed."
@@ -66,8 +70,10 @@ class AutoGoalTeamDeviceTest {
                 .put("final_review", assignment),
             JSONObject().put("finding", "Worker-only calendar note.").put("dissent", dissent),
             JSONObject().put("answer", draft),
-            JSONObject().put("verdict", "revise").put("objection", dissent).put("answer", approved)
-        )
+            JSONObject().put("verdict", "revise").put("objection", dissent).put("answer", if (handback) draft else approved)
+        ) + if (handback) listOf(JSONObject().put("answer", approved),
+            if (reject) JSONObject().put("verdict", "withhold").put("objection", dissent) else JSONObject().put("verdict", "accept"))
+        else emptyList()
         MockWebServer().use { server ->
             for (reply in replies) {
                 val message = JSONObject().put("role", "assistant").put("content", reply.toString())
@@ -82,14 +88,14 @@ class AutoGoalTeamDeviceTest {
                 .put("cloud_endpoint", "http://127.0.0.1:${server.port}/v1/chat/completions")
             val route = GoalRoute(id, "fixture", ConversationGoalRunner.fingerprint(contact))
             var count = 0
-            val result = runAutoGoalTeam(objective, { system, input ->
+            val result = runCatching { runAutoGoalTeam(objective, { system, input ->
                 val round = ++count
                 check(round <= replies.size) { "Unexpected call after final review" }
                 withContext(Dispatchers.IO) {
                     ConversationGoalRunner.text(ctx, route, id, id, round, system, input,
                         AgentNativeToolCancellationToken.NONE) { _, _, _ -> contact }
                 }
-            })
+            }) }
 
             assertEquals(replies.size, server.requestCount)
             val inputs = List(replies.size) {
@@ -102,9 +108,9 @@ class AutoGoalTeamDeviceTest {
                 val messages = body.getJSONArray("messages")
                 JSONObject(messages.getJSONObject(messages.length() - 1).getString("content"))
             }
-            assertEquals(listOf("plan", "role", "synthesis", "audit"), inputs.map { it.getString("stage") })
+            assertEquals(listOf("plan", "role", "synthesis", "audit") + (if (handback) listOf("rewrite", "recheck") else emptyList()), inputs.map { it.getString("stage") })
             assertTrue(inputs.first().getBoolean("final_review_required"))
-            val audit = inputs.last()
+            val audit = inputs[3]
             assertEquals(objective, audit.getString("objective"))
             assertEquals(assignment, audit.getString("assignment"))
             assertEquals(draft, audit.getString("draft"))
@@ -115,8 +121,16 @@ class AutoGoalTeamDeviceTest {
             assertEquals(1, forwarded.length())
             assertEquals(inputs[1].getString("id"), forwarded.getJSONObject(0).getString("id"))
             assertEquals(dissent, forwarded.getJSONObject(0).getString("dissent"))
-            assertTrue(result.contains(approved))
-            assertFalse(result.contains(draft))
+            if (handback) {
+                assertEquals(dissent, inputs[4].getString("objection"))
+                assertEquals(approved, inputs[5].getString("draft"))
+                assertEquals(audit.getString("id"), inputs[5].getString("id"))
+            }
+            if (reject) assertEquals(dissent, (result.exceptionOrNull() as TeamAnswerWithheld).reservation)
+            else {
+                assertTrue(result.getOrThrow().contains(approved))
+                assertFalse(result.getOrThrow().contains(draft))
+            }
         }
     }
 

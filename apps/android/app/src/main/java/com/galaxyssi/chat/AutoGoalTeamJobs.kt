@@ -114,6 +114,7 @@ internal object AutoGoalTeamJobs {
         val route = GoalRoute(routeJson.getString("target"), routeJson.getString("model"), routeJson.getString("endpoint"),
             routeJson.optString("host"))
         val calls = AtomicInteger()
+        val roles = AtomicInteger()
         val answer = try {
             runBlocking {
                 val labels = TeamResultLabels(ctx.getString(R.string.auto_team_correction), ctx.getString(R.string.auto_team_objections),
@@ -131,12 +132,15 @@ internal object AutoGoalTeamJobs {
                         if (job.optBoolean("pinned_cloud")) check(PinnedCloudTeamAdmission.current(ctx, chat, route))
                         val round = calls.incrementAndGet()
                         check(round <= 12)
+                        when (JSONObject(payload).getString("stage")) {
+                            "role", "audit" -> roles.incrementAndGet()
+                        }
                         ConversationGoalRunner.text(ctx, route, chat, id, round,
                             instructions, payload, call.token)
                     } } finally { guard.cancel(); registration.dispose() }
                 } })
             }.also { check(it.isNotBlank() && it.length <= 64_000) }.let { result ->
-                ctx.getString(R.string.auto_team_job_receipt, (calls.get() - 2).coerceAtLeast(0), calls.get()) +
+                ctx.getString(R.string.auto_team_job_receipt, roles.get(), calls.get()) +
                     "\n\n" + result
             }
         } catch (_: TeamFinalAuditMissing) {

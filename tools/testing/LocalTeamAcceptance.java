@@ -66,6 +66,7 @@ class LocalTeamAcceptance {
     final List<JSONObject> calls = new CopyOnWriteArrayList<>();
     final Map<String,String> findings = new ConcurrentHashMap<>();
     volatile String draft;
+    volatile String rewrite, firstReview, finalCheck;
     final URI endpoint;
     final String model;
     final boolean schemaPlan;
@@ -107,6 +108,9 @@ class LocalTeamAcceptance {
             String stage = call.getString("stage");
             if (stage.equals("role")) findings.put(call.getString("id"), content);
             if (stage.equals("synthesis")) draft = content;
+            if (stage.equals("audit")) firstReview = content;
+            if (stage.equals("rewrite")) rewrite = content;
+            if (stage.equals("recheck")) finalCheck = content;
             // Log the shape, never thoughts or the raw response to a malformed call.
             String shape = content.lines().limit(14).map(line -> {
                 int pipe = line.indexOf('|');
@@ -176,7 +180,11 @@ class LocalTeamAcceptance {
             answer = e.getReservation() + e.getPublicObjections();
         }
         var roles = calls.stream().filter(c -> Set.of("role","audit").contains(c.getString("stage"))).toList();
-        require(roles.size() >= 2 && roles.size() <= 10 && ids.size() == roles.size()+2, "Expected real independent calls");
+        var rewrites = calls.stream().filter(c -> c.getString("stage").equals("rewrite")).toList();
+        var rechecks = calls.stream().filter(c -> c.getString("stage").equals("recheck")).toList();
+        require(rewrites.size() <= 1 && rechecks.size() <= rewrites.size() &&
+            roles.size() >= 2 && roles.size() <= 10 && ids.size() == calls.size() && ids.size() <= 12 &&
+            ids.size() == roles.size()+2+rewrites.size()+rechecks.size(), "Unexpected role or call accounting");
         require(roles.stream().anyMatch(r -> Set.of("reviewer","dissent").contains(r.getString("kind"))), "No independent check");
         if (!concept) require(roles.stream().anyMatch(r -> !r.getJSONArray("reports").isEmpty()), "No assigned report handoff");
         JSONObject synthesis = calls.stream().filter(c -> c.getString("stage").equals("synthesis")).findFirst().orElseThrow();
@@ -187,6 +195,24 @@ class LocalTeamAcceptance {
         require(reports.length() == roles.size()-1, "Missing contributor report at synthesis");
         var audit = audits.get(0);
         require(audit.getString("draft").equals(publicField(draft, "answer")), "Final reviewer received a different draft");
+        if (!rewrites.isEmpty()) {
+            var edit = rewrites.get(0);
+            require(calls.indexOf(edit) > calls.indexOf(audit) && edit.getString("draft").equals(audit.getString("draft")) &&
+                edit.getString("brief").equals(synthesis.getString("brief")) &&
+                edit.getJSONArray("reports").similar(reports) && publicField(firstReview,"verdict").equals("revise") &&
+                publicField(firstReview,"objection").equals(edit.getString("objection")), "Writer handback lost its source");
+            if (rechecks.isEmpty()) require(withheld, "Rewrite published without a recheck");
+            else {
+                var check = rechecks.get(0);
+                require(calls.indexOf(check) > calls.indexOf(edit) && check.getString("id").equals(audit.getString("id")) &&
+                    check.getString("draft").equals(publicField(rewrite,"answer")) &&
+                    check.getString("rejected_draft").equals(edit.getString("draft")) &&
+                    check.getString("objection").equals(edit.getString("objection")) &&
+                    check.getJSONArray("reports").similar(audit.getJSONArray("reports")), "Recheck did not receive the actual handback");
+                if (!withheld) require(publicField(finalCheck,"verdict").equals("accept") && answer.startsWith(check.getString("draft")),
+                    "Return is not the independently approved replacement");
+            }
+        }
         require(findings.size() == reports.length(), "Contributor completion count does not match synthesis");
         for (int i=0; i<reports.length(); i++) {
             var report = reports.getJSONObject(i);
