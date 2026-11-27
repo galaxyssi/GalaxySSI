@@ -1008,6 +1008,17 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       )
       lock.unlock()
       do {
+        var nativeQueryScope: AgentNativeConnectorQueryScope?
+        if delegate is AgentQueuedConnectorDispatching {
+          var tracked = result
+          tracked.metadata["control_plane_run_id"] = request.runId
+          tracked.metadata["control_plane_agent_id"] = agentId
+          guard let scope = AgentNativeConnectorQueryScope.capture(action: item.action, receipt: tracked) else {
+            return failUntrackedDispatch(result, actionId: item.action.id, request: request, registration: item.registration,
+              code: "invalid_native_connector_query_scope")
+          }
+          nativeQueryScope = scope
+        }
         try managedResponseLedger.register(
           AgentManagedResponseRecord(
             ownerRunId: request.runId,
@@ -1019,7 +1030,8 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
             conversationId: responseConversationId,
             turnId: responseTurnId,
             taskId: responseTaskId,
-            executionGeneration: executionGeneration
+            executionGeneration: executionGeneration,
+            nativeQueryScope: nativeQueryScope
           )
         )
         try AgentManagedConnectorResponseRegistry.shared.register(

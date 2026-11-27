@@ -4037,7 +4037,8 @@ final class MessageCoordinator: ObservableObject {
       return false
     }
     if now < managedDesktopProbeAt || now - managedDesktopProbeAt >= 30_000 { managedDesktopProbeAt = now; managedDesktopProbes = 0 }
-    guard mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
+    guard managedNativeRecoveryMayQuery(source),
+          mayPublish, managedDesktopProbes < 8, mqttClient.relationshipSubscriptionsReady,
           let payload = desktopReplyRecovery.request(binding, online: true, now: now) ?? desktopResultRecovery.request(record, now: now),
           let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == binding.desktopId &&
             $0.routes.clientRouteId == binding.identity.clientRouteId }) else { return false }
@@ -5006,6 +5007,10 @@ final class MessageCoordinator: ObservableObject {
         do { try commitJournalBackedDesktopResult(payload, receipt: receipt) }
         catch { onFailure(error) }
         continue
+      }
+      if record.binding.managedSource != nil {
+        guard let managed = currentManagedDesktopReply(record.binding, allowCommitted: true),
+              managedNativeRecoveryMayQuery(managed) else { continue }
       }
       guard requests.count < 4, ready(record.binding) else { continue }
       let request = terminal ? desktopResultRecovery.request(record, now: now) :
@@ -14811,6 +14816,49 @@ final class MessageCoordinator: ObservableObject {
           let record = try? managedDesktopReplyLedger.recoveryRecord(owner: dispatch.owner), record.state == .pending,
           record.correlates(dispatch.response("", success: false)) else { return nil }
     return (task, outgoing, waiting, pending)
+  }
+
+  private func managedNativeRecoveryMayQuery(_ record: AgentManagedResponseRecord) -> Bool {
+    // Untagged historical/non-native owners retain their existing recovery policy.
+    guard UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript else {
+      return record.nativeQueryScope == nil
+    }
+    guard let task = store.agentTask(id: record.turnId), task.sessionId == record.conversationId else {
+      return record.nativeQueryScope == nil
+    }
+    let candidates = (task.activePlan?.actions ?? []).filter {
+      $0.kind == .callConnector &&
+        AgentNativeConnectorContinuation.pendingResult($0)?.metadata["control_plane_run_id"] == record.ownerRunId
+    }
+    if candidates.isEmpty { return record.nativeQueryScope == nil }
+    guard candidates.count == 1, let waiting = candidates.first,
+          let pending = AgentNativeConnectorContinuation.pendingResult(waiting),
+          let scope = AgentNativeConnectorQueryScope.capture(action: waiting, receipt: pending),
+          record.nativeQueryScope == nil || record.nativeQueryScope == scope,
+          scope.profile == store.profile.identityFingerprint,
+          UIApplication.shared.applicationState == .active,
+          !store.agentSafetySettings.executionPaused, store.agentSafetySettings.connectorCallsAllowed,
+          store.agentSafetySettings.taskExecutionMode != .planOnly,
+          ![AgentPermissionMode.observeOnly, .suggestOnly].contains(store.agentSafetySettings.permissionMode),
+          waiting.parameters[AgentIOSConnectorDispatch.permissionKey] == store.agentSafetySettings.permissionMode.rawValue,
+          !PhoneExecutionAuthority.isCancelled(taskId: record.turnId),
+          task.phase == .waitingResponse || (task.phase == .blocked &&
+            task.lastNativeActionResult?.metadata["native_connector_dispatch_uncertain"] == "true"),
+          task.activePlan?.executionMode != .planOnly,
+          task.lastNativeActionResult?.actionId == scope.actionId,
+          task.lastNativeActionResult?.metadata["control_plane_run_id"] == record.ownerRunId,
+          let session = store.agentSession(id: record.conversationId), session.status == .active,
+          !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
+          let dispatch = AgentIOSConnectorDispatch(action: waiting, receipt: pending),
+          dispatch.owner == record.ownerRunId, dispatch.sourceMessageId == record.sourceMessageId,
+          pending.metadata["control_plane_agent_id"] == record.agentId,
+          dispatch.contactId == record.contactId, dispatch.conversationId == record.conversationId,
+          dispatch.turnId == record.turnId, dispatch.taskId == record.taskId,
+          Int64(pending.metadata["execution_generation"] ?? "") == record.executionGeneration,
+          let outgoing = store.persistedMessage(id: scope.outgoingId, contactId: "hermes"),
+          AgentNativeConnectorContinuation.waitingAction(waiting, result: pending, task: task, outgoing: outgoing) != nil
+    else { return false }
+    return true
   }
 
   private func nativeConnectorObservationContext(action: AgentAction, pending: AgentActionResult)
