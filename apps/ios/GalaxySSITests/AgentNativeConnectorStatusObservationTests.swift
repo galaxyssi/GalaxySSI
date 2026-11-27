@@ -24,6 +24,46 @@ final class AgentNativeConnectorStatusObservationTests: XCTestCase {
     return (pending, managed, observation)
   }
 
+  func testFirstAuthenticatedStatusAnchorsAcceptanceWithoutResettingLaterProgress() throws {
+    let f = try fixture()
+    for status in ["queued", "running"] {
+      var pending = f.pending
+      for key in ["remote_task_status", "remote_task_status_seq", "remote_task_status_updated_at"] {
+        pending.metadata.removeValue(forKey: key)
+      }
+      pending.metadata["resource_started_at"] = "1000"
+      pending.metadata["routing_requires_live_data"] = "true"
+      var observation = f.observation
+      observation.status = status
+      let first = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: pending,
+        managed: f.managed, observation: observation))
+      XCTAssertEqual(first.metadata["transport_accepted_at"], "4000")
+      observation.sequence += 1
+      observation.lastResponseAt = 5_000
+      let later = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: first,
+        managed: f.managed, observation: observation))
+      XCTAssertEqual(later.metadata["transport_accepted_at"], "4000")
+      XCTAssertEqual(later.metadata["remote_task_status_updated_at"], "5000")
+      let now: Int64 = status == "queued" ? 49_000 : 65_000
+      let stage: AgentConnectorTimeoutStage = status == "queued" ? .notRunning : .readOnlyStale
+      XCTAssertEqual(AgentConnectorTimingPolicy.overdueObservationMetadata(metadata: later.metadata,
+        nowMillis: now)["native_connector_observation_timeout_stage"], stage.rawValue)
+      XCTAssertEqual(later.metadata["awaiting_response"], "true")
+      XCTAssertEqual(later.metadata["completion_verified"], "false")
+    }
+  }
+
+  func testRemoteStatusPreservesAnExistingAcceptanceAnchor() throws {
+    let f = try fixture()
+    var pending = f.pending
+    pending.metadata["transport_accepted_at"] = "1500"
+    let result = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: pending,
+      managed: f.managed, observation: f.observation))
+    XCTAssertEqual(result.metadata["transport_accepted_at"], "1500")
+    XCTAssertEqual(result.metadata["remote_task_status_updated_at"], "4000")
+    XCTAssertEqual(try JSONDecoder().decode(AgentActionResult.self, from: JSONEncoder().encode(result)), result)
+  }
+
   func testOwnedProgressPersistsStatusWithoutChangingExecutionResultOrIdentity() throws {
     let f = try fixture()
     let result = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: f.pending, managed: f.managed,
