@@ -1,0 +1,16 @@
+<resources>
+    <string name="agent_file_stored">已送达</string>
+    <string name="agent_file_uploading">传输中</string>
+    <string name="agent_file_failed">传输失败</string>
+    <string name="agent_file_closed">传输已结束</string>
+    <string name="agent_file_resuming">正在续传</string>
+    <string name="agent_file_read">已识别</string>
+    <string name="agent_file_unreadable">未能识别</string>
+    <string name="agent_file_requested">已请求单独识别</string>
+    <string name="agent_file_resume">续传此文件</string>
+    <string name="agent_file_read_one">单独识别</string>
+    <string name="agent_file_no_pending">无法续传：原传输已结束或配对设备已更改。</string>
+    <string name="agent_file_missing">原文件不可用或校验未通过。</string>
+    <string name="agent_file_read_named">单独识别：%1$s</string>
+    <string name="agent_file_group_unavailable">多人协作会话不支持单独识别。</string>
+</resources>

@@ -245,6 +245,8 @@ internal fun MainActivity.agentUserTranscriptRow(entry: AgentTranscriptEntry): V
     ).apply { topMargin = dp(14) }
     val blocks = AgentRichContentCodec.decode(entry.richOutputJson)
         .filter { it.type == AgentRichBlockType.IMAGE || it.type == AgentRichBlockType.FILE }
+    val tracked = AgentFileReceipt.originals(entry).takeIf { it.size >= 2 }.orEmpty().mapTo(hashSetOf()) { it.id }
+    val captions = mutableMapOf<String, TextView>()
     blocks.forEach { block ->
         val imageAttachment = block.type == AgentRichBlockType.IMAGE
         addView(
@@ -262,7 +264,20 @@ internal fun MainActivity.agentUserTranscriptRow(entry: AgentTranscriptEntry): V
                 }
             ).apply { bottomMargin = dp(6) }
         )
+        if (block.id in tracked) {
+            val caption = TextView(this@agentUserTranscriptRow).apply {
+                textSize = 13f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                minHeight = dp(44)
+                setPadding(dp(10), 0, dp(4), 0)
+                setTextColor(getColorCompat(R.color.text_secondary))
+                visibility = View.GONE
+            }
+            captions[block.id] = caption
+            addView(caption)
+        }
     }
+    if (captions.isNotEmpty()) bindAgentFileCaptions(this, entry, blocks, captions)
     val attachmentOnlyLabel = blocks.isNotEmpty() && (
         entry.text == "[${blocks.firstOrNull()?.title.orEmpty()}]" ||
             entry.text == getString(R.string.agent_attachment_count, blocks.size)

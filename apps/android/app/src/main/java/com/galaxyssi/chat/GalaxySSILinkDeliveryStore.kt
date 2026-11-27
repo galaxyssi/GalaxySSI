@@ -65,7 +65,8 @@ object GalaxySSILinkDeliveryStore {
         val contactId: String,
         val attempts: Int,
         val attachmentTransferId: String = "",
-        val recovering: Boolean = false
+        val recovering: Boolean = false,
+        val awaitingFileRetry: Boolean = false
     )
 
     data class PendingIncoming(
@@ -327,6 +328,49 @@ object GalaxySSILinkDeliveryStore {
     }
 
     @Synchronized
+    fun hasAttachmentDependency(context: Context, source: Long, transfer: String): Boolean {
+        if (source <= 0 || !transfer.matches(SHA256)) return false
+        val items = outboxArray(context)
+        return (0 until items.length()).any { i ->
+            val row = items.optJSONObject(i) ?: return@any false
+            val deps = row.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS) ?: return@any false
+            row.optLong("client_source_message_id") == source && (0 until deps.length()).any { deps.optString(it) == transfer }
+        }
+    }
+
+    @Synchronized
+    internal fun enableFileRecovery(context: Context, source: Long, transfers: Set<String>) {
+        if (source <= 0 || transfers.isEmpty()) return
+        val rows = outboxArray(context)
+        for (i in 0 until rows.length()) {
+            val row = rows.getJSONObject(i)
+            if (row.optLong("client_source_message_id") != source) continue
+            val deps = row.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS) ?: continue
+            if (deps.length() < 2 || !transfers.all { id -> (0 until deps.length()).any { deps.optString(it) == id } }) continue
+            outboxDatabase(context).update(row.getString("message_id")) { it.put("manual_files", JSONArray(transfers.toList())) }
+        }
+    }
+
+    @Synchronized
+    internal fun resumeHeldFile(context: Context, source: Long, transfer: String, now: Long = System.currentTimeMillis()): Boolean {
+        if (!hasAttachmentDependency(context, source, transfer)) return false
+        val db = outboxDatabase(context)
+        val rows = outboxArray(context)
+        var resumed = false
+        for (i in 0 until rows.length()) {
+            val row = rows.getJSONObject(i)
+            if (row.optString(ATTACHMENT_TRANSFER_ID) != transfer || row.optLong("manual_until") <= now ||
+                row.optLong("client_source_message_id") != source) continue
+            db.update(row.getString("message_id")) {
+                it.remove("manual_until")
+                it.put("attempts", 0).put("next_attempt_at", now).put("status", "queued")
+            }
+            resumed = true
+        }
+        return resumed
+    }
+
+    @Synchronized
     fun discardBlockedByAttachmentTransfers(
         context: Context,
         transferIds: Collection<String>
@@ -526,6 +570,24 @@ object GalaxySSILinkDeliveryStore {
                     continue
                 }
                 if (transferId.isNotBlank()) {
+                    if (sourceMessageId > 0 && !item.has("manual_until")) {
+                        // Only newly opted-in chat batches, never peer messages or a lone upload.
+                        val parents = outboxArray(context)
+                        val optedIn = (0 until parents.length()).any { p ->
+                            val row = parents.getJSONObject(p)
+                            val allowed = row.optJSONArray("manual_files")
+                            val deps = row.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS)
+                            row.optLong("client_source_message_id") == sourceMessageId && allowed != null && deps != null &&
+                                (0 until allowed.length()).any { allowed.optString(it) == transferId } &&
+                                (0 until deps.length()).any { deps.optString(it) == transferId }
+                        }
+                        if (optedIn) {
+                            val until = nowMillis + 600_000L
+                            outboxDatabase(context).update(messageId) { it.put("manual_until", until).put("next_attempt_at", until) }
+                            add(ExhaustedMessage(messageId, sourceMessageId, contactId, attempts, transferId, awaitingFileRetry = true))
+                            continue
+                        }
+                    }
                     if (sourceMessageId > 0L) {
                         if (!handledSourceMessages.add(sourceMessageId)) continue
                         discardClientSourceMessages(context, setOf(sourceMessageId))

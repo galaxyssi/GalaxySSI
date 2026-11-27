@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.galaxyssi.chat.AgentOutboundAttachmentTransferStore
 import com.galaxyssi.chat.AgentPreparedOutboundAttachment
+import com.galaxyssi.chat.AgentFileReceipt
 import com.galaxyssi.chat.GalaxySSILinkDeliveryStore
 import com.galaxyssi.chat.GalaxySSILinkProtocol
 import com.galaxyssi.chat.GalaxySSIMqttClient
@@ -31,6 +32,14 @@ internal object AndroidBlobTransfers {
         val config = BlobRelayConfigurations.get(context, attachment.scope.desktopId) ?: return false
         get(context).register(attachment, config, immediate)
         return true
+    }
+    fun retryHeld(context: Context, attachment: AgentPreparedOutboundAttachment): Boolean {
+        val scope = attachment.scope
+        val link = GalaxySSILinkProtocol.serverLink(context, scope.desktopId) ?: return false
+        if (!link.paired || link.routes.clientRouteId != scope.clientRouteId ||
+            !AgentFileReceipt.isBound(context, attachment, link.routes.remoteFingerprint) ||
+            !GalaxySSILinkDeliveryStore.hasAttachmentDependency(context, scope.clientMessageId ?: return false, attachment.transferId)) return false
+        return get(context).retryHeld(attachment)
     }
     fun owns(context: Context, id: String): Boolean = exists(context) && get(context).journal.contains(id)
     fun activate(context: Context, ids: Collection<String>) { if (exists(context)) get(context).activate(ids) }
@@ -89,6 +98,13 @@ private class BlobOutgoingCoordinator(private val context: Context) {
     }
     fun wake() { scheduler.execute { scheduled?.cancel(false); tick() } }
 
+    fun retryHeld(file: AgentPreparedOutboundAttachment): Boolean {
+        if (!journal.retryHeld(file.transferId, System.currentTimeMillis())) return false
+        AgentFileReceipt.update(context, file, "retrying")
+        wake()
+        return true
+    }
+
     private fun tick() {
         try {
             if (owner == null) {
@@ -133,10 +149,33 @@ private class BlobOutgoingCoordinator(private val context: Context) {
             val manifest = work.body.getJSONObject("manifest")
             val binding = BlobOutgoingContract.binding(manifest)
             val directory = staging(work.id)
+            if (work.phase == BlobOutgoingJournal.MANUAL) { journal.expiredManual(work); return }
+            if (work.phase == BlobOutgoingJournal.RESTART_UPLOAD) {
+                currentConfig(work)
+                if (!GalaxySSILinkDeliveryStore.hasAttachmentDependency(context, work.id)) {
+                    journal.expiredManual(work)
+                    return
+                }
+                revokeStaging(work, directory, binding, cancel)
+                if (directory.exists()) removeStaging(directory)
+                journal.restartUpload(work)
+                return
+            }
             if (work.phase == BlobOutgoingJournal.FAILURE) {
+                val file = AgentOutboundAttachmentTransferStore.find(context, work.id)
+                val code = work.body.getJSONObject("receipt").optString("error_code")
+                if (file != null && !work.body.optBoolean("manual_expired") && file.scope.attachmentRequestId.isBlank() &&
+                    code in setOf("blob_expired", "blob_not_found", "ciphertext_hash_mismatch", "chunk_authentication_failed") &&
+                    AgentFileReceipt.isBound(context, file, work.body.optString("fingerprint")) &&
+                    GalaxySSILinkDeliveryStore.hasAttachmentDependency(context, file.scope.clientMessageId ?: 0, work.id) &&
+                    journal.awaitPerFileRetry(work, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(10))) {
+                    AgentFileReceipt.update(context, file, "failed")
+                    return
+                }
                 if (!BlobFailureDelivery.persist(context, work.body)) {
                     throw BlobFailure("blob_failure_observation_pending", 503)
                 }
+                if (file != null) AgentFileReceipt.update(context, file, "closed")
                 GalaxySSILinkDeliveryStore.discardBlockedByAttachmentTransfers(context, listOf(work.id))
                 GalaxySSILinkDeliveryStore.discardAttachmentTransferMessages(context, work.id)
                 journal.failureObserved(work)
@@ -187,6 +226,11 @@ private class BlobOutgoingCoordinator(private val context: Context) {
                 journal.fail(work, code)
                 return
             }
+            if (work.phase == BlobOutgoingJournal.RESTART_UPLOAD &&
+                (code in BlobFailureContract.terminalCodes || work.attempts >= 3)) {
+                journal.expiredManual(work)
+                return
+            }
             Log.w("BlobTransfers", "Transfer deferred code=$code")
             journal.defer(work, System.currentTimeMillis() + BlobOutgoingContract.retryDelay(work.attempts), code)
         }
@@ -217,14 +261,17 @@ private class BlobOutgoingCoordinator(private val context: Context) {
             AgentOutboundAttachmentTransferStore.acknowledgeStored(context, receipt)
             GalaxySSIMqttClient.dispatchBlobDependencies()
         }
+        revokeStaging(work, directory, binding, cancel)
+        removeStaging(directory)
+        journal.finish(work)
+    }
+    private fun revokeStaging(work: BlobOutgoingWork, directory: File, binding: Map<String, String>, cancel: BlobCancellation) {
         if (BlobStaging.exists(directory)) BlobStaging.open(directory, binding).use { staged ->
             if (staged.remote.optBoolean("created") && !staged.remote.optBoolean("revoked")) {
                 try { BlobTransferClient(BlobHttp(work.body.getString("origin"))).revoke(staged, cancel) }
                 catch (error: BlobFailure) { if (error.status !in setOf(404, 410)) throw error }
             }
         }
-        removeStaging(directory)
-        journal.finish(work)
     }
     private fun staging(id: String): File {
         BlobProtocol.unhex(id, 32).fill(0)

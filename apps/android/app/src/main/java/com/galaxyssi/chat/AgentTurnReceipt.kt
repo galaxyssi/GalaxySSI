@@ -182,6 +182,30 @@ internal object AgentTurnReceipt {
         }
     }
 
+    internal fun fileChange(c: Context, key: AgentFileKey, edit: (JSONObject) -> Unit) =
+        change(c, key.chat, key.turn) { row ->
+            val before = row.toString()
+            edit(row)
+            if (before != row.toString()) AgentFileReceipt.notifyRow(key.chat, key.turn)
+        }
+
+    fun bindFileRead(c: Context, source: AgentFileKey, child: String) {
+        change(c, source.chat, child) { it.put("file_source_turn", source.turn).put("file_source_digest", source.digest) }
+        fileChange(c, source) { AgentFileReceipt.startRead(it, source, child) }
+    }
+
+    /** Ordered after pending observations; only used from transport and tool workers. */
+    internal fun fileInfo(c: Context, key: AgentFileKey): JSONObject? {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        return AgentFileReceipt.item(fileRow(c, key.chat, key.turn), key)
+    }
+
+    internal fun fileRow(c: Context, chat: String, turn: String): JSONObject {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        return io.submit<JSONObject> { JSONObject(database(c).readString(prefix(chat) +
+            AgentNativeJsonCodec.sha256(turn), "{}")) }.get(5, java.util.concurrent.TimeUnit.SECONDS)
+    }
+
     fun delete(context: Context, chat: String) {
         synchronized(live) { live.keys.removeAll { it.chat == chat } }
         val c = context.applicationContext

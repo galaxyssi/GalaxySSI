@@ -7,7 +7,7 @@ internal fun interface AgentAppControlPlatform {
 
 internal object AgentAppControlTools {
     const val PREFIX = "galaxyssi.app."
-    val toolIds = setOf("context", "reminders", "contacts", "send_message", "voice_message", "news", "read_article", "navigate", "playback")
+    val toolIds = setOf("context", "reminders", "contacts", "send_message", "voice_message", "attachment_reading", "news", "read_article", "navigate", "playback")
         .mapTo(linkedSetOf()) { PREFIX + it }
 
     fun definitions(platform: AgentAppControlPlatform): List<AgentNativeToolDefinition> {
@@ -32,6 +32,10 @@ internal object AgentAppControlTools {
             }, executorId = "galaxyssi.android_app_control")
         }
         return listOf(
+            define("attachment_reading", "Report the model's own reading of ONE current attachment by one-based input order. " +
+                "unreadable means you could not interpret its contents, not failed transport. Do not guess or report for other turns.",
+                mapOf("ordinal" to AgentNativeJsonSchema.integer(1, 10), "result" to AgentNativeJsonSchema.string(
+                    enumValues = setOf("recognized", "unreadable"))), setOf("ordinal", "result"), false),
             define("reminders", "Read personal reminders, tasks needing attention, authorized upcoming calendar events, and one news update summary. " +
                 "Includes source availability, kinds and exact IDs, never news article bodies. Use news/read_article for news. " +
                 "A paused or blocked task is not confirmed recovered. Missing permission or unavailable sources do not mean no events. " +

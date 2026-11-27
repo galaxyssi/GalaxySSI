@@ -84,7 +84,8 @@ object AgentAttachmentWorkspaceStager {
         context: Context,
         conversationId: String,
         turnId: String,
-        blocks: List<AgentRichBlock>
+        blocks: List<AgentRichBlock>,
+        requireExactId: Boolean = false
     ): List<AgentInputAttachment> {
         if (!turnId.matches(SAFE_ID) || blocks.isEmpty()) return emptyList()
         val workspaceId = AgentWorkspaceScope.id(conversationId)
@@ -109,7 +110,7 @@ object AgentAttachmentWorkspaceStager {
                     val record = unused.firstOrNull {
                         it.attachmentId == block.id && block.id.isNotBlank()
                     } ?: unused.firstOrNull {
-                        it.name.equals(block.title, ignoreCase = true)
+                        !requireExactId && it.name.equals(block.title, ignoreCase = true)
                     } ?: return@mapNotNull null
                     unused.remove(record)
                     val relative = record.relativePath.replace('\\', '/').trim('/')

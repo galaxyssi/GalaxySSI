@@ -1,0 +1,16 @@
+<resources>
+    <string name="agent_file_stored">Delivered</string>
+    <string name="agent_file_uploading">Transferring</string>
+    <string name="agent_file_failed">Transfer failed</string>
+    <string name="agent_file_closed">Transfer ended</string>
+    <string name="agent_file_resuming">Resuming transfer</string>
+    <string name="agent_file_read">Recognized</string>
+    <string name="agent_file_unreadable">Could not interpret</string>
+    <string name="agent_file_requested">Individual reading requested</string>
+    <string name="agent_file_resume">Retry this transfer</string>
+    <string name="agent_file_read_one">Read individually</string>
+    <string name="agent_file_no_pending">Cannot resume: the original transfer is no longer pending or the paired device has changed.</string>
+    <string name="agent_file_missing">The original file is no longer available or could not be verified.</string>
+    <string name="agent_file_read_named">Read separately: %1$s</string>
+    <string name="agent_file_group_unavailable">Individual reading is unavailable in a multi-agent conversation.</string>
+</resources>

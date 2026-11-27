@@ -325,6 +325,8 @@ internal object AgentOutboundAttachmentTransferStore {
             transfer.transferId
         )
         GalaxySSILinkDeliveryStore.discardAttachmentTransferMessages(context, transfer.transferId)
+        if (payload.optString("attachment_id") == transfer.attachmentId)
+            AgentFileReceipt.update(context, transfer, "stored")
         transferDirectory(context, transfer.transferId).deleteRecursively()
         return StoredAcknowledgement(
             transferId = transfer.transferId,

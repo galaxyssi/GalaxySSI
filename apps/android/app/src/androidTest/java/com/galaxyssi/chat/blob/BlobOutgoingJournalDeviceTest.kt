@@ -34,6 +34,39 @@ class BlobOutgoingJournalDeviceTest {
             assertEquals("中文测试会话", work.body.getJSONObject("manifest").getString("conversation_id"))
         }
     }
+
+    @Test fun onlyFailedFileCanRestartAndOnlyOnceBeforeExpiry() = fixture { path ->
+        BlobOutgoingJournal(path).use { j ->
+            val ids = (1..5).map { it.toString().repeat(64) }
+            ids.forEachIndexed { i, key ->
+                val b = body().also { it.getJSONObject("manifest").put("transfer_id", key).put("attachment_id", "item-$i") }
+                j.register(key, b, true)
+                val m = b.getJSONObject("manifest")
+                if (i == 2) {
+                    assertTrue(j.failedReceipt(key, BlobFailureContract.receipt(m, "blob_expired"), "test-desktop-private", fingerprint))
+                    assertTrue(j.awaitPerFileRetry(j.claimDue(10, 1, emptySet()).single(), 100))
+                } else {
+                    val ack = JSONObject(m.toString()).put("status", "stored").put("source_message_id", "7")
+                    assertFalse(j.stored(key, ack, "wrong", fingerprint))
+                    assertTrue(j.stored(key, ack, "test-desktop-private", fingerprint))
+                    j.finish(j.claimDue(10, 1, emptySet()).single())
+                }
+            }
+            j.recover()
+            assertTrue(j.claimDue(50, 4, emptySet()).isEmpty())
+            assertFalse(j.retryHeld(ids[1], 50))
+            assertFalse(j.retryHeld(ids[2], 101))
+            assertTrue(j.retryHeld(ids[2], 50))
+            assertFalse(j.retryHeld(ids[2], 51))
+            val restart = j.claimDue(51, 4, emptySet()).single()
+            assertEquals(ids[2], restart.id)
+            assertTrue(j.restartUpload(restart))
+            val only = j.claimDue(52, 4, emptySet()).single()
+            assertEquals(ids[2], only.id)
+            assertEquals(BlobOutgoingJournal.UPLOAD, only.phase)
+            assertFalse(only.body.has("receipt"))
+        }
+    }
     @Test fun activationDuringClaimDoesNotWaitForOldBackoff() = fixture { path ->
         BlobOutgoingJournal(path).use {
             it.register(id, body(), active = false)
