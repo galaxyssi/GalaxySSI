@@ -4,7 +4,11 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'df5d6beed47394c1578d1991527628064341a994';
 const checked = '4621f2a0b3231df6bfe47cca8ed75c51797b6136';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => {
+  const s = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  const mcp = path.join(__dirname, 'check-mcp-readiness-preparation-scope.cjs');
+  return fs.existsSync(mcp) ? require(mcp).retained(f, s) : s;
+};
 function show(ref, f) {
   const key = ref + ':' + f;
   if (!memo.has(key)) memo.set(key, clean(cp.execFileSync('git', ['show', key], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})));
