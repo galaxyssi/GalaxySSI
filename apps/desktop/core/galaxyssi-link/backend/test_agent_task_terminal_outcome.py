@@ -75,6 +75,16 @@ class TerminalOutcomeTest(unittest.TestCase):
         self.assertIsNotNone(persist_terminal_outcome(task, self.archive))
         self.assertEqual(receipt, self.stored()["research_trace"])
 
+    def test_recovered_failure_keeps_content_free_provider_submission(self):
+        task = {**self.task, "events": [{"kind": "agent", "event_id": "provider:task:0", "metadata": {
+            "attempt": 1, "provider": "codex", "model": "requested-id", "reasoning_effort": "high",
+            "execution_generation": 1, "private": "not-on-the-wire"}}],
+            "delivery_trace": [{"stage": "desktop_mqtt_received", "at": 100, "detail": "not-on-the-wire"}]}
+        self.assertIsNotNone(persist_terminal_outcome(task, self.archive))
+        self.assertEqual({"generation": 1, "desktop_received_at": 100, "submission": {
+            "provider": "codex", "model": "requested-id", "attempt": 1, "effort": "high"}},
+            self.stored()["turn_receipt"])
+
     def test_failure_archive_keeps_checkpoint_packets_even_without_progress(self):
         from research_checkpoint import ResearchCheckpoints
         store = ResearchCheckpoints(self.root / "research.db")

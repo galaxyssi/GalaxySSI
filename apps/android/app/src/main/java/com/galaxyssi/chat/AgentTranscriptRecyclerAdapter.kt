@@ -85,7 +85,12 @@ internal open class AgentTranscriptRecyclerAdapter(
         ) com.galaxyssi.chat.metrics.AgentLatencyTelemetry.observeDraw(
             holder.container,
             com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyTaskId(entry.conversationId, entry.turnId, entry.taskId),
-            final = !entry.id.startsWith("agent-stream-")
+            final = !entry.id.startsWith("agent-stream-"),
+            onVisible = if (AgentTurnReceipt.observeBody(entry.conversationId, entry.turnId) &&
+                !entry.id.startsWith("agent-stream-preview-") && !entry.dedupeKey.startsWith("delivery-failed:") &&
+                !activity.isAgentApprovalEntry(entry)) ({
+                AgentTurnReceipt.painted(activity, entry.conversationId, entry.turnId)
+            }) else null
         ) else null
     }
 

@@ -729,6 +729,7 @@ internal fun MobileNativeAgent.nativeToolHooks(
         )
     },
     onFinished = { result ->
+        AgentTurnReceipt.toolFinished(appContext, context, toolId, result)
         emitNativeToolEvent(
             AgentNativeToolLifecycleEvent(
                 stage = AgentNativeToolLifecycleStage.FINISHED,

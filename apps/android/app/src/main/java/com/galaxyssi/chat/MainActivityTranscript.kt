@@ -1404,6 +1404,13 @@ internal fun MainActivity.agentProcessTranscriptRow(entry: AgentTranscriptEntry)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 val statusView = this
+                if (entry.turnId.isNotBlank()) {
+                    tag = "turn-receipt:${entry.turnId}"
+                    isFocusable = true
+                    minHeight = dp(36)
+                    setOnClickListener { anchor -> showTurnReceipt(anchor, entry, agentProcessCompletionTimestamp(entry,
+                        renderedAgentTranscriptSourceEntries) ?: displayCompletedAt) }
+                }
                 val visibleBounds = Rect()
                 var hasRendered = false
                 val clock = AgentProcessClock(startedAt, displayCompletedAt)

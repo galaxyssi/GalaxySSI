@@ -4075,6 +4075,8 @@ def _agent_task_payload(
     if research_receipts:
         payload["research_trace"] = research_receipts
     if include_progress_replay or status in TERMINAL_STATES:
+        from turn_execution_receipt import attach as attach_turn_receipt
+        attach_turn_receipt(payload, task)
         checkpoints = research_task_packets(task)
         if checkpoints:
             payload["research_checkpoints"] = checkpoints
@@ -5603,6 +5605,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "sender": "other",
             "time": time.time(),
         }
+        from turn_execution_receipt import attach as attach_turn_receipt
+        attach_turn_receipt(reply_payload, task)
         research_receipts = replay_receipts(task.get("events") or [])
         if research_receipts:
             reply_payload["research_trace"] = research_receipts
@@ -9660,6 +9664,8 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         payload["exact_content_b64"] = base64.b64encode(raw_result.encode("utf-8")).decode("ascii")
     payload["latency"] = _trace_metrics(trace)
     research_receipts = replay_receipts(task.get("events") or [])
+    from turn_execution_receipt import attach as attach_turn_receipt
+    attach_turn_receipt(payload, task)
     if research_receipts:
         payload["research_trace"] = research_receipts
     checkpoints = research_task_packets(task)

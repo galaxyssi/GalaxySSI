@@ -622,6 +622,8 @@ object GalaxySSIMqttClient {
         }
         recordPublishStage("disclosure_ready", "attachments=${sourceAttachments.size}")
         if (disclosure?.allowed == false) return MqttPublishResult.FAILED
+        context?.let { AgentTurnReceipt.outbound(it, resolvedConversationId, resolvedTurnId, resolvedTaskId,
+            agentModelId, agentReasoningEffort) }
         fun disclosureFailed(reason: String): MqttPublishResult {
             if (context != null && disclosure != null) {
                 AgentDataDisclosureLedger.update(

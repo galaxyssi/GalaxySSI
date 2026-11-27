@@ -101,9 +101,9 @@ internal object AgentLatencyTelemetry {
         return AgentLatencyContract.summarize(journal?.snapshot().orEmpty()) to journal?.health().orEmpty()
     }
 
-    fun observeDraw(view: View, taskId: String, final: Boolean): (() -> Unit)? {
-        val current = tracer ?: return null
-        if (!current.shouldObserve(taskId, final)) return null
+    fun observeDraw(view: View, taskId: String, final: Boolean, onVisible: (() -> Unit)? = null): (() -> Unit)? {
+        val current = tracer?.takeIf { it.shouldObserve(taskId, final) }
+        if (current == null && onVisible == null) return null
         val observer = view.viewTreeObserver
         var fired = false
         var cancelled = false
@@ -115,8 +115,10 @@ internal object AgentLatencyTelemetry {
                 // Leave the draw traversal; detached or recycled rows are not visible samples.
                 view.post {
                     remove()
-                    if (!cancelled && view.isAttachedToWindow && view.isShown && view.hasWindowFocus()) {
-                        runCatching { current.visible(taskId, final) }
+                    if (!cancelled && view.isAttachedToWindow && view.isShown && view.hasWindowFocus() &&
+                        view.getGlobalVisibleRect(Rect())) {
+                        runCatching { current?.visible(taskId, final) }
+                        onVisible?.invoke()
                     }
                 }
             }

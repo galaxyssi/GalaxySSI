@@ -213,6 +213,9 @@ class OpenAiCompatibleAgentModelToolProtocolAdapter(
             metadata = metadata(finishReason).apply {
                 root.optionalString("id", "response")?.let { put("response_id", it) }
                 root.optionalString("model", "response")?.let { put("model", it) }
+                (root.opt("reasoning_effort") as? String)?.takeIf {
+                    it in setOf("minimal", "low", "medium", "high", "xhigh")
+                }?.let { put("reported_reasoning_effort", it) }
             }
         ).let { decoded ->
             val payload = JSONObject().put("role", "assistant")
