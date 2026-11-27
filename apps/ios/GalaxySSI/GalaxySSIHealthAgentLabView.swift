@@ -148,8 +148,10 @@ struct GalaxySSIHealthAgentLabView: View {
         DatePicker(t("due", "Recheck time"), selection: $due, in: Date()..., displayedComponents: [.date, .hourAndMinute])
         Button { confirming = true } label: { Label(t("confirm", "Confirm recheck reminder"), systemImage: "bell.badge") }
         NavigationLink(t("notification_settings", "Health review notification settings")) { GalaxySSIHealthReviewReminderView(records: records) }
+        NavigationLink(t("care_settings", "Local health review")) { GalaxySSIHealthCareView(records: records) }
       } else {
         TextEditor(text: $note).frame(minHeight: 100, maxHeight: 160).accessibilityLabel(t("note", "Add personal note"))
+        Text("\(note.count)/500").font(.caption).foregroundColor(.secondary)
         Picker(t("condition", "Collection condition"), selection: $condition) {
           Text(t("keep_condition", "Keep existing condition")).tag("")
           ForEach(["fasting", "non_fasting", "after_meal", "after_meal_1h", "after_meal_2h"], id: \.self) { code in
@@ -157,7 +159,7 @@ struct GalaxySSIHealthAgentLabView: View {
           }
         }
         Button { saveNote() } label: { Label(t("save", "Save"), systemImage: "checkmark") }
-          .disabled(note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || note.count > 500)
+          .disabled((note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && condition.isEmpty) || note.count > 500)
       }
       Button(t("cancel", "Cancel"), role: .cancel) { selected = nil; note = ""; condition = "" }
     }
@@ -166,6 +168,7 @@ struct GalaxySSIHealthAgentLabView: View {
     guard available, snapshot?.policy.allowed == true else { return }
     selected = row; editingReminder = reminder; condition = ""
     note = launch.mode == .note ? launch.supplement : ""
+    if launch.mode == .note { condition = GalaxySSIHealthAgentLab.suggestedCondition(launch.supplement) ?? "" }
     replacing = reminders["local-lab-review:" + row.id.uuidString]?.id
     due = reminders["local-lab-review:" + row.id.uuidString]?.requestedAt ??
       GalaxySSIHealthAgentLab.suggestedDay(launch.supplement, now: Date(), calendar: localCalendar) ?? Date().addingTimeInterval(86_400)
@@ -173,7 +176,9 @@ struct GalaxySSIHealthAgentLabView: View {
   }
   private func saveNote() {
     guard available, let row = selected, let policy = snapshot?.policy else { return }
-    do { try records.annotateLocalLab(row, policy: policy, note: note, condition: condition.isEmpty ? nil : condition); reload() }
+    let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+    let supplement = text.isEmpty && !condition.isEmpty ? t(condition, condition.replacingOccurrences(of: "_", with: " ")) : text
+    do { try records.annotateLocalLab(row, policy: policy, note: supplement, condition: condition.isEmpty ? nil : condition); reload() }
     catch { status = t("changed", "The record or permission changed. Reopen the result.") }
   }
   private func saveReminder() {

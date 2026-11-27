@@ -46,7 +46,7 @@ and exact revisions. A notification link rejects missing or group conversations.
 ## Verification Boundary
 
 Focused JS source contracts and the iOS project structure check cover wiring,
-resource placement and defensive source invariants. Fifteen deliberately synthetic
+resource placement and defensive source invariants. Sixteen deliberately synthetic
 XCTest methods cover projections, consent capabilities, intent and legacy decoding;
 they are authored but unexecuted. No native compilation, device notification/UI
 execution, provider testing, CI monitoring, full repository check or IPA build

@@ -60,5 +60,5 @@ for (const match of intent.matchAll(/matches\("([a-z_]+)", #"([^"\n]*)"#/g)) {
   new RegExp(translated.get('pattern_' + match[1]), 'i');
 }
 for (const match of ui.matchAll(/\bt\("([a-z_]+)",/g)) assert(translated.has(match[1]), 'Localized UI missing: ' + match[1]);
-assert.equal((read('apps/ios/GalaxySSITests/GalaxySSIHealthAgentLabIntentTests.swift').match(/func test/g) || []).length, 7);
+assert.equal((read('apps/ios/GalaxySSITests/GalaxySSIHealthAgentLabIntentTests.swift').match(/func test/g) || []).length, 8);
 console.log('Local lab routing, privacy, UI and reminder source contracts passed; no Swift compilation or XCTest execution.');

@@ -54,4 +54,11 @@ final class GalaxySSIHealthAgentLabIntentTests: XCTestCase {
     XCTAssertNil(try JSONDecoder().decode(GalaxySSIHealthCareFollowUp.Reminder.self,
       from: JSONEncoder().encode(reminder)).labReview)
   }
+  func testCollectionConditionSuggestionsDoNotResolveUncertaintyOrContradictions() {
+    XCTAssertEqual(GalaxySSIHealthAgentLab.suggestedCondition("the sample was not fasting"), "non_fasting")
+    XCTAssertEqual(GalaxySSIHealthAgentLab.suggestedCondition("two hours after the meal"), "after_meal_2h")
+    XCTAssertNil(GalaxySSIHealthAgentLab.suggestedCondition("maybe fasting"))
+    XCTAssertNil(GalaxySSIHealthAgentLab.suggestedCondition("fasting or after the meal?"))
+    XCTAssertNil(GalaxySSIHealthAgentLab.suggestedCondition("not after the meal"))
+  }
 }

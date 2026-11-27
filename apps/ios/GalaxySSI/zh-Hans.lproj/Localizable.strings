@@ -7989,6 +7989,14 @@
 "galaxyssi.health.local_lab.pattern_month" = "下个?月";
 "galaxyssi.health.local_lab.pattern_week" = "下周|下星期";
 "galaxyssi.health.local_lab.pattern_tomorrow" = "明天";
+"galaxyssi.health.local_lab.care_settings" = "本地健康关注";
+"galaxyssi.health.local_lab.pattern_uncertain" = "[？?]|可能|好像|不确定|不是.*餐后|不是.*饭后";
+"galaxyssi.health.local_lab.pattern_after_meal" = "饭后|餐后";
+"galaxyssi.health.local_lab.pattern_fasting" = "空腹";
+"galaxyssi.health.local_lab.pattern_two_hours" = "[饭餐]后[2二两]个?小时";
+"galaxyssi.health.local_lab.pattern_one_hour" = "[饭餐]后[1一]个?小时";
+"galaxyssi.health.local_lab.pattern_non_fasting" = "不是空腹|非空腹";
+"galaxyssi.health.local_lab.pattern_negative" = "不|没";
 "galaxyssi.agent.file.read_named" = "仅重新识别 %@";
 "galaxyssi.agent.file.recognized" = "模型自述：已识别";
 "galaxyssi.agent.file.unreadable" = "模型自述：无法解读";

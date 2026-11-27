@@ -57,6 +57,23 @@ extension GalaxySSIHealthAgentLab {
     if matches("tomorrow", #"\btomorrow\b"#) { return calendar.date(byAdding: .day, value: 1, to: now) }
     return nil
   }
+  static func suggestedCondition(_ raw: String) -> String? {
+    func matches(_ key: String, _ fallback: String) -> Bool {
+      [fallback, text("pattern_" + key, fallback, LanguagePolicySettings.zhCN)].contains {
+        raw.range(of: $0, options: [.regularExpression, .caseInsensitive]) != nil
+      }
+    }
+    if matches("uncertain", #"[?]|\b(?:maybe|perhaps|unsure|uncertain|not.*after.*meal)\b"#) { return nil }
+    if matches("after_meal", #"\b(?:after (?:a |the )?meal|after eating)\b"#) {
+      if matches("fasting", #"\bfasting\b"#) { return nil }
+      if matches("two_hours", #"\b(?:two|2) hours? after (?:a |the )?meal\b"#) { return "after_meal_2h" }
+      if matches("one_hour", #"\b(?:one|1) hours? after (?:a |the )?meal\b"#) { return "after_meal_1h" }
+      return "after_meal"
+    }
+    if matches("non_fasting", #"\b(?:not fasting|non.fasting)\b"#) { return "non_fasting" }
+    if matches("fasting", #"\bfasting\b"#), !matches("negative", #"\b(?:not|no|never)\b"#) { return "fasting" }
+    return nil
+  }
 }
 
 extension AgentHomeView {
