@@ -7,8 +7,9 @@ final class AgentConversationGoalRuntime {
   private weak var store: GalaxySSIStore?
   private var owner = ""
   private var foreground = false
-  private var backgroundGrant = false
+  private var backgroundGrant: UUID?
   private var grace: UIBackgroundTaskIdentifier = .invalid
+  private var graceToken: UUID?
   private var work: Task<Void, Never>?
   private var ticket = UUID()
   private var claimed: AgentConversationGoal?
@@ -24,11 +25,15 @@ final class AgentConversationGoalRuntime {
   }
   func setForeground(_ active: Bool, store value: GalaxySSIStore) {
     bind(value); foreground = active
-    if active { endGrace(); wake() }
+    if active { backgroundGrant = nil; endGrace(); wake() }
     else {
-      if work != nil, !backgroundGrant, grace == .invalid {
+      if work != nil, backgroundGrant == nil, grace == .invalid {
+        let token = UUID(); graceToken = token
         grace = UIApplication.shared.beginBackgroundTask(withName: "Conversation text goal") {
-          Task { @MainActor in self.interrupt(); self.schedule() }
+          Task { @MainActor in
+            guard self.graceToken == token else { return }
+            self.interrupt(); self.schedule()
+          }
         }
       }
       schedule()
@@ -49,7 +54,7 @@ final class AgentConversationGoalRuntime {
   }
   func interrupt() {
     let previous = claimed
-    ticket = UUID(); work?.cancel(); work = nil; claimed = nil; endGrace()
+    ticket = UUID(); work?.cancel(); work = nil; claimed = nil; backgroundGrant = nil; endGrace()
     if let previous, let store, owner == store.profile.identityFingerprint,
       UIApplication.shared.isProtectedDataAvailable {
       let repository = repository(store)
@@ -60,7 +65,11 @@ final class AgentConversationGoalRuntime {
     if claimed?.conversation == conversation { interrupt() }
     wake()
   }
-  func runBackground() async -> Bool {
+  func expireBackground(_ grant: UUID) {
+    guard backgroundGrant == grant else { return }
+    interrupt(); schedule()
+  }
+  func runBackground(grant: UUID) async -> Bool {
     guard UIApplication.shared.applicationState != .active, UIApplication.shared.isProtectedDataAvailable else { return false }
     var cold: GalaxySSIStore?
     if store == nil {
@@ -68,11 +77,11 @@ final class AgentConversationGoalRuntime {
       cold = GalaxySSIStore(); if let cold { bind(cold) }
     }
     guard let store, permitsIdentity(store) else { return false }
-    backgroundGrant = true
-    defer { backgroundGrant = false; _ = cold }
+    backgroundGrant = grant
+    defer { if backgroundGrant == grant { backgroundGrant = nil }; _ = cold }
     wake()
     if let work { await withTaskCancellationHandler(operation: { await work.value }, onCancel: {
-      Task { @MainActor in self.interrupt() }
+      Task { @MainActor in self.expireBackground(grant) }
     }) }
     return !Task.isCancelled
   }
@@ -84,7 +93,7 @@ final class AgentConversationGoalRuntime {
       value.canReadAgentTranscript && UIApplication.shared.isProtectedDataAvailable
   }
   private func permits(_ value: GalaxySSIStore) -> Bool {
-    permitsIdentity(value) && (foreground || backgroundGrant || grace != .invalid)
+    permitsIdentity(value) && (foreground || backgroundGrant != nil || grace != .invalid)
   }
   private func current(_ goal: AgentConversationGoal, store: GalaxySSIStore, ticket: UUID) -> Bool {
     self.ticket == ticket && !Task.isCancelled && permits(store) && Self.eligible(store.agentSession(id: goal.conversation)) &&
@@ -160,6 +169,7 @@ final class AgentConversationGoalRuntime {
     return true
   }
   private func endGrace() {
+    graceToken = nil
     if grace != .invalid { UIApplication.shared.endBackgroundTask(grace); grace = .invalid }
   }
   private func schedule() {

@@ -18,11 +18,12 @@ enum AgentConversationGoalBackground {
         task.setTaskCompleted(success: success)
         if let pending { schedule(pending: pending, expected: epoch) }
       }
+      let grant = UUID()
       let worker = Task { @MainActor in
-        let success = await AgentConversationGoalRuntime.shared.runBackground()
+        let success = await AgentConversationGoalRuntime.shared.runBackground(grant: grant)
         completion.finish(success: success, pending: success ? nil : true)
       }
-      completion.onCancellation { worker.cancel(); Task { @MainActor in AgentConversationGoalRuntime.shared.interrupt() } }
+      completion.onCancellation { worker.cancel(); Task { @MainActor in AgentConversationGoalRuntime.shared.expireBackground(grant) } }
       task.expirationHandler = { completion.finish(success: false, pending: true) }
     }
     if registered && UserDefaults.standard.bool(forKey: pendingKey) {
