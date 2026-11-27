@@ -287,6 +287,11 @@ extension MessageCoordinator {
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue
       }
+      if let scope = item.learningScope,
+         !scope.permits(item, store: store, now: GlobalRealtimeClock.nowMillis()) {
+        deliveryStore.discard(messageId: item.messageId)
+        continue
+      }
       if item.clientSourceMessageId.hasPrefix(PublicAttentionResearchPolicy.outboxPrefix) {
         let source = Int64(item.clientSourceMessageId.dropFirst(PublicAttentionResearchPolicy.outboxPrefix.count))
         let research = GalaxySSIGlobalAgentRuntimeBridge.researchState()
@@ -307,8 +312,7 @@ extension MessageCoordinator {
       } else if AgentIOSCognitionSchedulePolicy.isLearningTransport(item, legacySources: pausedLegacyLearningSourceIDs ?? []) {
         // Expired reservations belong to the learning journal, not transport replay.
         let expiry = backgroundLearningLeases()[item.clientSourceMessageId] ?? 0
-        guard expiry > GlobalRealtimeClock.nowMillis(), let scope = item.learningScope,
-              scope.permits(item, store: store, now: GlobalRealtimeClock.nowMillis()) else {
+        guard expiry > GlobalRealtimeClock.nowMillis(), item.learningScope != nil else {
           deliveryStore.discard(messageId: item.messageId)
           continue
         }
