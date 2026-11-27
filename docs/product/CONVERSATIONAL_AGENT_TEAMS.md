@@ -229,6 +229,12 @@ calls, handoff and final review. Inspect the public answer separately: does
 it propose a readout, name an observation that would undermine its interpretation,
 and distinguish desired behavior from actual measurements? The host replay
 does not exercise Android UI, establish scientific novelty or validate a protein.
+Add `--review-concept` alongside `--concept` to run a second, explicit
+conversational review using only the first run's actual public answer. The
+review asks whether the proposed falsifier really contradicts the prediction;
+it does not supply a candidate or a correct answer. Each turn has separate
+role and call accounting. Do not count a transport pass as a scientific pass:
+report a correction as a second-turn result, not a first-turn success.
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 
