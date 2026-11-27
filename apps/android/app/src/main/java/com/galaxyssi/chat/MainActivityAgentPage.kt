@@ -1371,6 +1371,7 @@ internal fun MainActivity.submitAgentGoal(
         ?: agentTranscriptStore.activeConversation()
     if (fileReadSource != null && (conversation.id != fileReadSource.chat || conversation.globalTopicKey.isNotBlank() ||
             attachments.singleOrNull()?.id != fileReadSource.item)) return
+    conversationWindow.teamReview.invalidate()
     if (goalOverride == null && handleAutoGoalTeam(conversation, goal,
             attachments.isNotEmpty() || explicitMembers.isNotEmpty())) return
     if (goalOverride == null && handleConversationGoal(conversation, goal,
@@ -1490,6 +1491,12 @@ internal fun MainActivity.submitAgentGoal(
         agentTurnGoals.keys.take(400).forEach(agentTurnGoals::remove)
     }
     val submittedText = displayGoal.ifBlank { attachmentLabel }
+    val modelReviewRevision = conversationWindow.teamReview.revision.takeIf {
+        goalOverride == null && displayGoalOverride == null && voiceTraceId.isBlank() && pendingVoiceDedupeKey.isBlank() &&
+            healthCareSubmission == null && fileReadSource == null && this !is ScreenAssistantChatActivity &&
+            allowsModelTeamTurn(conversation, goal, attachments.isNotEmpty(), requestedMembers.isNotEmpty() ||
+                explicitMembers.isNotEmpty() || CollaborationGroupStore.cached(conversation.id) != null)
+    }
     val richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
     agentSubmissionExecutor.execute {
         if (pendingVoiceDedupeKey.isNotBlank()) {
@@ -1575,6 +1582,9 @@ internal fun MainActivity.submitAgentGoal(
                 if (cancelled()) return@prepareAgentTurnContent
                 val priorReference = priorVisualReference.takeIf { contentGoal == baseGoal }
                 if (contentAttachments.isEmpty() && priorReference == null) {
+                    if (modelReviewRevision != null && contentGoal == goal && priorVisualReference == null) {
+                        conversationWindow.teamReview.bind(modelReviewRevision, conversation.id, turnId)
+                    }
                     continueAgentGoalSubmission(
                         goal = contentGoal,
                         conversationId = conversation.id,

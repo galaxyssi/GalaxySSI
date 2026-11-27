@@ -756,6 +756,7 @@
     C43210000000000000000011 /* GalaxySSIConversationRenamePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */; };
     C43210000000000000000021 /* GalaxySSIConversationRenameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */; };
     C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */; };
+    C46260000000000000000009 /* GalaxySSILocalMessageSearchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46260000000000000000010 /* GalaxySSILocalMessageSearchTests.swift */; };
     C46150000000000000000001 /* AgentSessionRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000002 /* AgentSessionRequirement.swift */; };
     C46150000000000000000003 /* GalaxySSISessionRequirementEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000004 /* GalaxySSISessionRequirementEditor.swift */; };
     C46150000000000000000005 /* AgentSessionRequirementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000006 /* AgentSessionRequirementTests.swift */; };
@@ -970,6 +971,10 @@
     C3007000000000000000000D /* AgentRemoteImageTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000E /* AgentRemoteImageTransfer.swift */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
     A1000000000000000000F002 /* GalaxySSIConversationHubModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */; };
+    C46260000000000000000001 /* GalaxySSILocalMessageSearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46260000000000000000002 /* GalaxySSILocalMessageSearch.swift */; };
+    C46260000000000000000003 /* GalaxySSILocalMessageSearchScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46260000000000000000004 /* GalaxySSILocalMessageSearchScanner.swift */; };
+    C46260000000000000000005 /* GalaxySSILocalMessageSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46260000000000000000006 /* GalaxySSILocalMessageSearchView.swift */; };
+    C46260000000000000000007 /* GalaxySSILocalMessageReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46260000000000000000008 /* GalaxySSILocalMessageReader.swift */; };
     D12900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */; };
     D12900000000000000000002 /* GalaxySSIPeerAttachmentTransferProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000002 /* GalaxySSIPeerAttachmentTransferProgress.swift */; };
     D12900000000000000000003 /* GalaxySSIPeerImageThumbnailRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22900000000000000000003 /* GalaxySSIPeerImageThumbnailRepository.swift */; };
@@ -3176,6 +3181,7 @@
     C43210000000000000000012 /* GalaxySSIConversationRenamePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenamePolicy.swift; sourceTree = "<group>"; };
     C43210000000000000000022 /* GalaxySSIConversationRenameView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameView.swift; sourceTree = "<group>"; };
     C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationRenameTests.swift; sourceTree = "<group>"; };
+    C46260000000000000000010 /* GalaxySSILocalMessageSearchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILocalMessageSearchTests.swift; sourceTree = "<group>"; };
     C46150000000000000000002 /* AgentSessionRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRequirement.swift; sourceTree = "<group>"; };
     C46150000000000000000004 /* GalaxySSISessionRequirementEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISessionRequirementEditor.swift; sourceTree = "<group>"; };
     C46150000000000000000006 /* AgentSessionRequirementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRequirementTests.swift; sourceTree = "<group>"; };
@@ -3334,6 +3340,10 @@
     E20000000000000000002403 /* GalaxySSIOpenWakeWordListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIOpenWakeWordListener.swift; sourceTree = "<group>"; };
     A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAttachmentKnowledgeImporter.swift; sourceTree = "<group>"; };
     A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIConversationHubModels.swift; sourceTree = "<group>"; };
+    C46260000000000000000002 /* GalaxySSILocalMessageSearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILocalMessageSearch.swift; sourceTree = "<group>"; };
+    C46260000000000000000004 /* GalaxySSILocalMessageSearchScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILocalMessageSearchScanner.swift; sourceTree = "<group>"; };
+    C46260000000000000000006 /* GalaxySSILocalMessageSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILocalMessageSearchView.swift; sourceTree = "<group>"; };
+    C46260000000000000000008 /* GalaxySSILocalMessageReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSILocalMessageReader.swift; sourceTree = "<group>"; };
     D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIChatMessageViewportPolicy.swift; sourceTree = "<group>"; };
     D22900000000000000000002 /* GalaxySSIPeerAttachmentTransferProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerAttachmentTransferProgress.swift; sourceTree = "<group>"; };
     D22900000000000000000003 /* GalaxySSIPeerImageThumbnailRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIPeerImageThumbnailRepository.swift; sourceTree = "<group>"; };
@@ -5607,6 +5617,10 @@
         F22679000000000000000001 /* MicrosoftTTSVoiceCatalog.swift */,
         A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */,
         A2000000000000000000F002 /* GalaxySSIConversationHubModels.swift */,
+        C46260000000000000000002 /* GalaxySSILocalMessageSearch.swift */,
+        C46260000000000000000004 /* GalaxySSILocalMessageSearchScanner.swift */,
+        C46260000000000000000006 /* GalaxySSILocalMessageSearchView.swift */,
+        C46260000000000000000008 /* GalaxySSILocalMessageReader.swift */,
         D22900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift */,
         D22900000000000000000002 /* GalaxySSIPeerAttachmentTransferProgress.swift */,
         D22900000000000000000003 /* GalaxySSIPeerImageThumbnailRepository.swift */,
@@ -7131,6 +7145,7 @@
         C43140000000000000000072 /* GalaxySSIHealthMeasurementComparisonTests.swift */,
         C43150000000000000000072 /* GalaxySSIHealthMeasurementPeriodTests.swift */,
         C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */,
+        C46260000000000000000010 /* GalaxySSILocalMessageSearchTests.swift */,
         C46150000000000000000006 /* AgentSessionRequirementTests.swift */,
         C46240000000000000000008 /* GalaxySSIReadingPositionTests.swift */,
         C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */,
@@ -8117,6 +8132,10 @@
         F12666000000000000000002 /* GalaxySSIAgentInteractiveProgressView.swift in Sources */,
         A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */,
         A1000000000000000000F002 /* GalaxySSIConversationHubModels.swift in Sources */,
+        C46260000000000000000001 /* GalaxySSILocalMessageSearch.swift in Sources */,
+        C46260000000000000000003 /* GalaxySSILocalMessageSearchScanner.swift in Sources */,
+        C46260000000000000000005 /* GalaxySSILocalMessageSearchView.swift in Sources */,
+        C46260000000000000000007 /* GalaxySSILocalMessageReader.swift in Sources */,
         D12900000000000000000001 /* GalaxySSIChatMessageViewportPolicy.swift in Sources */,
         D12900000000000000000002 /* GalaxySSIPeerAttachmentTransferProgress.swift in Sources */,
         D12900000000000000000003 /* GalaxySSIPeerImageThumbnailRepository.swift in Sources */,
@@ -9659,6 +9678,7 @@
         C43140000000000000000071 /* GalaxySSIHealthMeasurementComparisonTests.swift in Sources */,
         C43150000000000000000071 /* GalaxySSIHealthMeasurementPeriodTests.swift in Sources */,
         C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */,
+        C46260000000000000000009 /* GalaxySSILocalMessageSearchTests.swift in Sources */,
         C46150000000000000000005 /* AgentSessionRequirementTests.swift in Sources */,
         C46240000000000000000007 /* GalaxySSIReadingPositionTests.swift in Sources */,
         C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */,

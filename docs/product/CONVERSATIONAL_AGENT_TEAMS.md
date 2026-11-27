@@ -10,10 +10,28 @@ the turn creates no team conversation, saved roster, or reusable worker.
 
 "Have a team compare these two arguments and have someone challenge the
 conclusion" and `/team Compare these two arguments` are equivalent explicit
-requests. "Compare these two arguments" alone is an ordinary single-Agent
-turn. A mention of a team in quoted text, a question about how teams work, or
+requests. "Compare these two arguments" alone follows ordinary chat routing.
+A mention of a team in quoted text, a question about how teams work, or
 a request *not* to delegate does not start one. A bare `/team` without a task
 asks for the task; it does not dispatch workers.
+
+On Android, when an ordinary typed Agent turn is answered by the **on-device
+model** (`local-llm`), its first answer can also suggest a temporary team. For
+example, "Compare the two transit plans below, find assumptions that could
+reverse the ranking, and recommend one" needs no teamwork wording. The model
+returns its normal answer and an optional review signal together. The app does
+not make a separate planning call. Cloud, peer and desktop replies do not
+currently initiate these proposals.
+
+The suggestion is available only in the originating, unlocked, active chat,
+not for private or tracking-paused chats, health discussions or recognized
+personal health requests, groups, member mentions, voice turns or attachments.
+Editing the composer or leaving the window invalidates the pending review.
+Where an eligible destination exists, the phone shows the exact typed objective,
+the model and host (or this device), and the limit of twelve model requests.
+If there are multiple eligible routes, choose one before confirming. A manual
+model selection is never replaced. **Cancel** keeps the ordinary answer and
+starts nothing; only **Confirm and run** authorizes the pinned team run.
 
 The model selects **0 to 10 workers**, excluding the coordinating Agent. It
 assigns each worker a distinct question whose answer could change the result.
@@ -108,6 +126,34 @@ The example ends at that distinction. It supplies no novel sequences,
 engineering or testing procedures, predictions represented as findings, or
 therapeutic advice.
 
+## Opt-in live model check
+
+`tools/testing/LocalTeamAcceptance.java` runs the production Kotlin coordinator
+on a host JVM against an already-running localhost chat-completions model. It
+accepts only a numeric loopback port and model ID, never patient data, an API
+key, or a remote endpoint. It does not install or exercise the Android UI.
+Build the Android debug Kotlin classes first. With Java 17+, put
+`app/build/tmp/kotlin-classes/debug` from the Android project, Kotlin stdlib,
+kotlinx-coroutines-core-jvm and the JVM org.json jar on the classpath. From
+the repository root run:
+
+```text
+java -cp <classpath> tools/testing/LocalTeamAcceptance.java <localhost-port> <local-model-id>
+```
+
+The model chooses role count, assignments, dependencies, findings and synthesis.
+Role numbers belong to the host. Check that there was a real downstream review,
+that reported reservations reached the final answer, and that the final values
+match their labeled inputs and curves. The program checks transport and the
+presence of the numerical values separately; a human still checks attribution
+and interpretation. The rubric also rejects the known contradictory English
+verdict that both A and B pass, and flags a missing limitation on clinical
+inference. It is a smoke test, not a general scientific fact checker. Run with
+`--check-rubric` instead of the port and model to exercise those guards offline.
+An incomplete plan or an incomplete answer fails the run.
+Even a perfect numerical result identifies only a mathematical response profile.
+It says nothing about whether a physical protein can exhibit that profile.
+
 ## Synthetic acceptance rubric
 
 Use only the public notes above, invented task text, and in-memory synthetic
@@ -116,7 +162,7 @@ or proof of scientific feasibility.
 
 | Gate | Pass condition |
 | --- | --- |
-| Intent and sizing | An explicit collaboration request and its `/team` equivalent admit the same task. The ordinary and negated variants dispatch no workers. A zero-worker plan reports no independent review. |
+| Intent and sizing | An explicit collaboration request and its `/team` equivalent admit the same task for confirmation. An eligible ordinary on-device answer may offer review but dispatches no workers without confirmation. A request not to delegate does not offer a team. A zero-worker plan reports no independent review. |
 | Real roles | For the multi-perspective fixture, each role claimed in the answer maps to a distinct assignment, call ID, and returned finding. Workers get no peer drafts. One call returning three role-labeled paragraphs fails. |
 | Disagreement | Seed the synthetic returns with "Phe reduction is sufficient" and "Phe reduction is relevant but insufficient." The final answer names the point of disagreement and explains its resolution; a vote or an invented consensus fails. For compatible returns, do not fabricate dissent. |
 | Synthesis | One answer in the original chat retains the endpoint, limits it to the studied population, and explains why it is only a criterion for the hypothetical candidate. Concatenating the returns or crediting a failed worker fails. |

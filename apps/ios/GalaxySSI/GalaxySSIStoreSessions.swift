@@ -253,6 +253,45 @@ final class AgentConversationDatabase: @unchecked Sendable {
     }
   }
 
+  func localSearchPage(status: AgentConversationStatus, cursor: AgentConversationPageCursor?) throws -> AgentConversationPage {
+    try locked {
+      try Task.checkCancellation()
+      var boundary = ""
+      var values: [SQLiteValue] = [.text(status.rawValue)]
+      if let cursor {
+        boundary = " AND (pinned < ? OR (pinned = ? AND COALESCE(activity_at, updated_at) < ?) OR (pinned = ? AND COALESCE(activity_at, updated_at) = ? AND conversation_id < ?))"
+        let pinned: Int32 = cursor.pinned ? 1 : 0
+        values += [.int(pinned), .int(pinned), .int64(cursor.updatedAt), .int(pinned), .int64(cursor.updatedAt), .text(cursor.id)]
+      }
+      guard let statement = prepare("SELECT conversation_id, encrypted_payload, pinned, COALESCE(activity_at, updated_at) FROM agent_conversations WHERE status = ?\(boundary) ORDER BY pinned DESC, COALESCE(activity_at, updated_at) DESC, conversation_id DESC LIMIT 33")
+      else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+      defer { sqlite3_finalize(statement) }
+      for (offset, value) in values.enumerated() {
+        switch value {
+        case .text(let text): bind(text, at: Int32(offset + 1), to: statement)
+        case .int(let number): sqlite3_bind_int(statement, Int32(offset + 1), number)
+        case .int64(let number): sqlite3_bind_int64(statement, Int32(offset + 1), number)
+        }
+      }
+      var rows: [AgentConversation] = []
+      var step = sqlite3_step(statement)
+      while step == SQLITE_ROW {
+        try Task.checkCancellation()
+        guard let rawID = sqlite3_column_text(statement, 0) else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+        let id = String(cString: rawID)
+        guard let row = decode(statement, payloadColumn: 1, conversationId: id), row.id == id, row.status == status,
+          row.pinned == (sqlite3_column_int(statement, 2) != 0), row.dialogueActivityAt == sqlite3_column_int64(statement, 3)
+        else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+        rows.append(row); step = sqlite3_step(statement)
+      }
+      guard step == SQLITE_DONE else { throw GalaxySSILocalMessageSearch.Failure.unavailable }
+      let items = Array(rows.prefix(32)), more = rows.count > 32
+      return .init(items: items, nextCursor: more ? items.last.map {
+        AgentConversationPageCursor(pinned: $0.pinned, updatedAt: $0.dialogueActivityAt, id: $0.id)
+      } : nil, hasMore: more)
+    }
+  }
+
   @discardableResult
   func delete(_ conversationId: String) -> AgentConversation? {
     locked {

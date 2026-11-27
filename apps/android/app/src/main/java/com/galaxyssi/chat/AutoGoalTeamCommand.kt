@@ -63,6 +63,10 @@ internal sealed interface AutoGoalTeamCommand {
             else -> Start(objective)
         }
 
+        // This is an exclusion gate only. A structured model decision, never this test, requests review.
+        fun allowsModelReview(text: String): Boolean = text.isNotBlank() && !text.startsWith('/') &&
+            start(text) is Start && !noDelegation.containsMatchIn(text) && HealthAgentLab.intent(text, true) == null
+
         fun parse(input: String): AutoGoalTeamCommand? {
             val text = input.trim()
             if (text.startsWith('/')) {
