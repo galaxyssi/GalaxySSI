@@ -81,11 +81,15 @@ internal open class AgentTranscriptRecyclerAdapter(
     private fun observeDraw(holder: AgentTranscriptViewHolder, entry: AgentTranscriptEntry) {
         holder.latencyDrawCleanup?.invoke()
         holder.latencyDrawCleanup = if (holder.container.isAttachedToWindow &&
-            entry.role == AgentTranscriptRole.ASSISTANT && entry.text.isNotBlank()
+            AgentTurnReceipt.isReplyText(entry)
         ) com.galaxyssi.chat.metrics.AgentLatencyTelemetry.observeDraw(
             holder.container,
             com.galaxyssi.chat.metrics.AgentLatencyTelemetry.replyTaskId(entry.conversationId, entry.turnId, entry.taskId),
-            final = !entry.id.startsWith("agent-stream-")
+            final = !entry.id.startsWith("agent-stream-"),
+            onVisible = if (AgentTurnReceipt.observeBody(entry.conversationId, entry.turnId) &&
+                !activity.isAgentApprovalEntry(entry)) ({
+                AgentTurnReceipt.painted(activity, entry.conversationId, entry.turnId)
+            }) else null
         ) else null
     }
 

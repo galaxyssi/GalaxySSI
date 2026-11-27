@@ -390,6 +390,7 @@ object CloudModelClient {
                             }
                         }
                         val endpoint = contact.getString("cloud_endpoint")
+                        val receiptAttempt = AgentTurnReceipt.cloudStarted(context, request, contact.getString("cloud_model"))
                         val response = when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> postJson(
                                 context,
@@ -426,6 +427,9 @@ object CloudModelClient {
                             throw CancellationException("Model tool request cancelled")
                         }
                         protocol.decodeResponse(response, toolCatalog.descriptors).let { decoded ->
+                            AgentTurnReceipt.cloudResponse(context, request, receiptAttempt,
+                                decoded.providerMetadata["model"] ?: decoded.providerMetadata["model_version"],
+                                decoded.providerMetadata["reported_reasoning_effort"])
                             decoded.copy(continuation = decoded.continuation?.bindRoute(continuationRoute),
                                 contextHandoff = projection.newHandoff,
                                 providerMetadata = decoded.providerMetadata + (AgentModelContextHandoff.ROUTE_METADATA_KEY to continuationRoute))

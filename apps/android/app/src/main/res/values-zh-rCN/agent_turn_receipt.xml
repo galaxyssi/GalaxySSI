@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="turn_receipt_title">本轮用时明细</string>
+    <string name="turn_receipt_missing">未测得</string>
+    <string name="turn_receipt_timing">本轮时间</string>
+    <string name="turn_receipt_route">模型与设备</string>
+    <string name="turn_receipt_sent">手机提交</string>
+    <string name="turn_receipt_desktop">Desktop 收到（电脑时钟）</string>
+    <string name="turn_receipt_body">首段正文显示（手机）</string>
+    <string name="turn_receipt_result">手机收到 Desktop 结果</string>
+    <string name="turn_receipt_done">任务结束（会话记录）</string>
+    <string name="turn_receipt_choice">发送时选择</string>
+    <string name="turn_receipt_wire">手机请求 Desktop 的配置</string>
+    <string name="turn_receipt_submitted">Desktop 调用的 Agent 和配置</string>
+    <string name="turn_receipt_desktop_actual">Desktop 供应商确认的模型与强度</string>
+    <string name="turn_receipt_cloud">手机直连云端请求</string>
+    <string name="turn_receipt_actual">直连云端回执中的模型</string>
+    <string name="turn_receipt_local">本机推理使用的模型配置</string>
+    <string name="turn_receipt_actual_effort">供应商回执中的推理强度</string>
+    <string name="turn_receipt_device">已确认操作的设备</string>
+    <string name="turn_receipt_phone">本机</string>
+    <string name="turn_receipt_since">%1$s · +%2$s 秒</string>
+    <string name="turn_receipt_auto">自动</string>
+    <string name="turn_receipt_manual">手动</string>
+</resources>

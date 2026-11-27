@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="turn_receipt_title">Turn details</string>
+    <string name="turn_receipt_missing">Not measured</string>
+    <string name="turn_receipt_timing">Timeline</string>
+    <string name="turn_receipt_route">Models and devices</string>
+    <string name="turn_receipt_sent">Submitted on phone</string>
+    <string name="turn_receipt_desktop">Received by Desktop (Desktop clock)</string>
+    <string name="turn_receipt_body">First reply text visible on phone</string>
+    <string name="turn_receipt_result">Desktop result received on phone</string>
+    <string name="turn_receipt_done">Task ended (conversation record)</string>
+    <string name="turn_receipt_choice">Selection at send</string>
+    <string name="turn_receipt_wire">Requested from Desktop</string>
+    <string name="turn_receipt_submitted">Desktop provider submission</string>
+    <string name="turn_receipt_desktop_actual">Desktop provider-confirmed model and reasoning effort</string>
+    <string name="turn_receipt_cloud">Phone cloud API request</string>
+    <string name="turn_receipt_actual">Model reported by the direct cloud API</string>
+    <string name="turn_receipt_local">On-device inference profile</string>
+    <string name="turn_receipt_actual_effort">Provider-reported reasoning effort</string>
+    <string name="turn_receipt_device">Confirmed operation device</string>
+    <string name="turn_receipt_phone">This phone</string>
+    <string name="turn_receipt_since">%1$s · +%2$s s</string>
+    <string name="turn_receipt_auto">Auto</string>
+    <string name="turn_receipt_manual">Manual</string>
+</resources>

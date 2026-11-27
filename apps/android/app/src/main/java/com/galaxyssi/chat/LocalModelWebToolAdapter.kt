@@ -74,6 +74,7 @@ internal class LocalModelWebToolSession(
                 }
             }
         }
+        AgentTurnReceipt.localModel(appContext, request, response.providerMetadata["profile_id"])
         response
     }
 
