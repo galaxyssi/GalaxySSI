@@ -150,16 +150,16 @@ final class AgentConversationalTeamRuntime: ObservableObject {
             self.progress[running.id] = event
           })
           guard current(running, store: store, epoch: epoch) else { return }
-          answer = outcome.publicText(disagreementsTitle: text("disagreements", "Independent disagreements", store),
+          answer = outcome.publicText(disagreementsTitle: text("disagreements", "Reported disagreements (model reservations, not calculated values):", store),
             correctionTitle: text("correction", "Reviewer correction:", store)) + "\n\n" +
             String(format: text("receipt", "%lld roles / %lld model calls", store), Int64(outcome.roleCount), Int64(outcome.calls))
+        } catch let rejection as AgentTeamDraftAudit.Rejected {
+          guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
+          answer = auditFailure(rejection.issue, store: store) + AgentConversationalTeamProtocol.renderObjections(rejection.objections,
+            title: text("disagreements", "Reported disagreements (model reservations, not calculated values):", store))
         } catch let issue as AgentTeamDraftAudit.Failure {
           guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
-          switch issue {
-          case .withheld(let objection): answer = text("withheld", "The reviewer withheld the draft:", store) + "\n" + objection
-          case .tableMismatch(let verified): answer = text("table_mismatch", "The reviewer did not confirm the source table. Only the deterministic comparison is shown:", store) + "\n\n" + verified
-          case .invalid: answer = text("failed", "The confirmed model could not complete this team. No requests will be retried automatically.", store)
-          }
+          answer = auditFailure(issue, store: store)
         } catch {
           guard ticket == epoch, !Task.isCancelled, permits(store) else { return }
           answer = text("failed", "The confirmed model could not complete this team. No requests will be retried automatically.", store)
@@ -192,6 +192,13 @@ final class AgentConversationalTeamRuntime: ObservableObject {
   }
   private func text(_ key: String, _ fallback: String, _ store: GalaxySSIStore) -> String {
     GalaxySSILocalization.string("galaxyssi.conversation_team." + key, fallback: fallback, language: store.languagePolicy.interfaceLanguage)
+  }
+  private func auditFailure(_ issue: AgentTeamDraftAudit.Failure, store: GalaxySSIStore) -> String {
+    switch issue {
+    case .withheld(let objection): return text("withheld", "The reviewer withheld the draft:", store) + "\n" + objection
+    case .tableMismatch(let verified): return text("table_mismatch", "The source table was disputed. Host-calculated values and model reservations are listed separately:", store) + "\n\n" + verified
+    case .invalid: return text("failed", "The confirmed model could not complete this team. No requests will be retried automatically.", store)
+    }
   }
   private func endGrace() {
     graceToken = nil

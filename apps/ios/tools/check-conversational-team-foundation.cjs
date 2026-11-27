@@ -18,7 +18,7 @@ for (const token of ['calls < Contract.maximumCalls', 'running.count == Contract
   'role.parents.allSatisfy({ reports[$0] != nil })', 'role.parents.map { parent',
   'withThrowingTaskGroup(of: Contract.Report.self)', 'let report = try await group.next()',
   'defer { group.cancelAll() }', 'Task.checkCancellation()', '120_000_000_000',
-  'contributors = plan.roles.filter { $0 != editor }', 'let ordered = try contributors.map', 'ordered.map(\\.json)', 'report.dissent.map',
+  'contributors = plan.roles.filter { $0 != editor }', 'let ordered = try contributors.map', 'ordered.map(\\.json)', 'Contract.renderObjections',
   'onEvent(.interrupted)', 'onEvent(.stopped)']) assert(engine.includes(token), token);
 assert(!/GalaxySSIHealthRecords|MessageCoordinator|enqueueDesktop|AgentNativeToolRegistry|URLSession|AgentSkillRuntime/.test(engine + contract),
   'Core orchestration must not acquire a provider, tool, health, desktop or Skill execution authority');
