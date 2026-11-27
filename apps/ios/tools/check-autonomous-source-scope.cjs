@@ -4,7 +4,7 @@ const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'ca36efb28c5e2e72c620e20c4e88ccfe30e1549a';
 const clean = s => s.replace(/\r\n/g, '\n');
 const read = f => require('./check-research-context-provenance.cjs').retained(f,
-  clean(fs.readFileSync(path.join(root, f), 'utf8')));
+  require('./check-autonomous-transport-scope.cjs').retained(f, clean(fs.readFileSync(path.join(root, f), 'utf8'))));
 const old = f => clean(cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function section(s, first, last) {
@@ -12,6 +12,7 @@ function section(s, first, last) {
   assert(a >= 0 && b > a, first); assert.equal(s.split(first).length, 2, first); return s.slice(a, b);
 }
 function retained(file, s) {
+  s = require('./check-autonomous-transport-scope.cjs').retained(file, s);
   if (file.endsWith('GlobalBackgroundCognitionScope.swift') && s.includes('  static func sourceConversationIds(')) {
     const first = '  func allowsSource(', last = '  func allowsRunning(';
     return once(s, section(s, first, last), section(old(file), first, last));
