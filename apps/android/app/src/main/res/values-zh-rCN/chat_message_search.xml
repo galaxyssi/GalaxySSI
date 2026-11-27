@@ -1,0 +1,10 @@
+<resources>
+    <string name="chat_search_back">返回搜索结果</string>
+    <string name="chat_search_earlier">较早的消息</string>
+    <string name="chat_search_later">较新的消息</string>
+    <string name="chat_search_more">更多匹配消息</string>
+    <string name="chat_search_busy">正在搜索本机消息…</string>
+    <string name="chat_search_failed">未能完成本机消息搜索</string>
+    <string name="chat_search_gone">这条消息已不可用</string>
+    <string name="chat_search_attachment">附件 · %1$s</string>
+</resources>

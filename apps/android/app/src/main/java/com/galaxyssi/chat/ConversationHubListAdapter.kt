@@ -10,6 +10,12 @@ import androidx.recyclerview.widget.RecyclerView
 internal sealed class ConversationHubRow {
     abstract val stableId: String
 
+    data class Message(val hit: LocalMessageHit) : ConversationHubRow() {
+        override val stableId = "message:${hit.kind}:${hit.owner}:${hit.message}"
+    }
+
+    object MoreMessages : ConversationHubRow() { override val stableId = "more-messages" }
+
     data class Conversation(
         val item: ConversationHubItem
     ) : ConversationHubRow() {

@@ -364,6 +364,16 @@ internal class AgentTranscriptEntryDatabase(
         )
     }
 
+    fun pageAtEntry(conversationId: String, entryId: String): AgentTranscriptPage? {
+        val sequence = readableDatabase.query(TABLE_ENTRIES, arrayOf("sequence"), "conversation_id = ? AND entry_id = ?",
+            arrayOf(conversationId, entryId), null, null, null, "1").use { if (it.moveToFirst()) it.getLong(0) else null }
+            ?: return null
+        val before = listConversationPage(conversationId, sequence + 1, 16)
+        if (before.entries.none { it.id == entryId }) return null
+        val after = listConversationAfter(conversationId, sequence, 16)
+        return before.copy(entries = before.entries + after.entries, newestSequence = after.newestSequence ?: sequence)
+    }
+
     fun listConversationAfter(
         conversationId: String,
         afterSequenceExclusive: Long,

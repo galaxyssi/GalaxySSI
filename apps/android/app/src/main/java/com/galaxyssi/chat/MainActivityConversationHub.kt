@@ -71,6 +71,10 @@ internal fun MainActivity.showConversationHub(
         null
     }
     lateinit var renderBody: () -> Unit
+    var reader: Dialog? = null
+    val messageSearch = ConversationMessageSearch(applicationContext) {
+        if (dialog.isShowing && reader == null && !runtimePlaintextCleared) renderBody()
+    }
     var loadConversationPage: (Boolean) -> Unit = {}
     var captureConversationScroll: () -> Unit = {}
     var restoreConversationScrollOnNextRender = restoredNavigation?.anchor != null
@@ -185,6 +189,20 @@ internal fun MainActivity.showConversationHub(
     }
     val conversationAdapter = ConversationHubListAdapter { row ->
         when (row) {
+            is ConversationHubRow.Message -> conversationHubListRow(title = row.hit.ownerTitle,
+                subtitle = if (row.hit.filename) getString(R.string.chat_search_attachment, row.hit.snippet) else row.hit.snippet,
+                trailing = listTime(row.hit.time), iconRes = R.drawable.ic_hub_search, detailLines = 2, onClick = {
+                    captureConversationScroll()
+                    getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(searchInput.windowToken, 0)
+                    reader = messageHistoryReader(row.hit, searchInput.text.toString().trim()) {
+                        reader = null
+                        if (dialog.isShowing && !runtimePlaintextCleared) {
+                            restoreConversationScrollOnNextRender = true; renderBody()
+                        }
+                    }
+                })
+            ConversationHubRow.MoreMessages -> conversationHubListRow(getString(R.string.chat_search_more),
+                iconRes = R.drawable.ic_chevron_down, onClick = messageSearch::next)
             is ConversationHubRow.Conversation -> conversationHubConversationRow(
                 item = row.item,
                 conversations = conversations.orEmpty(),
@@ -235,6 +253,7 @@ internal fun MainActivity.showConversationHub(
                 val nextArchivedMode = row.action == ConversationHubAction.SHOW_ARCHIVED
                 if (archivedMode != nextArchivedMode) {
                     archivedMode = nextArchivedMode
+                    messageSearch.reset(searchInput.text.toString(), archivedMode)
                     loadConversationPage(true)
                 } else {
                     renderBody()
@@ -300,16 +319,32 @@ internal fun MainActivity.showConversationHub(
                 val agentItems = agentConversationItems
                 val contactSnapshot = contactConversationSummaries
                 val ready = contactSnapshot != null && snapshot != null
-                val rows = if (!ready) {
+                val query = searchInput.text.toString().trim()
+                val safeAgentItems = if (query.isEmpty()) agentItems.orEmpty() else {
+                    val ordinary = snapshot.orEmpty().filter(LocalMessageSearch::ordinary).mapTo(hashSetOf()) { it.id }
+                    agentItems.orEmpty().filter { it.id in ordinary }
+                }
+                val homeRows = if (!ready) {
                     listOf(ConversationHubRow.Empty(getString(R.string.navigation_content_loading)))
                 } else {
                     conversationHubRows(
                         query = searchInput.text?.toString().orEmpty(),
                         archived = archivedMode,
-                        agentItems = if (snapshot == null) emptyList() else agentItems.orEmpty(),
+                        agentItems = safeAgentItems,
                         contacts = contactSnapshot.orEmpty(),
                         archivedConversationCount = archivedConversationCount
                     )
+                }
+                val rows = if (!messageSearch.active || query.isEmpty()) homeRows else buildList {
+                    addAll(homeRows.filterIsInstance<ConversationHubRow.Conversation>())
+                    addAll(messageSearch.hits.map(ConversationHubRow::Message))
+                    when {
+                        messageSearch.busy -> add(ConversationHubRow.Empty(getString(R.string.chat_search_busy)))
+                        messageSearch.failed -> add(ConversationHubRow.Empty(getString(R.string.chat_search_failed)))
+                        messageSearch.more -> add(ConversationHubRow.MoreMessages)
+                        isEmpty() -> add(ConversationHubRow.Empty(getString(R.string.agent_session_no_results)))
+                    }
+                    addAll(homeRows.filterIsInstance<ConversationHubRow.Action>())
                 }
                 val scrollAnchor = savedConversationScrollAnchor.takeIf {
                     restoreConversationScrollOnNextRender && ready
@@ -377,6 +412,7 @@ internal fun MainActivity.showConversationHub(
     searchInput.addTextChangedListener(object : TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            messageSearch.reset(if (selectedTab == ConversationHubTab.CONVERSATIONS) s?.toString().orEmpty() else "", archivedMode)
             renderBody()
             if (!s.isNullOrBlank() && selectedTab == ConversationHubTab.CONVERSATIONS) {
                 loadConversationPage(false)
@@ -453,6 +489,8 @@ internal fun MainActivity.showConversationHub(
     }
     var windowRefreshCount = restoredNavigation?.loadedAgentCount ?: 0
     dialog.setOnDismissListener {
+        messageSearch.close()
+        reader?.dismiss()
         if (conversationWindow.refreshList === windowRefresh) conversationWindow.refreshList = null
         val frameView = firstFrameView
         val frameListener = firstFrameListener
@@ -1031,6 +1069,7 @@ private fun MainActivity.conversationHubListRow(
     contact: Contact? = null,
     tintIcon: Boolean = true,
     unreadCount: Int = 0,
+    detailLines: Int = 1,
     agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
     onLongClick: ((View) -> Boolean)? = null
@@ -1042,6 +1081,7 @@ private fun MainActivity.conversationHubListRow(
     tintIcon = tintIcon,
     trailing = trailing,
     unreadCount = unreadCount,
+    detailLines = detailLines,
     iconTint = getColorCompat(R.color.galaxyssi_green),
     iconBackground = Color.parseColor("#ECF9F2"),
     showChevron = false,
@@ -1061,6 +1101,7 @@ private fun MainActivity.conversationHubBaseRow(
     iconTint: Int,
     iconBackground: Int,
     showChevron: Boolean,
+    detailLines: Int = 1,
     agentStatus: ConversationHubAgentStatus? = null,
     onClick: () -> Unit,
     onLongClick: ((View) -> Boolean)?
@@ -1102,7 +1143,7 @@ private fun MainActivity.conversationHubBaseRow(
                 text = subtitle
                 textSize = 13f
                 setTextColor(getColorCompat(R.color.text_secondary))
-                maxLines = 1
+                maxLines = detailLines
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(3), 0, 0)
             })
