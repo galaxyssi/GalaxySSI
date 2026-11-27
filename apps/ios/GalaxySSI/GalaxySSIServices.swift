@@ -80,6 +80,16 @@ final class MessageCoordinator: ObservableObject {
     if case .legacy = mqttStartupOwner { return true }
     return false
   }
+  func mqttTransportDiagnostics() async -> MqttTransportDiagnostics {
+    if let runtime = journalMqttRuntime {
+      let snapshot = await runtime.transportDiagnostics()
+      return journalMqttRuntime === runtime ? snapshot : .unavailable
+    }
+    guard usesLegacyMqtt else { return .unavailable }
+    let path = await mqttClient.diagnosticSnapshot()
+    guard usesLegacyMqtt, journalMqttRuntime == nil, let path else { return .unavailable }
+    return MqttTransportDiagnostics(paths: [path.brokerID: path], verifiedDelivery: [:])
+  }
   let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   let incomingAttachmentTransferStore: AgentIncomingAttachmentTransferStore
   var attachmentChunkControlsInFlight = Set<String>()

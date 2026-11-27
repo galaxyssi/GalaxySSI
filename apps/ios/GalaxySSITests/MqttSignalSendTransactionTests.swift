@@ -291,7 +291,7 @@ final class MqttSignalSendTransactionTests: XCTestCase {
 
   func testPeerControllerQueuesOfflineAndRejectsRevokedSendBeforeEncryption() throws {
     let f = try SignalSendFixture()
-    let pool = GalaxySSIMqttBrokerPool { FakeMqttBrokerPath(id: $0.id) }
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { FakeMqttBrokerPath(id: $0.id) }
     let routes = MqttPeerRoutes(pool: pool, persistence: MqttRouteState(defaults: f.senderDefaults, secrets: f.storage.secrets))
     var binding = MqttPeerBinding(scope: "signal-send", sender: f.senderIdentity.fingerprint, receiver: f.receiverIdentity.fingerprint,
       secret: Data(repeating: 7, count: 32).base64URLEncodedString(), sendTopic: sendTopic,

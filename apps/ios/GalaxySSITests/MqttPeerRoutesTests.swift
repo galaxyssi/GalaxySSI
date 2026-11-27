@@ -1086,7 +1086,7 @@ private final class PeerRoutesFixture {
       sendTopics: [String(repeating: "s", count: 43)], receiveTopics: [String(repeating: "r", count: 43)], enabled: enabled)
     self.binding = binding
     var created: [String: FakeMqttBrokerPath] = [:]
-    let pool = GalaxySSIMqttBrokerPool { endpoint in
+    let pool = GalaxySSIMqttBrokerPool(networkMonitorFactory: { nil }) { endpoint in
       let value = FakeMqttBrokerPath(id: endpoint.id)
       created[endpoint.id] = value
       return value

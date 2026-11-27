@@ -423,6 +423,12 @@ final class MqttBusinessTransportRuntime {
     pool.connect(configuration)
   }
 
+  func transportDiagnostics() async -> MqttTransportDiagnostics {
+    guard started, !stopped else { return .unavailable }
+    let snapshot = await pool.diagnostics(now: monotonic())
+    return started && !stopped ? snapshot : .unavailable
+  }
+
   func enqueue(_ requests: [MqttSignalSendRequest]) throws -> [MqttBusinessOutbox.Entry] {
     guard started, !stopped, requests.allSatisfy({ !revokingScopes.contains($0.identity.scope) })
     else { throw MqttDeliveryDispatch.Failure.unavailable }

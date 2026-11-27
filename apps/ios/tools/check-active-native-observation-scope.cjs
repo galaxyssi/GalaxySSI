@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '85ffb607cc2bf1127ae6f3e9858ece5ed200d2e1';
-const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+const read = file => require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
 const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -21,6 +21,7 @@ const resume = `            let record = try? managedDesktopReplyLedger.recovery
       }
       guard let settled = AgentNativeConnectorContinuation.settle(pending, record: record) else { continue }`;
 function retained(file, source) {
+  source = require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, source);
   if (file.endsWith('GalaxySSIServices.swift') && source.includes('  private func nativeConnectorObservationContext(')) return source
     .replace(properties, '')
     .replace('    nativeConnectorObservationJobs.values.forEach { $0.task.cancel() }\n', '')

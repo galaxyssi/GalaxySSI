@@ -86,10 +86,12 @@ protocol MqttBrokerPathTransport: AnyObject {
   func outstandingDurableMessageIds() async -> Set<String>
   func wakeForTraffic()
   func disconnect()
+  func diagnosticSnapshot() async -> MqttBrokerPathDiagnostics?
 }
 
 extension MqttBrokerPathTransport {
   func wakeForTraffic() {}
+  func diagnosticSnapshot() async -> MqttBrokerPathDiagnostics? { nil }
 }
 
 enum MqttBrokerPathPolicy {
@@ -120,6 +122,54 @@ enum MqttBrokerPathPolicy {
   static func expiredSubscriptionIDs(_ sentAt: [UInt16: Int64], now: Int64) -> [UInt16] {
     sentAt.filter { handshakeExpired(startedAt: $0.value, now: now) }.map(\.key).sorted()
   }
+}
+
+struct MqttBrokerPathDiagnostics: Equatable {
+  enum State: String, CaseIterable {
+    case unknown, disconnected, connecting, subscribing, receiveReady, recovering, networkUnavailable
+  }
+  let brokerID: String
+  let configurationID: String
+  let state: State
+  let reconnectAttempts: Int64
+  let desiredSubscriptions: Int
+  let activeSubscriptions: Int
+  let pendingSubscriptions: Int
+  let queuedPublishes: Int
+  let inflightPublishes: Int
+
+  static func state(stopped: Bool, networkAvailable: Bool, connecting: Bool,
+    connected: Bool, receiveReady: Bool, recovering: Bool) -> State {
+    if stopped { return .disconnected }
+    if !networkAvailable { return .networkUnavailable }
+    if connecting { return .connecting }
+    if connected { return receiveReady ? .receiveReady : .subscribing }
+    return recovering ? .recovering : .disconnected
+  }
+}
+
+struct MqttTransportDiagnostics {
+  let paths: [String: MqttBrokerPathDiagnostics]
+  let verifiedDelivery: [String: MqttMultipathPolicy.DeliveryStats]
+  static let unavailable = MqttTransportDiagnostics(paths: [:], verifiedDelivery: [:])
+}
+
+// Unknown is permitted while the first monitor callback is pending. Once offline,
+// all connection entry points stay closed until a current monitor reports recovery.
+struct MqttNetworkAvailability {
+  enum Transition: Equatable { case none, lost, restored }
+  private(set) var available: Bool?
+  var permitsConnection: Bool { available != false }
+
+  mutating func update(_ value: Bool) -> Transition {
+    let previous = available
+    available = value
+    guard previous != value else { return .none }
+    if !value { return .lost }
+    return previous == false ? .restored : .none
+  }
+
+  mutating func reset() { available = nil }
 }
 
 struct MqttConnectionLiveness {
