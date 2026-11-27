@@ -67,6 +67,7 @@ struct AgentKnowledgeNativeRootSeed {
 final class AgentKnowledgeDatabase {
   let nativeFiles: AgentKnowledgeNativeFiles
   private let fileURL: URL
+  private let indexRetry: AgentKnowledgeIndexRetryGate
   private let secrets: GalaxySSISecretStore
   private let cipher: GalaxySSIAttachmentAtRestCipher
   private let vectorCipher: GalaxySSIAttachmentAtRestCipher
@@ -76,7 +77,9 @@ final class AgentKnowledgeDatabase {
   private let lock = NSRecursiveLock()
   private var database: OpaquePointer?
 
-  init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared) {
+  init(fileURL: URL, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,
+    indexRetryGate: AgentKnowledgeIndexRetryGate = AgentKnowledgeIndexRetryGate()) {
+    indexRetry = indexRetryGate
     nativeFiles = AgentKnowledgeNativeFiles(databaseURL: fileURL, secrets: secrets)
     self.fileURL = fileURL
     self.secrets = secrets
@@ -112,10 +115,13 @@ final class AgentKnowledgeDatabase {
         """) else { throw AgentKnowledgeDatabaseError.unavailable }
       defer { sqlite3_finalize(statement) }
       var items: [AgentKnowledgeItem] = []
-      while sqlite3_step(statement) == SQLITE_ROW {
+      while true {
+        try Task.checkCancellation()
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return items }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
         items.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
       }
-      return items
     }
   }
 
@@ -142,32 +148,18 @@ final class AgentKnowledgeDatabase {
     }
   }
 
-  func searchCandidates(query: String, limit: Int = 256) throws -> [AgentKnowledgeItem] {
+  func searchCandidates(query: String, limit: Int = 256,
+    beforeValidation: () throws -> Void = {}) throws -> [AgentKnowledgeItem] {
+    let view = try committedReadView()
+    defer { view.close() }
+    requestIndexRetry()
     let tokens = searchTokens(query).map(keyedHash)
     guard !tokens.isEmpty else { return [] }
-    var snapshot: OpaquePointer?
-    guard sqlite3_open_v2(
-      fileURL.path,
-      &snapshot,
-      SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
-      nil
-    ) == SQLITE_OK, let snapshot else {
-      if let snapshot { sqlite3_close_v2(snapshot) }
-      throw AgentKnowledgeDatabaseError.unavailable
-    }
-    defer { sqlite3_close_v2(snapshot) }
-    sqlite3_busy_timeout(snapshot, 5_000)
-    guard sqlite3_exec(snapshot, "PRAGMA query_only = ON", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "PRAGMA cache_size = -2048", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "PRAGMA mmap_size = 0", nil, nil, nil) == SQLITE_OK,
-          sqlite3_exec(snapshot, "BEGIN", nil, nil, nil) == SQLITE_OK else {
-      throw AgentKnowledgeDatabaseError.unavailable
-    }
-    defer { sqlite3_exec(snapshot, "ROLLBACK", nil, nil, nil) }
-    var statement: OpaquePointer?
-    guard sqlite3_prepare_v2(
-      snapshot,
-      """
+    let snapshotItems = try view.read { snapshot -> [AgentKnowledgeItem] in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        snapshot,
+        """
         SELECT k.item_hash, k.encrypted_payload
         FROM knowledge_fts f
         JOIN knowledge_items k ON k.item_hash = f.item_hash
@@ -175,27 +167,75 @@ final class AgentKnowledgeDatabase {
         ORDER BY bm25(knowledge_fts), k.updated_at DESC
         LIMIT ?
         """,
-      -1,
-      &statement,
-      nil
-    ) == SQLITE_OK, let statement else { throw AgentKnowledgeDatabaseError.unavailable }
-    defer { sqlite3_finalize(statement) }
-    bind(tokens.joined(separator: " OR "), at: 1, to: statement)
-    sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
-    var snapshotItems: [AgentKnowledgeItem] = []
-    while sqlite3_step(statement) == SQLITE_ROW {
-      snapshotItems.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK, let statement else {
+        if let statement { sqlite3_finalize(statement) }
+        indexRetry.markFailure(); requestIndexRetry()
+        throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { sqlite3_finalize(statement) }
+      bind(tokens.joined(separator: " OR "), at: 1, to: statement)
+      sqlite3_bind_int(statement, 2, Int32(min(max(limit, 1), 256)))
+      var snapshotItems: [AgentKnowledgeItem] = []
+      while true {
+        try Task.checkCancellation()
+        let status = sqlite3_step(statement)
+        if status == SQLITE_DONE { return snapshotItems }
+        guard status == SQLITE_ROW else {
+          indexRetry.markFailure(); requestIndexRetry()
+          throw AgentKnowledgeDatabaseError.unavailable
+        }
+        snapshotItems.append(try decode(statement, hashColumn: 0, payloadColumn: 1))
+      }
     }
-    return try locked {
-      try snapshotItems.filter { candidate in
+    try beforeValidation()
+    let committed = try committedReadView()
+    defer { committed.close() }
+    let validated = try committed.read { snapshot in
+      var row: OpaquePointer?
+      guard sqlite3_prepare_v2(snapshot, "SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1", -1, &row, nil) == SQLITE_OK,
+        let row else {
+        if let row { sqlite3_finalize(row) }; throw AgentKnowledgeDatabaseError.unavailable
+      }
+      defer { sqlite3_finalize(row) }
+      return try snapshotItems.filter { candidate in
+        try Task.checkCancellation()
         let itemHash = keyedHash(candidate.id)
-        guard let current = prepare(
-          "SELECT item_hash, encrypted_payload FROM knowledge_items WHERE item_hash = ? LIMIT 1"
-        ) else { throw AgentKnowledgeDatabaseError.unavailable }
-        defer { sqlite3_finalize(current) }
-        bind(itemHash, at: 1, to: current)
-        guard sqlite3_step(current) == SQLITE_ROW else { return false }
-        return try decode(current, hashColumn: 0, payloadColumn: 1) == candidate
+        guard sqlite3_reset(row) == SQLITE_OK, sqlite3_clear_bindings(row) == SQLITE_OK else { throw AgentKnowledgeDatabaseError.unavailable }
+        bind(itemHash, at: 1, to: row)
+        let status = sqlite3_step(row)
+        if status == SQLITE_DONE { return false }
+        guard status == SQLITE_ROW else { throw AgentKnowledgeDatabaseError.unavailable }
+        return try decode(row, hashColumn: 0, payloadColumn: 1) == candidate
+      }
+    }
+    // The validation view may have a newer lifecycle generation. Publication
+    // must still belong to the original candidate view, not just the latest one.
+    return try view.read { _ in validated }
+  }
+
+  private func committedReadView() throws -> AgentKnowledgeCommittedReadView {
+    try Task.checkCancellation()
+    guard let token = nativeFiles.activeToken() else { throw CancellationError() }
+    // A try-lock never waits for a different writer. On this thread it can
+    // inspect autocommit safely and reject reads of our own uncommitted write.
+    if lock.try() {
+      defer { lock.unlock() }
+      guard let database, sqlite3_get_autocommit(database) != 0 else { throw AgentKnowledgeDatabaseError.unavailable }
+    }
+    return try AgentKnowledgeCommittedReadView(fileURL: fileURL) { [nativeFiles = self.nativeFiles] in
+      guard nativeFiles.activeToken() == token else { throw CancellationError() }
+    }
+  }
+
+  private func requestIndexRetry() {
+    indexRetry.request { [weak self] in
+      guard let self, self.nativeFiles.activeToken() != nil else { return false }
+      return self.locked {
+        guard self.nativeFiles.activeToken() != nil else { return false }
+        return self.rebuildIndexIfNeeded()
       }
     }
   }
@@ -1723,7 +1763,7 @@ final class AgentKnowledgeDatabase {
       """)
     _ = execute("INSERT OR IGNORE INTO knowledge_vector_enrollment(model_hash, complete) SELECT DISTINCT model_hash, 1 FROM knowledge_vectors")
     setupVectorCounts()
-    rebuildIndexIfNeeded()
+    if !rebuildIndexIfNeeded() { indexRetry.markFailure() }
     _ = try? maintainExternalPayloads(pageSize: 4)
     _ = try? reclaimExternalPayloadFiles(pageSize: 16)
   }
@@ -2256,13 +2296,13 @@ final class AgentKnowledgeDatabase {
     return sqlite3_step(statement) == SQLITE_DONE
   }
 
-  private func rebuildIndexIfNeeded() {
-    let itemCount = scalar("SELECT COUNT(*) FROM knowledge_items") ?? 0
-    let indexCount = scalar("SELECT COUNT(*) FROM knowledge_fts") ?? 0
-    let headerCount = scalar("SELECT COUNT(*) FROM knowledge_source_headers") ?? 0
-    guard itemCount != indexCount || (itemCount > 0 && headerCount == 0),
-          let items = try? all() else { return }
-    _ = replaceAll(items)
+  private func rebuildIndexIfNeeded() -> Bool {
+    guard let itemCount = scalar("SELECT COUNT(*) FROM knowledge_items"),
+      let indexCount = scalar("SELECT COUNT(*) FROM knowledge_fts"),
+      let headerCount = scalar("SELECT COUNT(*) FROM knowledge_source_headers") else { return false }
+    guard itemCount != indexCount || (itemCount > 0 && headerCount == 0) else { return true }
+    guard let items = try? all() else { return false }
+    return replaceAll(items)
   }
 
   private func searchTokens(_ value: String) -> [String] {
