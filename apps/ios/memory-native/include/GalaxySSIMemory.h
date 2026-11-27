@@ -52,6 +52,12 @@ int32_t gs_memory_search(int64_t handle, const float *query, size_t query_length
                          uint32_t count, uint32_t breadth,
                          uint8_t *bytes, size_t capacity, size_t *written);
 int32_t gs_memory_node_count(int64_t handle, uint64_t *count);
+/* Query is read-only. Migration is explicit background work, one 1..256-record
+ * transaction per call. complete is a caller-owned byte (0 or 1), cleared before
+ * validation; it is meaningful only on GS_MEMORY_OK. Failures require retry or
+ * reopen, not a destructive rebuild. Both use the same cancellable owner. */
+int32_t gs_memory_records_partitioned(int64_t handle, uint8_t *complete);
+int32_t gs_memory_migrate_records(int64_t handle, uint32_t limit, uint8_t *complete);
 /* Cancel/close do not wait for the per-engine mutex. Closed handles cannot be reused.
  * An active call retains its owner, sees cancellation and releases it on exit.
  */

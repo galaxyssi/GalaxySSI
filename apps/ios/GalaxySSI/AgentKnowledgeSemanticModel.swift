@@ -391,7 +391,6 @@ final class AgentKnowledgeSemanticController: ObservableObject {
     work = Task { [weak self] in
       guard let self else { return }
       var interrupted = false
-      var successor = true
       do {
         state.phase = .indexing
         state.error = ""
@@ -414,7 +413,6 @@ final class AgentKnowledgeSemanticController: ObservableObject {
           if canUseNativeIndex { replayPending = try await search.advanceReplay() }
           else { replayPending = false }
           if indexed == 0 && !enrollmentPending && nativeEnrollmentComplete && !replayPending {
-            successor = !canUseNativeIndex
             break
           }
           await Task.yield()
@@ -436,7 +434,9 @@ final class AgentKnowledgeSemanticController: ObservableObject {
         }
       }
       work = nil
-      AgentKnowledgeBackgroundScheduler.schedule(pending: state.enabled && state.installed && successor)
+      // Foreground replay readiness says nothing about the native record layout.
+      // Let a system-granted slice query/migrate it before clearing durable intent.
+      AgentKnowledgeBackgroundScheduler.schedule(pending: state.enabled && state.installed)
       if Task.isCancelled || interrupted, canUseNativeIndex, database.nativeFiles.activeToken() != nil,
         state.enabled, state.installed { startIndexing() }
       else { scheduleIdleCleanup() }
@@ -539,8 +539,12 @@ final class AgentKnowledgeSemanticController: ObservableObject {
       try check()
       _ = try await Task.detached(priority: .utility) { try native.advance(maxPages: 4, token: lease.token) }.value
       try check()
+      let recordsComplete = try await Task.detached(priority: .utility) {
+        try native.maintainRecords(pageSize: 64, token: lease.token)
+      }.value
+      try check()
       let sourcePending = try database.vectorWorkPending(modelSHA256: spec.modelSHA256)
-      let pending = !enrolled || sourcePending || native.needsReplay
+      let pending = !enrolled || sourcePending || native.needsReplay || !recordsComplete
       await opened.close()
       return pending
     } catch {
