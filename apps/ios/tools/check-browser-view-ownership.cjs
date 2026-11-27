@@ -36,6 +36,9 @@ if (require.main === module) {
   let retained = retainedBrowserServices(services);
   const unplanned = path.join(__dirname, 'check-unplanned-native-dispatch.cjs');
   if (fs.existsSync(unplanned)) retained = require(unplanned).retainedUnplannedDispatchServices(retained);
+  const pairingFile = path.join(__dirname, 'check-pairing-history.cjs');
+  const pairing = fs.existsSync(pairingFile) && fs.readFileSync(pairingFile, 'utf8').includes('function retainedPairingStore(') ? require(pairingFile) : null;
+  if (pairing) retained = pairing.retainedPairingServices(retained);
   assert.equal(retained, old(app + 'GalaxySSIServices.swift'), 'All coordinator code outside declared view-lifetime hooks unchanged');
   assert.equal(retainedBrowserTaskModels(read(app + 'AgentPlanRunModels.swift')), old(app + 'AgentPlanRunModels.swift'));
   assert.equal(read(app + 'AgentManagedBrowserContinuationModels.swift').replace('    case browserViewClosed = "browser_view_closed"\n', ''),
@@ -81,7 +84,8 @@ if (require.main === module) {
   assert.equal(view.slice(view.indexOf(nav)), old(app + 'GalaxySSIManagedBrowserHandoffView.swift').slice(old(app + 'GalaxySSIManagedBrowserHandoffView.swift').indexOf(nav)),
     'All WebKit URL/DNS/response/cookie/observation policies unchanged');
   for (const name of ['AgentModelToolLoop', 'AgentModelLoopJournal', 'AgentSupervisedBrowserWait', 'GalaxySSIStore', 'AgentPlanNodeJournal', 'AgentActionEffectExecutor'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(name === 'GalaxySSIStore' && pairing ? pairing.retainedPairingStore(read(app + name + '.swift')) : read(app + name + '.swift'),
+      old(app + name + '.swift'), name + ' unchanged outside the exact approved pairing version');
   const tests = read('apps/ios/GalaxySSITests/AgentBrowserViewLeaseTests.swift');
   assert.equal((tests.match(/func test/g) || []).length, 8);
   for (const token of ['testFailedPersistenceLeavesNoActiveAuthorityForTheCandidate', 'testManagedStoreReopensOnlyTheSameLiveViewThenRecordsDurableLoss',

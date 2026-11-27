@@ -5,6 +5,11 @@ managed-browser control events. Baseline main `c6bad3465c673dfb2dcecb23b095185c1
 This is an iOS adaptation of original-handoff ownership, generation containment,
 durable interruptions and no automatic human-handoff replay, not an Android host port.
 
+Integration follow-up: project registrations now sit beside the browser dependency
+and native-tool tests instead of shared insertion anchors. The dedicated guard uses
+#4664's exact approved revocation/Store normalizers when present; all remaining
+coordinator/Store comparisons and browser lifetime assertions are retained.
+
 ## Actual Gap
 
 The prior iOS handoff was already encrypted and its return was durably committed.
