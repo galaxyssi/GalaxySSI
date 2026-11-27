@@ -891,7 +891,8 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
       .appendingPathComponent("AgentKnowledgeExternalPayloadTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let url = directory.appendingPathComponent("knowledge.sqlite")
-    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
     let large = AgentKnowledgeItem(
       id: "large-external-payload",
       kind: .document,
@@ -909,6 +910,7 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
       updatedAtMillis: 99
     )
     XCTAssertTrue(database.replaceAll([large, small]))
+    try seedLegacyKnowledgePayloads([large, small], url: url, secrets: secrets, externalIDs: [large.id])
     XCTAssertEqual(try database.all(), [small, large])
 
     var raw: OpaquePointer?
@@ -939,13 +941,15 @@ final class AgentKnowledgeDatabaseTests: XCTestCase {
       .appendingPathComponent("AgentKnowledgePayloadReclamationTests-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: directory) }
     let url = directory.appendingPathComponent("knowledge.sqlite")
-    let database = AgentKnowledgeDatabase(fileURL: url, secrets: InMemorySecretStore())
+    let secrets = InMemorySecretStore()
+    let database = AgentKnowledgeDatabase(fileURL: url, secrets: secrets)
     let item = AgentKnowledgeItem(
       id: "reclamation-payload", kind: .document, title: "Large",
       content: String(repeating: "payload ", count: 2_000), source: "test", updatedAtMillis: 1
     )
     XCTAssertTrue(database.replaceAll([item]))
     let payloadDirectory = URL(fileURLWithPath: url.path + ".payloads", isDirectory: true)
+    try seedLegacyKnowledgePayloads([item], url: url, secrets: secrets, externalIDs: [item.id])
     let live = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: payloadDirectory, includingPropertiesForKeys: nil).first)
     let orphan = payloadDirectory.appendingPathComponent(
       "\(String(repeating: "f", count: 64))-\(String(repeating: "e", count: 16)).saenc"
