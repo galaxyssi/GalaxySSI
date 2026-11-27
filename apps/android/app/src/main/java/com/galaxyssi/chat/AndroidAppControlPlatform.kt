@@ -38,6 +38,12 @@ internal class AndroidAppControlPlatform(context: Context,
                 null -> throw AppControlFailure("unknown_turn_source", "Cannot verify the source of this turn. Ask for a fresh instruction; no message was sent.")
             }
             "voice_message" -> voiceMessage(input, invocation)
+            "attachment_reading" -> {
+                val saved = AgentFileReceipt.report(app, invocation.context.conversationId, invocation.context.turnId,
+                    (input["ordinal"] as? Number)?.toInt() ?: 0, arg("result") == "recognized")
+                if (!saved) throw AppControlFailure("attachment_not_current", "No matching current attachment.")
+                mapOf("observation_accepted" to true)
+            }
             "news" -> mapOf("articles" to AttentionArticleStore(app).voiceArticles(arg("query"),
                 (input["since_epoch_ms"] as? Number)?.toLong() ?: 0, limit()))
             "read_article" -> {

@@ -126,6 +126,7 @@ internal class BlobOutgoingJournal(path: File) : Closeable {
             }
             if (phase != UPLOAD && phase != target && !(target == FAILURE && phase == FAILED_CLEANUP)) return false
             if (body.optString("desktop_id") != sourceId || body.optString("fingerprint") != fingerprint ||
+                body.optInt("file_retry_generation") != payload.optInt("file_retry_generation") ||
                 !(if (target == FAILURE) BlobFailureContract.matches(body.getJSONObject("manifest"), payload)
                   else BlobOutgoingContract.receiptMatches(body.getJSONObject("manifest"), payload))) return false
             body.put("receipt", payload)
@@ -149,6 +150,27 @@ internal class BlobOutgoingJournal(path: File) : Closeable {
     @Synchronized fun failureObserved(work: BlobOutgoingWork): Boolean = db.update("jobs", ContentValues().apply {
         put("phase", FAILED_CLEANUP); put("state", READY); put("claim", ""); put("due", 0)
     }, "id=? AND claim=? AND phase=?", arrayOf(work.id, work.claim, FAILURE.toString())) == 1
+
+    @Synchronized fun awaitPerFileRetry(work: BlobOutgoingWork, expires: Long) = db.update("jobs", ContentValues().apply {
+        put("phase", MANUAL); put("state", READY); put("due", expires); put("claim", "")
+    }, "id=? AND claim=? AND phase=?", arrayOf(work.id, work.claim, FAILURE.toString())) == 1
+
+    @Synchronized fun retryHeld(id: String, now: Long): Boolean = db.update("jobs", ContentValues().apply {
+        put("phase", RESTART_UPLOAD); put("state", READY); put("due", 0); put("claim", ""); put("attempts", 0)
+    }, "id=? AND phase=? AND state=? AND due>?", arrayOf(id, MANUAL.toString(), READY.toString(), now.toString())) == 1
+
+    @Synchronized fun restartUpload(work: BlobOutgoingWork) = db.update("jobs", ContentValues().apply {
+        val body = JSONObject(work.body.toString()).apply {
+            remove("receipt")
+            put("file_retry_generation", optInt("file_retry_generation") + 1)
+        }
+        put("body", encode(work.id, body)); put("phase", UPLOAD); put("state", READY); put("due", 0); put("claim", "")
+    }, "id=? AND claim=? AND phase=?", arrayOf(work.id, work.claim, RESTART_UPLOAD.toString())) == 1
+
+    @Synchronized fun expiredManual(work: BlobOutgoingWork) = db.update("jobs", ContentValues().apply {
+        put("phase", FAILURE); put("state", READY); put("due", 0); put("claim", "")
+        put("body", encode(work.id, JSONObject(work.body.toString()).put("manual_expired", true)))
+    }, "id=? AND claim=? AND phase IN (?,?)", arrayOf(work.id, work.claim, MANUAL.toString(), RESTART_UPLOAD.toString())) == 1
     @Synchronized fun finish(work: BlobOutgoingWork) {
         db.update("jobs", ContentValues().apply { put("state", DONE); put("claim", ""); put("error", "") },
             "id=? AND claim=? AND phase IN (?,?,?)", arrayOf(work.id, work.claim,
@@ -165,7 +187,7 @@ internal class BlobOutgoingJournal(path: File) : Closeable {
     @Synchronized override fun close() = db.close()
     companion object {
         const val UPLOAD = 0; const val CLEANUP = 1; const val DISCARD = 2
-        const val FAILURE = 3; const val FAILED_CLEANUP = 4
+        const val FAILURE = 3; const val FAILED_CLEANUP = 4; const val MANUAL = 5; const val RESTART_UPLOAD = 6
         private const val WAITING = 0; private const val READY = 1; private const val RUNNING = 2; private const val DONE = 3
     }
 }

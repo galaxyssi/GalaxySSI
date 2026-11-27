@@ -13,6 +13,7 @@ from blob_protocol import BlobError, canonical
 from secure_state import decrypt_text, encrypt_text, seal_identifier
 
 PURPOSE = "blob.input-journal.v1"
+RETRYABLE_FILE_ERRORS = {"blob_expired", "blob_not_found", "ciphertext_hash_mismatch", "chunk_authentication_failed"}
 
 
 class BlobInputJournal:
@@ -59,14 +60,28 @@ class BlobInputJournal:
         encoded = self._encode(job_id, body)
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            previous = db.execute("SELECT digest,state FROM jobs WHERE id=?", (job_id,)).fetchone()
+            previous = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             if previous:
                 if previous["digest"] != digest:
-                    raise BlobError("input_blob_offer_conflict", 409)
+                    generation = body.get("file_retry_generation", 0)
+                    if not generation or previous["state"] != "done":
+                        raise BlobError("input_blob_offer_conflict", 409)
+                    old = self._decode(previous)
+                    receipt = old.get("receipt", {})
+                    if (generation != old.get("file_retry_generation", 0) + 1 or
+                            receipt.get("status") != "failed" or receipt.get("error_code") not in RETRYABLE_FILE_ERRORS or
+                            not body.get("peer_fingerprint") or
+                            any(old.get(k) != body.get(k) for k in ("manifest", "route", "source", "peer_fingerprint", "binding"))):
+                        raise BlobError("input_blob_offer_conflict", 409)
+                    db.execute("UPDATE jobs SET digest=?,body=?,phase='download',state='pending',due=?,"
+                               "attempts=0,claim='',error='' WHERE id=?", (digest, encoded, now, job_id))
+                    return job_id
                 # A repeated offer retries the stored receipt, never discards a live claim.
                 if previous["state"] != "running":
                     db.execute("UPDATE jobs SET state='pending',due=? WHERE id=?", (now, job_id))
             else:
+                if body.get("file_retry_generation"):
+                    raise BlobError("input_blob_retry_without_original", 409)
                 db.execute("INSERT INTO jobs(id,digest,body,phase,state,due) VALUES(?,?,?,'download','pending',?)",
                            (job_id, digest, encoded, now))
         return job_id
@@ -99,6 +114,10 @@ class BlobInputJournal:
             return jobs
 
     def receipt_ready(self, job: dict, receipt: dict):
+        if receipt.get("error_code") in RETRYABLE_FILE_ERRORS and job["body"].get("file_retry_generation", 0) < 3:
+            receipt = {**receipt, "supports_file_retry": True}
+        if job["body"].get("file_retry_generation"):
+            receipt = {**receipt, "file_retry_generation": job["body"]["file_retry_generation"]}
         body = {**job["body"], "receipt": receipt}
         body.pop("offer", None)
         with self._db() as db:

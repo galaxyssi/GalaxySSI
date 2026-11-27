@@ -2,6 +2,9 @@ package com.galaxyssi.chat
 
 /** Keep transport replay separate from what the user actually supplied in this turn. */
 internal object AgentVisualTurnPolicy {
+    const val READING_REPORT = "For an unreadable input, report its original one-based ordinal with " +
+        "galaxyssi.app.attachment_reading(result=unreadable); distinguish interpretation from delivery. " +
+        "Do not guess about files you did not inspect. Continue answering about the other inputs."
     const val ATTACHED_INPUT_HEADER = "Attached input:"
     const val HISTORICAL_INPUT_HEADER = "Historical visual context (no new attachment in this turn):"
 
@@ -45,6 +48,7 @@ internal object AgentVisualTurnPolicy {
         append(userGoal).append("\n\n")
         append(if (historicalOnly) HISTORICAL_INPUT_HEADER else ATTACHED_INPUT_HEADER).append('\n')
         append(evidence)
+        if (attachments.count { !it.isHistoricalReference } > 1) append('\n').append(READING_REPORT)
         instruction(attachments).takeIf(String::isNotBlank)?.let { append("\n\n").append(it) }
         if (!historicalOnly) {
             append("\nInspect the newly attached content in light of the user's current request. ")

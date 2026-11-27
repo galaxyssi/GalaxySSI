@@ -23,6 +23,7 @@ internal object AgentVisionInitialPrompt {
             }
             append("For a question requiring no tools, return {\"disposition\":\"respond\",\"final_response\":\"actual answer\"}. ")
             append(AgentVisualOutputContract.PROMPT).append(' ')
+            if (mimeTypes.size > 1 && historicalSourceTurnIds.isEmpty()) append(AgentVisualTurnPolicy.READING_REPORT).append(' ')
             append(AgentVisualTurnPolicy.ANSWER_STYLE).append(' ')
             append("When reading an image, do not invent symbols or a written answer. ")
             append("If an orientation reference sheet is supplied, compare its labeled views of the SAME source, not separate user photos. Use the full-resolution source for detail. ")

@@ -429,13 +429,14 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     deterministicAction: AgentAction? = null,
     executionMode: AgentTaskExecutionMode? = null,
     isSubmissionCancelled: () -> Boolean = { false },
-    approvedHealthDiscussion: Boolean = false
+    approvedHealthDiscussion: Boolean = false,
+    isolatedFileRead: Boolean = false
 ) {
     if (isSubmissionCancelled()) return
     require(!approvedHealthDiscussion || deterministicAction?.isSupervisedProjectConnector() == true)
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val phoneControl = PhoneAssistantTaskControl.isAutomation(turnId)
-    val groupSeed = if (approvedHealthDiscussion) null
+    val groupSeed = if (approvedHealthDiscussion || isolatedFileRead) null
         else CollaborationRoutingPolicy.seed(turnId, AgentTurnMentionRegistry.peek(turnId))
     val supervisedProject = phoneControl || groupSeed == null && AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
@@ -510,7 +511,9 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                 screenProvider = { if (PhoneAssistantTaskControl.isBound(turnId)) AndroidScreenPerceptionProvider(applicationContext).capture() else runtime.currentScreen },
                 actionExecutor = phoneExecutor
             ).let { registry ->
-                if (!PhoneAssistantTaskControl.isReadOnly(turnId)) registry
+                if (isolatedFileRead) registry.subset { it.id in setOf("galaxyssi.app.attachment_reading",
+                    "galaxyssi.tools.discover", "galaxyssi.tools.describe") }
+                else if (!PhoneAssistantTaskControl.isReadOnly(turnId)) registry
                 else registry.subset { tool ->
                     tool.id in setOf(AgentPhoneUiNativeTools.INSPECT, AgentPhoneUiNativeTools.CAPTURE, AgentPhoneUiNativeTools.BROWSER) ||
                         tool.risk == AgentNativeToolRisk.LOW && tool.idempotency == AgentNativeToolIdempotency.IDEMPOTENT
@@ -539,7 +542,7 @@ internal fun MainActivity.executeConcurrentAgentGoal(
             actionExecutor = phoneExecutor,
             sessionStore = SharedPreferencesAgentSessionStore(this@executeConcurrentAgentGoal, "task:$turnId"),
             nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent),
-            screenObservationOverride = if (approvedHealthDiscussion) false else deterministicAction?.let { selectedAction ->
+            screenObservationOverride = if (approvedHealthDiscussion || isolatedFileRead) false else deterministicAction?.let { selectedAction ->
                 AgentScreenObservationPolicy.requiresObservation(goal, selectedAction)
             },
             nativeToolRegistryProvider = { sharedNativeToolRegistry }

@@ -1343,7 +1343,8 @@ internal fun MainActivity.submitAgentGoal(
     displayGoalOverride: String? = null,
     onTurnCreated: ((String) -> Unit)? = null,
     isSubmissionCancelled: () -> Boolean = { false },
-    healthCareSubmission: HealthCareDiscussionPreview? = null
+    healthCareSubmission: HealthCareDiscussionPreview? = null,
+    fileReadSource: AgentFileKey? = null
 ) {
     if (isSubmissionCancelled()) return
     val submissionStartedAt = SystemClock.elapsedRealtime()
@@ -1368,6 +1369,8 @@ internal fun MainActivity.submitAgentGoal(
         .takeIf(String::isNotBlank)
         ?.let(agentTranscriptStore::conversation)
         ?: agentTranscriptStore.activeConversation()
+    if (fileReadSource != null && (conversation.id != fileReadSource.chat || conversation.globalTopicKey.isNotBlank() ||
+            attachments.singleOrNull()?.id != fileReadSource.item)) return
     if (healthCareSubmission == null && conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) {
         healthCareDiscussion.confirm(conversation, goal, attachments) { approved ->
             if (isSubmissionCancelled()) return@confirm
@@ -1381,10 +1384,14 @@ internal fun MainActivity.submitAgentGoal(
         if (goalOverride != null || (agentTranscriptStore.activeConversation().id == conversation.id &&
             agentGoalInput.text?.toString()?.trim() == goal)) {
             submitAgentGoal(voiceTraceId, pendingVoiceDedupeKey, pendingVoiceConversationId, goalOverride,
-                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled, healthCareSubmission)
+                attachmentsOverride, displayGoalOverride, onTurnCreated, isSubmissionCancelled, healthCareSubmission, fileReadSource)
         }
     }) return
     val requestedMembers = collaborationRequestedMembers(conversation.id, explicitMembers, goalOverride == null)
+    if (fileReadSource != null && requestedMembers.isNotEmpty()) {
+        Toast.makeText(this, R.string.agent_file_group_unavailable, Toast.LENGTH_SHORT).show()
+        return
+    }
     if (CollaborationGroupStore.cached(conversation.id)?.members?.isNotEmpty() == true && requestedMembers.isEmpty()) {
         Toast.makeText(this, R.string.collaboration_no_active_members, Toast.LENGTH_LONG).show()
         return
@@ -1399,13 +1406,14 @@ internal fun MainActivity.submitAgentGoal(
     AgentTurnReceipt.begin(this, conversation.id, turnId, AgentModelSelectionSettings.selection(this, conversation.id),
         voice = voiceTraceId.isNotBlank())
     onAgentTurnSubmitted(conversation.id, turnId, goal, attachments)
+    if (fileReadSource != null) AgentTurnReceipt.bindFileRead(this, fileReadSource, turnId)
     onTurnCreated?.invoke(turnId)
     AgentStableAutoRouteStore.beginTurn(this, conversation.id, turnId)
     com.galaxyssi.chat.metrics.AgentLatencyTelemetry.beginTurn(turnId)
     agentVoiceConversation?.onTurnSubmitted(voiceTraceId, turnId, displayGoal)
     AppVoiceControlBridge.bindTurn(voiceTraceId, conversation.id, turnId)
     AgentTurnMentionRegistry.put(turnId, requestedMembers)
-    val preparedContext = if (initialAgentHydrationPending) {
+    val preparedContext = if (initialAgentHydrationPending || fileReadSource != null) {
         null
     } else {
         agentTranscriptStore.preparedContext(conversation.id)
@@ -1461,7 +1469,7 @@ internal fun MainActivity.submitAgentGoal(
         agentGoalInput.clearFocus()
         getSystemService(InputMethodManager::class.java)
             .hideSoftInputFromWindow(agentGoalInput.windowToken, 0)
-    } else if (attachmentsOverride != null && attachments.isNotEmpty()) {
+    } else if (fileReadSource == null && attachmentsOverride != null && attachments.isNotEmpty()) {
         val consumedAttachmentIds = attachments.mapTo(hashSetOf(), AgentInputAttachment::id)
         if (agentInputAttachments.removeAll { it.id in consumedAttachmentIds }) {
             renderAgentInputAttachments()
@@ -1517,6 +1525,13 @@ internal fun MainActivity.submitAgentGoal(
         runOnUiThread {
             if (isFinishing || isDestroyed) return@runOnUiThread
             if (isSubmissionCancelled()) return@runOnUiThread
+            if (fileReadSource != null) {
+                agentContextBeforeTurn.remove(turnId)
+                stageAgentGoalAttachments(goal, baseGoal, conversation, turnId, attachments,
+                    isSubmissionCancelled = isSubmissionCancelled, isolatedFileRead = true)
+                refreshAgentTranscriptWindow(conversation.id)
+                return@runOnUiThread
+            }
             if (healthCareSubmission != null) {
                 if (healthHistory?.conversationId != conversation.id || !healthHistory.privateMode || !healthHistory.trackingPaused) {
                     pendingAgentReplyIndicators.remove(turnId)
@@ -1594,10 +1609,12 @@ internal fun MainActivity.stageAgentGoalAttachments(
     turnId: String,
     attachments: List<AgentInputAttachment>,
     priorVisualReference: AgentConversationVisualReference? = null,
-    isSubmissionCancelled: () -> Boolean = { false }
+    isSubmissionCancelled: () -> Boolean = { false },
+    isolatedFileRead: Boolean = false
 ) {
     thread(name = "galaxyssi-agent-attachments") {
         if (isSubmissionCancelled()) return@thread
+        if (isolatedFileRead && (attachments.size != 1 || priorVisualReference != null)) return@thread
         val executionAttachments = if (attachments.isNotEmpty()) {
             attachments
         } else {
@@ -1657,6 +1674,13 @@ internal fun MainActivity.stageAgentGoalAttachments(
                 attachmentManifest
             )
         )
+        if (isolatedFileRead) {
+            if (!isSubmissionCancelled()) executeConcurrentAgentGoal(executionGoal,
+                AgentConversationContext(conversation.id, "", emptyList(), conversation.privateMode, trackingPaused = true),
+                conversation.id, turnId, deterministicAction = attachmentConnectorAction(executionGoal, conversation.id),
+                isSubmissionCancelled = isSubmissionCancelled, isolatedFileRead = true)
+            return@thread
+        }
         runOnUiThread {
             if (isSubmissionCancelled()) return@runOnUiThread
             continueAgentGoalSubmission(
