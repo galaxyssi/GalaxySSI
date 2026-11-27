@@ -29,6 +29,7 @@ enum GalaxySSIHealthCareDiscussion {
     // Stored only in the encrypted Health archive, never used as assistant history.
     var interruptedReply: String?
     var execution: GalaxySSIHealthCareDiscussionRecovery.Execution?
+    var answerBasis: GalaxySSIHealthAnswerBasis.Grant?
 
     var hasInterruptedReply: Bool {
       interruptedReply != nil || answer.map(AgentModelPlanParser.containsUnexecutedControlReply) == true
@@ -310,6 +311,8 @@ enum GalaxySSIHealthCareDiscussion {
       Use saved clarification answers for the current measurement only. A false answer and zero hours are recorded
       answers, not unknowns. Do not repeat answered questions. Ask only materially unresolved questions, do not infer
       fasting hours from a label, and treat previous exchanges marked historical or unknown as historical context.
+      A confirmed fasting label is already known even when exact hours are missing. Ask for the duration only if
+      it changes the next decision; otherwise proceed without another follow-up question.
       If a previous answer conflicts with a current saved answer, use the current saved answer.
       Current symptoms are not assessed. Use saved_profile only when supplied, as selected self-reported context.
       latest_action_feedback is self-reported execution, not a new measurement or verified clinical improvement.
