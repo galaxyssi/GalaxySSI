@@ -967,6 +967,8 @@
     C30070000000000000000009 /* CloudImageSearchEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000A /* CloudImageSearchEvidence.swift */; };
     C30070000000000000000011 /* AgentIOSImageSearchFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */; };
     C30070000000000000000013 /* AgentIOSImageSearchRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30070000000000000000014 /* AgentIOSImageSearchRequestPolicy.swift */; };
+    C3007B100000000000000001 /* AgentIOSHTMLSearchRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B100000000000000002 /* AgentIOSHTMLSearchRequestPolicy.swift */; };
+    C3007B100000000000000003 /* AgentIOSHTMLSearchRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007B100000000000000004 /* AgentIOSHTMLSearchRequestTests.swift */; };
     C3007000000000000000000B /* AgentMarkdownImageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000C /* AgentMarkdownImageStore.swift */; };
     C3007000000000000000000D /* AgentRemoteImageTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3007000000000000000000E /* AgentRemoteImageTransfer.swift */; };
     A1000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000F001 /* AgentAttachmentKnowledgeImporter.swift */; };
@@ -4620,6 +4622,8 @@
     C3007000000000000000000A /* CloudImageSearchEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudImageSearchEvidence.swift; sourceTree = "<group>"; };
     C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSImageSearchFusion.swift; sourceTree = "<group>"; };
     C30070000000000000000014 /* AgentIOSImageSearchRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSImageSearchRequestPolicy.swift; sourceTree = "<group>"; };
+    C3007B100000000000000002 /* AgentIOSHTMLSearchRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHTMLSearchRequestPolicy.swift; sourceTree = "<group>"; };
+    C3007B100000000000000004 /* AgentIOSHTMLSearchRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHTMLSearchRequestTests.swift; sourceTree = "<group>"; };
     C3007000000000000000000C /* AgentMarkdownImageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMarkdownImageStore.swift; sourceTree = "<group>"; };
     C3007000000000000000000E /* AgentRemoteImageTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteImageTransfer.swift; sourceTree = "<group>"; };
     A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSPublicArticleParser.swift; sourceTree = "<group>"; };
@@ -5844,6 +5848,7 @@
         C3007000000000000000000A /* CloudImageSearchEvidence.swift */,
         C30070000000000000000012 /* AgentIOSImageSearchFusion.swift */,
         C30070000000000000000014 /* AgentIOSImageSearchRequestPolicy.swift */,
+        C3007B100000000000000002 /* AgentIOSHTMLSearchRequestPolicy.swift */,
         C3007000000000000000000C /* AgentMarkdownImageStore.swift */,
         C3007000000000000000000E /* AgentRemoteImageTransfer.swift */,
         A20000000000000000001132 /* AgentIOSPublicArticleParser.swift */,
@@ -7359,6 +7364,7 @@
         C30070000000000000000016 /* AgentIOSImageSearchAdapterTests.swift */,
         C3007D000000000000000006 /* AgentIOSIndexedWebSourceCatalogTests.swift */,
         C3007E000000000000000004 /* AgentIOSJSONWebSearchAdapterTests.swift */,
+        C3007B100000000000000004 /* AgentIOSHTMLSearchRequestTests.swift */,
         C3007F000000000000000008 /* AgentIOSAdditionalWebSearchAdapterTests.swift */,
         C3007A100000000000000004 /* AgentIOSWebSearchFusionTests.swift */,
         C3007E100000000000000004 /* AgentIOSWebFeatureHashTests.swift */,
@@ -8865,6 +8871,7 @@
         C30070000000000000000009 /* CloudImageSearchEvidence.swift in Sources */,
         C30070000000000000000011 /* AgentIOSImageSearchFusion.swift in Sources */,
         C30070000000000000000013 /* AgentIOSImageSearchRequestPolicy.swift in Sources */,
+        C3007B100000000000000001 /* AgentIOSHTMLSearchRequestPolicy.swift in Sources */,
         C3007000000000000000000B /* AgentMarkdownImageStore.swift in Sources */,
         C3007000000000000000000D /* AgentRemoteImageTransfer.swift in Sources */,
         A10000000000000000001132 /* AgentIOSPublicArticleParser.swift in Sources */,
@@ -9945,6 +9952,7 @@
         C30070000000000000000015 /* AgentIOSImageSearchAdapterTests.swift in Sources */,
         C3007D000000000000000005 /* AgentIOSIndexedWebSourceCatalogTests.swift in Sources */,
         C3007E000000000000000003 /* AgentIOSJSONWebSearchAdapterTests.swift in Sources */,
+        C3007B100000000000000003 /* AgentIOSHTMLSearchRequestTests.swift in Sources */,
         C3007F000000000000000007 /* AgentIOSAdditionalWebSearchAdapterTests.swift in Sources */,
         C3007A100000000000000003 /* AgentIOSWebSearchFusionTests.swift in Sources */,
         C3007E100000000000000003 /* AgentIOSWebFeatureHashTests.swift in Sources */,

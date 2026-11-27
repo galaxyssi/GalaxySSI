@@ -11,6 +11,7 @@ const section = (source, start, end, after = 0) => {
   return source.slice(first, last);
 };
 function retainedProvider(source) {
+  source = require('./check-baidu-search-request-scope.cjs').retainedBaiduProvider(source);
   source = require('./check-public-address-policy-scope.cjs').retainedAddressProvider(source);
   if (!source.includes('  var imageCredentials: AgentIOSWebIntelligenceCredentials\n')) return source;
   const original = old('apps/ios/GalaxySSI/AgentIOSURLSessionWebMediaProvider.swift');

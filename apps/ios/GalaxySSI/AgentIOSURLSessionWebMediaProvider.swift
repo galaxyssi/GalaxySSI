@@ -499,7 +499,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
               imagePolicy: endpoint.imageSearch ? AgentIOSImageSearchRequestPolicy(source: endpoint.provider,
                 braveKey: endpoint.provider == "brave_image" ? imageCredentials.credential(.braveAPIKey) : "") : nil,
               jsonPolicy: endpoint.jsonParser.map { AgentIOSJSONWebSearchRequestPolicy(source: $0,
-                githubToken: ["github", "github_code"].contains($0) ? imageCredentials.credential(.githubToken) : "") }
+                githubToken: ["github", "github_code"].contains($0) ? imageCredentials.credential(.githubToken) : "") },
+              htmlSearchPolicy: AgentIOSHTMLSearchRequestPolicy(source: endpoint.provider)
             )
             let html = decodedText(resource).text
             let results: [AgentIOSWebSearchResult]
@@ -1478,6 +1479,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     allowsBrowserObservation: Bool = false,
     imagePolicy: AgentIOSImageSearchRequestPolicy? = nil,
     jsonPolicy: AgentIOSJSONWebSearchRequestPolicy? = nil,
+    htmlSearchPolicy: AgentIOSHTMLSearchRequestPolicy? = nil,
     willDispatch: () -> Void = {}
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
@@ -1502,6 +1504,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           timeoutMillis: remainingMillis,
           maxBodyBytes: maxBodyBytes,
           headers: AgentIOSPublicArticleRequestPolicy.headers(for: currentURL)
+            .merging(htmlSearchPolicy?.headers(for: currentURL) ?? [:]) { _, search in search }
             .merging(imagePolicy?.headers(for: currentURL) ?? [:]) { _, image in image }
             .merging(jsonPolicy?.headers(for: currentURL) ?? [:]) { _, api in api },
           allowsPartialBody: allowsBrowserObservation
