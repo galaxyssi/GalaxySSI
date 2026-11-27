@@ -11,6 +11,7 @@ enum AgentTeamDraftAudit {
     let passing: String
     let none: String
     let limitation: String
+    var noReviewReason = "The reviewer did not give a specific reason."
     static let english = Labels(passing: "Pass all gates:", none: "None", limitation: "Evidence limitation:")
   }
   static let system = """
@@ -21,9 +22,12 @@ enum AgentTeamDraftAudit {
     Check additional_objections as well as assigned reports. Qualify, correct or withhold a draft
     if a material reservation was overlooked; an objection is not proof.
     A fictional mathematical model is not a measured property of a real molecule or patient.
+    \(AgentConversationalTeamProtocol.predictionCheck)
     Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
-    To fix it, return {"verdict":"revise","objection":"brief error in draft","answer":"full corrected answer"}.
-    If evidence is insufficient, return {"verdict":"withhold","objection":"brief reason"}.
+    To fix it, set verdict to "revise"; include objection (the actual error) and answer (the full correction).
+    To send it back, set verdict to "request_changes" and include only the specific objection besides verdict.
+    In particular, send back a draft that confuses an invalid measurement with evidence against a prediction.
+    If evidence is insufficient, set verdict to "withhold" and state the reason in objection.
     Use the language of the objective. No text outside the object.
     """ + "\n" + AgentConversationalTeamProtocol.boundary
   static let tableSystem = """
@@ -41,16 +45,16 @@ enum AgentTeamDraftAudit {
   static let rewriteSystem = """
     You wrote the draft. The final editor raised a specific objection and did not supply a correction.
     Using the original objective, brief and reports, write the corrected public answer, not a promise to fix it.
-    Check whether the objection is supported. For predictions, test whether the proposed counterexample
-    contradicts the prediction under the same assumptions rather than restating it. Do not invent evidence.
+    Check whether the objection is supported. Do not invent evidence.
+    \(AgentConversationalTeamProtocol.predictionCheck)
     Return only {"answer":"complete replacement in the language of the objective"}.
     """ + "\n" + AgentConversationalTeamProtocol.boundary
   static let recheckSystem = """
     As the same independent editor, compare draft (the proposed replacement) with rejected_draft,
     the original objective and your objection. Do not accept a paraphrase that leaves the error intact.
-    Verify that each claimed counterexample is incompatible with its prediction under the same assumptions.
+    \(AgentConversationalTeamProtocol.predictionCheck)
     Return only {"verdict":"accept"} if the replacement resolves the objection and meets the objective.
-    Otherwise return {"verdict":"withhold","objection":"specific reason in the language of the objective"}.
+    Otherwise set verdict to "withhold" and explain the actual remaining problem in objection. Return no other keys.
     """ + "\n" + AgentConversationalTeamProtocol.boundary
 
   static func sameDraft(_ left: String, _ right: String) -> Bool {
@@ -74,6 +78,17 @@ enum AgentTeamDraftAudit {
       !value.isBlank, value.utf16.count <= limit, !value.contains("```galaxyssi-rich") else { throw Failure.invalid }
     return value
   }
+  static func isReviewPlaceholder(_ reason: String) -> Bool {
+    var normalized = reason.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    while normalized.hasSuffix(".") { normalized.removeLast() }
+    return ["brief error in draft", "brief reason", "what the writer must correct",
+      "specific reason in the language of the objective"].contains(normalized)
+  }
+  private static func objection(_ object: AgentMcpJSONObject, labels: Labels) throws -> String {
+    let reason = try field(object, "objection", limit: 600)
+    guard !isReviewPlaceholder(reason) else { throw Failure.withheld(labels.noReviewReason) }
+    return reason
+  }
   static func replacement(_ raw: String, rejected: String) throws -> String {
     let value = try object(raw)
     guard Set(value.keys) == ["answer"] else { throw Failure.invalid }
@@ -84,8 +99,11 @@ enum AgentTeamDraftAudit {
   static func recheck(_ raw: String) throws {
     let value = try object(raw), keys = Set(value.keys)
     if keys == ["verdict"], value["verdict"] == .string("accept") { return }
-    if keys == ["verdict", "objection"], value["verdict"] == .string("withhold") {
-      throw Failure.withheld(try field(value, "objection", limit: 600))
+    if keys == ["verdict", "objection"],
+      (value["verdict"] == .string("withhold") || value["verdict"] == .string("request_changes")) {
+      let reason = try field(value, "objection", limit: 600)
+      guard !isReviewPlaceholder(reason) else { throw Failure.invalid }
+      throw Failure.withheld(reason)
     }
     throw Failure.invalid
   }
@@ -105,13 +123,16 @@ enum AgentTeamDraftAudit {
     case .string("accept"):
       guard keys == ["verdict"] else { throw Failure.invalid }
       return Result(answer: draft, correction: nil)
-    case .string("revise"):
-      guard keys == ["verdict", "objection", "answer"] else { throw Failure.invalid }
-      let objection = try field("objection", limit: 600), answer = try field("answer", limit: 8_000)
-      return Result(answer: answer, correction: objection, requiresHandback: sameDraft(answer, draft))
+    case .string("revise"), .string("request_changes"):
+      let returnToWriter = review["verdict"] == .string("request_changes")
+      let expected: Set<String> = returnToWriter ? ["verdict", "objection"] : ["verdict", "objection", "answer"]
+      guard keys == expected else { throw Failure.invalid }
+      let reason = try objection(review, labels: labels)
+      let answer = try (returnToWriter ? draft : field("answer", limit: 8_000))
+      return Result(answer: answer, correction: reason, requiresHandback: returnToWriter || sameDraft(answer, draft))
     case .string("withhold"):
       guard keys == ["verdict", "objection"] else { throw Failure.invalid }
-      throw Failure.withheld(try field("objection", limit: 600))
+      throw Failure.withheld(try objection(review, labels: labels))
     default: throw Failure.invalid
     }
   }

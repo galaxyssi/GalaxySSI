@@ -141,7 +141,8 @@ final class AgentConversationalTeamRuntime: ObservableObject {
         let answer: String
         do {
           let labels = AgentTeamDraftAudit.Labels(passing: text("passing", "Pass all gates:", store),
-            none: text("none", "None", store), limitation: text("limitation", "Evidence limitation:", store))
+            none: text("none", "None", store), limitation: text("limitation", "Evidence limitation:", store),
+            noReviewReason: text("review_reason_missing", "The reviewer did not give a specific reason.", store))
           let outcome = try await AgentConversationalTeamEngine.run(objective: running.objective, labels: labels, ask: { [weak self, weak store] system, prompt in
             guard let self, let store else { throw CancellationError() }
             return try await self.ask(system, prompt: prompt, original: running, store: store, epoch: epoch)
