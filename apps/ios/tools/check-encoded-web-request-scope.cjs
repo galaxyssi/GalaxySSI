@@ -6,6 +6,7 @@ const clean = text => text.replace(/\r\n/g, '\n');
 const read = file => {
   let source = clean(fs.readFileSync(path.join(root, file), 'utf8'));
   source = require('./check-web-network-assurance-scope.cjs').retained(file, source);
+  source = require('./check-search-response-size-parity.cjs').retained(file, source);
   if (file.endsWith('AgentIOSPublicAddressPolicy.swift')) source = require('./check-special-use-address-scope.cjs').retainedPolicy(source);
   return source;
 };
@@ -15,6 +16,7 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retainedEncodedMedia(source) {
+  source = require('./check-original-page-provider-retention.cjs').retainedOriginalPageProvider(source);
   source = require('./check-web-tool-failure-scope.cjs').retainedFailureMedia(source);
   const hook = '    components.host = host.lowercased()\n    components.fragment = nil\n    if components.percentEncodedPath.isEmpty { components.percentEncodedPath = "/" }\n';
   if (!source.includes(hook)) return source;
