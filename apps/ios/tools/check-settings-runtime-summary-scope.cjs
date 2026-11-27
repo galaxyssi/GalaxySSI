@@ -3,7 +3,11 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'bf68594c9ac3ea6f66a6782e3528228c11ddea3d';
 const file = app + 'GalaxySSISettingsView.swift', clean = s => s.replace(/\r\n/g, '\n');
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => {
+  const s = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  const mcp = path.join(__dirname, 'check-mcp-readiness-preparation-scope.cjs');
+  return fs.existsSync(mcp) ? require(mcp).retained(f, s) : s;
+};
 const show = (ref, f) => clean(cp.execFileSync('git', ['show', ref + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000}));
 function section(s, first, last) {
   const a = s.indexOf(first), b = s.indexOf(last, a + first.length);
