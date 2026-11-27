@@ -58,12 +58,19 @@ private val finalReviewPlannerSystem = """
     Each brief is a single nonblank line of at most $MAX_BRIEF characters, without pipes. $TEXT_ONLY
 """.trimIndent()
 
+private const val PREDICTION_CHECK = "When the task asks what would falsify a prediction, separate three cases: " +
+    "the expected observation, a valid observation contrary to it under the SAME independent conditions, and an " +
+    "uninterpretable observation. Do not assume the predicted readout as a condition. If measurement or the " +
+    "reporter fails, the result cannot test the claim; never list such failure as counterevidence, even as an alternative. " +
+    "Name what evidence is still missing. Do not invent data."
+
 private val workerSystem = """
     Perform only your assigned role on the objective. Do not delegate. Reports are from direct dependencies only.
     Reviewers check supplied findings; dissent roles consider an independent counterposition.
     Return one JSON object, no commentary. "finding" is your concise public result
     (at most $MAX_FINDING characters); optional "dissent" is a specific material reservation
     (at most $MAX_DISSENT characters). Omit it or write null if not reporting one. Do not invent disagreement.
+    $PREDICTION_CHECK
     $TEXT_ONLY
     Output format: {"finding":"your result","dissent":null}
 """.trimIndent()
@@ -74,6 +81,7 @@ private val synthesisSystem = """
     Preserve requested comparisons, numbers and units. Check the user's supplied evidence before
     adopting a report's claim. A criterion or simulated response is not a measured property.
     If a property has not been measured, describe it as a goal, not as a finding.
+    $PREDICTION_CHECK
     Write a single JSON object with one string field named "answer" (at most $MAX_ANSWER characters).
     $TEXT_ONLY
     Answer in the language of the objective. No new roles. Output format: {"answer":"your final answer"}
@@ -87,9 +95,12 @@ private val auditSystem = """
     Check any additional_objections as well as your assigned reports. Qualify, correct or
     withhold the draft if a material reservation was overlooked; an objection is not proof.
     A fictional mathematical model is not a measured property of a real molecule or patient.
+    $PREDICTION_CHECK
     $TEXT_ONLY
     Return exactly one JSON object. Use {"verdict":"accept"} ONLY for a complete, consistent draft.
     To fix it, return {"verdict":"revise","objection":"brief error in draft","answer":"full corrected answer"}.
+    For a conceptual error, return {"verdict":"request_changes","objection":"what the writer must correct"}.
+    In particular, send back a draft that confuses an invalid measurement with evidence against a prediction.
     If the evidence is insufficient to answer reliably, return {"verdict":"withhold","objection":"brief reason"}.
     Use the language of the objective. No text outside the object.
 """.trimIndent()
@@ -110,8 +121,7 @@ private val tableAuditSystem = """
 private val rewriteSystem = """
     You wrote the draft. The final editor raised a specific objection and did not supply a correction.
     Using the original objective, brief and reports, write the corrected public answer, not a promise to fix it.
-    Check whether the objection is supported. For predictions, test whether the proposed counterexample
-    contradicts the prediction under the same assumptions rather than restating it. Do not invent evidence.
+    Check whether the objection is supported. $PREDICTION_CHECK
     $TEXT_ONLY
     Return only {"answer":"complete replacement in the language of the objective"}.
 """.trimIndent()
@@ -119,7 +129,7 @@ private val rewriteSystem = """
 private val recheckSystem = """
     As the same independent editor, compare draft (the proposed replacement) with rejected_draft,
     the original objective and your objection. Do not accept a paraphrase that leaves the error intact.
-    Verify that each claimed counterexample is incompatible with its prediction under the same assumptions.
+    $PREDICTION_CHECK
     $TEXT_ONLY
     Return only {"verdict":"accept"} if the replacement resolves the objection and meets the objective.
     Otherwise return {"verdict":"withhold","objection":"specific reason in the language of the objective"}.
@@ -462,11 +472,13 @@ internal suspend fun runAutoGoalTeam(
                     "\n\n" + labels.limitation + " " + field("limitation", MAX_FINDING)
             } else when (review.opt("verdict")) {
                 "accept" -> check(keys == setOf("verdict")) { "Ambiguous final approval." }
-                "revise" -> {
-                    check(keys == setOf("verdict", "objection", "answer")) { "Incomplete final revision." }
+                "revise", "request_changes" -> {
+                    val returnToWriter = review.opt("verdict") == "request_changes"
+                    val expected = if (returnToWriter) setOf("verdict", "objection") else setOf("verdict", "objection", "answer")
+                    check(keys == expected) { "Incomplete or ambiguous final revision." }
                     correction = field("objection", MAX_DISSENT)
-                    answer = field("answer", MAX_ANSWER)
-                    if (sameTeamDraft(answer, body)) {
+                    if (!returnToWriter) answer = field("answer", MAX_ANSWER)
+                    if (returnToWriter || sameTeamDraft(answer, body)) {
                         // Planning + synthesis + one call per role have already run; fund both turns or neither.
                         fun withhold(reason: String): Nothing = throw TeamAnswerWithheld(reason, publicObjections)
                         val objection = correction
@@ -492,7 +504,8 @@ internal suspend fun runAutoGoalTeam(
                             MAX_DISSENT * 2 + 100)
                         if (recheck?.length() != 1 || recheck.opt("verdict") != "accept") {
                             val reason = (recheck?.opt("objection") as? String)?.trim()?.takeIf {
-                                recheck.length() == 2 && recheck.opt("verdict") == "withhold" && it.length in 1..MAX_DISSENT
+                                recheck.length() == 2 && recheck.opt("verdict") in setOf("withhold", "request_changes") &&
+                                    it.length in 1..MAX_DISSENT
                             }
                             withhold(reason ?: objection)
                         }

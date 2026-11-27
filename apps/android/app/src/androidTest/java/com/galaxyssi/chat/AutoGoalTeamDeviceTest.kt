@@ -58,8 +58,9 @@ class AutoGoalTeamDeviceTest {
     @Test fun modelAuthoredIndependentFinalReviewOnPhoneLoopbackRevisesTheActualDraft() = runReviewFixture(false, false)
     @Test fun writerHandbackReachesSamePhoneReviewerBeforePublication() = runReviewFixture(true, false)
     @Test fun phoneReviewerCanRejectWriterHandback() = runReviewFixture(true, true)
+    @Test fun phoneReviewerCanReturnAnObjectionWithoutAuthoringTheReplacement() = runReviewFixture(true, false, true)
 
-    private fun runReviewFixture(handback: Boolean, reject: Boolean) = runBlocking {
+    private fun runReviewFixture(handback: Boolean, reject: Boolean, explicitRequest: Boolean = false) = runBlocking {
         val objective = "Compare schedules, then independently audit the final answer."
         val assignment = "Verify the claim about the Friday handover against the stated limitation."
         val draft = "The Friday handover is fixed."
@@ -70,7 +71,8 @@ class AutoGoalTeamDeviceTest {
                 .put("final_review", assignment),
             JSONObject().put("finding", "Worker-only calendar note.").put("dissent", dissent),
             JSONObject().put("answer", draft),
-            JSONObject().put("verdict", "revise").put("objection", dissent).put("answer", if (handback) draft else approved)
+            if (explicitRequest) JSONObject().put("verdict", "request_changes").put("objection", dissent)
+            else JSONObject().put("verdict", "revise").put("objection", dissent).put("answer", if (handback) draft else approved)
         ) + if (handback) listOf(JSONObject().put("answer", approved),
             if (reject) JSONObject().put("verdict", "withhold").put("objection", dissent) else JSONObject().put("verdict", "accept"))
         else emptyList()

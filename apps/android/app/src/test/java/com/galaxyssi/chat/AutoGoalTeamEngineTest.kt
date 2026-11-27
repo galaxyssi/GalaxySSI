@@ -16,7 +16,7 @@ import org.junit.Test
 
 class AutoGoalTeamEngineTest {
     @Test fun rewriteMustReachTheSameIndependentEditorAndCanStillBeVetoed() = runBlocking {
-        for (mode in listOf("approve", "reject", "ambiguous", "duplicate", "cut-review", "cut-rewrite", "unchanged", "cancel", "offline", "blank", "oversized")) {
+        for (mode in listOf("approve", "request", "repeat-request", "reject", "ambiguous", "duplicate", "cut-review", "cut-rewrite", "unchanged", "cancel", "offline", "blank", "oversized")) {
             val draft = "Confirmed on Friday."
             val changed = "Friday is provisional."
             val objection = "No confirmation."
@@ -24,7 +24,9 @@ class AutoGoalTeamEngineTest {
                 when (p.getString("stage")) {
                     "role" -> """{"finding":"A private-to-the-writer finding.","dissent":"Still unresolved."}"""
                     "synthesis" -> JSONObject().put("answer", draft).toString()
-                    "audit" -> JSONObject().put("verdict", "revise").put("objection", objection).put("answer", draft).toString()
+                    "audit" -> if (mode in listOf("request", "repeat-request"))
+                        JSONObject().put("verdict", "request_changes").put("objection", objection).toString()
+                    else JSONObject().put("verdict", "revise").put("objection", objection).put("answer", draft).toString()
                     "rewrite" -> {
                         assertEquals(draft, p.getString("draft"))
                         assertEquals(objection, p.getString("objection"))
@@ -41,7 +43,8 @@ class AutoGoalTeamEngineTest {
                         assertEquals(0, p.getJSONArray("reports").length())
                         assertEquals("Still unresolved.", p.getJSONArray("additional_objections").getJSONObject(0).getString("dissent"))
                         when (mode) {
-                            "approve" -> """{"verdict":"accept"}"""
+                            "approve", "request" -> """{"verdict":"accept"}"""
+                            "repeat-request" -> """{"verdict":"request_changes","objection":"No support for Friday."}"""
                             "reject" -> """{"verdict":"withhold","objection":"No support for Friday."}"""
                             "duplicate" -> """{"verdict":"withhold","verdict":"accept"}"""
                             "cut-review" -> """{"verdict":"accept""""
@@ -56,26 +59,27 @@ class AutoGoalTeamEngineTest {
             }
             val run = runCatching { fake.run() }
             assertEquals(mode, if (mode in listOf("unchanged", "cut-rewrite", "cancel")) 5 else 6, fake.calls.size)
-            if (mode == "approve") {
+            if (mode in listOf("approve", "request")) {
                 assertTrue(changed in run.getOrThrow() && objection in run.getOrThrow() && draft !in run.getOrThrow())
             } else if (mode == "cancel") {
                 assertTrue(run.exceptionOrNull() is CancellationException)
             } else {
                 val held = run.exceptionOrNull() as TeamAnswerWithheld
-                assertEquals(if (mode == "reject") "No support for Friday." else objection, held.reservation)
+                assertEquals(if (mode in listOf("reject", "repeat-request")) "No support for Friday." else objection, held.reservation)
                 assertFalse("Team completed." in fake.events)
             }
         }
     }
 
     @Test fun handbackFundsBothTurnsOrNeither() = runBlocking {
-        for (roles in 8..10) {
+        for (roles in 8..10) for (explicitRequest in listOf(false, true)) {
             val jobs = (1 until roles).map { "WORK|-|Check item $it" } + "REVIEW|-|Final check"
             val fake = Fake(plan(*jobs.toTypedArray())) { p ->
                 when (p.getString("stage")) {
                     "role" -> report("Found.")
                     "synthesis" -> """{"answer":"Initial"}"""
-                    "audit" -> """{"verdict":"revise","objection":"Disputed","answer":"Initial"}"""
+                    "audit" -> if (explicitRequest) """{"verdict":"request_changes","objection":"Disputed"}"""
+                        else """{"verdict":"revise","objection":"Disputed","answer":"Initial"}"""
                     "rewrite" -> """{"answer":"Changed"}"""
                     "recheck" -> """{"verdict":"accept"}"""
                     else -> error("unexpected stage")
@@ -85,6 +89,17 @@ class AutoGoalTeamEngineTest {
             assertEquals(if (roles == 8) 12 else roles + 2, fake.calls.size)
             if (roles == 8) assertTrue(run.getOrThrow().startsWith("Changed"))
             else assertEquals("Disputed", (run.exceptionOrNull() as TeamAnswerWithheld).reservation)
+        }
+    }
+
+    @Test fun requestChangesRequiresOnlyAnExplicitNonblankObjection() = runBlocking {
+        for (receipt in listOf("""{"verdict":"request_changes"}""", """{"verdict":"request_changes","objection":" "}""",
+            """{"verdict":"request_changes","objection":"No source","answer":"Unchecked"}""")) {
+            val fake = Fake(plan("REVIEW|-|Verify")) {
+                if (it.getString("stage") == "synthesis") """{"answer":"Draft"}""" else receipt
+            }
+            assertTrue(runCatching { fake.run() }.isFailure)
+            assertEquals(listOf("plan", "synthesis", "audit"), fake.calls)
         }
     }
 
