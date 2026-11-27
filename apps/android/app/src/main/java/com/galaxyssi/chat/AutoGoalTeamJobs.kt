@@ -139,6 +139,8 @@ internal object AutoGoalTeamJobs {
                 ctx.getString(R.string.auto_team_job_receipt, (calls.get() - 2).coerceAtLeast(0), calls.get()) +
                     "\n\n" + result
             }
+        } catch (_: TeamFinalAuditMissing) {
+            ctx.getString(R.string.auto_team_final_audit_missing)
         } catch (e: TeamAnswerWithheld) {
             ctx.getString(R.string.auto_team_job_withheld, e.reservation) + e.publicObjections
         } catch (e: TeamTableMismatch) {

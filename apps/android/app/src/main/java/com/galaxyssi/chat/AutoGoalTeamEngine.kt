@@ -32,6 +32,7 @@ private val plannerSystem = """
     Group related calculations or table rows into one assignment; do not assign a role per data point.
     Independent roles can work together through named dependencies. To audit another result,
     assign a reviewer that depends on the role that produces it. An independent critic can use dissent.
+    When final_review_required is true, include a terminal REVIEW to audit the actual final draft.
     Write one line per role: WORK|parents|task, REVIEW|parents|task, or CRITIC|parents|task.
     Roles are numbered automatically from 1. Parents are - or comma-separated earlier role numbers.
     At most $MAX_LINKS parents or children per role. Tasks and brief: <=$MAX_BRIEF characters, no pipes.
@@ -107,9 +108,78 @@ internal fun teamAuditOutputFormat(system: String, endpoint: String): JSONObject
         JSONObject().put("name", "source_table_audit").put("strict", true).put("schema", schema))
 }
 
+/** The selectable Custom/OpenAI preset can request JSON without assuming server-side schema support. */
+internal fun teamPlanWire(system: String, endpoint: String, apiStyle: String): TeamPlanWire? {
+    if (system != plannerSystem || apiStyle !in setOf("openai", "llama.cpp-json-schema")) return null
+    val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return null
+    if (uri.scheme !in setOf("http", "https") || uri.host !in setOf("127.0.0.1", "[::1]") ||
+        uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null ||
+        uri.rawPath != "/v1/chat/completions" || (uri.port != -1 && uri.port !in 1..65535) ||
+        uri.rawAuthority.endsWith(':')) return null
+    return TeamPlanWire(constrained = apiStyle == "llama.cpp-json-schema")
+}
+
+internal class TeamPlanWire(private val constrained: Boolean) {
+    val system = """
+        Plan, do not solve. Return only JSON: {"roles":[{"kind":"WORK","parents":[],"task":"assignment"}],"synthesis":"brief"}.
+        Use roles: [] for simple work; otherwise choose the fewest useful roles (max $MAX_ROLES). Do not copy placeholders.
+        Kinds: WORK produces findings, REVIEW checks findings, CRITIC considers a counterposition.
+        If the objective requests an independent review of the final answer, include a terminal REVIEW
+        that depends on the relevant WORK. It will see the actual draft after synthesis. A worker cannot review itself.
+        Parents are distinct one-based earlier role numbers, e.g. [1], or []. Max $MAX_LINKS parents or children per role.
+        Each task and the synthesis brief must be one nonblank line, at most $MAX_BRIEF characters, no pipes. No other keys or prose.
+        $TEXT_ONLY
+    """.trimIndent()
+
+    private val kinds = setOf("WORK", "REVIEW", "CRITIC")
+    val requestFormat: JSONObject? get() = if (constrained) format else null
+    val format: JSONObject
+        get() {
+            fun array(items: JSONObject, max: Int) = JSONObject().put("type", "array").put("items", items).put("maxItems", max)
+            fun record(vararg fields: Pair<String, JSONObject>) = JSONObject().put("type", "object")
+                .put("properties", JSONObject().apply { fields.forEach { (key, value) -> put(key, value) } })
+                .put("required", JSONArray(fields.map { it.first })).put("additionalProperties", false)
+            val brief = JSONObject().put("type", "string").put("minLength", 1).put("maxLength", MAX_BRIEF)
+            val role = record("kind" to JSONObject().put("type", "string").put("enum", JSONArray(kinds.toList())),
+                "parents" to array(JSONObject().put("type", "integer").put("minimum", 1).put("maximum", MAX_ROLES), MAX_LINKS),
+                "task" to brief)
+            return JSONObject().put("type", "json_schema").put("json_schema", JSONObject().put("name", "team_plan")
+                .put("strict", true).put("schema", record("roles" to array(role, MAX_ROLES), "synthesis" to brief)))
+        }
+
+    fun decode(reply: String): String {
+        fun invalid(): Nothing = error("Invalid structured team plan.")
+        if (reply.length > 6000) invalid()
+        if (!constrained && reply.substringBefore('|') in setOf("ROLE", "WORK", "REVIEW", "CRITIC", "SYNTHESIS")) {
+            // Older local servers may still emit the previous protocol. Never repair a partial response.
+            return reply.trimEnd('\r', '\n').also { parseAutoPlan(it) }
+        }
+        val root = McpJson.parseObject(reply, McpJsonLimits(maxDepth = 5, maxNodes = 100,
+            maxContainerEntries = MAX_ROLES, maxStringLength = MAX_BRIEF))
+        fun brief(obj: McpJsonObject, key: String) = obj.string(key)?.takeIf { value ->
+            value.isNotBlank() && value.none { it == '|' || it.isISOControl() ||
+                it == '\u2028' || it == '\u2029' || Character.getType(it) == Character.FORMAT.toInt() }
+        } ?: invalid()
+        if (root.entries.keys != setOf("roles", "synthesis")) invalid()
+        val roles = root.array("roles") ?: invalid()
+        val lines = roles.values.map { entry ->
+            val role = entry as? McpJsonObject ?: invalid()
+            if (role.entries.keys != setOf("kind", "parents", "task")) invalid()
+            val kind = role.string("kind")?.takeIf { it in kinds } ?: invalid()
+            val parents = role.array("parents") ?: invalid()
+            val refs = parents.values.joinToString(",") { (it as? McpJsonNumber)?.raw ?: invalid() }
+            "$kind|${refs.ifEmpty { "-" }}|${brief(role, "task")}"
+        }
+        val canonical = (lines + "SYNTHESIS|${brief(root, "synthesis")}").joinToString("\n")
+        parseAutoPlan(canonical)
+        return canonical
+    }
+}
+
 private data class AutoRole(val id: String, val kind: String, val parents: List<String>, val assignment: String)
 private data class AutoPlan(val roles: List<AutoRole>, val synthesis: String, val finalEditor: AutoRole?)
 internal class TeamAnswerWithheld(val reservation: String, val publicObjections: String) : IllegalStateException("Final review withheld the draft.")
+internal class TeamFinalAuditMissing : IllegalStateException("No independent final reviewer in the plan.")
 internal class TeamTableMismatch(val verified: String, val publicObjections: String) : IllegalStateException("Final review did not confirm the source table.")
 internal data class TeamResultLabels(val correction: String = "Reviewer correction:", val dissent: String = "Reported disagreements:",
     val passing: String = "Pass all gates:", val none: String = "None", val limitation: String = "Evidence limitation:")
@@ -238,9 +308,12 @@ internal suspend fun runAutoGoalTeam(
     return try {
         onEvent("Planning team.")
         val worksheet = TeamComparisonSheet.evaluate(objective)
+        val finalAuditRequired = AutoGoalTeamCommand.requestsFinalAudit(objective)
         val plan = parseAutoPlan(call("planning", plannerSystem, input("plan")
+            .apply { if (finalAuditRequired) put("final_review_required", true) }
             .put("objective", worksheet?.plannerObjective ?: objective), 6000))
         val editor = plan.finalEditor
+        if (finalAuditRequired && editor == null) throw TeamFinalAuditMissing()
         val contributors = plan.roles.filterNot { it == editor }
         val reports = linkedMapOf<String, AutoReport>()
         fun label(role: AutoRole) = "Role ${plan.roles.indexOf(role) + 1}/${plan.roles.size} (${role.kind})"

@@ -18,26 +18,60 @@ import java.util.concurrent.atomic.AtomicInteger
 class AutoGoalTeamDeviceTest {
     private val ctx get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test fun onlyTheLoopbackTableAuditRequestsStructuredOutputAndItsDraftIsNotReleased() = runBlocking {
+    @Test fun ordinaryCustomLoopbackPlansInJsonWithoutRequestingAPlanSchema() =
+        runTableFixture(hardPlanSchema = false)
+
+    @Test fun explicitLlamaCppLoopbackRequestsAPlanSchema() = runTableFixture(hardPlanSchema = true)
+
+    @Test fun missingRequestedFinalReviewStopsAfterOneLocalRequest() = runBlocking {
+        MockWebServer().use { server ->
+            val plan = """{"roles":[{"kind":"WORK","parents":[],"task":"Compare totals"}],"synthesis":"Report totals"}"""
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(
+                JSONObject().put("choices", JSONArray().put(JSONObject().put("message",
+                    JSONObject().put("role", "assistant").put("content", plan)))).toString()))
+            server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
+            val id = UUID.randomUUID().toString()
+            val c = JSONObject().put("cloud_provider", "Custom").put("cloud_api_style", "openai")
+                .put("cloud_model", "fixture").put("cloud_api_key", "synthetic")
+                .put("cloud_endpoint", "http://127.0.0.1:${server.port}/v1/chat/completions")
+            val route = GoalRoute(id, "fixture", ConversationGoalRunner.fingerprint(c))
+            var calls = 0
+            try {
+                runAutoGoalTeam("请比较两份虚构日程，并独立审核最后的答复。", { s, p ->
+                    check(++calls == 1) { "Unexpected model call after incomplete plan" }
+                    withContext(Dispatchers.IO) {
+                        ConversationGoalRunner.text(ctx, route, id, id, calls, s, p,
+                            AgentNativeToolCancellationToken.NONE) { _, _, _ -> c }
+                    }
+                })
+                fail("Do not publish a draft without the requested final reviewer")
+            } catch (_: TeamFinalAuditMissing) { }
+            assertEquals(1, calls)
+            assertEquals(1, server.requestCount)
+            val messages = JSONObject(server.takeRequest().body.readUtf8()).getJSONArray("messages")
+            val payload = JSONObject(messages.getJSONObject(messages.length() - 1).getString("content"))
+            assertEquals("plan", payload.getString("stage"))
+            assertTrue(payload.getBoolean("final_review_required"))
+        }
+    }
+
+    private fun runTableFixture(hardPlanSchema: Boolean) = runBlocking {
         val id = UUID.randomUUID().toString()
         val calls = AtomicInteger()
         val task = "Compare synthetic alternatives.\n|input|gate|left|right|\n|---|---|---|---|\n|sample|<2|2|1|"
         MockWebServer().use { server ->
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
-                    val body = JSONObject(request.body.readUtf8())
+                    val body = JSONObject(request.body.clone().readUtf8())
                     val messages = body.getJSONArray("messages")
                     val payload = JSONObject(messages.getJSONObject(messages.length()-1).getString("content"))
                     val stage = payload.getString("stage")
-                    if (body.has("tools") || body.has("tool_choice") || (stage == "audit") != body.has("response_format"))
-                        return MockResponse().setResponseCode(400)
                     val reply = when (stage) {
-                        "plan" -> "WORK|-|Compare prices\nREVIEW|1|Audit boundary\nSYNTHESIS|Report comparison"
+                        "plan" -> """{"roles":[{"kind":"WORK","parents":[],"task":"Compare prices"},{"kind":"REVIEW","parents":[1],"task":"Audit boundary"}],"synthesis":"Report comparison"}"""
                         "role" -> """{"finding":"These prices are hypothetical."}"""
                         "synthesis" -> """{"answer":"Disputed initial draft."}"""
                         "audit" -> {
-                            if (body.getJSONObject("response_format").getString("type") != "json_schema" ||
-                                payload.getString("draft") != "Disputed initial draft.") return MockResponse().setResponseCode(400)
+                            if (payload.getString("draft") != "Disputed initial draft.") return MockResponse().setResponseCode(400)
                             """{"purpose":"Compare synthetic alternatives.","limitation":"No measured price.","pass_all":["right"]}"""
                         }
                         else -> return MockResponse().setResponseCode(400)
@@ -48,15 +82,40 @@ class AutoGoalTeamDeviceTest {
                 }
             }
             server.start(java.net.InetAddress.getByName("127.0.0.1"), 0)
-            val c = JSONObject().put("id", id).put("name", "Synthetic review").put("cloud_provider", "custom")
-                .put("cloud_api_style", "openai").put("cloud_model", "fixture").put("cloud_api_key", "synthetic")
-                .put("cloud_endpoint", "http://127.0.0.1:${server.port}/fixture")
+            val preset = CLOUD_MODEL_PRESETS.single { it.provider == "Custom" && it.apiStyle == "openai" }
+            val c = JSONObject().put("id", id).put("name", "Synthetic review").put("cloud_provider", preset.provider)
+                .put("cloud_api_style", if (hardPlanSchema) "llama.cpp-json-schema" else preset.apiStyle)
+                .put("cloud_model", "fixture").put("cloud_api_key", "synthetic")
+                .put("cloud_endpoint", "http://127.0.0.1:${server.port}/v1/chat/completions")
             val route = GoalRoute(id, "fixture", ConversationGoalRunner.fingerprint(c))
             val answer = runAutoGoalTeam(task, { s, p -> withContext(Dispatchers.IO) {
                 ConversationGoalRunner.text(ctx, route, id, id, calls.incrementAndGet(), s, p,
                     AgentNativeToolCancellationToken.NONE) { _,_,_ -> c }
             } })
             assertEquals(4, server.requestCount)
+            for (stage in listOf("plan", "role", "synthesis", "audit")) {
+                val request = server.takeRequest()
+                assertEquals("/v1/chat/completions", request.path)
+                val body = JSONObject(request.body.readUtf8())
+                val messages = body.getJSONArray("messages")
+                val payload = JSONObject(messages.getJSONObject(messages.length() - 1).getString("content"))
+                assertEquals(stage, payload.getString("stage"))
+                assertEquals("fixture", body.getString("model"))
+                assertFalse(body.has("tools"))
+                assertFalse(body.has("tool_choice"))
+                if (stage == "plan" && !hardPlanSchema) {
+                    val system = messages.getJSONObject(0).getString("content")
+                    assertTrue("Soft planning must describe the JSON fields", listOf("roles", "parents", "synthesis").all { it in system })
+                }
+                if ((stage == "plan" && hardPlanSchema) || stage == "audit") {
+                    val format = body.getJSONObject("response_format")
+                    assertEquals("json_schema", format.getString("type"))
+                    val envelope = format.getJSONObject("json_schema")
+                    assertTrue(envelope.getBoolean("strict"))
+                    val fields = envelope.getJSONObject("schema").getJSONObject("properties").keys().asSequence().toSet()
+                    assertEquals(if (stage == "plan") setOf("roles", "synthesis") else setOf("purpose", "limitation", "pass_all"), fields)
+                } else assertFalse("$stage must retain its original request shape", body.has("response_format"))
+            }
             assertTrue("Pass all gates: right" in answer)
             assertFalse("Disputed initial draft." in answer)
         }
@@ -74,7 +133,8 @@ class AutoGoalTeamDeviceTest {
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val body = JSONObject(request.body.readUtf8())
-                    if (body.has("tools") || body.has("tool_choice")) return MockResponse().setResponseCode(400)
+                    if (body.has("tools") || body.has("tool_choice") || body.has("response_format"))
+                        return MockResponse().setResponseCode(400)
                     val turns = body.getJSONArray("messages")
                     val input = JSONObject(turns.getJSONObject(turns.length() - 1).getString("content"))
                     synchronized(inputs) { inputs.add(input) }
