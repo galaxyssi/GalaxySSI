@@ -185,6 +185,7 @@ final class AgentCognitiveGovernanceStore {
   private let key: String
   private let nowMillis: () -> Int64
   private let lock = NSRecursiveLock()
+  private(set) var lastErrorDescription = ""
 
   init(
     defaults: UserDefaults = .standard,
@@ -217,21 +218,21 @@ final class AgentCognitiveGovernanceStore {
     )
     guard !normalized.topic.isEmpty, !normalized.unknownQuestions.isEmpty else { return nil }
     return locked {
-      var state = load()
+      guard var state = load() else { return nil }
       normalized.updatedAtMillis = nowMillis()
       state.gaps[normalized.id] = normalized
       state.gaps = Dictionary(uniqueKeysWithValues: state.gaps.values
         .sorted { $0.updatedAtMillis > $1.updatedAtMillis }
         .prefix(Self.maximumGaps)
         .map { ($0.id, $0) })
-      save(state)
-      return normalized
+      return save(state) ? normalized : nil
     }
   }
 
   func gaps(status: AgentKnowledgeGapStatus? = nil, limit: Int = AgentCognitiveGovernanceStore.maximumGaps) -> [AgentKnowledgeGap] {
     locked {
-      Array(load().gaps.values)
+      guard let state = load() else { return [] }
+      return Array(state.gaps.values)
         .filter { status == nil || $0.status == status }
         .sorted { $0.priority == $1.priority ? $0.updatedAtMillis > $1.updatedAtMillis : $0.priority > $1.priority }
         .prefixArray(min(max(limit, 1), Self.maximumGaps))
@@ -240,9 +241,17 @@ final class AgentCognitiveGovernanceStore {
 
   @discardableResult
   func updateGapStatus(id: String, status: AgentKnowledgeGapStatus) -> AgentKnowledgeGap? {
-    guard var gap = locked({ load().gaps[id.trimmingCharacters(in: .whitespacesAndNewlines)] }) else { return nil }
-    gap.status = status
-    return upsertGap(gap)
+    locked {
+      guard var state = load(), var gap = state.gaps[id.trimmingCharacters(in: .whitespacesAndNewlines)] else { return nil }
+      gap.status = status
+      gap.updatedAtMillis = nowMillis()
+      state.gaps[gap.id] = gap
+      return save(state) ? gap : nil
+    }
+  }
+
+  func gap(id: String) -> AgentKnowledgeGap? {
+    locked { load()?.gaps[id.trimmingCharacters(in: .whitespacesAndNewlines)] }
   }
 
   @discardableResult
@@ -262,20 +271,20 @@ final class AgentCognitiveGovernanceStore {
     )
     guard !normalized.question.isEmpty, !normalized.decision.isEmpty else { return nil }
     return locked {
-      var state = load()
+      guard var state = load() else { return nil }
       state.decisions[normalized.id] = normalized
       state.decisions = Dictionary(uniqueKeysWithValues: state.decisions.values
         .sorted { $0.createdAtMillis > $1.createdAtMillis }
         .prefix(Self.maximumDecisions)
         .map { ($0.id, $0) })
-      save(state)
-      return normalized
+      return save(state) ? normalized : nil
     }
   }
 
   func decisions(limit: Int = AgentCognitiveGovernanceStore.maximumDecisions) -> [AgentDecisionLogEntry] {
     locked {
-      Array(load().decisions.values.sorted { $0.createdAtMillis > $1.createdAtMillis }
+      guard let state = load() else { return [] }
+      return Array(state.decisions.values.sorted { $0.createdAtMillis > $1.createdAtMillis }
         .prefix(min(max(limit, 1), Self.maximumDecisions)))
     }
   }
@@ -288,26 +297,45 @@ final class AgentCognitiveGovernanceStore {
     reviewedAtMillis: Int64? = nil
   ) -> AgentDecisionLogEntry? {
     locked {
-      var state = load()
+      guard var state = load() else { return nil }
       guard var current = state.decisions[id.trimmingCharacters(in: .whitespacesAndNewlines)] else { return nil }
       current.outcome = String(outcome.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(80))
       current.outcomeEvidenceRefs = Array(evidenceRefs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.prefix(40))
       current.reviewedAtMillis = max(0, reviewedAtMillis ?? nowMillis())
       state.decisions[current.id] = current
-      save(state)
-      return current
+      return save(state) ? current : nil
     }
   }
 
-  private func load() -> State {
+  private func load() -> State? {
+    guard GalaxySSIEncryptedUserDefaultsStore.contains(defaults: defaults, key: key) else {
+      guard defaults.object(forKey: key) == nil else {
+        lastErrorDescription = "governance_read_failed"
+        return nil
+      }
+      lastErrorDescription = ""
+      return State()
+    }
     guard let data = GalaxySSIEncryptedUserDefaultsStore.load(defaults: defaults, key: key, secrets: secrets),
-          let state = try? JSONDecoder().decode(State.self, from: data) else { return State() }
+          let state = try? JSONDecoder().decode(State.self, from: data) else {
+      lastErrorDescription = "governance_read_failed"
+      return nil
+    }
+    lastErrorDescription = ""
     return state
   }
 
-  private func save(_ state: State) {
-    guard let data = try? JSONEncoder().encode(state) else { return }
-    _ = GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key, secrets: secrets)
+  private func save(_ state: State) -> Bool {
+    guard let data = try? JSONEncoder().encode(state) else {
+      lastErrorDescription = "governance_encode_failed"
+      return false
+    }
+    guard GalaxySSIEncryptedUserDefaultsStore.write(data, defaults: defaults, key: key, secrets: secrets) else {
+      lastErrorDescription = "governance_write_failed"
+      return false
+    }
+    lastErrorDescription = ""
+    return true
   }
 
   private func locked<T>(_ work: () -> T) -> T {
@@ -333,6 +361,7 @@ enum AgentKnowledgeGapDetector {
     let existing = store.gaps().first {
       [.open, .researching].contains($0.status) && AgentLearningAnalyzer.sameTaskFamily($0.topic, topic)
     }
+    guard store.lastErrorDescription.isEmpty else { return nil }
     let missing = sample.failureReasons.filter { $0.hasPrefix("missing_evidence:") }
     if missing.isEmpty {
       guard sample.passed, let existing else { return nil }

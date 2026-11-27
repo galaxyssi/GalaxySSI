@@ -202,7 +202,8 @@ final class AgentKnowledgeGapResearchBridge: @unchecked Sendable {
     }
   }
 
-  private func observeLocked(_ gap: AgentKnowledgeGap, enabled: Bool) {
+  private func observeLocked(_ observed: AgentKnowledgeGap, enabled: Bool) {
+    guard let gap = governance.gap(id: observed.id), governance.lastErrorDescription.isEmpty else { return }
     if gap.status == .resolved {
       governance.decisions().filter { $0.evidenceRefs.contains("knowledge-gap:\(gap.id)") && $0.outcome == "pending" }
         .forEach {
@@ -219,6 +220,16 @@ final class AgentKnowledgeGapResearchBridge: @unchecked Sendable {
     var state = researchStore.state()
     guard researchStore.lastErrorDescription.isEmpty else { return }
     let sourceEventId = "knowledge-gap:\(gap.id)"
+    let existing = state.tasks.filter { $0.sourceEventId == sourceEventId }
+    if !existing.isEmpty {
+      guard enabled, existing.count == 1, let task = existing.first,
+            [.open, .researching].contains(gap.status),
+            [.queued, .running, .waitingForResource, .scheduled].contains(task.status),
+            task.sourceConversationIds == sources, task.sourceConversationId == sources.sorted().first,
+            task.topic == gap.topic, task.question == String(gap.unknownQuestions.joined(separator: "\n").prefix(4_000)) else { return }
+      recordQueuedResearch(gap)
+      return
+    }
     guard AgentKnowledgeGapResearchPolicy.shouldQueue(
       gap: gap,
       autonomousResearchEnabled: enabled,
@@ -240,12 +251,24 @@ final class AgentKnowledgeGapResearchBridge: @unchecked Sendable {
     ))
     researchStore.save(state)
     guard researchStore.lastErrorDescription.isEmpty else { return }
-    _ = governance.updateGapStatus(id: gap.id, status: .researching)
+    recordQueuedResearch(gap)
+  }
+
+  private func recordQueuedResearch(_ gap: AgentKnowledgeGap) {
+    let reference = "knowledge-gap:\(gap.id)"
+    let decisions = governance.decisions()
+    guard governance.lastErrorDescription.isEmpty else { return }
+    if gap.status != .researching {
+      guard governance.updateGapStatus(id: gap.id, status: .researching) != nil else { return }
+    }
+    guard !decisions.contains(where: { $0.evidenceRefs.contains(reference) &&
+      $0.decision == "Queue bounded background research" }) else { return }
     _ = governance.appendDecision(AgentDecisionLogEntry(
+      id: "knowledge-gap-research:\(gap.id)",
       question: "How should GalaxySSI close the evidence gap for \(gap.topic)?",
       decision: "Queue bounded background research",
       alternatives: ["Wait for user evidence", "Leave the result unverified"],
-      evidenceRefs: [sourceEventId] + gap.sourceRunIds.map { "run:\($0)" },
+      evidenceRefs: [reference] + gap.sourceRunIds.map { "run:\($0)" },
       rationale: "The outcome contract is missing evidence and the gap exceeded the research threshold.",
       relatedGoal: gap.relatedGoal
     ))
