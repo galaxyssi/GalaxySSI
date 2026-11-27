@@ -23,8 +23,10 @@ internal object AutoGoalTeamJobs {
         .takeIf(String::isNotEmpty)?.let(::JSONObject)
     private fun active(j: JSONObject?) = j?.optString("state") in setOf("queued", "running")
     private fun name(id: String) = "chat-text-team:$id"
-    private fun valid(ctx: Context, chat: String) =
-        ConversationGoalRunner.eligible(ctx, AgentTranscriptStore(ctx).conversation(chat))
+    private fun valid(ctx: Context, chat: String): Boolean {
+        val current = AgentTranscriptStore(ctx).conversation(chat)
+        return current != null && !current.trackingPaused && ConversationGoalRunner.eligible(ctx, current)
+    }
 
     fun start(context: Context, chat: AgentConversation, objective: String, route: GoalRoute,
         sourceTurn: String? = null): Boolean = synchronized(lock) {
@@ -111,7 +113,9 @@ internal object AutoGoalTeamJobs {
         val calls = AtomicInteger()
         val answer = try {
             runBlocking {
-                runAutoGoalTeam(job.getString("objective"), { instructions, payload -> coroutineScope {
+                val labels = TeamResultLabels(ctx.getString(R.string.auto_team_correction), ctx.getString(R.string.auto_team_objections),
+                    ctx.getString(R.string.auto_team_passing), ctx.getString(R.string.auto_team_none), ctx.getString(R.string.auto_team_limitation))
+                runAutoGoalTeam(job.getString("objective"), labels, { instructions, payload -> coroutineScope {
                     val call = AgentNativeToolCancellationSource()
                     val registration = cancel.token.invokeOnCancellation { call.cancel() }
                     // Provider HTTP calls need an explicit cancellation signal on sibling failure or timeout.
@@ -130,6 +134,10 @@ internal object AutoGoalTeamJobs {
                 ctx.getString(R.string.auto_team_job_receipt, (calls.get() - 2).coerceAtLeast(0), calls.get()) +
                     "\n\n" + result
             }
+        } catch (e: TeamAnswerWithheld) {
+            ctx.getString(R.string.auto_team_job_withheld, e.reservation)
+        } catch (e: TeamTableMismatch) {
+            ctx.getString(R.string.auto_team_table_mismatch, e.verified)
         } catch (_: Exception) {
             cancel.cancel()
             ctx.getString(R.string.auto_team_job_failed, route.label)

@@ -63,6 +63,25 @@ took place. The next turn does not inherit permission to delegate.
    request, status receipts, final answer and stated objections belong in the originating chat;
    discard worker contexts and drafts at termination.
 
+In numbered plans, the last reviewer whose output is not needed by a later
+role reads the actual synthesized draft, its assigned sources and the original
+objective. This is one of the roles the model selected, not an extra call.
+Intermediate reviewers still work before their consumers. The final editor can
+accept, revise with a public correction, or withhold with a reason. A cancelled
+or malformed audit does not release the draft.
+
+An explicit Markdown comparison table can also be checked without model
+arithmetic. Its first two headers must be `input | gate` or `输入 | 门槛`, with
+named alternatives in the remaining columns. Each row supplies decimal values
+in comparable units and one explicit `<`, `>`, `<=` or `>=` threshold, or
+`-` for a row without a gate. Blank values, duplicate labels and ambiguous
+table shapes do not enable this mode. The host compares the printed decimals,
+not hypothetical higher-precision inputs. The reviewer receives those checks
+and the draft. On agreement the app renders the source table and passing
+alternatives itself, separately from the reviewer's explanation and limitation.
+On a structured verdict mismatch it shows the recalculation as partial, not
+the disputed narrative. The table cannot verify claims outside its data.
+
 The only allowed exchange is task text and model responses. Neither coordinator
 nor workers may browse, follow links, invoke tools or connectors, read user
 files or attachments, or retrieve memory or unrelated chat history. The explicit task text
@@ -140,6 +159,13 @@ the repository root run:
 ```text
 java -cp <classpath> tools/testing/LocalTeamAcceptance.java <localhost-port> <local-model-id>
 ```
+
+Repeat with `--swap` as a third argument to reverse the alternatives and their
+definitions. The runner checks the labeled source rows, the changed expected
+winner, a separate review call *after* synthesis, and a limitation on clinical
+inference. A loopback OpenAI-compatible table audit requests a JSON schema for
+the review envelope; the schema constrains types but contains neither the
+series names nor the correct answer. Other routes do not request that schema.
 
 The model chooses role count, assignments, dependencies, findings and synthesis.
 Role numbers belong to the host. Check that there was a real downstream review,

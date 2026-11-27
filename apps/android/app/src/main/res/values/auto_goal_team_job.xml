@@ -4,4 +4,11 @@
     <string name="auto_team_job_interrupted">The team was interrupted. Its last requests have an unknown outcome and were not repeated. Start a new team request to try again.</string>
     <string name="auto_team_job_failed">The team could not deliver a verified workflow result using %1$s. A model call, the plan, or a worker response did not pass checks. No alternate model was used.</string>
     <string name="auto_team_job_stopped">Team stopped. No further results from this run will be added.</string>
+    <string name="auto_team_job_withheld">The reviewer withheld the draft: %1$s</string>
+    <string name="auto_team_correction">Reviewer correction:</string>
+    <string name="auto_team_objections">Reported disagreements:</string>
+    <string name="auto_team_passing">Pass all gates:</string>
+    <string name="auto_team_none">None</string>
+    <string name="auto_team_limitation">Evidence limitation:</string>
+    <string name="auto_team_table_mismatch">The reviewer did not confirm the table verdict. Only the recalculated results are shown.\n\n%1$s</string>
 </resources>
