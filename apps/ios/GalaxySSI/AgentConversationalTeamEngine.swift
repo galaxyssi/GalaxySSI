@@ -107,7 +107,11 @@ enum AgentConversationalTeamEngine {
       var fields: [String: Any] = ["brief": plan.synthesis, "reports": ordered.map(\.json)]
       if let worksheet { fields["verified_table"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(worksheet.evidence)) }
       let payload = try input("synthesis", objective: objective, fields: fields)
-      let draft = try Contract.synthesis(await call(Contract.synthesizer, input: payload, limit: 16_064, ask: ask))
+      let offerContrast = editor != nil && worksheet == nil && AgentTeamPredictionContrast.requested(objective)
+      let synthesis = try AgentTeamPredictionContrast.synthesis(
+        await call(offerContrast ? AgentTeamPredictionContrast.writer : Contract.synthesizer, input: payload, limit: 16_064, ask: ask),
+        offered: offerContrast, text: labels.contrast)
+      let draft = synthesis.answer
       var answer = draft, correction: String?
       if let editor {
         let parents = try editor.parents.map { id -> [String: Any] in
@@ -121,7 +125,9 @@ enum AgentConversationalTeamEngine {
         if let worksheet { auditFields["verified_table"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(worksheet.evidence)) }
         let index = (plan.roles.firstIndex(of: editor) ?? 0) + 1
         onEvent(.auditing(index, plan.roles.count)); try reserveCall()
-        let raw = try await call(worksheet == nil ? AgentTeamDraftAudit.system : AgentTeamDraftAudit.tableSystem,
+        let auditSystem = worksheet != nil ? AgentTeamDraftAudit.tableSystem :
+          (synthesis.claim == nil ? AgentTeamDraftAudit.system : AgentTeamPredictionContrast.auditor)
+        let raw = try await call(auditSystem,
           input: input("audit", objective: objective, fields: auditFields), limit: 17_300, ask: ask)
         let reviewed: AgentTeamDraftAudit.Result
         do { reviewed = try AgentTeamDraftAudit.parse(raw, draft: draft, sheet: worksheet, labels: labels) }
@@ -132,7 +138,7 @@ enum AgentConversationalTeamEngine {
           }
         }
         answer = reviewed.answer; correction = reviewed.correction
-        if reviewed.requiresHandback {
+        if reviewed.requiresHandback || (synthesis.claim != nil && reviewed.correction != nil) {
           guard let objection = reviewed.correction else { throw AgentTeamDraftAudit.Failure.invalid }
           func withhold(_ reason: String) -> AgentTeamDraftAudit.Rejected {
             AgentTeamDraftAudit.Rejected(issue: .withheld(reason), objections: objections)
@@ -141,11 +147,15 @@ enum AgentConversationalTeamEngine {
           guard calls + 2 <= Contract.maximumCalls else { throw withhold(objection) }
           do {
             onEvent(.rewriting); try reserveCall()
-            let rewriteFields: [String: Any] = ["brief": plan.synthesis, "reports": ordered.map(\.json),
+            var rewriteFields: [String: Any] = ["brief": plan.synthesis, "reports": ordered.map(\.json),
               "draft": draft, "objection": objection]
-            let rawRewrite = try await call(AgentTeamDraftAudit.rewriteSystem,
+            if let claim = synthesis.claim { rewriteFields["original_claim"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(claim)) }
+            let rawRewrite = try await call(synthesis.claim == nil ? AgentTeamDraftAudit.rewriteSystem : AgentTeamPredictionContrast.writer,
               input: input("rewrite", objective: objective, fields: rewriteFields), limit: 16_064, ask: ask)
-            let candidate = try AgentTeamDraftAudit.replacement(rawRewrite, rejected: draft)
+            let candidate: String
+            if synthesis.claim == nil { candidate = try AgentTeamDraftAudit.replacement(rawRewrite, rejected: draft) }
+            else { candidate = try AgentTeamPredictionContrast.render(AgentTeamDraftAudit.object(rawRewrite), text: labels.contrast) }
+            guard !candidate.isBlank, !AgentTeamDraftAudit.sameDraft(candidate, draft), candidate.utf16.count <= 8_000 else { throw AgentTeamDraftAudit.Failure.invalid }
             onEvent(.rechecking(index, plan.roles.count)); try reserveCall()
             auditFields["draft"] = candidate; auditFields["rejected_draft"] = draft; auditFields["objection"] = objection
             let rawRecheck = try await call(AgentTeamDraftAudit.recheckSystem,

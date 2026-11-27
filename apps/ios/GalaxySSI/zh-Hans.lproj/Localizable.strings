@@ -8086,6 +8086,14 @@
 "galaxyssi.conversation_team.rewriting" = "正在改写有异议的草稿";
 "galaxyssi.conversation_team.rechecking" = "角色 %lld / %lld 正在复核修改稿";
 "galaxyssi.conversation_team.review_reason_missing" = "审核者未给出具体理由。";
+"galaxyssi.conversation_team.contrast_format" = "目的：%1$@\n预测：如果%2$@%3$@，%4$@的有效读数应当%5$@。\n相反观察：在相同前提下，如果%2$@%3$@，%4$@的有效读数却%6$@，这才与预测矛盾；未测量、测量无效或结果无法解释都不构成反证。\n替代解释：%7$@；仍缺的证据：%8$@。这只是假设，不是实验或临床结论。";
+"galaxyssi.conversation_team.contrast_higher" = "更高";
+"galaxyssi.conversation_team.contrast_lower" = "更低";
+"galaxyssi.conversation_team.contrast_excluded" = "翻译|词义|不要|不用|无需|不必";
+"galaxyssi.conversation_team.contrast_request" = "(?:什么|哪[种个些]|怎样的)(?:样的)?(?:观察|现象|结果|证据|变化|读数)(?:会|能|可以|能够|将|足以)?(?:让|使|迫使)?(?:你|我们|我)?(?:(?:证伪|推翻|反驳|否定|放弃)(?:这[个一项]?|该|上述|你的)?(?:假设|解释|预测|说法)|(?:与|和)(?:这[个一项]?|该|上述)?(?:预测|解释|假设)(?:不能同时成立|不相容|相矛盾|相冲突))|(?:如何|怎样|怎么)(?:才能|能|可以)?(?:证伪|推翻)(?:这[个一项]?|该)(?:预测|假设|解释)";
+"galaxyssi.conversation_team.contrast_placeholders" = "占位符|待填写|待补充|待填|待定|未知|输入|读数|目的|替代解释|缺失证据|无";
+"galaxyssi.conversation_team.contrast_sample_request" = "同样前提下哪种观察与该预测不能同时成立";
+"galaxyssi.conversation_team.contrast_sample_excluded" = "不要讨论什么现象会让你放弃这个解释。";
 "galaxyssi.conversation_team.correction" = "审核者修正：";
 "galaxyssi.conversation_team.passing" = "通过全部门槛：";
 "galaxyssi.conversation_team.none" = "无";
