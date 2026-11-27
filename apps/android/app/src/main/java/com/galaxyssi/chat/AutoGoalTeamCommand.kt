@@ -67,6 +67,16 @@ internal sealed interface AutoGoalTeamCommand {
         fun allowsModelReview(text: String): Boolean = text.isNotBlank() && !text.startsWith('/') &&
             start(text) is Start && !noDelegation.containsMatchIn(text) && HealthAgentLab.intent(text, true) == null
 
+        private val finalAudit = Regex(
+            """(?i)(?:^|\bplease\s+|\bthen\s+|\band\s+)(?:provide\s+|perform\s+|arrange\s+|request\s+|get\s+)?(?:independently (?:review|audit|check)|(?:an? )?independent (?:final )?(?:review|audit|check)(?: of)?) (?:the |my |our )?(?:final (?:answer|draft|response|report)|conclusion)\b""" +
+                """|(?:^|请|并|再|然后|需要)(?:安排|进行|做一次)?独立(?:审核|复核|审查|评审)(?:一下)?(?:最后|最终)(?:的)?(?:答复|答案|回复|结论|报告|草稿)"""
+        )
+
+        fun requestsFinalAudit(text: String): Boolean =
+            separator.splitToSequence(quoted.replace(text, " ")).map(String::trim).any { clause ->
+                !noDelegation.containsMatchIn(clause) && !meta.containsMatchIn(clause) && finalAudit.containsMatchIn(clause)
+            }
+
         fun parse(input: String): AutoGoalTeamCommand? {
             val text = input.trim()
             if (text.startsWith('/')) {

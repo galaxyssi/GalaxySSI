@@ -71,13 +71,15 @@ internal object ConversationGoalRunner {
         }
         val c = resolveCloud(context, route.target, route.model) ?: error("model unavailable")
         check(c.getString("cloud_model") == route.model && fingerprint(c) == route.endpointHash)
-        val format = teamAuditOutputFormat(system, c.getString("cloud_endpoint"))
+        val endpoint = c.getString("cloud_endpoint")
+        val wire = teamPlanWire(system, endpoint, c.optString("cloud_api_style", "openai"))
+        val format = if (wire == null) teamAuditOutputFormat(system, endpoint) else wire.requestFormat
         val response = CloudModelClient.nativeToolAdapter(context, c, emptyList(), textOnlyResponseFormat = format).complete(
             AgentModelRequest(run, chat, "$run-$round", run, chat, round,
-                listOf(AgentModelMessage.system(system), AgentModelMessage.user(prompt)), "[]",
+                listOf(AgentModelMessage.system(wire?.system ?: system), AgentModelMessage.user(prompt)), "[]",
                 AgentNativeJsonCodec.sha256("[]"), 0, 3000, 120_000, 0, token))
         check(response.toolCalls.isEmpty())
-        return response.assistantText
+        return wire?.decode(response.assistantText) ?: response.assistantText
     }
 
     fun name(g: ConversationGoal) = "conversation-goal:${g.id}:${g.generation}"

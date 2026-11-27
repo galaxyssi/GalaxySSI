@@ -202,6 +202,27 @@ verdict that both A and B pass, and flags a missing limitation on clinical
 inference. It is a smoke test, not a general scientific fact checker. Run with
 `--check-rubric` instead of the port and model to exercise those guards offline.
 An incomplete plan or an incomplete answer fails the run.
+
+The Custom/OpenAI preset at a numeric loopback host and the canonical
+`/v1/chat/completions` path requests a compact JSON plan. It does not assume
+the server supports schema-constrained decoding. For a known llama.cpp server
+only, add `--schema-plan` to exercise native schema constraints. Both paths
+validate role count, dependency order, assignments and the synthesis brief
+before dispatch. Neither repairs a broken plan by inventing missing work.
+When an explicit request for independent final review is recognized, a plan
+without a final editor stops before any worker call; no unaudited draft is published.
+Remote endpoints keep the existing planning protocol.
+
+For an open-ended concept instead of a table comparison, use `--concept` as
+an option. This fixed Chinese turn goes through the same team-command
+parser as typed chat. The only disease background is that blood phenylalanine
+can be elevated in PKU ([MedlinePlus Genetics](https://medlineplus.gov/genetics/condition/phenylketonuria/)).
+It asks for a **research-only, in-vitro readout concept** without specifying a
+candidate, mechanism or answer. The harness checks admission, independent
+calls, handoff and final review. Inspect the public answer separately: does
+it propose a readout, name an observation that would undermine its interpretation,
+and distinguish desired behavior from actual measurements? The host replay
+does not exercise Android UI, establish scientific novelty or validate a protein.
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 
