@@ -8,7 +8,7 @@ enum AgentConversationalTeamEngine {
   enum Event: Equatable {
     case planning, planAccepted(Int), roleStarted(Int, Int, Contract.Kind), roleCompleted(Int, Int, Contract.Kind)
     case synthesizing, completed, interrupted, stopped
-    case auditing(Int, Int)
+    case auditing(Int, Int), rewriting, rechecking(Int, Int)
   }
   struct Outcome: Sendable {
     let answer: String
@@ -132,6 +132,30 @@ enum AgentConversationalTeamEngine {
           }
         }
         answer = reviewed.answer; correction = reviewed.correction
+        if reviewed.requiresHandback {
+          guard let objection = reviewed.correction else { throw AgentTeamDraftAudit.Failure.invalid }
+          func withhold(_ reason: String) -> AgentTeamDraftAudit.Rejected {
+            AgentTeamDraftAudit.Rejected(issue: .withheld(reason), objections: objections)
+          }
+          // Fund the complete pair before asking the writer; never start an unauditable rewrite.
+          guard calls + 2 <= Contract.maximumCalls else { throw withhold(objection) }
+          do {
+            onEvent(.rewriting); try reserveCall()
+            let rewriteFields: [String: Any] = ["brief": plan.synthesis, "reports": ordered.map(\.json),
+              "draft": draft, "objection": objection]
+            let rawRewrite = try await call(AgentTeamDraftAudit.rewriteSystem,
+              input: input("rewrite", objective: objective, fields: rewriteFields), limit: 16_064, ask: ask)
+            let candidate = try AgentTeamDraftAudit.replacement(rawRewrite, rejected: draft)
+            onEvent(.rechecking(index, plan.roles.count)); try reserveCall()
+            auditFields["draft"] = candidate; auditFields["rejected_draft"] = draft; auditFields["objection"] = objection
+            let rawRecheck = try await call(AgentTeamDraftAudit.recheckSystem,
+              input: input("recheck", objective: objective, fields: auditFields), limit: 1_300, ask: ask)
+            try AgentTeamDraftAudit.recheck(rawRecheck)
+            answer = candidate
+          } catch is CancellationError { throw CancellationError() }
+            catch AgentTeamDraftAudit.Failure.withheld(let reason) { throw withhold(reason) }
+            catch { throw withhold(objection) }
+        }
         onEvent(.roleCompleted(index, plan.roles.count, editor.kind))
       }
       try Task.checkCancellation()

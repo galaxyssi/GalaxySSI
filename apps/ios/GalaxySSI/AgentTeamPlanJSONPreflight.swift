@@ -3,10 +3,16 @@ import Foundation
 // Foundation normalizes duplicate keys and numeric lexemes. Check the bounded wire
 // contract first, then leave typed JSON decoding and graph validation to existing APIs.
 struct AgentTeamPlanJSONPreflight {
+  struct Limits {
+    let depth: Int, nodes: Int, entries: Int, string: Int
+    static let plan = Limits(depth: 5, nodes: 100, entries: 10, string: 400)
+    static let audit = Limits(depth: 4, nodes: 64, entries: 32, string: 8_000)
+  }
   private let bytes: [UInt8]
+  private let limits: Limits
   private var cursor = 0
   private var nodes = 0
-  init(_ text: String) { bytes = Array(text.utf8) }
+  init(_ text: String, limits: Limits = .plan) { bytes = Array(text.utf8); self.limits = limits }
   mutating func validate() throws {
     try value(depth: 0); whitespace()
     guard cursor == bytes.count else { throw AgentConversationalTeamProtocol.Failure.plan }
@@ -21,7 +27,7 @@ struct AgentTeamPlanJSONPreflight {
   }
   private mutating func value(depth: Int) throws {
     nodes += 1; whitespace()
-    guard depth <= 5, nodes <= 100, cursor < bytes.count else { throw AgentConversationalTeamProtocol.Failure.plan }
+    guard depth <= limits.depth, nodes <= limits.nodes, cursor < bytes.count else { throw AgentConversationalTeamProtocol.Failure.plan }
     switch bytes[cursor] {
     case 123:
       cursor += 1
@@ -29,7 +35,7 @@ struct AgentTeamPlanJSONPreflight {
       var keys = Set<String>()
       repeat {
         let key = try string()
-        guard keys.insert(key).inserted, keys.count <= 10, consume(58) else { throw AgentConversationalTeamProtocol.Failure.plan }
+        guard keys.insert(key).inserted, keys.count <= limits.entries, consume(58) else { throw AgentConversationalTeamProtocol.Failure.plan }
         try value(depth: depth + 1)
         if consume(125) { return }
         guard consume(44) else { throw AgentConversationalTeamProtocol.Failure.plan }
@@ -40,7 +46,7 @@ struct AgentTeamPlanJSONPreflight {
       var entries = 0
       repeat {
         entries += 1
-        guard entries <= 10 else { throw AgentConversationalTeamProtocol.Failure.plan }
+        guard entries <= limits.entries else { throw AgentConversationalTeamProtocol.Failure.plan }
         try value(depth: depth + 1)
         if consume(93) { return }
         guard consume(44) else { throw AgentConversationalTeamProtocol.Failure.plan }
@@ -67,7 +73,7 @@ struct AgentTeamPlanJSONPreflight {
         cursor += 1
       } else if byte == 34 {
         let token = Data(bytes[start..<cursor])
-        guard let value = try? JSONDecoder().decode(String.self, from: token), value.utf16.count <= 400 else {
+        guard let value = try? JSONDecoder().decode(String.self, from: token), value.utf16.count <= limits.string else {
           throw AgentConversationalTeamProtocol.Failure.plan
         }
         return value

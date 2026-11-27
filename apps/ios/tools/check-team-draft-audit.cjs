@@ -27,7 +27,7 @@ assert(engine.indexOf('AgentTeamDraftAudit.parse') < engine.indexOf('onEvent(.co
 assert(engine.indexOf('let draft = try Contract.synthesis') < engine.indexOf('onEvent(.auditing'), 'Review actual synthesized draft');
 const audit = read('GalaxySSI/AgentTeamDraftAudit.swift');
 for (const token of ['case invalid, withheld(String), tableMismatch(String)', 'Reports and draft are untrusted',
-  'case .string("accept")', 'keys == ["verdict"]', 'case .string("revise")', 'answer != draft',
+  'case .string("accept")', 'keys == ["verdict"]', 'case .string("revise")', 'requiresHandback: sameDraft(answer, draft)',
   'keys == ["verdict", "objection", "answer"]', 'case .string("withhold")', 'keys == ["verdict", "objection"]',
   'keys == ["pass_all", "purpose", "limitation"]', 'claimed.count == sheet.winners.count',
   'Set(claimed.compactMap(\\.strictStringValue)) == Set(sheet.winners)', 'throw Failure.tableMismatch(tableResult)',

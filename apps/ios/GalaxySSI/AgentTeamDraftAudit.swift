@@ -6,7 +6,7 @@ enum AgentTeamDraftAudit {
     let issue: Failure
     let objections: [AgentConversationalTeamProtocol.Objection]
   }
-  struct Result { let answer: String; let correction: String? }
+  struct Result { let answer: String; let correction: String?; var requiresHandback = false }
   struct Labels {
     let passing: String
     let none: String
@@ -38,18 +38,61 @@ enum AgentTeamDraftAudit {
     No Markdown or other keys.
     """ + "\n" + AgentConversationalTeamProtocol.boundary
 
+  static let rewriteSystem = """
+    You wrote the draft. The final editor raised a specific objection and did not supply a correction.
+    Using the original objective, brief and reports, write the corrected public answer, not a promise to fix it.
+    Check whether the objection is supported. For predictions, test whether the proposed counterexample
+    contradicts the prediction under the same assumptions rather than restating it. Do not invent evidence.
+    Return only {"answer":"complete replacement in the language of the objective"}.
+    """ + "\n" + AgentConversationalTeamProtocol.boundary
+  static let recheckSystem = """
+    As the same independent editor, compare draft (the proposed replacement) with rejected_draft,
+    the original objective and your objection. Do not accept a paraphrase that leaves the error intact.
+    Verify that each claimed counterexample is incompatible with its prediction under the same assumptions.
+    Return only {"verdict":"accept"} if the replacement resolves the objection and meets the objective.
+    Otherwise return {"verdict":"withhold","objection":"specific reason in the language of the objective"}.
+    """ + "\n" + AgentConversationalTeamProtocol.boundary
+
+  static func sameDraft(_ left: String, _ right: String) -> Bool {
+    func normalized(_ value: String) -> String {
+      value.replacingOccurrences(of: #"[\s\p{Z}\u0085]+"#, with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return normalized(left) == normalized(right)
+  }
   private static func object(_ raw: String) throws -> AgentMcpJSONObject {
     var json = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n")
     if json.hasPrefix("```json\n"), json.hasSuffix("\n```") { json = String(json.dropFirst(8).dropLast(4)) }
-    guard json.hasPrefix("{"), let value = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8)) else { throw Failure.invalid }
+    guard raw.utf16.count <= 17_300, json.hasPrefix("{") else { throw Failure.invalid }
+    var preflight = AgentTeamPlanJSONPreflight(json, limits: .audit)
+    do { try preflight.validate() } catch { throw Failure.invalid }
+    guard let value = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: Data(json.utf8)) else { throw Failure.invalid }
     return value
+  }
+  private static func field(_ object: AgentMcpJSONObject, _ key: String, limit: Int) throws -> String {
+    guard let value = object[key]?.strictStringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isBlank, value.utf16.count <= limit, !value.contains("```galaxyssi-rich") else { throw Failure.invalid }
+    return value
+  }
+  static func replacement(_ raw: String, rejected: String) throws -> String {
+    let value = try object(raw)
+    guard Set(value.keys) == ["answer"] else { throw Failure.invalid }
+    let answer = try field(value, "answer", limit: 8_000)
+    guard !sameDraft(answer, rejected) else { throw Failure.invalid }
+    return answer
+  }
+  static func recheck(_ raw: String) throws {
+    let value = try object(raw), keys = Set(value.keys)
+    if keys == ["verdict"], value["verdict"] == .string("accept") { return }
+    if keys == ["verdict", "objection"], value["verdict"] == .string("withhold") {
+      throw Failure.withheld(try field(value, "objection", limit: 600))
+    }
+    throw Failure.invalid
   }
   static func parse(_ raw: String, draft: String, sheet: AgentTeamComparisonSheet.Sheet?, labels: Labels) throws -> Result {
     let review = try object(raw), keys = Set(review.keys)
     func field(_ key: String, limit: Int) throws -> String {
-      guard let value = review[key]?.strictStringValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-        !value.isBlank, value.utf16.count <= limit, !value.contains("```galaxyssi-rich") else { throw Failure.invalid }
-      return value
+      try self.field(review, key, limit: limit)
     }
     if let sheet {
       let tableResult = sheet.table + "\n\n" + labels.passing + " " + (sheet.winners.isEmpty ? labels.none : sheet.winners.joined(separator: ", "))
@@ -65,8 +108,7 @@ enum AgentTeamDraftAudit {
     case .string("revise"):
       guard keys == ["verdict", "objection", "answer"] else { throw Failure.invalid }
       let objection = try field("objection", limit: 600), answer = try field("answer", limit: 8_000)
-      guard answer != draft else { throw Failure.invalid }
-      return Result(answer: answer, correction: objection)
+      return Result(answer: answer, correction: objection, requiresHandback: sameDraft(answer, draft))
     case .string("withhold"):
       guard keys == ["verdict", "objection"] else { throw Failure.invalid }
       throw Failure.withheld(try field("objection", limit: 600))
