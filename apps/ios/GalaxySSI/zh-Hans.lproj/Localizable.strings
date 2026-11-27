@@ -8084,6 +8084,7 @@
 "galaxyssi.conversation_team.auditing" = "角色 %lld / %lld 正在审核最终草稿";
 "galaxyssi.conversation_team.rewriting" = "正在改写有异议的草稿";
 "galaxyssi.conversation_team.rechecking" = "角色 %lld / %lld 正在复核修改稿";
+"galaxyssi.conversation_team.review_reason_missing" = "审核者未给出具体理由。";
 "galaxyssi.conversation_team.correction" = "审核者修正：";
 "galaxyssi.conversation_team.passing" = "通过全部门槛：";
 "galaxyssi.conversation_team.none" = "无";

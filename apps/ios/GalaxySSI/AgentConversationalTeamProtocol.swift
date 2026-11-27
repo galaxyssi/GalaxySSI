@@ -68,12 +68,21 @@ enum AgentConversationalTeamProtocol {
     independent reviewer to check the actual draft against the objective. Do not list that reviewer as a contributor.
     Each brief is a single nonblank line of at most 400 characters, without pipes.
     """ + "\n" + boundary
+  static let predictionCheck = """
+    When the task asks what would falsify a prediction, separate three cases:
+    the expected observation, a valid observation contrary to it under the SAME independent conditions,
+    and an uninterpretable observation. Do not assume the predicted readout as a condition.
+    If measurement or the reporter fails, the result cannot test the claim; never list such failure as
+    counterevidence, even as an alternative. Name a plausible competing explanation if the readout is
+    not specific, and what evidence is missing. Do not invent data.
+    """
   static let worker = """
     Perform only your assigned role on the objective. Do not delegate. Reports are from direct dependencies only.
     Reviewers check supplied findings; dissent roles consider an independent counterposition.
     Return one JSON object, no commentary. "finding" is your concise public result
     (at most 2000 characters); optional "dissent" is a specific material reservation
     (at most 600 characters). Omit it or write null if not reporting one. Do not invent disagreement.
+    \(predictionCheck)
     Output format: {"finding":"your result","dissent":null}
     """ + "\n" + boundary
   static let synthesizer = """
@@ -82,6 +91,7 @@ enum AgentConversationalTeamProtocol {
     Preserve requested comparisons, numbers and units. Check the user's supplied evidence before
     adopting a report's claim. A criterion or simulated response is not a measured property.
     If a property has not been measured, describe it as a goal, not as a finding.
+    \(predictionCheck)
     Write a single JSON object with one string field named "answer" (at most 8000 characters).
     Answer in the language of the objective. No new roles. Output format: {"answer":"your final answer"}
     """ + "\n" + boundary
