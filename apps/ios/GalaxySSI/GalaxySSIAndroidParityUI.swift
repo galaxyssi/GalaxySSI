@@ -197,7 +197,7 @@ struct AgentHomeView: View {
   @State var doorAccessLaunch: GalaxySSIDoorAccessView.Launch?
   @State var homeActionEditorSelection: GalaxySSIAgentRuntimeActionSelection?
   @State var composerFocusRequest = 0
-  @State var agentRuntimeAuditRecords: [AgentNativeToolAuditRecord] = []
+  @StateObject var homeAudit = AgentHomeAuditLoader()
   @State var modelSelection = AgentModelSelection()
   @State var voiceAttachmentSnapshot: [GalaxySSIDraftAttachment] = []
   @State var voiceAppAnchor: VoiceAppCaptureAnchor?
@@ -389,6 +389,7 @@ struct AgentHomeView: View {
         cancelScreenPagePDFImport()
         invalidateVoiceAppAnchor()
         homeVisible = false
+        homeAudit.invalidate()
         clearAgentTranscriptWindow()
         AgentIOSComposerInputBridge.shared.removeHandler()
         AgentIOSAgentHomeActionBridge.shared.removeTapHandler()
@@ -414,6 +415,7 @@ struct AgentHomeView: View {
         refreshVisibleAgentReplyReadState()
       }
       .onChange(of: homeWindowFocused) { _ in refreshVisibleAgentReplyReadState() }
+      .task(id: auditRefreshIdentity) { refreshAgentRuntimeAuditRecords() }
       .onChange(of: agentReplyReadBoundary) { _ in refreshVisibleAgentReplyReadState() }
       .task(id: agentReplyReadBoundary) {
         guard let boundary = agentReplyReadBoundary else { return }

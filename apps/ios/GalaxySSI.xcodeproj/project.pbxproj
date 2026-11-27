@@ -1872,6 +1872,7 @@
     A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */; };
     F12698000000000000000001 /* AgentNativeToolResourceLocks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */; };
     A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000311 /* AgentNativeToolAuditStore.swift */; };
+    C46820000000000000000001 /* AgentHomeAuditLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46820000000000000000002 /* AgentHomeAuditLoader.swift */; };
     A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */; };
     A10000000000000000000313 /* AgentNativeToolDefaultStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */; };
     A10000000000000000000314 /* AgentPhoneNativeToolCatalogDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000314 /* AgentPhoneNativeToolCatalogDefaults.swift */; };
@@ -2282,6 +2283,7 @@
     A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000210 /* GlobalMemoryContextTests.swift */; };
     A10000000000000000000211 /* GlobalMemoryEvolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */; };
     A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000212 /* GlobalMemoryAuditTests.swift */; };
+    C46820000000000000000003 /* AgentHomeAuditLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46820000000000000000004 /* AgentHomeAuditLoaderTests.swift */; };
     A10000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */; };
     A10000000000000000000214 /* LocalModelRuntimePreflightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */; };
     A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */; };
@@ -4211,6 +4213,7 @@
     A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolExecutionModels.swift; sourceTree = "<group>"; };
     F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolResourceLocks.swift; sourceTree = "<group>"; };
     A20000000000000000000311 /* AgentNativeToolAuditStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolAuditStore.swift; sourceTree = "<group>"; };
+    C46820000000000000000002 /* AgentHomeAuditLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHomeAuditLoader.swift; sourceTree = "<group>"; };
     A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolReplayFileStore.swift; sourceTree = "<group>"; };
     A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolDefaultStores.swift; sourceTree = "<group>"; };
     A20000000000000000000314 /* AgentPhoneNativeToolCatalogDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeToolCatalogDefaults.swift; sourceTree = "<group>"; };
@@ -4764,6 +4767,7 @@
     A20000000000000000000210 /* GlobalMemoryContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000212 /* GlobalMemoryAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryAuditTests.swift; sourceTree = "<group>"; };
+    C46820000000000000000004 /* AgentHomeAuditLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHomeAuditLoaderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRuntimePreflightTests.swift; sourceTree = "<group>"; };
     A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAcceleratorCapabilityTests.swift; sourceTree = "<group>"; };
@@ -5938,6 +5942,7 @@
         A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */,
         F22698000000000000000001 /* AgentNativeToolResourceLocks.swift */,
         A20000000000000000000311 /* AgentNativeToolAuditStore.swift */,
+        C46820000000000000000002 /* AgentHomeAuditLoader.swift */,
         A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */,
         A20000000000000000000550 /* AgentPlanNodeJournal.swift */,
         A20000000000000000000313 /* AgentNativeToolDefaultStores.swift */,
@@ -7099,6 +7104,7 @@
         A20000000000000000000210 /* GlobalMemoryContextTests.swift */,
         A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */,
         A20000000000000000000212 /* GlobalMemoryAuditTests.swift */,
+        C46820000000000000000004 /* AgentHomeAuditLoaderTests.swift */,
         A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */,
         A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */,
         A20000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift */,
@@ -8380,6 +8386,7 @@
         A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */,
         F12698000000000000000001 /* AgentNativeToolResourceLocks.swift in Sources */,
         A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */,
+        C46820000000000000000001 /* AgentHomeAuditLoader.swift in Sources */,
         A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */,
         A10000000000000000000550 /* AgentPlanNodeJournal.swift in Sources */,
         A10000000000000000000313 /* AgentNativeToolDefaultStores.swift in Sources */,
@@ -9682,6 +9689,7 @@
         A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */,
         A10000000000000000000211 /* GlobalMemoryEvolutionTests.swift in Sources */,
         A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */,
+        C46820000000000000000003 /* AgentHomeAuditLoaderTests.swift in Sources */,
         A10000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift in Sources */,
         A10000000000000000000214 /* LocalModelRuntimePreflightTests.swift in Sources */,
         A10000000000000000000883 /* GalaxySSIEmbeddingRuntimeTests.swift in Sources */,
