@@ -30,6 +30,13 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
   private struct PickerRequest: Identifiable { let id = UUID(); let kind: Period.Kind }
   @State private var expanded = false
   @State private var visible = false
+  @State private var readingAnchor = GalaxySSIHealthMetricReadingAnchor()
+  private func readingKey(_ item: Item) -> String {
+    let dimension = item.series.map { series in
+      AgentModelLoopRecoveryIdentity.sha256(["unit": series.key.unit, "condition": series.key.condition, "side": series.key.side])
+    } ?? "missing"
+    return item.metric.metric.rawValue + ":" + dimension
+  }
   private var scope: GalaxySSIHealthMeasurementQuery.Scope {
     .overview(period: period, abnormal: false, after: nil, expanded: false, outsideIDs: [])
   }
@@ -61,7 +68,9 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
     VStack(alignment: .leading, spacing: 10) {
       heading
       HStack(alignment: .top, spacing: 12) {
-        Toggle(t("abnormal", "Abnormal only"), isOn: $abnormal).disabled(!allowed || selection.pending != nil)
+        Toggle(t("abnormal", "Abnormal only"), isOn: Binding(get: { abnormal }, set: {
+          readingAnchor.capture(); abnormal = $0
+        })).disabled(!allowed || selection.pending != nil)
         Button { compare(period) } label: {
           Label(t("comparison", "Period comparison"), systemImage: "arrow.left.arrow.right")
             .fixedSize(horizontal: false, vertical: true).frame(minHeight: 44)
@@ -79,6 +88,7 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
         VStack(spacing: 0) {
           ForEach(displayed) { item in
             previewRow(item)
+              .background(GalaxySSIHealthMetricReadingAnchor.Marker(anchor: readingAnchor, key: readingKey(item)))
             Divider()
           }
           if filtered.isEmpty { Text(t("empty", "No matching measurements")).font(.caption).foregroundColor(.secondary).padding(12) }
@@ -87,8 +97,16 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
         if filtered.count > previewSize { expansionToggle.disabled(selection.pending != nil) }
       }
     }
-    .onAppear { visible = true; reload(preserve: true) }
-    .onDisappear { visible = false; picker = nil; cancelSelection(); query.cancel(clear: false) }
+    .onAppear {
+      visible = true
+      readingAnchor.allowed = { visible && scene == .active && store.profile.identityFingerprint == records.owner &&
+        UIApplication.shared.isProtectedDataAvailable }
+      reload(preserve: true)
+    }
+    .onChange(of: displayed.map(readingKey)) { keys in readingAnchor.restore(keys: keys) }
+    .onChange(of: abnormal) { _ in readingAnchor.restore(keys: displayed.map(readingKey)) }
+    .onChange(of: period) { _ in readingAnchor.restore(keys: displayed.map(readingKey)) }
+    .onDisappear { visible = false; readingAnchor.clear(); readingAnchor.allowed = nil; picker = nil; cancelSelection(); query.cancel(clear: false) }
     .onChange(of: timeZone) { _ in picker = nil; reload() }
     .onChange(of: allowed) { if !$0 { clearPrivate(); reload() } }
     .onChange(of: now) { _ in reload(preserve: true) }
@@ -115,6 +133,7 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) { changed($0) }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification)) { _ in reload() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in clearPrivate() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in clearPrivate() }
     .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in reload() }
     .background(GeometryReader { geometry in
       Color.clear.onAppear { width = geometry.size.width }.onChange(of: geometry.size.width) { width = $0 }
@@ -146,9 +165,10 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
           .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
       }.accessibilityLabel(selectorLabel).help(selectorLabel).accessibilityIdentifier("health-measurement-period-filter")
     }
+    .background(GalaxySSIHealthMetricReadingAnchor.Marker(anchor: readingAnchor, key: "filter"))
   }
   private var expansionToggle: some View {
-    Button { expanded.toggle() } label: {
+    Button { readingAnchor.capture(); expanded.toggle() } label: {
       HStack {
         Spacer()
         Text(expanded ? t("collapse_records", "Collapse records") : t("expand_records", "View all records"))
@@ -220,7 +240,8 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
   private func finishSelection() {
     guard visible, scene == .active, store.profile.identityFingerprint == records.owner, let request = selection.pending,
           staged.hasScope(.overview(period: request.period, abnormal: false, after: nil, expanded: false, outsideIDs: [])) else { return }
-    guard query.adopt(staged, records: records) else { failSelection(.changed); return }
+    readingAnchor.capture()
+    guard query.adopt(staged, records: records) else { readingAnchor.clear(); failSelection(.changed); return }
     if selection.commit(request) { expanded = false }
     staged.cancel()
   }
@@ -231,6 +252,7 @@ struct GalaxySSIHealthMeasurementOverviewView: View {
   }
   private func cancelSelection() { selection.cancel(); staged.cancel() }
   private func clearPrivate() {
+    readingAnchor.clear()
     picker = nil; cancelSelection(); selection = .init(); selectionFailure = nil
     abnormal = false; expanded = false; query.cancel()
   }

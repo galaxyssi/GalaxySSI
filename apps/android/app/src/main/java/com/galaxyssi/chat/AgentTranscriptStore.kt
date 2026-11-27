@@ -1165,6 +1165,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         if (draftConversation?.id == conversationId) draftConversation = null
         if (loadDraftConversation()?.id == conversationId) preferences.remove(draftPreferenceKey)
         ConversationGoalStore(appContext).remove(conversationId)
+        AutoGoalTeamJobs.remove(appContext, conversationId)
         entryDatabase.deleteConversation(conversationId)
         AgentResearchTraceStore.delete(appContext, conversationId)
         AgentTurnReceipt.delete(appContext, conversationId)
@@ -1190,6 +1191,7 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         val deleted = conversationDatabase.deleteConversations(ids)
         val goals = ConversationGoalStore(appContext)
         ids.forEach(goals::remove)
+        ids.forEach { AutoGoalTeamJobs.remove(appContext, it) }
         entryDatabase.deleteConversations(ids)
         ids.forEach { AgentResearchTraceStore.delete(appContext, it) }
         ids.forEach { AgentTurnReceipt.delete(appContext, it) }

@@ -760,6 +760,7 @@
     C46150000000000000000001 /* AgentSessionRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000002 /* AgentSessionRequirement.swift */; };
     C46150000000000000000003 /* GalaxySSISessionRequirementEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000004 /* GalaxySSISessionRequirementEditor.swift */; };
     C46150000000000000000005 /* AgentSessionRequirementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46150000000000000000006 /* AgentSessionRequirementTests.swift */; };
+    C46240000000000000000007 /* GalaxySSIReadingPositionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46240000000000000000008 /* GalaxySSIReadingPositionTests.swift */; };
     C43080000000000000000011 /* PublicNewsArticleRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */; };
     C43080000000000000000021 /* PublicNewsArticleRetryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */; };
     C43070000000000000000011 /* PublicNewsBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C43070000000000000000012 /* PublicNewsBudget.swift */; };
@@ -1517,6 +1518,9 @@
     A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000710 /* CodexStyleResponsePolicy.swift */; };
     A10000000000000000000711 /* AppDisplaySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000711 /* AppDisplaySettings.swift */; };
     A10000000000000000000712 /* AgentTranscriptScrollPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */; };
+    C46240000000000000000001 /* GalaxySSIReadingPosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46240000000000000000002 /* GalaxySSIReadingPosition.swift */; };
+    C46240000000000000000003 /* GalaxySSIReadingParagraphAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46240000000000000000004 /* GalaxySSIReadingParagraphAnchor.swift */; };
+    C46240000000000000000005 /* GalaxySSIHealthMetricReadingAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46240000000000000000006 /* GalaxySSIHealthMetricReadingAnchor.swift */; };
     A10000000000000000009895 /* AgentTranscriptWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009895 /* AgentTranscriptWindow.swift */; };
     A10000000000000000000713 /* AgentTranscriptRenderPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */; };
     A10000000000000000000714 /* AgentFastLocalResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000714 /* AgentFastLocalResponse.swift */; };
@@ -3177,6 +3181,7 @@
     C46150000000000000000002 /* AgentSessionRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRequirement.swift; sourceTree = "<group>"; };
     C46150000000000000000004 /* GalaxySSISessionRequirementEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSISessionRequirementEditor.swift; sourceTree = "<group>"; };
     C46150000000000000000006 /* AgentSessionRequirementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionRequirementTests.swift; sourceTree = "<group>"; };
+    C46240000000000000000008 /* GalaxySSIReadingPositionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIReadingPositionTests.swift; sourceTree = "<group>"; };
     C43080000000000000000012 /* PublicNewsArticleRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryPolicy.swift; sourceTree = "<group>"; };
     C43080000000000000000022 /* PublicNewsArticleRetryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsArticleRetryTests.swift; sourceTree = "<group>"; };
     C43070000000000000000012 /* PublicNewsBudget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicNewsBudget.swift; sourceTree = "<group>"; };
@@ -3880,6 +3885,9 @@
     A20000000000000000000710 /* CodexStyleResponsePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexStyleResponsePolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000711 /* AppDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplaySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptScrollPolicy.swift; sourceTree = "<group>"; };
+    C46240000000000000000002 /* GalaxySSIReadingPosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIReadingPosition.swift; sourceTree = "<group>"; };
+    C46240000000000000000004 /* GalaxySSIReadingParagraphAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIReadingParagraphAnchor.swift; sourceTree = "<group>"; };
+    C46240000000000000000006 /* GalaxySSIHealthMetricReadingAnchor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthMetricReadingAnchor.swift; sourceTree = "<group>"; };
     A20000000000000000009895 /* AgentTranscriptWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptWindow.swift; sourceTree = "<group>"; };
     A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTranscriptRenderPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000714 /* AgentFastLocalResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFastLocalResponse.swift; sourceTree = "<group>"; };
@@ -5647,6 +5655,9 @@
         A20000000000000000000710 /* CodexStyleResponsePolicy.swift */,
         A20000000000000000000711 /* AppDisplaySettings.swift */,
         A20000000000000000000712 /* AgentTranscriptScrollPolicy.swift */,
+        C46240000000000000000002 /* GalaxySSIReadingPosition.swift */,
+        C46240000000000000000004 /* GalaxySSIReadingParagraphAnchor.swift */,
+        C46240000000000000000006 /* GalaxySSIHealthMetricReadingAnchor.swift */,
         A20000000000000000009895 /* AgentTranscriptWindow.swift */,
         A20000000000000000000713 /* AgentTranscriptRenderPolicy.swift */,
         A20000000000000000000714 /* AgentFastLocalResponse.swift */,
@@ -7125,6 +7136,7 @@
         C43210000000000000000032 /* GalaxySSIConversationRenameTests.swift */,
         C46260000000000000000010 /* GalaxySSILocalMessageSearchTests.swift */,
         C46150000000000000000006 /* AgentSessionRequirementTests.swift */,
+        C46240000000000000000008 /* GalaxySSIReadingPositionTests.swift */,
         C43170000000000000000022 /* GalaxySSIHealthMeasurementListTests.swift */,
         C43180000000000000000032 /* GalaxySSIHealthThemeTests.swift */,
         82CAA5317D7AACF6D76773DE /* GalaxySSIHealthAtlasAgentContextTests.swift */,
@@ -8127,6 +8139,9 @@
         A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */,
         A10000000000000000000711 /* AppDisplaySettings.swift in Sources */,
         A10000000000000000000712 /* AgentTranscriptScrollPolicy.swift in Sources */,
+        C46240000000000000000001 /* GalaxySSIReadingPosition.swift in Sources */,
+        C46240000000000000000003 /* GalaxySSIReadingParagraphAnchor.swift in Sources */,
+        C46240000000000000000005 /* GalaxySSIHealthMetricReadingAnchor.swift in Sources */,
         A10000000000000000009895 /* AgentTranscriptWindow.swift in Sources */,
         A10000000000000000000713 /* AgentTranscriptRenderPolicy.swift in Sources */,
         A10000000000000000000714 /* AgentFastLocalResponse.swift in Sources */,
@@ -9650,6 +9665,7 @@
         C43210000000000000000031 /* GalaxySSIConversationRenameTests.swift in Sources */,
         C46260000000000000000009 /* GalaxySSILocalMessageSearchTests.swift in Sources */,
         C46150000000000000000005 /* AgentSessionRequirementTests.swift in Sources */,
+        C46240000000000000000007 /* GalaxySSIReadingPositionTests.swift in Sources */,
         C43170000000000000000021 /* GalaxySSIHealthMeasurementListTests.swift in Sources */,
         C43180000000000000000031 /* GalaxySSIHealthThemeTests.swift in Sources */,
         E05B7B1440408F5D1480CDE3 /* GalaxySSIHealthAtlasAgentContextTests.swift in Sources */,

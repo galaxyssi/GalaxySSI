@@ -1371,6 +1371,8 @@ internal fun MainActivity.submitAgentGoal(
         ?: agentTranscriptStore.activeConversation()
     if (fileReadSource != null && (conversation.id != fileReadSource.chat || conversation.globalTopicKey.isNotBlank() ||
             attachments.singleOrNull()?.id != fileReadSource.item)) return
+    if (goalOverride == null && handleAutoGoalTeam(conversation, goal,
+            attachments.isNotEmpty() || explicitMembers.isNotEmpty())) return
     if (goalOverride == null && handleConversationGoal(conversation, goal,
             attachments.isNotEmpty() || explicitMembers.isNotEmpty())) return
     if (healthCareSubmission == null && conversation.globalTopicKey.startsWith(HealthCareDiscussionPolicy.TOPIC_PREFIX)) {

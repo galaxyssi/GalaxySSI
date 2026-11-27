@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auto_goal_team_title">Temporary team</string>
+    <string name="auto_goal_team_help">What should the team work on? Type /team followed by a self-contained objective, or ask for team collaboration or an independent review. You do not need to choose roles or a team size. Use /team stop to stop a run.</string>
+    <string name="auto_goal_team_limit">Keep the objective to 4,000 characters or fewer. Nothing was sent.</string>
+    <string name="auto_goal_team_chat">Teams are available only in an ordinary active Agent chat, not a group, private chat, or health discussion. Nothing was sent.</string>
+    <string name="auto_goal_team_extras">Remove pending attachments and member mentions before using a team. Your draft has not been changed.</string>
+    <string name="auto_goal_team_health">Do not share personal health data with a team. Restate the objective using public or wholly synthetic information. Nothing was sent.</string>
+    <string name="auto_goal_team_choose">Choose a model for this run</string>
+    <string name="auto_goal_team_route">%1$s · %2$s</string>
+    <string name="auto_goal_team_device">This device (offline)</string>
+    <string name="auto_goal_team_confirm">Model: %1$s\nHost: %2$s\n\nThe coordinator may use 0 to 10 temporary agents, with up to 12 model requests in total. Only the objective below and work produced for this run go to this model. No chat history, health records, attachments, tools, or real-world actions. No fallback; your chat model selection stays unchanged.\n\nConfirm that the objective contains no personal health data and may be shared with this model and host:\n\n%3$s</string>
+    <string name="auto_goal_team_run">Confirm and run</string>
+    <string name="auto_goal_team_no_route">No eligible model is available for this chat selection. A manual choice will not be replaced. Nothing was sent.</string>
+    <string name="auto_goal_team_route_changed">The confirmed route is no longer available for this selection. Submit again to review the model and host. Nothing was sent.</string>
+    <string name="auto_goal_team_active">A team is already active in this chat. Wait for it to finish or use /team stop.</string>
+    <string name="auto_goal_team_inactive">There is no active team to stop in this chat.</string>
+    <string name="auto_goal_team_error">Could not complete the team command. Check this chat before trying again.</string>
+</resources>

@@ -1,0 +1,7 @@
+<resources>
+    <string name="auto_team_job_receipt">协作结果 · %1$d 个子智能体 · %2$d 次模型调用</string>
+    <string name="auto_team_job_queued">协作请求已排队 · %1$s</string>
+    <string name="auto_team_job_interrupted">协作已中断，末次请求结果未知，未自动重发。可以重新发起协作。</string>
+    <string name="auto_team_job_failed">%1$s 未能完成协作：模型调用、分工计划或成员回复未通过检查。没有切换模型。</string>
+    <string name="auto_team_job_stopped">协作已停止。本次任务的迟到结果不会写回。</string>
+</resources>

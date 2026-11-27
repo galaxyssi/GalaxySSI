@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auto_goal_team_title">临时团队</string>
+    <string name="auto_goal_team_help">希望团队完成什么目标？在 /team 后写下完整目标，也可以直接要求团队协作或独立审核。不必指定角色或人数。输入 /team stop 可停止本次任务。</string>
+    <string name="auto_goal_team_limit">请将目标缩短至 4000 个字符以内。尚未发送任何内容。</string>
+    <string name="auto_goal_team_chat">临时团队仅适用于普通的活跃智能体会话，不适用于群聊、私密会话或健康讨论。尚未发送任何内容。</string>
+    <string name="auto_goal_team_extras">请先移除待发送的附件和成员提及，再使用临时团队。草稿未被修改。</string>
+    <string name="auto_goal_team_health">请勿向团队提供个人健康数据。请使用公开或完全虚构的信息重新描述目标。尚未发送任何内容。</string>
+    <string name="auto_goal_team_choose">选择本次任务使用的模型</string>
+    <string name="auto_goal_team_route">%1$s · %2$s</string>
+    <string name="auto_goal_team_device">本机（离线）</string>
+    <string name="auto_goal_team_confirm">模型：%1$s\n主机：%2$s\n\n协调者会按需安排 0 至 10 个临时智能体，整次任务最多请求模型 12 次。只向该模型提供下方目标和本次产生的工作内容。不读取聊天记录、健康档案或附件，不调用工具，也不执行现实操作。不会自动切换服务商或模型，也不会更改当前会话的模型设置。\n\n请确认以下目标不含个人健康数据，且可以与上述模型和主机分享：\n\n%3$s</string>
+    <string name="auto_goal_team_run">确认并开始</string>
+    <string name="auto_goal_team_no_route">当前会话的模型设置下没有可用的合适模型。不会替换手动选择的模型。尚未发送任何内容。</string>
+    <string name="auto_goal_team_route_changed">按当前设置，已确认的模型或主机不再可用。请重新提交并确认。尚未发送任何内容。</string>
+    <string name="auto_goal_team_active">本会话已有团队正在工作。请等待完成，或输入 /team stop 停止任务。</string>
+    <string name="auto_goal_team_inactive">本会话没有可停止的临时团队任务。</string>
+    <string name="auto_goal_team_error">未能完成团队命令。请先查看当前会话，再决定是否重试。</string>
+</resources>

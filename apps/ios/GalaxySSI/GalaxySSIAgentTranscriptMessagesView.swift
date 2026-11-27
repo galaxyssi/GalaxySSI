@@ -164,6 +164,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         localResearchDisclosure(for: researchSource)
       }
       agentMessageContent(message)
+        .background(GalaxySSIReadingParagraphAnchor.RowMarker())
       if message.isMine {
         if let task, let plan, plan.visible {
           let sameState = plan.status == AgentInteractiveProgressStatus(task.phase)
