@@ -45,6 +45,18 @@ private val plannerSystem = """
     Stop immediately after the single SYNTHESIS|brief line. No prose, fences or blank lines.
 """.trimIndent()
 
+private val finalReviewPlannerSystem = """
+    Plan, do not solve. Return only one JSON object with roles, synthesis, and final_review.
+    For example: {"roles":["Compare the schedules"],"synthesis":"Explain the tradeoff","final_review":"Check the draft against the original schedules"}.
+    Write your own briefs for this objective. Use zero to ${MAX_ROLES - 1} contributors. A string is an independent WORK assignment.
+    For dependencies or specialized contributors use {"kind":"WORK","parents":[],"task":"assignment"} instead.
+    WORK produces findings; REVIEW checks earlier findings; CRITIC considers a counterposition. Parents are distinct
+    one-based earlier role numbers; at most $MAX_LINKS parents or children per role. No other keys.
+    Write synthesis as the instruction for drafting the answer. Write final_review as a separate, nonblank instruction
+    for an independent reviewer to check the actual draft against the objective. Do not list that reviewer among the contributors.
+    Each brief is a single nonblank line of at most $MAX_BRIEF characters, without pipes. $TEXT_ONLY
+""".trimIndent()
+
 private val workerSystem = """
     Perform only your assigned role on the objective. Do not delegate. Reports are from direct dependencies only.
     Reviewers check supplied findings; dissent roles consider an independent counterposition.
@@ -110,17 +122,19 @@ internal fun teamAuditOutputFormat(system: String, endpoint: String): JSONObject
 
 /** The selectable Custom/OpenAI preset can request JSON without assuming server-side schema support. */
 internal fun teamPlanWire(system: String, endpoint: String, apiStyle: String): TeamPlanWire? {
-    if (system != plannerSystem || apiStyle !in setOf("openai", "llama.cpp-json-schema")) return null
+    if ((system != plannerSystem && system != finalReviewPlannerSystem) || apiStyle !in setOf("openai", "llama.cpp-json-schema")) return null
     val uri = runCatching { java.net.URI(endpoint) }.getOrNull() ?: return null
     if (uri.scheme !in setOf("http", "https") || uri.host !in setOf("127.0.0.1", "[::1]") ||
         uri.rawUserInfo != null || uri.rawQuery != null || uri.rawFragment != null ||
         uri.rawPath != "/v1/chat/completions" || (uri.port != -1 && uri.port !in 1..65535) ||
         uri.rawAuthority.endsWith(':')) return null
-    return TeamPlanWire(constrained = apiStyle == "llama.cpp-json-schema")
+    return TeamPlanWire(constrained = apiStyle == "llama.cpp-json-schema", finalReview = system == finalReviewPlannerSystem)
 }
 
-internal class TeamPlanWire(private val constrained: Boolean) {
-    val system = """
+private val teamPlanKinds = setOf("WORK", "REVIEW", "CRITIC")
+
+internal class TeamPlanWire(private val constrained: Boolean, private val finalReview: Boolean = false) {
+    val system = if (finalReview) finalReviewPlannerSystem else """
         Plan, do not solve. Return only JSON: {"roles":[{"kind":"WORK","parents":[],"task":"assignment"}],"synthesis":"brief"}.
         Use roles: [] for simple work; otherwise choose the fewest useful roles (max $MAX_ROLES). Do not copy placeholders.
         Kinds: WORK produces findings, REVIEW checks findings, CRITIC considers a counterposition.
@@ -131,7 +145,6 @@ internal class TeamPlanWire(private val constrained: Boolean) {
         $TEXT_ONLY
     """.trimIndent()
 
-    private val kinds = setOf("WORK", "REVIEW", "CRITIC")
     val requestFormat: JSONObject? get() = if (constrained) format else null
     val format: JSONObject
         get() {
@@ -140,40 +153,65 @@ internal class TeamPlanWire(private val constrained: Boolean) {
                 .put("properties", JSONObject().apply { fields.forEach { (key, value) -> put(key, value) } })
                 .put("required", JSONArray(fields.map { it.first })).put("additionalProperties", false)
             val brief = JSONObject().put("type", "string").put("minLength", 1).put("maxLength", MAX_BRIEF)
-            val role = record("kind" to JSONObject().put("type", "string").put("enum", JSONArray(kinds.toList())),
+            val role = record("kind" to JSONObject().put("type", "string").put("enum", JSONArray(teamPlanKinds.toList())),
                 "parents" to array(JSONObject().put("type", "integer").put("minimum", 1).put("maximum", MAX_ROLES), MAX_LINKS),
                 "task" to brief)
+            val schema = if (finalReview) record(
+                "roles" to array(JSONObject().put("anyOf", JSONArray().put(brief).put(role)), MAX_ROLES - 1),
+                "synthesis" to brief, "final_review" to brief
+            ) else record("roles" to array(role, MAX_ROLES), "synthesis" to brief)
             return JSONObject().put("type", "json_schema").put("json_schema", JSONObject().put("name", "team_plan")
-                .put("strict", true).put("schema", record("roles" to array(role, MAX_ROLES), "synthesis" to brief)))
+                .put("strict", true).put("schema", schema))
         }
 
-    fun decode(reply: String): String {
-        fun invalid(): Nothing = error("Invalid structured team plan.")
-        if (reply.length > 6000) invalid()
-        if (!constrained && reply.substringBefore('|') in setOf("ROLE", "WORK", "REVIEW", "CRITIC", "SYNTHESIS")) {
-            // Older local servers may still emit the previous protocol. Never repair a partial response.
-            return reply.trimEnd('\r', '\n').also { parseAutoPlan(it) }
-        }
-        val root = McpJson.parseObject(reply, McpJsonLimits(maxDepth = 5, maxNodes = 100,
-            maxContainerEntries = MAX_ROLES, maxStringLength = MAX_BRIEF))
-        fun brief(obj: McpJsonObject, key: String) = obj.string(key)?.takeIf { value ->
-            value.isNotBlank() && value.none { it == '|' || it.isISOControl() ||
-                it == '\u2028' || it == '\u2029' || Character.getType(it) == Character.FORMAT.toInt() }
-        } ?: invalid()
-        if (root.entries.keys != setOf("roles", "synthesis")) invalid()
-        val roles = root.array("roles") ?: invalid()
-        val lines = roles.values.map { entry ->
-            val role = entry as? McpJsonObject ?: invalid()
-            if (role.entries.keys != setOf("kind", "parents", "task")) invalid()
-            val kind = role.string("kind")?.takeIf { it in kinds } ?: invalid()
-            val parents = role.array("parents") ?: invalid()
-            val refs = parents.values.joinToString(",") { (it as? McpJsonNumber)?.raw ?: invalid() }
-            "$kind|${refs.ifEmpty { "-" }}|${brief(role, "task")}"
-        }
-        val canonical = (lines + "SYNTHESIS|${brief(root, "synthesis")}").joinToString("\n")
-        parseAutoPlan(canonical)
-        return canonical
+    fun decode(reply: String): String = decodeTeamPlan(reply, finalReview, allowText = !constrained).canonical
+}
+
+private data class DecodedTeamPlan(val canonical: String, val plan: AutoPlan)
+
+private fun decodeTeamPlan(reply: String, finalReview: Boolean, allowText: Boolean): DecodedTeamPlan {
+    fun invalid(): Nothing = error("Invalid structured team plan.")
+    fun checked(text: String): DecodedTeamPlan {
+        val plan = parseAutoPlan(text)
+        if (finalReview && plan.finalEditor == null) throw TeamFinalAuditMissing()
+        return DecodedTeamPlan(text, plan)
     }
+    if (reply.length > 6000) invalid()
+    if (allowText && reply.substringBefore('|') in setOf("ROLE", "WORK", "REVIEW", "CRITIC", "SYNTHESIS")) {
+        return checked(reply.trimEnd('\r', '\n'))
+    }
+    val root = McpJson.parseObject(reply, McpJsonLimits(maxDepth = 5, maxNodes = 100,
+        maxContainerEntries = MAX_ROLES, maxStringLength = MAX_BRIEF))
+    fun brief(field: McpJsonValue?): String = (field as? McpJsonString)?.value?.takeIf { value ->
+        value.isNotBlank() && value.none { it == '|' || it.isISOControl() ||
+            it == '\u2028' || it == '\u2029' || Character.getType(it) == Character.FORMAT.toInt() }
+    } ?: invalid()
+    val hasFinalBrief = finalReview && "final_review" in root.entries
+    val keys = if (hasFinalBrief) setOf("roles", "synthesis", "final_review") else setOf("roles", "synthesis")
+    if (root.entries.keys != keys) invalid()
+    val roles = root.array("roles")?.values ?: invalid()
+    if (hasFinalBrief && roles.size > MAX_ROLES - 1) invalid()
+    val lines = roles.map { entry ->
+        if (finalReview && entry is McpJsonString) {
+            // String roles did not exist in the old protocol; they require an explicit final brief.
+            if (!hasFinalBrief) throw TeamFinalAuditMissing()
+            return@map "WORK|-|${brief(entry)}"
+        }
+        val role = entry as? McpJsonObject ?: invalid()
+        if (role.entries.keys != setOf("kind", "parents", "task")) invalid()
+        val kind = role.string("kind")?.takeIf { it in teamPlanKinds } ?: invalid()
+        val parents = role.array("parents") ?: invalid()
+        val refs = parents.values.joinToString(",") { (it as? McpJsonNumber)?.raw ?: invalid() }
+        "$kind|${refs.ifEmpty { "-" }}|${brief(role["task"])}"
+    }.toMutableList()
+    if (hasFinalBrief) {
+        val audit = root["final_review"]
+        if (audit == McpJsonNull || (audit is McpJsonString && audit.value.isBlank())) throw TeamFinalAuditMissing()
+        // The last independent REVIEW is the final editor. Other REVIEWs keep their declared graph.
+        lines += "REVIEW|-|${brief(audit)}"
+    }
+    lines += "SYNTHESIS|${brief(root["synthesis"])}"
+    return checked(lines.joinToString("\n"))
 }
 
 private data class AutoRole(val id: String, val kind: String, val parents: List<String>, val assignment: String)
@@ -296,6 +334,8 @@ internal suspend fun runAutoGoalTeam(
             withTimeoutOrNull(120_000L) { ask(system, payload.toString()) }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: TeamFinalAuditMissing) {
+            throw e
         } catch (e: Exception) {
             throw IllegalStateException("Team $stage call failed.", e)
         }
@@ -309,11 +349,12 @@ internal suspend fun runAutoGoalTeam(
         onEvent("Planning team.")
         val worksheet = TeamComparisonSheet.evaluate(objective)
         val finalAuditRequired = AutoGoalTeamCommand.requestsFinalAudit(objective)
-        val plan = parseAutoPlan(call("planning", plannerSystem, input("plan")
+        val planReply = call("planning", if (finalAuditRequired) finalReviewPlannerSystem else plannerSystem, input("plan")
             .apply { if (finalAuditRequired) put("final_review_required", true) }
-            .put("objective", worksheet?.plannerObjective ?: objective), 6000))
+            .put("objective", worksheet?.plannerObjective ?: objective), 6000)
+        val plan = if (finalAuditRequired) decodeTeamPlan(planReply, finalReview = true, allowText = true).plan
+            else parseAutoPlan(planReply)
         val editor = plan.finalEditor
-        if (finalAuditRequired && editor == null) throw TeamFinalAuditMissing()
         val contributors = plan.roles.filterNot { it == editor }
         val reports = linkedMapOf<String, AutoReport>()
         fun label(role: AutoRole) = "Role ${plan.roles.indexOf(role) + 1}/${plan.roles.size} (${role.kind})"

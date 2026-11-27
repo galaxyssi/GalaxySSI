@@ -44,6 +44,8 @@ class LocalTeamAcceptance {
         .connectTimeout(Duration.ofSeconds(5)).followRedirects(HttpClient.Redirect.NEVER).build();
     final Set<String> ids = ConcurrentHashMap.newKeySet();
     final List<JSONObject> calls = new CopyOnWriteArrayList<>();
+    final Map<String,String> findings = new ConcurrentHashMap<>();
+    volatile String draft;
     final URI endpoint;
     final String model;
     final boolean schemaPlan;
@@ -83,6 +85,8 @@ class LocalTeamAcceptance {
             String raw = message.getString("content");
             String content = planWire == null ? raw : planWire.decode(raw);
             String stage = call.getString("stage");
+            if (stage.equals("role")) findings.put(call.getString("id"), content);
+            if (stage.equals("synthesis")) draft = content;
             // Log the shape, never thoughts or the raw response to a malformed call.
             String shape = content.lines().limit(14).map(line -> {
                 int pipe = line.indexOf('|');
@@ -105,6 +109,17 @@ class LocalTeamAcceptance {
 
     static void require(boolean condition, String message) {
         if (!condition) throw new IllegalStateException(message);
+    }
+
+    // The host compares public fields from separate completions, not inferred role labels.
+    static String publicField(String response, String field) {
+        String raw = Objects.requireNonNull(response).strip().replace("\r\n", "\n");
+        if (raw.startsWith("```json\n") && raw.endsWith("\n```")) raw = raw.substring(8, raw.length()-4).strip();
+        if (raw.startsWith("{")) return new JSONObject(raw).getString(field).strip();
+        if (field.equals("finding") && raw.startsWith("FINDING|") && raw.endsWith("\nEND"))
+            return raw.lines().findFirst().orElseThrow().substring(8).strip();
+        if (field.equals("answer") && raw.endsWith("\nEND")) return raw.substring(0, raw.length()-4).strip();
+        throw new IllegalStateException("Missing complete public " + field);
     }
 
     static String reference(boolean swapped) {
@@ -142,7 +157,7 @@ class LocalTeamAcceptance {
         var roles = calls.stream().filter(c -> Set.of("role","audit").contains(c.getString("stage"))).toList();
         require(roles.size() >= 2 && roles.size() <= 10 && ids.size() == roles.size()+2, "Expected real independent calls");
         require(roles.stream().anyMatch(r -> Set.of("reviewer","dissent").contains(r.getString("kind"))), "No independent check");
-        require(roles.stream().anyMatch(r -> !r.getJSONArray("reports").isEmpty()), "No handoff observed");
+        if (!concept) require(roles.stream().anyMatch(r -> !r.getJSONArray("reports").isEmpty()), "No assigned report handoff");
         JSONObject synthesis = calls.stream().filter(c -> c.getString("stage").equals("synthesis")).findFirst().orElseThrow();
         var reports = synthesis.getJSONArray("reports");
         var audits = calls.stream().filter(c -> c.getString("stage").equals("audit")).toList();
@@ -150,6 +165,13 @@ class LocalTeamAcceptance {
             !audits.get(0).getString("draft").isBlank(), "No independent final-draft review");
         require(reports.length() == roles.size()-1, "Missing contributor report at synthesis");
         var audit = audits.get(0);
+        require(audit.getString("draft").equals(publicField(draft, "answer")), "Final reviewer received a different draft");
+        require(findings.size() == reports.length(), "Contributor completion count does not match synthesis");
+        for (int i=0; i<reports.length(); i++) {
+            var report = reports.getJSONObject(i);
+            require(report.getString("finding").equals(publicField(findings.get(report.getString("id")), "finding")),
+                "Synthesis did not receive the original contributor finding");
+        }
         var parents = audit.getJSONArray("reports");
         Set<String> assigned = new HashSet<>();
         for (int i=0; i<parents.length(); i++) assigned.add(parents.getJSONObject(i).getString("id"));
