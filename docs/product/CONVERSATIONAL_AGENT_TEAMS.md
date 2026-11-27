@@ -235,6 +235,10 @@ review asks whether the proposed falsifier really contradicts the prediction;
 it does not supply a candidate or a correct answer. Each turn has separate
 role and call accounting. Do not count a transport pass as a scientific pass:
 report a correction as a second-turn result, not a first-turn success.
+Use `--falsifiable-concept` instead to test a fresh, concise conversational
+request for a prediction, a mutually incompatible observation under the same
+conditions, and an evidence gap. No candidate, measurement or answer is supplied.
+This single-turn result does not replace the longer follow-up test.
 Even a perfect numerical result identifies only a mathematical response profile.
 It says nothing about whether a physical protein can exhibit that profile.
 
