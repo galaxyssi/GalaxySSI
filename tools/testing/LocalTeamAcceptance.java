@@ -31,12 +31,21 @@ class LocalTeamAcceptance {
         return objective;
     }
 
+    // A fresh chat, not a replay of the review and not a list of candidate answers.
+    static final String FALSIFIABLE_TURN = """
+        请自动组队，为苯丙酮尿症（PKU）的体外研究构想一种假想的报告蛋白，并独立审核最终答复。
+        公开背景只有一条：PKU 可使血中苯丙氨酸升高。不存在候选名单或实测结果。
+        用四句中文给出：蛋白想报告什么；假设成立时应看到的变化；同样前提下哪种观察与该预测不能同时成立；还缺什么证据。
+        不把“尚未测量”当成反证，不用已知蛋白冒充新设计。只谈功能，不给序列、实验步骤或诊疗结论。
+        """.strip();
+
     static String challenge(String published) {
         return admit("""
             请自动组队复查上一轮的 PKU 体外报告蛋白构想，并独立审核最终答复。
             上轮公开答复只是待质疑的材料。用功能定义假想的报告蛋白，不给它套用未经核实的已知蛋白名称。
             用中文分别给出：它要报告的量、假设成立时应观察到的变化、真正与这一预测矛盾的观察，以及尚缺的证据。
             逐句核对原答复的反证条件：它否定的是原假设，还是恰好符合预测？请给出修正后的构想。
+            各角色用一两句简报发现；最终答复用四至六句，保留上述全部要点。
             只谈可检验的功能，不给序列、制备或实验步骤，不作新颖性、诊断或疗效声明。
             上轮已公开答复：
             """ + published);
@@ -247,6 +256,7 @@ class LocalTeamAcceptance {
     public static void main(String[] args) throws Exception {
         if (Arrays.equals(args, new String[]{"--check-rubric"})) {
             admit(CONCEPT_TURN);
+            admit(FALSIFIABLE_TURN);
             require(challenge("Public synthetic draft.").endsWith("Public synthetic draft."), "Lost follow-up evidence");
             String good = "B meets both toy gates. No clinical evidence.";
             screenVerdict(good, false);
@@ -261,12 +271,14 @@ class LocalTeamAcceptance {
         if (args.length < 2) throw new IllegalArgumentException("Expected loopback port and local model ID");
         var extra = List.of(args).subList(2, args.length);
         var opts = Set.copyOf(extra);
-        require(opts.size() == extra.size() && Set.of("--swap", "--concept", "--schema-plan", "--review-concept").containsAll(opts) &&
+        require(opts.size() == extra.size() && Set.of("--swap", "--concept", "--schema-plan", "--review-concept", "--falsifiable-concept").containsAll(opts) &&
+            (!opts.contains("--falsifiable-concept") || Collections.disjoint(opts, Set.of("--swap","--concept","--review-concept"))) &&
             !(opts.contains("--swap") && opts.contains("--concept")) && (!opts.contains("--review-concept") || opts.contains("--concept")),
             "Invalid fixture options");
         int port = Integer.parseInt(args[0]);
         var initial = new LocalTeamAcceptance(port, args[1], opts.contains("--schema-plan"));
-        String published = initial.run(opts.contains("--swap"), opts.contains("--concept") ? admit(CONCEPT_TURN) : null);
+        String published = initial.run(opts.contains("--swap"), opts.contains("--falsifiable-concept") ? admit(FALSIFIABLE_TURN) :
+            opts.contains("--concept") ? admit(CONCEPT_TURN) : null);
         if (opts.contains("--review-concept")) {
             System.out.println("Independent follow-up on the previous public answer:");
             var review = new LocalTeamAcceptance(port, args[1], opts.contains("--schema-plan"));
