@@ -19,8 +19,9 @@ internal object AttentionNewsEvents {
     private val spaces = Regex("\\s+")
     private const val WINDOW = 36L * 60 * 60 * 1000
     private fun headline(item: GlobalProactiveInboxItem): String? {
-        if (item.title.length !in 12..512 || item.newsArticleKey.isBlank()) return null
-        val title = Normalizer.normalize(item.title, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
+        val original = item.newsSummary?.originalTitle.orEmpty()
+        if (original.length !in 12..512 || item.newsArticleKey.isBlank()) return null
+        val title = Normalizer.normalize(original, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
             .trim().replace(spaces, " ").trimEnd('.', '。')
         if (title.contains('?') || title.contains('？') ||
             (title.count { it in '\u3400'..'\u9fff' } < 12 && title.split(' ').count { it.length > 1 } < 5)) return null

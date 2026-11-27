@@ -11,7 +11,8 @@ data class AttentionNewsSummary(
     val collectedAtMillis: Long,
     val knowledge: Boolean = false,
     val selected: Boolean = false,
-    val event: AttentionEvent? = null
+    val event: AttentionEvent? = null,
+    val originalTitle: String = ""
 )
 
 /** A diverse reading shortlist, not an AI quality score or a semantic claim merger. */

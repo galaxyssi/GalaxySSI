@@ -9,7 +9,7 @@ internal object AttentionNewsCurationStore {
     fun decorate(db: SQLiteDatabase, items: List<GlobalProactiveInboxItem>, enabled: Set<String>, now: Long): List<GlobalProactiveInboxItem> {
         val summaries = mutableMapOf<String, AttentionNewsSummary>()
         items.map { it.newsArticleKey }.filter(String::isNotBlank).distinct().chunked(300).forEach { keys ->
-            db.rawQuery("SELECT a.id,a.url,a.publisher,a.published,a.collected,a.knowledge,t.topic " +
+            db.rawQuery("SELECT a.id,a.url,a.publisher,a.published,a.collected,a.knowledge,t.topic,substr(a.title,1,513) " +
                 "FROM articles a JOIN article_topics t ON t.article_id=a.id WHERE a.state='published' AND a.id IN (" +
                 keys.joinToString(",") { "?" } + ") ORDER BY a.id,t.topic", keys.toTypedArray()).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -21,7 +21,8 @@ internal object AttentionNewsCurationStore {
                     else {
                         val host = runCatching { URI(cursor.getString(1)).host }.getOrNull()
                         summaries[id] = AttentionNewsSummary((host ?: cursor.getString(2)).lowercase(Locale.ROOT).removePrefix("www."),
-                            setOf(topic), cursor.getLong(3), cursor.getLong(4), cursor.getInt(5) != 0)
+                            setOf(topic), cursor.getLong(3), cursor.getLong(4), cursor.getInt(5) != 0,
+                            originalTitle = cursor.getString(7).orEmpty())
                     }
                 }
             }

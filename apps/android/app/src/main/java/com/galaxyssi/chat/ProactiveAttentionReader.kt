@@ -31,6 +31,7 @@ internal class ProactiveAttentionReader(
     val timeline = ProactiveAttentionTimeline()
     private val main = Handler(Looper.getMainLooper())
     private val stateStore = ProactiveAttentionReaderStateStore(storageContext)
+    private val articleContext = storageContext.applicationContext
     private val attention = ProactiveAttentionStore(storageContext)
     private val repository = GlobalAgentRepository(storageContext)
     private val titleStore = ProactiveAttentionTitleStore(storageContext)
@@ -62,7 +63,7 @@ internal class ProactiveAttentionReader(
             .setItems(labels) { _, index ->
                 val report = event.reports[index]
                 worker.execute {
-                    val body = runCatching { AttentionArticleStore(activity.applicationContext).body(report.article) }.getOrNull()
+                    val body = runCatching { AttentionArticleStore(articleContext).body(report.article) }.getOrNull()
                     main.post {
                         if (destroyed || !active || activity.isFinishing) return@post
                         val detail = android.app.AlertDialog.Builder(activity).setTitle(report.source)
@@ -356,7 +357,7 @@ internal class ProactiveAttentionReader(
         pendingReads += marking
         worker.execute {
             val result = runCatching { repository.markProactiveViewed(selected.flatMapTo(hashSetOf()) { it.messageIds }, System.currentTimeMillis()) }
-            if (result.isSuccess) AttentionNewsBudget.noteRead(activity.applicationContext)
+            if (result.isSuccess) AttentionNewsBudget.noteRead(articleContext)
             main.post {
                 pendingReads.removeAll(marking)
                 if (activity.isDestroyed) return@post

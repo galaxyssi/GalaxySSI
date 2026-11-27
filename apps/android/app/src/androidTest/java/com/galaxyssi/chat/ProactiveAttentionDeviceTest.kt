@@ -255,6 +255,61 @@ class ProactiveAttentionDeviceTest {
         assertEquals(0, database.countKeys("article:"))
     }
 
+    @Test fun openingOneEventSourceDisplaysItsCachedBodyAndLeavesOtherSourceUnread() = isolated { context ->
+        assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
+        val repo = GlobalAgentRepository(context)
+        val articles = AttentionArticleStore(context)
+        val feed = ProactiveAttentionFeedStore(context)
+        val now = System.currentTimeMillis()
+        for ((i, key) in listOf("first", "second").withIndex()) {
+            val original = "Researchers publish detailed observations from the same expedition"
+            assertTrue(articles.enqueue(AttentionFeedArticle(key, "earth", original, "", "https://$key.example/test",
+                key, now + i, now + i), "Earth"))
+            articles.ready(key, AttentionChineseArticle("独立译名$key", "独立来源正文$key。".repeat(30), ""))
+            assertTrue(feed.publishArticle(articles.metadata(key)!!))
+            articles.published(key)
+        }
+        val items = articles.curate(GlobalProactiveInboxPolicy.project(repo.proactiveMessages(), emptyList()), setOf("earth"), now)
+        val lead = items.single { it.newsSummary?.selected == true }
+        val other = items.single { it.key != lead.key }
+        val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+        var reader: ProactiveAttentionReader? = null
+        ActivityScenario.launch(ProactiveAttentionActivity::class.java).use { scenario ->
+            try {
+                scenario.onActivity { activity ->
+                    (ProactiveAttentionActivity::class.java.getDeclaredField("reader").apply { isAccessible = true }
+                        .get(activity) as ProactiveAttentionReader).pause()
+                    reader = ProactiveAttentionReader(activity, worker, {}, { fail("Do not launch a network source") },
+                        { _, callback -> callback(null) }, {}, context)
+                    activity.setContentView(reader!!.view)
+                    reader!!.update(items, emptySet(), AttentionReaderState(filter = AttentionFeedFilter.CURATED))
+                    reader!!.resume()
+                }
+                await(scenario) { root -> root.findViewWithTag<View>("attention-event:${lead.key}")?.performClick() == true }
+                fun dialogs() = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views)
+                await(scenario) {
+                    dialogs().filterIsInstance<android.widget.ListView>().any { list ->
+                        val i = (0 until list.count).firstOrNull { list.adapter.getItem(it).toString().contains("${other.newsArticleKey}.example") }
+                        i != null && list.getChildAt(i)?.let { list.performItemClick(it, i, list.adapter.getItemId(i)) } == true
+                    }
+                }
+                await(scenario) { dialogs().filterIsInstance<TextView>().any {
+                    it.text.toString().contains("独立来源正文${other.newsArticleKey}") } }
+                // Dwell time on the obscured lead must not count as reading it.
+                SystemClock.sleep(2300)
+                worker.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                val messages = repo.proactiveMessages().associateBy { it.newsArticleKey }
+                assertTrue(messages.getValue(other.newsArticleKey).viewedAtMillis > 0)
+                assertEquals(0L, messages.getValue(lead.newsArticleKey).viewedAtMillis)
+                scenario.onActivity { dialogs().first { it.id == android.R.id.button1 && it.isShown }.performClick() }
+            } finally {
+                scenario.onActivity { reader?.destroy() }
+                worker.shutdown()
+                worker.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
+    }
+
     @Test fun continuousReaderKeepsExpandedContentAndAnchorWhileNewStoriesArrive() = isolated { context ->
         val repository = GlobalAgentRepository(context)
         repeat(65) { index -> repository.appendProactiveMessage(message().copy(id = "reader-$index",

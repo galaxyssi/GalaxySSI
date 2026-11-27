@@ -12,7 +12,7 @@ class AttentionNewsEventsTest {
         val at = base + h * hour
         return GlobalProactiveInboxItem("key-$i", setOf("message-$i"), headline, "Independent account $i", topic,
             GlobalProactiveTarget.NEW_CONVERSATION, false, "", "", emptySet(), at, at, read, null,
-            newsArticleKey = "article-$i", newsSummary = AttentionNewsSummary(source, setOf(topic), at, at))
+            newsArticleKey = "article-$i", newsSummary = AttentionNewsSummary(source, setOf(topic), at, at, originalTitle = headline))
     }
     @Test fun newCoverageIsRelativeToRecordedReadNotTabOpenAndKeepsSeparateArticles() {
         val a = article(1, 0, read = base + hour)
@@ -31,14 +31,15 @@ class AttentionNewsEventsTest {
             article(4, 0, source = "source-1"), article(5, 80), article(6, 1).let {
                 it.copy(newsSummary = it.newsSummary!!.copy(knowledge = true)) })
         for (other in others) assertTrue(AttentionNewsEvents.group(listOf(a, other)).isEmpty())
-        assertTrue(AttentionNewsEvents.group(listOf(a.copy(title = "$title 6.1"), others[0].copy(title = "$title 6.2"))).isEmpty())
+        assertTrue(AttentionNewsEvents.group(listOf(article(1, 0, headline = "$title 6.1"), article(2, 0, headline = "$title 6.2"))).isEmpty())
     }
     @Test fun groupingIsDeterministicAndCannotBridgeAcrossDaysOrFromTranslatedTitles() {
         val a = article(1, 0); val b = article(2, 30); val c = article(3, 60)
         val group = AttentionNewsEvents.group(listOf(c, b, a))
         assertEquals(setOf(a.key, b.key), group.keys)
         assertEquals(group, AttentionNewsEvents.group(listOf(a, b, c)))
-        assertTrue(AttentionNewsEvents.group(listOf(a.copy(translatedTitle = title),
-            c.copy(title = "Completely different original story", translatedTitle = title))).isEmpty())
+        val collision = article(2, 1, headline = "Completely different original story from another publisher").copy(title = a.title)
+        assertTrue(AttentionNewsEvents.group(listOf(a, collision)).isEmpty())
+        assertTrue(AttentionNewsEvents.group(listOf(a, b.copy(newsSummary = b.newsSummary!!.copy(originalTitle = "")))).isEmpty())
     }
 }
