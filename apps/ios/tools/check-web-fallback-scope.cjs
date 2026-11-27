@@ -16,6 +16,7 @@ function replace(source, from, to, count = 1) {
   return source.replaceAll(from, to);
 }
 function retainedFallbackFile(file, source) {
+  source = require('./check-search-page-reads-scope.cjs').retained(file, source);
   source = require('./check-web-tool-failure-scope.cjs').retainedToolFailureFile(file, source);
   if (file.endsWith('/CloudWebGrounding.swift')) {
     if (!source.includes('"cloud_web_fallback_sources"')) return source;

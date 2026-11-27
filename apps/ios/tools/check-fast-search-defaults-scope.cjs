@@ -17,6 +17,7 @@ function once(source, from, to) {
 }
 function retainedFastGrounding(source) {
   source = require('./check-image-request-count-scope.cjs').retained(app + 'CloudWebGrounding.swift', source);
+  source = require('./check-search-page-reads-scope.cjs').retained(app + 'CloudWebGrounding.swift', source);
   if (!source.includes('let ordinaryAlias = name.trimmingCharacters')) return source;
   source = source.replace(section(source, '  static func normalizeArguments(', '  static func boundedModelJson('),
     section(show(base, app + 'CloudWebGrounding.swift'), '  static func normalizeArguments(', '  static func boundedModelJson('));
