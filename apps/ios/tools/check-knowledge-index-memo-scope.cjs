@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'e6bd822b0d1f08d6dd445839b87179a72f42da3c';
+const base = '7896a98c2ca7f7555ae5c6aa217efade1015efa4';
 const raw = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const read = name => raw(app + name);
 const old = file => cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
@@ -55,7 +55,7 @@ assert.match(database, /agent\.knowledge\.index\.hmac256\.v1/);
 assert.match(database, /agent\.knowledge\.row\.aes256\.v1/);
 // Existing canonical encryption/authentication remains in place; the memo is
 // never a replacement for ciphertext or plaintext body authentication.
-assert.ok(database.includes('primaryPayloads.append(plaintext, itemHash: itemHash, catalog: database)'));
+assert.ok(database.includes('primaryPayloads.append(plaintext, itemHash: itemHash, catalog: database, header: sealedHeader)'));
 assert.match(read('AgentKnowledgePrimaryPartitions.swift'), /cipher\.encrypt\(encoded, purpose: framePurpose\(/);
 assert.match(database, /cipher\.decrypt\(encrypted, expectedPurpose: purpose\(itemHash\)\)/);
 const cipher = read('GalaxySSIAttachmentAtRestCipher.swift');
@@ -84,7 +84,7 @@ for (const file of [app + 'AgentKnowledgeDatabase.swift', app + 'AgentKnowledgeC
 const memoFile = app + 'AgentKnowledgeIndexKeyMemo.swift';
 const priorMemo = cp.execFileSync('git', ['show', '5c21d5994a898360781a2ed836f66a5c0ea9815c:' + memoFile], {cwd: root, encoding: 'utf8'}).replace(/\r\n/g, '\n');
 assert.equal(memo.slice(0, memo.indexOf('// All bodies are synchronous.')).trimEnd(), priorMemo.trimEnd(), 'Original LRU/UTF8/close kernel unchanged');
-const guard = 'apps/ios/tools/check-knowledge-read-connections-scope.cjs';
+const guard = 'apps/ios/tools/check-knowledge-primary-metadata-scope.cjs';
 assert.equal(raw(guard), old(guard)
   .replace("const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n');",
     "const read = f => require('./check-knowledge-index-memo-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\\r\\n/g, '\\n'));")

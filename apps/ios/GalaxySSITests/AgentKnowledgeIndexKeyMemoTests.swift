@@ -100,10 +100,10 @@ final class AgentKnowledgeIndexKeyMemoTests: XCTestCase {
   func testDatabaseSharesHashWithinOperationButReleasesItBeforeNextOperation() throws {
     try fixture { database, _, secrets in
       XCTAssertEqual(try database.items(ids: ["memo"]).count, 1)
-      // Lookup and authenticated decode hash the same ID in the same operation.
-      XCTAssertEqual(secrets.indexReads, 1)
-      XCTAssertEqual(try database.items(ids: ["memo"]).count, 1)
+      // Lookup/decoded ID share one hash; the authenticated source uses another.
       XCTAssertEqual(secrets.indexReads, 2)
+      XCTAssertEqual(try database.items(ids: ["memo"]).count, 1)
+      XCTAssertEqual(secrets.indexReads, 4)
     }
   }
   func testDatabaseThrowingDecodeDoesNotLeakOperationMemo() throws {

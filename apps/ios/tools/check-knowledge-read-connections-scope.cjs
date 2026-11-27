@@ -1,8 +1,8 @@
 // Source contracts only; not Swift, native SQLite, filesystem or concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
-const root = path.resolve(__dirname, '../../..'), base = '78a541cf118c37f0a01187357c8818e51f4a3709';
+const root = path.resolve(__dirname, '../../..'), base = 'b3fb18e58c2fea7e31a4e02862f11691323111b3';
 const app = 'apps/ios/GalaxySSI/', tests = 'apps/ios/GalaxySSITests/';
-const read = f => require('./check-knowledge-index-memo-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
+const read = f => require('./check-knowledge-primary-compaction-scope.cjs').retained(f, fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'));
 const old = f => cp.execFileSync('git', ['show', base + ':' + f], {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 const route = `    if let pending {
       return try readFrames(pending, reference: reference, itemHash: itemHash, partition: partition, checkActive: checkActive)
@@ -18,7 +18,7 @@ const route = `    if let pending {
                           checkActive: () throws -> Void) throws -> Data {
 `;
 function retained(f, source) {
-  source = require('./check-knowledge-index-memo-scope.cjs').retained(f, source);
+  source = require('./check-knowledge-primary-compaction-scope.cjs').retained(f, source);
   if (f.endsWith('GalaxySSI.xcodeproj/project.pbxproj')) return source.split('\n').filter(l => !/AgentKnowledge(?:ReadConnectionPool|PrimaryReadConnections)(?:Tests)?\.swift/.test(l)).join('\n');
   if (f === app + 'AgentKnowledgePrimaryPartitions.swift') return source
     .replace('  private let readConnections: AgentKnowledgePrimaryReadConnections\n', '')

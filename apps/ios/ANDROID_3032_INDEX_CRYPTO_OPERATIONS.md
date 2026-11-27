@@ -41,12 +41,12 @@ and legacy reads remain unchanged.
 
 ## Boundaries
 
-- Main `e6bd822b0` now contains prepared source replacement, committed read/vector
+- Main `7896a98c2` now contains prepared source replacement, committed read/vector
   admission, primary storage/durability/allocations, statement reuse and reusable
   read connections. This PR retains that ancestry; none of those are newly
-  delivered #3032 features. Android metadata-only ownership optimization and
-  further primary-header work remain separate. Full bodies still decode where
-  required by current main.
+  delivered #3032 features. Compaction, durable copy and authenticated primary
+  headers from #4604-#4606 are retained too. Further metadata-only ownership
+  tuning is outside this increment; bodies still decode where main requires it.
 - Original memo wiring cached only writer-locked operations. Integration now
   covers the shared committed-read adapter as well, without changing WAL pinning,
   lifecycle checks, statement disposal or physical retention lease order.
@@ -77,13 +77,17 @@ is part of this change.
 The main merge preserves both sides of concurrent Xcode source registrations.
 The focused scope check compares complete database/read-view/project content to
 that main outside declared memo hooks, and retains the original LRU/hex kernel.
-Read-connection guards normalize only those hooks for older contracts; no SQL,
+The root metadata guard normalizes only those hooks before the existing copy,
+compaction and read-connection checks; no SQL,
 ownership, encryption, WAL or durable primary implementation is replaced by a
 cached digest.
 
 Current verification passes the memo scope, all eight native-knowledge source
-guards and check:ios. Six older whole-file guards (read-connections, statements,
-primary allocations/durability/partitions and primary-source integration) fail
+guards and check:ios. Nine older whole-file guards (read-connections, statements,
+primary allocations/durability/partitions, primary-source integration and primary
+metadata/copy/compaction) fail
 on project or coordinator baseline drift. A read-only loader of main's original
 scripts and sources reproduced the same failures. They are not counted as passes
 and their assertions are not disabled. There is no full-repository-green claim.
+The database memo fixture now expects distinct ID and authenticated source hashes;
+duplicate ID checks still share one calculation within the operation.
