@@ -15,8 +15,10 @@ for (const token of ['system == AgentConversationalTeamProtocol.planner', 'apiSt
   '[.control, .format, .lineSeparator, .paragraphSeparator]', 'let plan = try AgentConversationalTeamProtocol.plan(text)',
   '"maxLength": .int(400)', '"maximum": .int(10)', 'max: 3', 'max: 10']) assert(wire.includes(token), token);
 const preflight = read('GalaxySSI/AgentTeamPlanJSONPreflight.swift');
-for (const token of ['cursor == bytes.count', 'depth <= 5, nodes <= 100', 'keys.insert(key).inserted', 'keys.count <= 10',
-  'entries <= 10', 'String($0) == token', 'JSONDecoder().decode(String.self, from: token)', 'value.utf16.count <= 400']) assert(preflight.includes(token), token);
+for (const token of ['cursor == bytes.count', 'depth <= limits.depth, nodes <= limits.nodes',
+  'Limits(depth: 5, nodes: 100, entries: 10, string: 400)', 'limits: Limits = .plan',
+  'keys.insert(key).inserted', 'keys.count <= limits.entries', 'entries <= limits.entries',
+  'String($0) == token', 'JSONDecoder().decode(String.self, from: token)', 'value.utf16.count <= limits.string']) assert(preflight.includes(token), token);
 const command = read('GalaxySSI/AgentConversationalTeamCommand.swift');
 assert(command.includes('static func requestsFinalAudit') && command.includes('regex.stringByReplacingMatches'));
 assert(command.includes('!matches(value, key: "negative"') && command.includes('!matches(value, key: "meta"'));

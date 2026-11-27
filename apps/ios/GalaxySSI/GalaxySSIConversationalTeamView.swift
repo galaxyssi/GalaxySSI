@@ -164,6 +164,8 @@ struct GalaxySSIConversationalTeamView: View {
     case .roleCompleted(let index, let total, _): return String(format: t("role_completed", "Role %lld / %lld completed"), Int64(index), Int64(total))
     case .synthesizing: return t("synthesizing", "Synthesizing public reports")
     case .auditing(let index, let total): return String(format: t("auditing", "Role %lld / %lld is auditing the final draft"), Int64(index), Int64(total))
+    case .rewriting: return t("rewriting", "Revising the disputed draft")
+    case .rechecking(let index, let total): return String(format: t("rechecking", "Role %lld / %lld is rechecking the revision"), Int64(index), Int64(total))
     case .completed: return t("state_finished", "Finished")
     case .interrupted: return t("interrupted", "This team was interrupted. Its uncertain requests were not replayed.")
     case .stopped: return t("state_stopped", "Stopped")

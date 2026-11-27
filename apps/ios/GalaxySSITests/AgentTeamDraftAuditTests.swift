@@ -36,8 +36,12 @@ final class AgentTeamDraftAuditTests: XCTestCase {
     let fixed = try AgentTeamDraftAudit.parse(#"{"verdict":"revise","objection":"One gate was missed","answer":"Only east passes."}"#,
       draft: "Draft", sheet: nil, labels: .english)
     XCTAssertEqual(fixed.answer, "Only east passes."); XCTAssertEqual(fixed.correction, "One gate was missed")
+    XCTAssertFalse(fixed.requiresHandback)
+    let unchanged = try AgentTeamDraftAudit.parse(#"{"verdict":"revise","objection":"Not corrected","answer":"Draft"}"#,
+      draft: "Draft", sheet: nil, labels: .english)
+    XCTAssertTrue(unchanged.requiresHandback); XCTAssertEqual(unchanged.correction, "Not corrected")
     for raw in [#"{"verdict":"accept","answer":"Extra"}"#, #"{"verdict":"revise","objection":"Missing answer"}"#,
-      #"{"verdict":"revise","objection":"Not corrected","answer":"Draft"}"#, #"{"verdict":true}"#,
+      #"{"verdict":true}"#,
       #"{"verdict":"accept"} trailing"#] {
       XCTAssertThrowsError(try AgentTeamDraftAudit.parse(raw, draft: "Draft", sheet: nil, labels: .english))
     }
