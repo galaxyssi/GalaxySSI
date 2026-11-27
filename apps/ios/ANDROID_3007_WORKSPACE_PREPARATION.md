@@ -38,6 +38,15 @@ concurrent writes through independent registries and denied invocation.
 No Swift/native build, XCTest execution, full repository check, CI inspection,
 live network/model, simulator/device run, IPA or private evidence is included.
 
+Local integration with the fourteen pending branches (#4664 and #4671-#4683)
+had no textual or Xcode registration conflict. All twenty focused source guards,
+`npm run check:ios` and `git diff --check` passed on that combined tree.
+The historical observation guard in #4683 recognizes only this exact independent
+workspace/defaults delta through the exported normalizer. Its normalized file
+projections equal main; no original assertion or storage policy is removed.
+That historical guard's separately documented old whole-Services snapshot
+failure is not reported as passing. No remote PR is approved or merged here.
+
 ## Remaining work
 
 This removes one actual startup read, not all native runtime construction or
