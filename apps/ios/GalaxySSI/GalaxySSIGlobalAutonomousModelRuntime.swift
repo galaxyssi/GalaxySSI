@@ -95,7 +95,7 @@ enum GalaxySSIGlobalAutonomousModelRuntime {
         nowMillis: nowMillis
       )
     }
-    let updated = deliberationStore.updateAutonomousRun(runId: run.id) { current in
+    let saved = deliberationStore.updateAutonomousRun(runId: run.id) { current in
       var next = current
       next.status = .running
       next.nextAttemptAtMillis = 0
@@ -105,6 +105,7 @@ enum GalaxySSIGlobalAutonomousModelRuntime {
         var running = candidate
         running.status = .running
         running.resourceId = resource.id
+        running.resourceTransport = resource.transport
         running.sourceMessageId = sourceMessageId
         running.leaseExpiresAtMillis = nowMillis + GlobalAutonomousRunPolicy.leaseMillis
         running.startedAtMillis = max(running.startedAtMillis, nowMillis)
@@ -113,7 +114,14 @@ enum GalaxySSIGlobalAutonomousModelRuntime {
       }
       next.updatedAtMillis = nowMillis
       return next
-    } ?? run
+    }
+    guard let updated = saved, deliberationStore.lastErrorDescription.isEmpty,
+          updated.actions.filter({ $0.id == action.id && $0.status == .running &&
+            $0.sourceMessageId == sourceMessageId && $0.resourceId == resource.id &&
+            $0.resourceTransport == resource.transport }).count == 1 else {
+      return GalaxySSIGlobalAutonomousExecutionResult(runId: run.id, actionId: action.id,
+        status: run.status, detail: "The autonomous model attempt could not be persisted")
+    }
     let request = GalaxySSIGlobalAutonomousDispatchRequest(
       runId: updated.id,
       actionId: action.id,
@@ -188,19 +196,26 @@ enum GalaxySSIGlobalAutonomousModelRuntime {
         nowMillis: nowMillis
       )
     }
-    let updated = deliberationStore.updateAutonomousRun(runId: run.id) { current in
+    let saved = deliberationStore.updateAutonomousRun(runId: run.id) { current in
       var next = current
       next.status = .replanning
       next.leaseExpiresAtMillis = GlobalAutonomousReplanPolicy.leaseMillis + nowMillis
       next.review.status = .running
       next.review.resourceId = resource.id
+      next.review.resourceTransport = resource.transport
       next.review.sourceMessageId = sourceMessageId
       next.review.leaseExpiresAtMillis = nowMillis + GlobalAutonomousReplanPolicy.leaseMillis
       next.review.lastError = ""
       next.review.updatedAtMillis = nowMillis
       next.updatedAtMillis = nowMillis
       return next
-    } ?? run
+    }
+    guard let updated = saved, deliberationStore.lastErrorDescription.isEmpty,
+          updated.review.status == .running, updated.review.sourceMessageId == sourceMessageId,
+          updated.review.resourceId == resource.id, updated.review.resourceTransport == resource.transport else {
+      return GalaxySSIGlobalAutonomousExecutionResult(runId: run.id,
+        status: run.status, detail: "The autonomous review attempt could not be persisted")
+    }
     let request = GalaxySSIGlobalAutonomousDispatchRequest(
       runId: updated.id,
       resourceId: resource.id,
@@ -448,7 +463,8 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
     }) {
       guard store.lastErrorDescription.isEmpty, GlobalAutonomousSourceScope.allows(reviewRun, scope: scope),
             GlobalAutonomousSourceScope.matches(response, run: reviewRun),
-            GlobalAutonomousSourceScope.resourceAuthorized(response.contactId, store: appStore) else { return false }
+            GlobalAutonomousSourceScope.resourceAuthorized(response.contactId,
+              transport: GlobalAutonomousSourceScope.transport(for: response, run: reviewRun), store: appStore) else { return false }
       return consumePlanReview(
         run: reviewRun,
         response: response,
@@ -468,7 +484,8 @@ extension GalaxySSIGlobalAgentRuntimeBridge {
 
     guard store.lastErrorDescription.isEmpty, GlobalAutonomousSourceScope.allows(run, scope: scope),
           GlobalAutonomousSourceScope.matches(response, run: run),
-          GlobalAutonomousSourceScope.resourceAuthorized(response.contactId, store: appStore) else { return false }
+          GlobalAutonomousSourceScope.resourceAuthorized(response.contactId,
+            transport: GlobalAutonomousSourceScope.transport(for: response, run: run), store: appStore) else { return false }
 
     GalaxySSIGlobalAutonomousBudgetRuntime.complete(
       runId: run.id,

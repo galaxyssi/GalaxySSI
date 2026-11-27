@@ -226,6 +226,7 @@ final class GlobalAgentDeliberationStore {
   ) -> GlobalAutonomousRun? {
     locked {
       var snapshot = load()
+      guard lastErrorDescription.isEmpty else { return nil }
       guard let index = snapshot.autonomousRuns.firstIndex(where: { $0.id == runId }) else {
         return nil
       }
@@ -233,7 +234,7 @@ final class GlobalAgentDeliberationStore {
       snapshot.autonomousRuns[index] = updated
       snapshot.autonomousRuns = boundedRuns(snapshot.autonomousRuns)
       persist(snapshot)
-      return updated
+      return lastErrorDescription.isEmpty ? updated : nil
     }
   }
 
