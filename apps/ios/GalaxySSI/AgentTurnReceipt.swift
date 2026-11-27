@@ -6,6 +6,7 @@ struct AgentTurnReceipt: Codable, Equatable {
   var generation: Int64?, attempt: Int?, provider: String?, submitted: String?, submittedEffort: String?
   var cloudAttempt: String?, cloudRequested: String?, cloudActual: String?, cloudEffort: String?, localProfile: String?
   var phoneExecuted: Bool?, desktopExecuted: Bool?
+  var voiceInput: Bool?
 
   mutating func clearSubmission() {
     attempt = nil; provider = nil; submitted = nil; submittedEffort = nil; resultAt = nil

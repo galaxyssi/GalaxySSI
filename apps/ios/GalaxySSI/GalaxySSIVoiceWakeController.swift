@@ -19,7 +19,7 @@ final class GalaxySSIVoiceWakeController: ObservableObject {
   private var configurationGeneration = 0
   private var restartTask: Task<Void, Never>?
   private var onWakeDetected: (() -> Void)?
-  private var onWakeCommand: ((String) -> Void)?
+  private var onWakeCommand: ((GalaxySSIVoiceTranscriptSubmission) -> Void)?
 
   deinit {
     restartTask?.cancel()
@@ -28,7 +28,7 @@ final class GalaxySSIVoiceWakeController: ObservableObject {
   func activate(
     settings: VoiceSettings,
     onWakeDetected: @escaping () -> Void,
-    onWakeCommand: @escaping (String) -> Void
+    onWakeCommand: @escaping (GalaxySSIVoiceTranscriptSubmission) -> Void
   ) {
     self.settings = settings.normalized
     self.onWakeDetected = onWakeDetected
@@ -336,11 +336,13 @@ final class GalaxySSIVoiceWakeController: ObservableObject {
   }
 
   private func handleTapToSpeakCommand(_ command: VoiceInteractionCommand) {
-    guard case let .routeFinalTranscript(_, transcript, _) = command else { return }
+    guard case let .routeFinalTranscript(sessionId, transcript, _) = command else { return }
     let commandText = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !commandText.isEmpty else { return }
     VoiceRuntimeHealthRegistry.success(.androidWakeASR)
-    onWakeCommand?(commandText)
+    let review = speech.correctionReview(sessionId: sessionId)
+    onWakeCommand?(.init(text: commandText, correctionReview: review, sessionId: sessionId,
+      spokenText: review?.diff.fastText ?? commandText))
   }
 
   private func completeTapToSpeakCapture(after delayNanoseconds: UInt64) {
