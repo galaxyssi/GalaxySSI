@@ -54,5 +54,11 @@ before this PR's exact baseline comparison. Without #4674, the original comparis
 unchanged. No browser production code is included in this PR, and the browser guard
 separately checks view admission, save-before-load and unverified interruption behavior.
 
+Real local integration of #4664 and #4671-#4674 identified shared Xcode insertion
+anchors and pairing-history snapshot differences. This branch now places project
+registrations beside its sequential-dispatch dependencies. Its source guard accepts
+only #4664's exported exact approved revocation/Store normalization when present;
+unexpected Store or coordinator changes still fail the complete baseline comparison.
+
 Only JS/source/project checks and whitespace checks are run. No Swift/native build,
 XCTest execution, device/restart/fault acceptance, full check, CI monitoring or IPA.

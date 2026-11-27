@@ -22,8 +22,11 @@ if (require.main === module) {
   const services = read(app + 'GalaxySSIServices.swift');
   const browserFile = path.join(__dirname, 'check-browser-view-ownership.cjs');
   const browser = fs.existsSync(browserFile) ? require(browserFile) : null;
+  const pairingFile = path.join(__dirname, 'check-pairing-history.cjs');
+  const pairing = fs.existsSync(pairingFile) && fs.readFileSync(pairingFile, 'utf8').includes('function retainedPairingStore(') ? require(pairingFile) : null;
   const retainedServices = retainedUnplannedDispatchServices(services);
-  assert.equal(browser ? browser.retainedBrowserServices(retainedServices) : retainedServices, old(app + 'GalaxySSIServices.swift'),
+  const browserRetained = browser ? browser.retainedBrowserServices(retainedServices) : retainedServices;
+  assert.equal(pairing ? pairing.retainedPairingServices(browserRetained) : browserRetained, old(app + 'GalaxySSIServices.swift'),
     'Only mandatory sequential checkpoint/claim and unplanned envelope admission change');
   const begin = services.indexOf('  private func executeLocalNativeAction(\n'), end = services.indexOf('  private func refreshAutomaticConnectorAction(', begin);
   const execute = services.slice(begin, end);
@@ -52,6 +55,7 @@ if (require.main === module) {
     const captureEnvelope = require('./check-approved-capture-dispatch.cjs').retainedCaptureEnvelope;
     let retained = name === 'AgentApprovedCaptureDispatch' && captureEnvelope ? captureEnvelope(source) : source;
     if (name === 'AgentPlanRunModels' && browser) retained = browser.retainedBrowserTaskModels(retained);
+    if (name === 'GalaxySSIStore' && pairing) retained = pairing.retainedPairingStore(retained);
     assert.equal(retained, old(app + name + '.swift'), name);
   }
   const tests = read('apps/ios/GalaxySSITests/AgentUnplannedNativeDispatchTests.swift');
