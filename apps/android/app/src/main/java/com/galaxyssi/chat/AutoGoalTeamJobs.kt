@@ -15,6 +15,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
+internal fun Context.teamContrastText() = TeamContrastText(getString(R.string.team_contrast_format),
+    getString(R.string.team_contrast_higher), getString(R.string.team_contrast_lower))
+
 internal object AutoGoalTeamJobs {
     private val lock = Any()
     private val live = ConcurrentHashMap<String, AgentNativeToolCancellationSource>()
@@ -119,7 +122,8 @@ internal object AutoGoalTeamJobs {
             runBlocking {
                 val labels = TeamResultLabels(ctx.getString(R.string.auto_team_correction), ctx.getString(R.string.auto_team_objections),
                     ctx.getString(R.string.auto_team_passing), ctx.getString(R.string.auto_team_none), ctx.getString(R.string.auto_team_limitation),
-                    ctx.getString(R.string.auto_team_review_reason_missing))
+                    ctx.getString(R.string.auto_team_review_reason_missing),
+                    ctx.teamContrastText())
                 runAutoGoalTeam(job.getString("objective"), labels, { instructions, payload -> coroutineScope {
                     val call = AgentNativeToolCancellationSource()
                     val registration = cancel.token.invokeOnCancellation { call.cancel() }

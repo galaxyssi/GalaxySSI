@@ -1,12 +1,17 @@
 import com.galaxyssi.chat.AutoGoalTeamEngineKt;
 import com.galaxyssi.chat.AutoGoalTeamCommand;
 import com.galaxyssi.chat.TeamAnswerWithheld;
+import com.galaxyssi.chat.TeamContrastText;
+import com.galaxyssi.chat.TeamResultLabels;
 import java.net.*;
 import java.net.http.*;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
 import kotlin.Unit;
 import kotlin.coroutines.*;
 import kotlinx.coroutines.BuildersKt;
@@ -135,15 +140,103 @@ class LocalTeamAcceptance {
         if (!condition) throw new IllegalStateException(message);
     }
 
-    // The host compares public fields from separate completions, not inferred role labels.
-    static String publicField(String response, String field) {
+    static String unwrap(String response) {
         String raw = Objects.requireNonNull(response).strip().replace("\r\n", "\n");
         if (raw.startsWith("```json\n") && raw.endsWith("\n```")) raw = raw.substring(8, raw.length()-4).strip();
+        return raw;
+    }
+
+    // The host compares public fields from separate completions, not inferred role labels.
+    static String publicField(String response, String field) {
+        String raw = unwrap(response);
         if (raw.startsWith("{")) return new JSONObject(raw).getString(field).strip();
         if (field.equals("finding") && raw.startsWith("FINDING|") && raw.endsWith("\nEND"))
             return raw.lines().findFirst().orElseThrow().substring(8).strip();
         if (field.equals("answer") && raw.endsWith("\nEND")) return raw.substring(0, raw.length()-4).strip();
         throw new IllegalStateException("Missing complete public " + field);
+    }
+
+    record ContrastWords(String format, String higher, String lower) {
+        static ContrastWords load(String objective) throws Exception {
+            boolean chinese = objective.codePoints().anyMatch(c -> Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN);
+            Path path = Path.of("apps/android/app/src/main/res", chinese ? "values-zh" : "values", "team_prediction_contrast.xml");
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            var strings = factory.newDocumentBuilder().parse(path.toFile()).getDocumentElement().getElementsByTagName("string");
+            Map<String,String> words = new HashMap<>();
+            for (int i = 0; i < strings.getLength(); i++) {
+                var item = (org.w3c.dom.Element) strings.item(i);
+                var key = item.getAttribute("name");
+                require(words.putIfAbsent(key, item.getTextContent().replace("\\n", "\n")) == null, "Duplicate resource: " + key);
+            }
+            return new ContrastWords(word(words, "team_contrast_format"), word(words, "team_contrast_higher"),
+                word(words, "team_contrast_lower"));
+        }
+
+        static String word(Map<String,String> words, String key) {
+            String value = words.get(key);
+            require(value != null && !value.isBlank(), "Missing contrast resource: " + key);
+            return value;
+        }
+
+        TeamResultLabels labels() { return new TeamResultLabels(new TeamContrastText(format, higher, lower)); }
+
+        String direction(String value) {
+            return switch (value) {
+                case "higher" -> higher;
+                case "lower" -> lower;
+                default -> throw new IllegalStateException("Invalid contrast direction");
+            };
+        }
+    }
+
+    record WriterWitness(String text, JSONObject claim) {
+        boolean structured() { return claim != null; }
+    }
+
+    static String writerText(JSONObject obj, String key) {
+        String text = obj.getString(key).replaceAll("^[\\p{javaWhitespace}\\p{Z}]+|[\\p{javaWhitespace}\\p{Z}]+$", "");
+        require(!text.isEmpty(), "Blank writer field: " + key);
+        return text;
+    }
+
+    static WriterWitness writerWitness(String response, ContrastWords words) {
+        String raw = unwrap(response);
+        if (!raw.startsWith("{")) return new WriterWitness(publicField(response, "answer"), null);
+        var reader = new JSONTokener(raw);
+        JSONObject obj = new JSONObject(reader);
+        require(reader.nextClean() == 0, "Trailing writer reply");
+        if (obj.keySet().equals(Set.of("answer"))) return new WriterWitness(writerText(obj, "answer"), null);
+        require(obj.keySet().equals(Set.of("purpose", "input", "input_direction", "readout", "expected_direction",
+            "alternative", "gap")), "Unexpected writer fields");
+        String expected = obj.getString("expected_direction");
+        String text = String.format(Locale.ROOT, words.format(), writerText(obj, "purpose"), writerText(obj, "input"),
+            words.direction(obj.getString("input_direction")), writerText(obj, "readout"), words.direction(expected),
+            words.direction("higher".equals(expected) ? "lower" : "higher"), writerText(obj, "alternative"), writerText(obj, "gap"));
+        return new WriterWitness(text, obj);
+    }
+
+    static boolean publishedBody(String publication, String body) {
+        return !body.isBlank() && (publication.equals(body) || publication.startsWith(body + "\n\n"));
+    }
+
+    static void checkWriterRubric() throws Exception {
+        var claim = new JSONObject().put("purpose", "P").put("input", "I").put("readout", "R")
+            .put("alternative", "A").put("gap", "G").put("input_direction", "higher").put("expected_direction", "lower");
+        var reordered = new ContrastWords("%8$s:%7$s\n%2$s:%3$s:%1$s:%4$s:%5$s:%6$s:%2$s", "H", "L");
+        require(writerWitness(claim.toString(), reordered).text().equals("G:A\nI:H:P:R:L:H:I"), "Incorrect positional witness");
+        claim.put("input_direction", "lower").put("expected_direction", "higher");
+        require(writerWitness(claim.toString(), reordered).text().equals("G:A\nI:L:P:R:H:L:I"), "Incorrect opposite direction");
+        for (String fixture : List.of(task(false), FALSIFIABLE_TURN)) {
+            var words = ContrastWords.load(fixture);
+            var witness = writerWitness(claim.toString(), words);
+            require(witness.structured() && witness.text().contains("\n") && !witness.text().contains("\\n"),
+                "Localized writer witness did not expand line breaks");
+            var free = writerWitness(new JSONObject().put("answer", witness.text()).toString(), words);
+            require(!free.structured() && free.text().equals(witness.text()), "Prose was mistaken for a structured witness");
+        }
     }
 
     static String reference(boolean swapped) {
@@ -168,11 +261,13 @@ class LocalTeamAcceptance {
     String run(boolean swapped, String conceptTurn) throws Exception {
         boolean concept = conceptTurn != null;
         String objective = concept ? conceptTurn : task(swapped);
+        var words = ContrastWords.load(objective);
+        var labels = words.labels();
         String answer;
         boolean withheld = false;
         try {
             answer = BuildersKt.<String>runBlocking(EmptyCoroutineContext.INSTANCE,
-                (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(objective, this::ask,
+                (scope, cont) -> AutoGoalTeamEngineKt.runAutoGoalTeam(objective, labels, this::ask,
                     event -> { System.out.println(event); return Unit.INSTANCE; }, cont));
         } catch (TeamAnswerWithheld e) {
             if (!concept) throw e;
@@ -194,9 +289,13 @@ class LocalTeamAcceptance {
             !audits.get(0).getString("draft").isBlank(), "No independent final-draft review");
         require(reports.length() == roles.size()-1, "Missing contributor report at synthesis");
         var audit = audits.get(0);
-        require(audit.getString("draft").equals(publicField(draft, "answer")), "Final reviewer received a different draft");
+        var initialWitness = writerWitness(draft, words);
+        boolean structuredWitness = initialWitness.structured();
+        require(audit.getString("draft").equals(initialWitness.text()), "Final reviewer received a different draft");
         if (!rewrites.isEmpty()) {
             var edit = rewrites.get(0);
+            if (initialWitness.structured()) require(initialWitness.claim().similar(edit.optJSONObject("original_claim")),
+                "Writer handback lost its original structured claim");
             require(calls.indexOf(edit) > calls.indexOf(audit) && edit.getString("draft").equals(audit.getString("draft")) &&
                 edit.getString("brief").equals(synthesis.getString("brief")) &&
                 edit.getJSONArray("reports").similar(reports) && Set.of("revise", "request_changes").contains(publicField(firstReview,"verdict")) &&
@@ -204,14 +303,28 @@ class LocalTeamAcceptance {
             if (rechecks.isEmpty()) require(withheld, "Rewrite published without a recheck");
             else {
                 var check = rechecks.get(0);
+                var replacement = writerWitness(rewrite, words);
+                require(!initialWitness.structured() || replacement.structured(), "Structured rewrite lost its claim fields");
                 require(calls.indexOf(check) > calls.indexOf(edit) && check.getString("id").equals(audit.getString("id")) &&
-                    check.getString("draft").equals(publicField(rewrite,"answer")) &&
+                    !replacement.text().replaceAll("(?U)\\s+", " ").strip().equals(initialWitness.text().replaceAll("(?U)\\s+", " ").strip()) &&
+                    check.getString("draft").equals(replacement.text()) &&
                     check.getString("rejected_draft").equals(edit.getString("draft")) &&
                     check.getString("objection").equals(edit.getString("objection")) &&
                     check.getJSONArray("reports").similar(audit.getJSONArray("reports")), "Recheck did not receive the actual handback");
-                if (!withheld) require(publicField(finalCheck,"verdict").equals("accept") && answer.startsWith(check.getString("draft")),
+                structuredWitness |= replacement.structured();
+                if (!withheld) require(publicField(finalCheck,"verdict").equals("accept") && publishedBody(answer, replacement.text()),
                     "Return is not the independently approved replacement");
             }
+        } else if (!withheld && !audit.has("verified_table")) {
+            String approved = switch (publicField(firstReview, "verdict")) {
+                case "accept" -> initialWitness.text();
+                case "revise" -> {
+                    require(!initialWitness.structured(), "Structured revision bypassed the writer and recheck");
+                    yield publicField(firstReview, "answer");
+                }
+                default -> throw new IllegalStateException("Publication without final approval");
+            };
+            require(publishedBody(answer, approved), "Return is not the independently approved draft");
         }
         require(findings.size() == reports.length(), "Contributor completion count does not match synthesis");
         for (int i=0; i<reports.length(); i++) {
@@ -243,6 +356,7 @@ class LocalTeamAcceptance {
         require(expectedObjections.isEmpty(), "Missing non-parent objection");
         System.out.println((withheld ? "Review withheld the draft:\n" : "Final public answer:\n") + answer);
         System.out.println("Transport verified: " + roles.size() + " model-chosen roles, " + ids.size() + " distinct completions.");
+        System.out.println("Structured writer witness verified: " + structuredWitness);
         if (concept) {
             require(calls.stream().allMatch(c -> objective.equals(c.getString("objective")) && !c.has("verified_table")),
                 "The open-ended fixture changed or received a precomputed answer");
@@ -281,6 +395,7 @@ class LocalTeamAcceptance {
 
     public static void main(String[] args) throws Exception {
         if (Arrays.equals(args, new String[]{"--check-rubric"})) {
+            checkWriterRubric();
             admit(CONCEPT_TURN);
             admit(FALSIFIABLE_TURN);
             require(challenge("Public synthetic draft.").endsWith("Public synthetic draft."), "Lost follow-up evidence");

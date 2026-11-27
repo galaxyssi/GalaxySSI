@@ -1,0 +1,5 @@
+<resources>
+    <string name="team_contrast_format">目的：%1$s\n预测：如果%2$s%3$s，%4$s的有效读数应当%5$s。\n相反观察：在相同前提下，如果%2$s%3$s，%4$s的有效读数却%6$s，这才与预测矛盾；未测量、测量无效或结果无法解释都不构成反证。\n替代解释：%7$s；仍缺的证据：%8$s。这只是假设，不是实验或临床结论。</string>
+    <string name="team_contrast_higher">更高</string>
+    <string name="team_contrast_lower">更低</string>
+</resources>

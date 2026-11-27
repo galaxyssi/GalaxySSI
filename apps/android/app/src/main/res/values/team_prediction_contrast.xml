@@ -1,0 +1,5 @@
+<resources>
+    <string name="team_contrast_format">Purpose: %1$s\nPrediction: If %2$s is %3$s, a valid reading of %4$s should be %5$s.\nContrary observation: Under the same assumptions, if %2$s is %3$s, a valid reading of %4$s that is %6$s would contradict the prediction; a missing, invalid or uninterpretable measurement would not.\nAlternative explanation: %7$s; missing evidence: %8$s. This is a hypothesis, not an experimental or clinical conclusion.</string>
+    <string name="team_contrast_higher">higher</string>
+    <string name="team_contrast_lower">lower</string>
+</resources>
