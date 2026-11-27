@@ -60,6 +60,9 @@ final class AgentKnowledgePrimaryPartitions {
   private let beforeCatalogPublication: () throws -> Void
   private let beforeRetiredUnlink: () throws -> Void
   private let afterRetiredUnlink: () throws -> Void
+  private let afterAllocationIntent: (String) throws -> Void
+  private let afterAllocationFile: (String) throws -> Void
+  private var allocations: AgentKnowledgePrimaryAllocations { AgentKnowledgePrimaryAllocations(root: root) }
   private static let maximumSealedFrame = 192 * 1_024
   private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
@@ -67,7 +70,9 @@ final class AgentKnowledgePrimaryPartitions {
        partitionRecords: Int64 = 65_536, beforeCatalogPublication: @escaping () throws -> Void = {},
        beforeRetiredUnlink: @escaping () throws -> Void = {}, afterRetiredUnlink: @escaping () throws -> Void = {},
        beforePartitionCommit: @escaping (String) throws -> Void = { _ in },
-       readerSlots: AgentKnowledgePrimaryReaderSlots = .shared) {
+       readerSlots: AgentKnowledgePrimaryReaderSlots = .shared,
+       afterAllocationIntent: @escaping (String) throws -> Void = { _ in },
+       afterAllocationFile: @escaping (String) throws -> Void = { _ in }) {
     root = URL(fileURLWithPath: catalogURL.path + ".primary", isDirectory: true)
     let identity = Self.sha256(Data(catalogURL.lastPathComponent.utf8))
     namespacePurpose = "knowledge-primary.namespace.v1:\(identity)"
@@ -79,6 +84,8 @@ final class AgentKnowledgePrimaryPartitions {
     self.afterRetiredUnlink = afterRetiredUnlink
     self.beforePartitionCommit = beforePartitionCommit
     self.readerSlots = readerSlots
+    self.afterAllocationIntent = afterAllocationIntent
+    self.afterAllocationFile = afterAllocationFile
   }
 
   deinit {
@@ -361,9 +368,21 @@ final class AgentKnowledgePrimaryPartitions {
     guard (1...32).contains(pageSize), sqlite3_get_autocommit(catalog) != 0 else {
       throw AgentKnowledgeDatabaseError.corruptRecord
     }
-    if try reclaimPending(catalog) == false { return ReclaimPage(removed: 0, complete: true, deferred: false) }
+    if try reclaimPending(catalog) == false && !allocations.hasPending() { return ReclaimPage(removed: 0, complete: true, deferred: false) }
     return try withExclusiveAccess(catalog: catalog) {
-      try reclaimExclusively(catalog: catalog, pageSize: pageSize, checkActive: checkActive)
+      let recovered = try allocations.replay(limit: min(pageSize, 8), referenced: { id in
+        try allocationReferenced(id, catalog: catalog, includeRetired: true)
+      }, verify: { id in
+        try validatePartitionFiles(id, requireMain: allocationReferenced(id, catalog: catalog, includeRetired: false))
+      }, remove: { id in
+        try beforeRetiredUnlink()
+        try checkActive()
+        try unlinkRetired(id)
+        try afterRetiredUnlink()
+      }, checkActive: checkActive)
+      let retired = try reclaimExclusively(catalog: catalog, pageSize: pageSize, checkActive: checkActive)
+      return ReclaimPage(removed: retired.removed + recovered.orphaned,
+        complete: retired.complete && recovered.complete, deferred: false)
     } ?? ReclaimPage(removed: 0, complete: false, deferred: true)
   }
 
@@ -510,8 +529,9 @@ final class AgentKnowledgePrimaryPartitions {
   }
 
   private func unlinkRetired(_ id: String) throws {
+    try validatePartitionFiles(id, requireMain: false)
     guard Self.token(id), directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    for suffix in ["-wal", "-shm", ""] {
+    for suffix in ["-wal", "-shm", "-journal", ""] {
       let name = id + ".sqlite" + suffix
       var info = stat()
       if Darwin.fstatat(directoryDescriptor, name, &info, AT_SYMLINK_NOFOLLOW) != 0 {
@@ -524,6 +544,35 @@ final class AgentKnowledgePrimaryPartitions {
       }
     }
     try syncRoot()
+  }
+
+  // Validate the entire set before unlinking any member; never follow a sidecar link.
+  private func validatePartitionFiles(_ id: String, requireMain: Bool) throws {
+    guard Self.token(id), directoryDescriptor >= 0 else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+      var info = stat()
+      if Darwin.fstatat(directoryDescriptor, id + ".sqlite" + suffix, &info, AT_SYMLINK_NOFOLLOW) != 0 {
+        if errno == ENOENT, !suffix.isEmpty || !requireMain { continue }
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+      guard (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else { throw AgentKnowledgeDatabaseError.corruptRecord }
+    }
+  }
+
+  private func allocationReferenced(_ id: String, catalog: OpaquePointer, includeRetired: Bool) throws -> Bool {
+    let retired = includeRetired ? "UNION ALL SELECT 1 FROM knowledge_primary_retired WHERE partition_id=?" : ""
+    let statement = try prepare(catalog, """
+      SELECT 1 FROM knowledge_primary_partitions WHERE partition_id=? UNION ALL
+      SELECT 1 FROM knowledge_primary_refs WHERE partition_id=?
+      \(retired) LIMIT 1
+      """)
+    defer { sqlite3_finalize(statement) }
+    try bind(id, index: 1, statement: statement)
+    try bind(id, index: 2, statement: statement)
+    if includeRetired { try bind(id, index: 3, statement: statement) }
+    let state = sqlite3_step(statement)
+    guard state == SQLITE_ROW || state == SQLITE_DONE else { throw AgentKnowledgeDatabaseError.unavailable }
+    return state == SQLITE_ROW
   }
 
   private func syncRoot() throws {
@@ -606,8 +655,12 @@ final class AgentKnowledgePrimaryPartitions {
     } else if status != SQLITE_DONE { throw AgentKnowledgeDatabaseError.unavailable }
     try flushWriter(bucket: bucket, checkActive: checkActive)
     let id = UUID().uuidString.lowercased()
+    try allocations.remember(id, syncParent: syncRoot)
+    try afterAllocationIntent(id)
     let database = try open(id, create: true, readOnly: false)
     sqlite3_close_v2(database)
+    try syncRoot()
+    try afterAllocationFile(id)
     let insert = try prepare(catalog, "INSERT INTO knowledge_primary_partitions(partition_id,bucket,bytes,records,sealed) VALUES(?,?,0,0,0)")
     defer { sqlite3_finalize(insert) }
     try bind(id, index: 1, statement: insert)
@@ -649,7 +702,7 @@ final class AgentKnowledgePrimaryPartitions {
     let url = root.appendingPathComponent(id + ".sqlite")
     let exists = FileManager.default.fileExists(atPath: url.path)
     guard create ? !exists : exists else { throw AgentKnowledgeDatabaseError.corruptRecord }
-    for suffix in ["", "-wal", "-shm"] {
+    for suffix in ["", "-wal", "-shm", "-journal"] {
       let path = url.path + suffix
       if FileManager.default.fileExists(atPath: path) {
         guard try FileManager.default.attributesOfItem(atPath: path)[.type] as? FileAttributeType == .typeRegular else {

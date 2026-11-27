@@ -30,6 +30,12 @@ process/reboot fixture is imported. The iOS allocation metadata remains in its
 WAL catalog; Android's separate DELETE-journal allocation architecture is not
 claimed implemented by this change.
 
+The subsequent [#3042 allocation follow-up](ANDROID_3042_PRIMARY_ALLOCATIONS.md)
+adds a separate forward-recovery journal using this checked WAL/EXTRA policy.
+The no-new-journal boundary above describes the original durability increment,
+not that follow-up's complete review scope. Unjournaled legacy orphan inventory
+and physical-copy checkpoint protection remain separate work.
+
 ## Platform distinction
 
 iOS keeps its predecessor's WAL reader/writer contract rather than converting

@@ -2302,6 +2302,8 @@
     A10000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift */; };
     A10000000000000000003E42 /* AgentKnowledgePrimaryDurability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E42 /* AgentKnowledgePrimaryDurability.swift */; };
     A10000000000000000003E43 /* AgentKnowledgePrimaryDurabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E43 /* AgentKnowledgePrimaryDurabilityTests.swift */; };
+    A10000000000000000003E44 /* AgentKnowledgePrimaryAllocations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E44 /* AgentKnowledgePrimaryAllocations.swift */; };
+    A10000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift */; };
     D12633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */; };
     D12633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */; };
     D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */; };
@@ -4660,6 +4662,8 @@
     A20000000000000000003E41 /* AgentIOSOriginalPageArchiveOwnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOriginalPageArchiveOwnerTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E42 /* AgentKnowledgePrimaryDurability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryDurability.swift; sourceTree = "<group>"; };
     A20000000000000000003E43 /* AgentKnowledgePrimaryDurabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryDurabilityTests.swift; sourceTree = "<group>"; };
+    A20000000000000000003E44 /* AgentKnowledgePrimaryAllocations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryAllocations.swift; sourceTree = "<group>"; };
+    A20000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgePrimaryAllocationsTests.swift; sourceTree = "<group>"; };
     D22633000000000000000003 /* AgentIOSWebEvidenceVerificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebEvidenceVerificationTests.swift; sourceTree = "<group>"; };
     D22633000000000000000004 /* AgentIOSLocalModelWebToolProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSLocalModelWebToolProtocolTests.swift; sourceTree = "<group>"; };
     D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationNonStreamingToolEngine.swift; sourceTree = "<group>"; };
@@ -5629,6 +5633,7 @@
         A20000000000000000003E36 /* AgentKnowledgeStorageBackground.swift */,
         A20000000000000000003E38 /* AgentKnowledgePrimaryReaderSlots.swift */,
         A20000000000000000003E42 /* AgentKnowledgePrimaryDurability.swift */,
+        A20000000000000000003E44 /* AgentKnowledgePrimaryAllocations.swift */,
 		D22633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift */,
         A2000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift */,
         A20000000000000000003E3C /* AgentIOSOriginalPageDocument.swift */,
@@ -6691,6 +6696,7 @@
         A20000000000000000003E37 /* AgentKnowledgeStorageMaintenanceTests.swift */,
         A20000000000000000003E39 /* AgentKnowledgePrimaryReaderSlotsTests.swift */,
         A20000000000000000003E43 /* AgentKnowledgePrimaryDurabilityTests.swift */,
+        A20000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift */,
         A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */,
         A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */,
         A20000000000000000003E21 /* MqttJournalCodexReplayTests.swift */,
@@ -8523,6 +8529,7 @@
         A10000000000000000003E36 /* AgentKnowledgeStorageBackground.swift in Sources */,
         A10000000000000000003E38 /* AgentKnowledgePrimaryReaderSlots.swift in Sources */,
         A10000000000000000003E42 /* AgentKnowledgePrimaryDurability.swift in Sources */,
+        A10000000000000000003E44 /* AgentKnowledgePrimaryAllocations.swift in Sources */,
 		D12633000000000000000005 /* CloudConversationNonStreamingToolEngine.swift in Sources */,
         A1000000000000000000F560 /* AgentIOSPhonePublicHTMLAttachment.swift in Sources */,
         A10000000000000000003E3C /* AgentIOSOriginalPageDocument.swift in Sources */,
@@ -9159,6 +9166,7 @@
         A10000000000000000003E37 /* AgentKnowledgeStorageMaintenanceTests.swift in Sources */,
         A10000000000000000003E39 /* AgentKnowledgePrimaryReaderSlotsTests.swift in Sources */,
         A10000000000000000003E43 /* AgentKnowledgePrimaryDurabilityTests.swift in Sources */,
+        A10000000000000000003E45 /* AgentKnowledgePrimaryAllocationsTests.swift in Sources */,
         A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */,
         A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */,
         A10000000000000000003E21 /* MqttJournalCodexReplayTests.swift in Sources */,
