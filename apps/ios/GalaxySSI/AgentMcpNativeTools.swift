@@ -50,12 +50,15 @@ enum AgentMcpNativeTools {
   static let mcpHostPermission = "galaxyssi.scope.mcp_host"
   static let noAdditionalConsent = "galaxyssi.consent.none"
   static let toolIds: Set<String> = [listConnections, listTools, callTool]
+  static let uncheckedAvailability = AgentNativeToolAvailability(
+    status: .unavailable, reason: "MCP readiness has not been checked")
 
   static func definitions(
-    provider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider()
+    provider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSMcpNativeToolOperation.allCases.map { operation in
-      definition(provider: provider, operation: operation)
+      definition(provider: provider, operation: operation, initialAvailability: initialAvailability)
     }
   }
 
@@ -96,7 +99,8 @@ enum AgentMcpNativeTools {
 
   private static func definition(
     provider: AgentIOSMcpNativeToolProviding,
-    operation: AgentIOSMcpNativeToolOperation
+    operation: AgentIOSMcpNativeToolOperation,
+    initialAvailability: AgentNativeToolAvailability?
   ) -> AgentPhoneNativeToolDefinition {
     let descriptor = try! AgentNativeToolDescriptor(
       id: toolId(operation),
@@ -125,7 +129,7 @@ enum AgentMcpNativeTools {
       ],
       timeoutMillis: operation == .callTool ? 60_000 : 30_000,
       idempotency: .nonIdempotent,
-      availability: provider.availability(operation: operation)
+      availability: initialAvailability ?? provider.availability(operation: operation)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,

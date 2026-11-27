@@ -38,9 +38,11 @@ enum AgentLocalModelToolCatalog {
       }
       registry.refreshAvailability()
       if !tool.isEmpty {
-        guard let match = registry.lookup(tool)?.descriptor else {
+        guard let definition = registry.lookup(tool) else {
           return .failure(code: "unknown_tool", message: "That tool is not in this local assignment.")
         }
+        var match = definition.descriptor
+        match.availability = definition.availabilityProvider.current(nil)
         var result = row(match)
         if AgentMcpJSONCodec.stringify(match.inputSchema).utf8.count <= 8_192 {
           result["input_schema"] = .object(match.inputSchema)
