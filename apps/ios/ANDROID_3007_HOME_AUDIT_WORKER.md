@@ -30,6 +30,13 @@ old-owner rejection, in-flight invalidation and blank identity clearing.
 They are not executed. No Swift/native build, XCTest, full repository check,
 simulator/device run, CI inspection, IPA or private evidence is included.
 
+Local integration with the twelve pending branches for #4664 and #4671-#4681
+had no textual or Xcode registration conflict. All eighteen focused source
+guards, `npm run check:ios` and `git diff --check` passed on that combined tree.
+The catalog PR's source guard recognizes only the exact independent audit UI
+hooks via this change's exported normalizer; no original assertions are removed.
+This does not merge or approve any remote PR or establish native acceptance.
+
 ## Limits
 
 This is a presentation worker, not a new audit persistence or authorization
