@@ -41,6 +41,14 @@ These do not prove real connection-store timing, native delivery or startup spee
 No Swift/native build, XCTest, full repository check, CI inspection, simulator/
 device/live model/network execution, IPA or private evidence is included.
 
+Local integration with fifteen pending branches (#4664 and #4671-#4684) had no
+text or Xcode registration conflict. All twenty-one focused source guards,
+`npm run check:ios` and `git diff --check` passed on that combined tree.
+The home-catalog, settings-summary and workspace guards in #4681/#4680/#4684
+recognize only this exact approved independent catalog delta through the exported
+normalizer. Their original assertions remain; no MCP feature code is duplicated
+into those branches. No remote PR is approved or merged by this verification.
+
 ## Remaining work
 
 This removes MCP construction-time readiness reads, not all native registry or
