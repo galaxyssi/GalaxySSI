@@ -14,11 +14,23 @@ observation cannot be stored is not reported as verified success.
 
 Preparation binds the original pending action, message, conversation, turn,
 session, capture kind, permission ticket, input and host scope. A legacy authorized
-capture without an active plan receives a single-action host plan containing only
-that same action; its dispatched ticket is rebound to the saved plan while keeping
+capture without an active plan receives an execution envelope retaining the exact
+pending queue; its dispatched ticket is rebound to the saved plan while keeping
 the permission token and original action digest. No new action or permission is
 invented. Existing plans retain their ID/revision and graph validation. Duplicate
 callbacks and persisted dispatch intents cannot obtain fresh execution authority.
+
+Queue follow-up (baseline main `c6bad3465c673dfb2dcecb23b095185c129c7447`): the
+original single-action fallback lost later queued actions from the saved plan,
+so subsequent captures/native tools could not prepare their checkpoints. The
+envelope now retains action order and all original action data without planner
+rewrites or connector-call deduplication. Only the current capture becomes running;
+later actions retain their status and confirmation requirement. A second capture
+uses the same plan but a new permission token and node/checkpoint identity.
+An existing plan summary without its body, pending planning, blocked state,
+wrong task/session ownership, duplicate/blank IDs, foreign scopes and already
+dispatched legacy actions are rejected instead of receiving fresh execution proof.
+This does not authorize the remaining queue or change its per-action gates.
 
 Existing foreground/system permission, current permission-mode, read-only and
 cancellation checks remain. Execution-paused and plan-only modes are also checked
@@ -33,15 +45,21 @@ physical capture. Existing uncertain-effect recovery still applies. This is not
 an OS background execution, cross-process CAS, fsync/power-loss, exactly-once or
 instantaneous cancellation guarantee.
 
-Eight synthetic XCTest methods are authored, not executed: both capture kinds and
+Twelve synthetic XCTest methods are authored, not executed: both capture kinds and
 legacy no-plan preparation; persisted state visible before the synthetic effect;
 cancelled/stale CAS; changed scope/input; plan-only/pause/revision/duplicate gates;
 interrupted claim recovery; saved observation reuse; and failed observation storage.
+Four queue follow-up methods cover both capture kinds with retained native/connector
+actions; queue persistence before a synthetic first effect; a second capture with
+independent permission and the original plan; and invalid legacy queue/summary gates.
 The focused JS guard compares the whole coordinator outside this single method
 against the baseline and freezes the permission, capture, journal and effect
-kernels. Structural checks do not prove Swift typing, native storage faults,
-camera/microphone UI, actual permission races or device behavior. No native build/
-tests, full check, CI monitoring, IPA or private evidence upload is performed.
+kernels. The helper is separately frozen against the follow-up baseline except for the
+single declared legacy-envelope block. Existing permission and ticket logic remains
+byte-for-byte identical after restoring that block.
+Structural checks do not prove Swift typing, native storage faults, camera/microphone
+UI, actual permission races or device behavior. No native build/tests, full check,
+CI monitoring, IPA or private evidence upload is performed.
 
 Broader unplanned actions, browser and cloud-loop persistence, audit batching,
 other Android #3007 work and the overall port backlog remain incomplete.
