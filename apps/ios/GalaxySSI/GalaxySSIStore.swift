@@ -386,6 +386,13 @@ final class GalaxySSIStore: ObservableObject {
   var canRestoreMessageViewport: Bool { !runtimePlaintextCleared }
   var canReadVoiceReminderSnapshot: Bool { !runtimePlaintextCleared }
   var canReadAgentTranscript: Bool { !runtimePlaintextCleared }
+  static func canRestoreConversationGoalState(defaults: UserDefaults = .standard,
+    secrets: GalaxySSISecretStore = KeychainSecretStore.shared) -> Bool {
+    guard var data = GalaxySSIEncryptedStateStore.load(defaults: defaults, secrets: secrets) else { return false }
+    defer { data.wipeSensitive() }
+    guard let state = try? JSONDecoder.galaxySSI.decode(PersistedState.self, from: data) else { return false }
+    return !state.profile.identityFingerprint.isBlank
+  }
   private var suppressMessageDatabaseSync = false
 
   init(defaults: UserDefaults = .standard, secrets: GalaxySSISecretStore = KeychainSecretStore.shared,

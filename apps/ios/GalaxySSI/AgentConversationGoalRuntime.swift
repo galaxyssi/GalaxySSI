@@ -73,7 +73,7 @@ final class AgentConversationGoalRuntime {
     guard UIApplication.shared.applicationState != .active, UIApplication.shared.isProtectedDataAvailable else { return false }
     var cold: GalaxySSIStore?
     if store == nil {
-      guard GalaxySSIEncryptedStateStore.load(defaults: .standard, secrets: KeychainSecretStore.shared) != nil else { return false }
+      guard GalaxySSIStore.canRestoreConversationGoalState() else { return false }
       cold = GalaxySSIStore(); if let cold { bind(cold) }
     }
     guard let store, permitsIdentity(store) else { return false }

@@ -45,7 +45,7 @@ assert(!/recentLocalConversationContext|GalaxySSIHealthRecords|enqueueDesktop|co
 for (const token of ['!session.privateMode && !session.trackingPaused', 'session.collaborationRoster == nil',
   'store.profile.identityFingerprint', 'Self.eligible(store.agentSession', 'try repository.replace(next, expected: goal)',
   'try repository.replace(result, expected: next)', 'guard current(next, store: store, ticket: ticket)',
-  'try goal.halt(.interrupted)', 'ProcessInfo.processInfo.systemUptime - started >= 180',
+  'try goal.halt(.interrupted)', 'ProcessInfo.processInfo.systemUptime - started >= 180', 'GalaxySSIStore.canRestoreConversationGoalState()',
   'guard backgroundGrant == grant else { return }', 'guard self.graceToken == token else { return }',
   'goal.review && goal.phase == .running', 'store.hasIncomingDuplicate', 'beginBackgroundTask',
   'guard let initial = try repository.read(queued.conversation)', 'try repository.read(goal.conversation) == goal']) assert(runtime.includes(token), token);
