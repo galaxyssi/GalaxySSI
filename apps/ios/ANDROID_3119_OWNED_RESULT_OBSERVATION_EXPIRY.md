@@ -50,6 +50,14 @@ executed persistence, scheduler, MQTT or device acceptance.
 No Swift/native build, XCTest execution, full repository check, CI inspection,
 live model/network, simulator/device run, IPA or private evidence is included.
 
+Local integration with seventeen pending branches (#4664 and #4671-#4686) had
+no textual or Xcode registration conflict. All twenty-three focused source guards,
+`npm run check:ios` and `git diff --check` passed on that combined tree. The
+pairing-history and observation-job guards in #4664/#4683 compose only this exact
+independent method/caller delta through its exported normalizer. No feature code
+is duplicated there and no original assertion is removed. No remote PR is approved
+or merged by this verification.
+
 ## Remaining work
 
 This is not automatic model liveness assessment, remote-silence replay or generic
