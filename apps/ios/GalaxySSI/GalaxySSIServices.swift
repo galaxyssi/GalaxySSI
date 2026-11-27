@@ -1399,7 +1399,8 @@ final class MessageCoordinator: ObservableObject {
           clientSourceMessageId: String(request.sourceMessageId),
           contactId: contact.id,
           trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
-          backgroundLearning: true
+          backgroundLearning: true,
+          learningScope: .autonomous(request, profile: store.profile.identityFingerprint)
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -1584,7 +1585,8 @@ final class MessageCoordinator: ObservableObject {
           clientSourceMessageId: (publicAttention ? PublicAttentionResearchPolicy.outboxPrefix : "") + String(request.sourceMessageId),
           contactId: contact.id,
           trustedBackgroundCognitionAuthorized: !publicAttention && store.globalAgentSettings.allowPairedAgentCognition,
-          backgroundLearning: true
+          backgroundLearning: true,
+          learningScope: publicAttention ? nil : .research(request, profile: store.profile.identityFingerprint)
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -1797,7 +1799,8 @@ final class MessageCoordinator: ObservableObject {
           clientSourceMessageId: String(request.sourceMessageId),
           contactId: contact.id,
           trustedBackgroundCognitionAuthorized: store.globalAgentSettings.allowPairedAgentCognition,
-          backgroundLearning: true
+          backgroundLearning: true,
+          learningScope: .cognition(request, profile: store.profile.identityFingerprint)
         )
         scheduleOutboxFlushFromStore()
         return true
@@ -18805,7 +18808,8 @@ final class MessageCoordinator: ObservableObject {
     clientSourceMessageId: String = "",
     contactId: String = "",
     trustedBackgroundCognitionAuthorized: Bool = false,
-    backgroundLearning: Bool = false
+    backgroundLearning: Bool = false,
+    learningScope: AgentLearningOutboxScope? = nil
   ) throws -> String {
     if !usesLegacyMqtt {
       guard let runtime = journalMqttRuntime, payload.string("type") == "text", blockedByAttachmentTransferIds.isEmpty,
@@ -18819,6 +18823,11 @@ final class MessageCoordinator: ObservableObject {
       link: link,
       trustedBackgroundCognitionAuthorized: trustedBackgroundCognitionAuthorized
     )
+    let boundScope = learningScope?.bound(messageID: wire.messageId, topic: topic, payload: payload,
+      profile: store.profile.identityFingerprint, source: clientSourceMessageId, contact: contactId)
+    guard learningScope == nil || (backgroundLearning && boundScope != nil) else {
+      throw GalaxySSIError.invalidPayload("The learning outbox scope does not match its original request.")
+    }
     deliveryStore.enqueue(
       messageId: wire.messageId,
       topic: topic,
@@ -18827,7 +18836,8 @@ final class MessageCoordinator: ObservableObject {
       blockedByAttachmentTransferIds: blockedByAttachmentTransferIds,
       clientSourceMessageId: clientSourceMessageId,
       contactId: contactId,
-      backgroundLearning: backgroundLearning
+      backgroundLearning: backgroundLearning,
+      learningScope: boundScope
     )
     return wire.messageId
   }

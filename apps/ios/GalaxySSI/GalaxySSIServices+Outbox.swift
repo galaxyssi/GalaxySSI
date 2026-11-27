@@ -1,5 +1,153 @@
 import Foundation
 
+struct AgentLearningOutboxScope: Codable, Equatable {
+  enum Kind: String, Codable { case cognition, autonomous, research }
+  let kind: Kind
+  let profile: String
+  let source: Int64
+  let resource: String
+  let transport: GlobalResearchResourceTransport
+  let task: String
+  let action: String
+  let conversation: String
+  let turn: String
+  let requestID: String
+  let unit: String
+  let stage: GlobalResearchDispatchStage?
+  let leaseID: String
+  let requestOwner: String
+  private(set) var messageID = ""
+  private(set) var topic = ""
+
+  static func cognition(_ request: GalaxySSIGlobalCognitionDispatchRequest, profile: String) -> Self {
+    .init(kind: .cognition, profile: profile, source: request.sourceMessageId, resource: request.resourceId,
+      transport: request.transport, task: request.taskId, action: "", conversation: request.conversationId,
+      turn: request.turnId, requestID: "", unit: "", stage: nil, leaseID: "", requestOwner: "")
+  }
+
+  static func autonomous(_ request: GalaxySSIGlobalAutonomousDispatchRequest, profile: String) -> Self {
+    .init(kind: .autonomous, profile: profile, source: request.sourceMessageId, resource: request.resourceId,
+      transport: request.transport, task: request.runId, action: request.actionId, conversation: request.conversationId,
+      turn: request.turnId, requestID: "", unit: "", stage: nil, leaseID: "", requestOwner: "")
+  }
+
+  static func research(_ request: GlobalResearchDispatchRequest, profile: String) -> Self {
+    .init(kind: .research, profile: profile, source: request.sourceMessageId, resource: request.resourceId,
+      transport: request.transport, task: request.taskId, action: "", conversation: request.conversationId,
+      turn: request.turnId, requestID: request.id, unit: request.unitId, stage: request.stage,
+      leaseID: request.leaseId, requestOwner: request.ownerKey)
+  }
+
+  private var valid: Bool {
+    source > 0 && transport == .pairedAgent && [profile, resource, task, conversation, turn].allSatisfy {
+      !$0.isBlank && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) && $0.utf8.count <= 512
+    } && [action, requestID, unit, leaseID, requestOwner].allSatisfy { $0.utf8.count <= 512 } &&
+      (kind != .research || (!requestID.isBlank && stage != nil && !leaseID.isBlank && !requestOwner.isBlank))
+  }
+
+  func bound(messageID: String, topic: String, payload: [String: Any], profile: String,
+             source: String, contact: String) -> Self? {
+    guard valid, self.profile == profile, String(self.source) == source, resource == contact,
+          self.messageID.isEmpty, self.topic.isEmpty, UUID(uuidString: messageID) != nil,
+          GalaxySSILinkProtocol.validTopic(topic),
+          (try? MqttRouteProtocol.integer(payload, "source_message_id")) == self.source,
+          payload.string("type") == "text", payload.string("contact_id") == resource,
+          payload.string("task_id") == task, payload.string("conversation_id") == conversation,
+          payload.string("turn_id") == turn else { return nil }
+    var copy = self; copy.messageID = messageID; copy.topic = topic; return copy
+  }
+
+  func matches(_ item: PendingLinkMessage, profile: String) -> Bool {
+    valid && self.profile == profile && item.backgroundLearning == true &&
+      UUID(uuidString: messageID) != nil && item.messageId == messageID &&
+      GalaxySSILinkProtocol.validTopic(topic) && item.topic == topic &&
+      item.clientSourceMessageId == String(source) && item.contactId == resource
+  }
+
+  func cognitionRequest(_ tasks: [GlobalCognitionTask], scope: GlobalBackgroundCognitionScope,
+                        now: Int64) -> GalaxySSIGlobalCognitionDispatchRequest? {
+    let owned = tasks.filter { $0.id == task }
+    guard valid, kind == .cognition, now > 0, owned.count == 1, let current = owned.first,
+          current.leaseExpiresAtMillis > now else { return nil }
+    let request = GalaxySSIGlobalCognitionDispatchRequest(taskId: task, resourceId: resource, transport: transport,
+      contactId: resource, sourceMessageId: source, conversationId: conversation, turnId: turn, systemPrompt: "", prompt: "")
+    return scope.accepts(current, request: request) ? request : nil
+  }
+
+  func autonomousRequest(_ runs: [GlobalAutonomousRun], scope: GlobalRealtimePlanningScope,
+                         now: Int64) -> GalaxySSIGlobalAutonomousDispatchRequest? {
+    let owned = runs.filter { $0.id == task }
+    guard valid, kind == .autonomous, now > 0, owned.count == 1, let run = owned.first,
+          GlobalAutonomousSourceScope.allows(run, scope: scope) else { return nil }
+    let response = AgentConnectorResponse(sourceMessageId: source, contactId: resource, content: "",
+      conversationId: conversation, turnId: turn, taskId: task, receivedAtMillis: now)
+    guard GlobalAutonomousSourceScope.matches(response, run: run) else { return nil }
+    if action.isEmpty {
+      guard run.status == .replanning, run.review.leaseExpiresAtMillis > now else { return nil }
+    } else {
+      let steps = run.actions.filter { $0.id == action && $0.status == .running && $0.sourceMessageId == source }
+      guard run.status == .running, action == turn, steps.count == 1,
+            steps[0].leaseExpiresAtMillis > now else { return nil }
+    }
+    return .init(runId: task, actionId: action, resourceId: resource, transport: transport, contactId: resource,
+      sourceMessageId: source, conversationId: conversation, turnId: turn, systemPrompt: "", prompt: "")
+  }
+
+  func researchRequest(_ state: GlobalResearchExecutorState, scope: GlobalRealtimePlanningScope,
+                       now: Int64) -> GlobalResearchDispatchRequest? {
+    let requests = state.dispatchRequests.filter { $0.id == requestID }
+    let tasks = state.tasks.filter { $0.id == task }
+    guard valid, kind == .research, now > 0, requests.count == 1, let request = requests.first,
+          tasks.count == 1, let current = tasks.first, current.status == .running,
+          request.taskId == task, request.sourceMessageId == source, request.resourceId == resource,
+          request.unitId == unit, request.stage == stage, request.leaseId == leaseID, request.ownerKey == requestOwner,
+          request.contactId == resource, request.transport == transport,
+          request.conversationId == conversation, request.turnId == turn,
+          GlobalResearchSourceScope.allows(current, scope: scope),
+          GlobalResearchSourceScope.allowsContext(request, scope: scope) else { return nil }
+    switch request.stage {
+    case .evidence:
+      let units = current.researchPlan.units.filter { $0.id == request.unitId }
+      guard current.researchPlan.phase == .collecting, units.count == 1, let unit = units.first, unit.status == .running,
+            unit.sourceMessageId == source, unit.resourceId == resource, unit.leaseExpiresAtMillis > now else { return nil }
+    case .synthesis:
+      guard current.researchPlan.phase == .synthesizing, current.researchPlan.synthesisSourceMessageId == source,
+            current.researchPlan.synthesisResourceId == resource,
+            current.researchPlan.synthesisLeaseExpiresAtMillis > now else { return nil }
+    }
+    return request
+  }
+
+  @MainActor
+  func permits(_ item: PendingLinkMessage, store: GalaxySSIStore, now: Int64) -> Bool {
+    guard matches(item, profile: store.profile.identityFingerprint),
+          let contact = store.contact(id: resource), !contact.deleted, contact.trustState == .verified,
+          contact.deliveryMode.isGalaxySSILinkFamily,
+          store.serverLinks.filter({ $0.paired && $0.routes.upTopic == topic &&
+            (contact.desktopId.isBlank || $0.desktopId == contact.desktopId) }).count == 1 else { return false }
+    let settings = store.globalAgentSettings
+    switch kind {
+    case .cognition:
+      let ledger = GlobalAgentDeliberationStore(), tasks = ledger.cognitionTasks()
+      let scope = GlobalBackgroundCognitionScope(enabled: settings.enabled && settings.modelUnderstandingEnabled,
+        conversations: store.agentSessions(includeArchived: true))
+      guard ledger.lastErrorDescription.isEmpty, let request = cognitionRequest(tasks, scope: scope, now: now) else { return false }
+      return GalaxySSIGlobalAgentRuntimeBridge.permitsCognitionRequest(store: store, request: request, requireAvailable: false)
+    case .autonomous:
+      let ledger = GlobalAgentDeliberationStore(), runs = ledger.autonomousRuns()
+      guard ledger.lastErrorDescription.isEmpty, let request = autonomousRequest(runs,
+        scope: GlobalAutonomousSourceScope.liveScope(store), now: now) else { return false }
+      return GalaxySSIGlobalAgentRuntimeBridge.permitsAutonomousRequest(store: store, request: request)
+    case .research:
+      let ledger = GalaxySSIGlobalResearchRuntimeStore(), state = ledger.state()
+      let scope = GlobalRealtimePlanningScope(enabled: settings.enabled && settings.autonomousResearchEnabled,
+        conversations: store.agentSessions(includeArchived: true))
+      guard ledger.lastErrorDescription.isEmpty, let request = researchRequest(state, scope: scope, now: now) else { return false }
+      return GalaxySSIGlobalAgentRuntimeBridge.permitsResearchRequest(store: store, request: request)
+    }
+  }
+}
+
 struct LinkOutboxReceiptWindow {
   private struct Entry {
     let topic: String
@@ -159,7 +307,8 @@ extension MessageCoordinator {
       } else if AgentIOSCognitionSchedulePolicy.isLearningTransport(item, legacySources: pausedLegacyLearningSourceIDs ?? []) {
         // Expired reservations belong to the learning journal, not transport replay.
         let expiry = backgroundLearningLeases()[item.clientSourceMessageId] ?? 0
-        guard expiry > GlobalRealtimeClock.nowMillis() else {
+        guard expiry > GlobalRealtimeClock.nowMillis(), let scope = item.learningScope,
+              scope.permits(item, store: store, now: GlobalRealtimeClock.nowMillis()) else {
           deliveryStore.discard(messageId: item.messageId)
           continue
         }
