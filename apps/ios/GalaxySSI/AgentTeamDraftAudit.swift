@@ -12,6 +12,7 @@ enum AgentTeamDraftAudit {
     let none: String
     let limitation: String
     var noReviewReason = "The reviewer did not give a specific reason."
+    var contrast = AgentTeamPredictionContrast.Text.english
     static let english = Labels(passing: "Pass all gates:", none: "None", limitation: "Evidence limitation:")
   }
   static let system = """
@@ -64,7 +65,7 @@ enum AgentTeamDraftAudit {
     }
     return normalized(left) == normalized(right)
   }
-  private static func object(_ raw: String) throws -> AgentMcpJSONObject {
+  static func object(_ raw: String) throws -> AgentMcpJSONObject {
     var json = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\r\n", with: "\n")
     if json.hasPrefix("```json\n"), json.hasSuffix("\n```") { json = String(json.dropFirst(8).dropLast(4)) }
     guard raw.utf16.count <= 17_300, json.hasPrefix("{") else { throw Failure.invalid }
