@@ -26,7 +26,7 @@ class ReadingPositionTest {
     @Test fun pendingApprovalPreviewAndDeliveryMarkersNeverCountAsAnswers() {
         val user = row("user", turn = "t", role = AgentTranscriptRole.USER)
         val base = listOf(user)
-        for (e in listOf(row("approval"), row("agent-stream-preview-1"), row("wait").copy(dedupeKey = "ui-reply-waiting:1"),
+        for (e in listOf(row("approval").copy(richOutputJson = "[{}]"), row("agent-stream-preview-1"), row("wait").copy(dedupeKey = "ui-reply-waiting:1"),
             row("failure").copy(dedupeKey = "delivery-failed:1"), row("process", role = AgentTranscriptRole.PROCESS))) {
             assertFalse(changed(base, base + e.copy(turnId = "t")))
         }

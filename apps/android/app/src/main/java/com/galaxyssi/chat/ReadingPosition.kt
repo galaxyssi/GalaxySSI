@@ -14,7 +14,7 @@ internal object ReadingPosition {
                   excluded: (AgentTranscriptEntry) -> Boolean): Boolean {
         if (previous.isEmpty() || current.isEmpty() || previous.last().conversationId != current.last().conversationId) return false
         val last = previous.maxOf { it.timestampMillis }
-        val seen = previous.asSequence().filter(::body).filterNot(excluded).map(::key).toHashSet()
+        val seen = previous.asSequence().filter(::body).filterNot { it.richOutputJson.isNotEmpty() && excluded(it) }.map(::key).toHashSet()
         // An in-flight turn can have an older timestamp than an unrelated, later message.
         val open = previous.asSequence().filter { it.role == AgentTranscriptRole.USER && it.turnId.isNotBlank() }
             .map(::key).filterNot(seen::contains).toHashSet()

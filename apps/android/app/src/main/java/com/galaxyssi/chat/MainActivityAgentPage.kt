@@ -440,7 +440,7 @@ private fun MainActivity.configureTranscriptList(list: RecyclerView, transcriptA
                     itemCount = itemCount,
                     lastVisiblePosition = lastPosition,
                     remainingPx = remaining,
-                    thresholdPx = dp(56)
+                    thresholdPx = 1
                 )
                 if (agentTranscriptAutoFollow) readingArrow(R.id.agentReadingLatest, false)
                 if (AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(

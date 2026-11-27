@@ -261,7 +261,7 @@ internal fun MainActivity.addMessage(msg: ChatMessage, fromIncoming: Boolean = f
             )
         )
     }
-    if (stored.isMine && !stored.isSystem) onPeerChatMessageSent(stored.contact.id)
+    if (stored.isMine && !stored.isSystem) followPeerChatLatest(stored.contact.id)
     if (isVisibleIncoming && !peerChatViewport.followLatest && peerChatViewport.contactId == stored.contact.id)
         readingArrow(R.id.peerReadingLatest, true)
     refreshVisibleMessages(stored.contact.id)

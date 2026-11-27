@@ -9,6 +9,49 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReadingPositionDeviceTest {
+    @Test fun delayedMediaGrowthAboveVisibleParagraphDoesNotDisplaceItsText() {
+        ActivityScenario.launch(MainActivity::class.java).use { screen ->
+            lateinit var list: androidx.recyclerview.widget.RecyclerView
+            lateinit var media: View
+            lateinit var text: com.galaxyssi.chat.ui.ParagraphSelectingTextView
+            var holding = false
+            screen.onActivity { a ->
+                list = androidx.recyclerview.widget.RecyclerView(a).apply {
+                    layoutManager = androidx.recyclerview.widget.LinearLayoutManager(a)
+                    itemAnimator = null
+                    adapter = object : androidx.recyclerview.widget.RecyclerView.Adapter<androidx.recyclerview.widget.RecyclerView.ViewHolder>() {
+                        override fun getItemCount() = 1
+                        override fun onBindViewHolder(holder: androidx.recyclerview.widget.RecyclerView.ViewHolder, position: Int) = Unit
+                        override fun onCreateViewHolder(parent: android.view.ViewGroup, viewType: Int): androidx.recyclerview.widget.RecyclerView.ViewHolder {
+                            val row = android.widget.LinearLayout(a).apply {
+                                orientation = android.widget.LinearLayout.VERTICAL
+                                media = View(a); addView(media, -1, 360)
+                                text = com.galaxyssi.chat.ui.ParagraphSelectingTextView(a).apply { this.text = "Reading marker" }
+                                addView(text, -1, 240)
+                                addView(View(a), -1, 2400)
+                            }
+                            return object : androidx.recyclerview.widget.RecyclerView.ViewHolder(row) {}
+                        }
+                    }
+                }
+                a.addContentView(list, android.view.ViewGroup.LayoutParams(-1, 640))
+                ReadingParagraphAnchor(list) { holding }.install()
+            }
+            val inst = InstrumentationRegistry.getInstrumentation()
+            inst.waitForIdleSync()
+            fun y() = IntArray(2).also { text.getLocationInWindow(it) }[1]
+            var before = 0
+            screen.onActivity { list.scrollBy(0, 300); holding = true; list.invalidate() }
+            inst.waitForIdleSync()
+            screen.onActivity {
+                assertTrue(text.isShown); before = y()
+                media.layoutParams = media.layoutParams.apply { height += 110 }
+            }
+            inst.waitForIdleSync()
+            screen.onActivity { assertEquals(before, y()) }
+        }
+    }
+
     @Test fun firstStreamBodyLeavesTheReaderInPlaceAndTheArrowFollowsToLatest() {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val transcripts = AgentTranscriptStore(ctx)
@@ -20,7 +63,9 @@ class ReadingPositionDeviceTest {
                 transcripts.append(AgentTranscriptRole.USER, "Fixture $i\nReading position\nOnly synthetic text.",
                     conversationId = chat, turnId = if (i == 23) turn else UUID.randomUUID().toString())
             }
-            ActivityScenario.launch(MainActivity::class.java).use { screen ->
+            val launch = android.content.Intent(ctx, MainActivity::class.java)
+                .putExtra("galaxyssi_open_agent", true).putExtra("galaxyssi_agent_conversation_id", chat)
+            ActivityScenario.launch<MainActivity>(launch).use { screen ->
                 fun await(hint: String, test: (MainActivity) -> Boolean) {
                     val end = SystemClock.elapsedRealtime() + 20_000
                     do {
