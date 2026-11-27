@@ -11776,6 +11776,20 @@ final class MessageCoordinator: ObservableObject {
       (try? managedBrowserContinuations.awaitingHandoff(binding: request.binding)?.ticket) == request.handoff.ticket
   }
 
+  func beginManagedBrowserView(_ request: AgentManagedBrowserPresentation, id: UUID) throws -> AgentBrowserViewLease {
+    guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
+    try managedBrowserContinuations.reconcileHostProcess(request.binding)
+    guard managedBrowserPresentationIsCurrent(request) else {
+      recoverManagedBrowserMembers(bindings: [request.binding], rememberBusyWake: true)
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
+    do { return try managedBrowserContinuations.claimView(request.handoff.ticket, binding: request.binding, id: id) }
+    catch AgentBrowserViewLease.Failure.viewLost {
+      try recordManagedBrowserContentExit(request, cause: .browserViewClosed)
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
+  }
+
   func returnManagedBrowserControl(_ request: AgentManagedBrowserPresentation,
                                    observation: AgentManagedBrowserHandoff.Observation) throws {
     guard managedBrowserPresentationIsCurrent(request) else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
@@ -11789,11 +11803,12 @@ final class MessageCoordinator: ObservableObject {
     return try managedBrowserContinuations.cookies(request.handoff.ticket, binding: request.binding)
   }
 
-  func recordManagedBrowserContentExit(_ request: AgentManagedBrowserPresentation) throws {
+  func recordManagedBrowserContentExit(_ request: AgentManagedBrowserPresentation,
+    cause: AgentManagedBrowserHandoff.Interruption = .webContentProcessExited) throws {
     guard managedBrowserPresentationIsCurrent(request) else {
       throw AgentManagedBrowserContinuationStore.Failure.scopeChanged
     }
-    if try managedBrowserContinuations.recordWebContentExit(request.handoff.ticket, binding: request.binding) {
+    if try managedBrowserContinuations.recordWebContentExit(request.handoff.ticket, binding: request.binding, cause: cause) {
       NotificationCenter.default.post(name: AgentManagedBrowserContinuationStore.changed, object: request.binding.owner.runId)
       recoverManagedBrowserMembers(bindings: [request.binding], rememberBusyWake: true)
     }
@@ -14371,6 +14386,7 @@ final class MessageCoordinator: ObservableObject {
     }
     var waiting = task
     waiting.supervisedBrowserWait = wait
+    waiting.browserViewLease = nil
     waiting.phase = .waitingResponse
     waiting.blocked = false
     waiting.result = ""
@@ -14391,6 +14407,29 @@ final class MessageCoordinator: ObservableObject {
     guard let wait = store.agentTask(id: taskID)?.supervisedBrowserWait,
           wait.resolution == nil, supervisedBrowserContext(wait) != nil else { return nil }
     return wait
+  }
+
+  func beginSupervisedBrowserView(_ wait: AgentSupervisedBrowserWait, id: UUID) throws -> AgentBrowserViewLease {
+    guard wait.resolution == nil, let context = supervisedBrowserContext(wait) else {
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
+    guard wait.hostProcessID == AgentOwnedOperationContext.processId else {
+      try resolveSupervisedBrowser(wait, resolution: .interrupted(.appProcessChanged))
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
+    let scope = AgentModelLoopRecoveryIdentity.sha256(wait)
+    do {
+      return try AgentBrowserViewLease.claim(scope: scope, id: id, existing: context.task.browserViewLease,
+        processID: AgentOwnedOperationContext.processId) { lease in
+          var task = context.task; task.browserViewLease = lease
+          guard store.commitSupervisedBrowserState(expected: context.task, updated: task) else {
+            throw AgentManagedBrowserContinuationStore.Failure.unavailable
+          }
+        }
+    } catch AgentBrowserViewLease.Failure.viewLost {
+      try resolveSupervisedBrowser(wait, resolution: .interrupted(.browserViewClosed))
+      throw AgentManagedBrowserContinuationStore.Failure.staleTicket
+    }
   }
 
   private func supervisedBrowserAllowed(_ conversationID: String) -> Bool {
@@ -14457,6 +14496,9 @@ final class MessageCoordinator: ObservableObject {
       if wait.resolution != nil { wakeSupervisedBrowserWait(wait) }
       else if wait.hostProcessID != AgentOwnedOperationContext.processId {
         try? resolveSupervisedBrowser(wait, resolution: .interrupted(.appProcessChanged))
+      } else if let lease = task.browserViewLease,
+        !AgentBrowserViewLease.isLive(lease, scope: AgentModelLoopRecoveryIdentity.sha256(wait), processID: AgentOwnedOperationContext.processId) {
+        try? resolveSupervisedBrowser(wait, resolution: .interrupted(.browserViewClosed))
       }
     }
   }

@@ -88,6 +88,7 @@ final class AgentManagedBrowserContinuationStore {
     var delivered = false
     var deliveredReceiptID: UUID?
     var browserCookies: [String: [AgentManagedBrowserCookie]]? = nil
+    var viewLeases: [String: AgentBrowserViewLease]? = nil
     var ownerStopped: Bool? = nil
   }
 
@@ -244,6 +245,23 @@ final class AgentManagedBrowserContinuationStore {
       let record = try owned(binding)
       let host = try activeBrowserHost(ticket, record: record)
       return (record.browserCookies?[host] ?? []).compactMap { $0.restore(host: host) }
+    }
+  }
+
+  func claimView(_ ticket: AgentManagedBrowserHandoff.Ticket, binding: AgentManagedBrowserDispatchBinding,
+    id: UUID) throws -> AgentBrowserViewLease {
+    try locked {
+      var record = try owned(binding)
+      _ = try activeBrowserHost(ticket, record: record)
+      let handoff = try exact(ticket, in: record)
+      guard handoff.hostProcessID == nil || handoff.hostProcessID == hostProcessID else { throw AgentBrowserViewLease.Failure.viewLost }
+      let scope = AgentModelLoopRecoveryIdentity.sha256(ticket)
+      return try AgentBrowserViewLease.claim(scope: scope, id: id, existing: record.viewLeases?[ticket.callID],
+        processID: hostProcessID) { lease in
+          var table = record.viewLeases ?? [:]
+          table[ticket.callID] = lease; record.viewLeases = table
+          try save(record)
+        }
     }
   }
 
@@ -455,6 +473,7 @@ final class AgentManagedBrowserContinuationStore {
       record.handoffs.removeAll()
       record.activeCallID = nil
       record.browserCookies = nil
+      record.viewLeases = nil
       try save(record)
       GalaxySSIEncryptedUserDefaultsStore.remove(defaults: defaults, key: indexPrefix(RunScope(binding)) + binding.key)
     }
@@ -496,20 +515,24 @@ final class AgentManagedBrowserContinuationStore {
   func reconcileHostProcess(_ binding: AgentManagedBrowserDispatchBinding) throws {
     try locked {
       var record = try owned(binding)
-      guard let callID = record.activeCallID, let handoff = record.handoffs[callID],
-            let previousHost = handoff.hostProcessID, !previousHost.isBlank,
-            previousHost != hostProcessID else { return }
-      _ = try interrupt(handoff, record: &record, cause: .appProcessChanged)
+      guard let callID = record.activeCallID, let handoff = record.handoffs[callID] else { return }
+      if let previousHost = handoff.hostProcessID, !previousHost.isBlank, previousHost != hostProcessID {
+        _ = try interrupt(handoff, record: &record, cause: .appProcessChanged)
+      } else if let lease = record.viewLeases?[callID],
+        !AgentBrowserViewLease.isLive(lease, scope: AgentModelLoopRecoveryIdentity.sha256(handoff.ticket), processID: hostProcessID) {
+        _ = try interrupt(handoff, record: &record, cause: .browserViewClosed)
+      }
     }
   }
 
   @discardableResult
   func recordWebContentExit(_ ticket: AgentManagedBrowserHandoff.Ticket,
-                            binding: AgentManagedBrowserDispatchBinding) throws -> Bool {
+                            binding: AgentManagedBrowserDispatchBinding,
+                            cause: AgentManagedBrowserHandoff.Interruption = .webContentProcessExited) throws -> Bool {
     try locked {
       var record = try owned(binding)
       let handoff = try exact(ticket, in: record)
-      return try interrupt(handoff, record: &record, cause: .webContentProcessExited)
+      return try interrupt(handoff, record: &record, cause: cause)
     }
   }
 

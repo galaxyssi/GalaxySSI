@@ -32,7 +32,7 @@ struct GalaxySSIManagedBrowserHandoffView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 12) {
-        Button { presentation.wrappedValue.dismiss() } label: {
+        Button { closeBrowser() } label: {
           Image(systemName: "xmark").frame(width: 44, height: 44)
         }
         .accessibilityLabel(t("galaxyssi.common.close", "Close"))
@@ -59,8 +59,9 @@ struct GalaxySSIManagedBrowserHandoffView: View {
     .onAppear {
       let managed = request
       let plan = supervised
-      browser.authorize = { [weak coordinator] in
-        guard let coordinator else { return false }
+      browser.authorize = { [weak coordinator, weak browser] in
+        guard let coordinator, let browser, let lease = browser.lease,
+          AgentBrowserViewLease.isLive(lease, scope: lease.scope, processID: AgentOwnedOperationContext.processId) else { return false }
         if let managed { return coordinator.managedBrowserPresentationIsCurrent(managed) }
         if let plan { return coordinator.supervisedBrowserRequest(taskID: plan.taskID) == plan }
         return false
@@ -76,6 +77,9 @@ struct GalaxySSIManagedBrowserHandoffView: View {
       }
       Task { @MainActor in
         do {
+          guard !browser.closed, isCurrent(coordinator) else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+          if let managed { browser.lease = try coordinator.beginManagedBrowserView(managed, id: browser.id) }
+          if let plan { browser.lease = try coordinator.beginSupervisedBrowserView(plan, id: browser.id) }
           let cookies = try managed.map { try coordinator.managedBrowserCookies($0) } ?? []
           await browser.load(address, restoring: cookies)
         } catch { failed = true }
@@ -96,7 +100,25 @@ struct GalaxySSIManagedBrowserHandoffView: View {
     .onReceive(coordinator.store.$agentSafetySettings) { _ in
       if supervised != nil { Task { @MainActor in closeIfRetired() } }
     }
-    .onDisappear { browser.close() }
+    .interactiveDismissDisabled()
+    .onDisappear {
+      if browser.authorize() { try? recordViewClosure() }
+      browser.close()
+    }
+  }
+
+  private func recordViewClosure() throws {
+    guard browser.authorize() else { throw AgentManagedBrowserContinuationStore.Failure.staleTicket }
+    if let request { try coordinator.recordManagedBrowserContentExit(request, cause: .browserViewClosed) }
+    if let supervised { try coordinator.resolveSupervisedBrowser(supervised, resolution: .interrupted(.browserViewClosed)) }
+  }
+
+  private func closeBrowser() {
+    do {
+      if browser.authorize() { try recordViewClosure() }
+      browser.close()
+      presentation.wrappedValue.dismiss()
+    } catch { failed = true }
   }
 
   private func closeIfRetired() {
@@ -139,6 +161,9 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   var authorize: () -> Bool = { false }
   var persistCookies: ([HTTPCookie]) throws -> Void = { _ in }
   var reportProcessExit: () throws -> Void = {}
+  let id = UUID()
+  var lease: AgentBrowserViewLease?
+  private(set) var closed = false
   private var loaded = false
   private var cookieObserverInstalled = false
   private lazy var webView: WKWebView = {
@@ -153,6 +178,10 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   }()
 
   var view: WKWebView { webView }
+
+  deinit {
+    if let lease { AgentBrowserViewLease.release(lease) }
+  }
 
   func load(_ address: String, restoring cookies: [HTTPCookie]) async {
     guard !loaded, authorize(), let url = AgentManagedBrowserHandoff.url(address) else { return }
@@ -171,6 +200,8 @@ private final class ManagedBrowserViewSession: NSObject, ObservableObject, WKNav
   }
 
   func close() {
+    closed = true
+    if let lease { AgentBrowserViewLease.release(lease); self.lease = nil }
     authorize = { false }
     reportProcessExit = {}
     canReturn = false

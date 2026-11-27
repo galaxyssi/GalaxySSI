@@ -14,6 +14,7 @@ function section(source) {
 }
 function retainedApprovedCaptureServices(source) {
   if (!source.includes('AgentApprovedCaptureDispatch.prepare(')) return source;
+  source = require('./check-browser-view-ownership.cjs').retainedBrowserServices(source);
   return source.replace(section(source), section(old(app + 'GalaxySSIServices.swift')));
 }
 module.exports = {retainedApprovedCaptureServices};
