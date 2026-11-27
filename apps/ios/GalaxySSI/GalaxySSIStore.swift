@@ -366,6 +366,7 @@ final class GalaxySSIStore: ObservableObject {
 
   let defaults: UserDefaults
   let secrets: GalaxySSISecretStore
+  lazy var turnReceiptStore = AgentTurnReceiptStore(defaults: defaults, secrets: secrets)
   let agentConversationDatabase: AgentConversationDatabase
   let chatHistoryDatabase: GalaxySSIChatHistoryDatabase
   let agentKnowledgeDatabase: AgentKnowledgeDatabase
@@ -791,6 +792,7 @@ final class GalaxySSIStore: ObservableObject {
   }
 
   func clearRuntimePlaintextForBackground() {
+    turnReceiptStore.invalidateLive()
     chatHistoryDatabase.setRowCachingEnabled(false)
     guard !runtimePlaintextCleared else { return }
     runtimePlaintextGeneration &+= 1
@@ -1183,6 +1185,7 @@ final class GalaxySSIStore: ObservableObject {
       GalaxySSIEncryptedUserDefaultsStore.destroy(defaults: defaults, key: key, secrets: secrets)
     }
     agentMemoryStore.clear()
+    turnReceiptStore.clear()
     memoryDeletionIndex.clear()
     agentWorkspaceStore.clear()
     FileAgentDataDisclosureStore.destroyPersistentStore()
@@ -1233,6 +1236,7 @@ final class GalaxySSIStore: ObservableObject {
   ) -> ChatMessage {
     let conversationId = conversationOverride ?? activeConversationId(for: contactId)
     let createdAt = Date()
+    let receiptUptime = DispatchTime.now().uptimeNanoseconds
     let message = ChatMessage(
       id: messageId,
       contactId: contactId,
@@ -1256,6 +1260,12 @@ final class GalaxySSIStore: ObservableObject {
     )
     if sourceTrace != AgentConversationSchedule.occurrenceStage {
       captureExplicitAgentCoreMemory(content, conversationId: conversationId, contactId: contactId, eventId: message.id.uuidString)
+    }
+    if !readOnlyAnalysis, (contactId == "hermes" || contact(id: contactId)?.type.caseInsensitiveCompare("agent") == .orderedSame),
+       agentSession(id: message.conversationId) != nil,
+       let key = turnReceiptKey(conversation: message.conversationId, turn: message.turnId) {
+      turnReceiptStore.begin(key, choice: AgentModelSelectionSettings.selection(for: message.conversationId, defaults: defaults),
+        wall: Int64(createdAt.timeIntervalSince1970 * 1_000), uptime: receiptUptime)
     }
     save()
     return message

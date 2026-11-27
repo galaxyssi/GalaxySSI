@@ -39,6 +39,7 @@ private struct GalaxySSILocalResearchDisclosureRow: View {
 struct GalaxySSIAgentTranscriptMessagesView: View {
   @EnvironmentObject private var store: GalaxySSIStore
   @State private var expandedProgress = Set<UUID>()
+  @State private var receiptTarget: AgentTurnReceiptTarget?
   @State private var requirementDraft: AgentSessionRequirementDraft?
   var messages: [ChatMessage]
   var answerPreviews: [AgentSupervisedAnswerPreview] = []
@@ -109,10 +110,12 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
       replySpeech.stop()
       requirementDraft = nil
+      receiptTarget = nil
     }
     .sheet(item: $requirementDraft) { draft in
       GalaxySSISessionRequirementEditor(draft: draft, t: t)
     }
+    .sheet(item: $receiptTarget) { target in GalaxySSITurnReceiptView(target: target) }
   }
 
   private func localResearchPlacements(_ visible: [ChatMessage]) -> [UUID: ChatMessage] {
@@ -155,7 +158,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
           .accessibilityLabel(mergedSource)
       }
       if !message.isMine, !message.isSystem {
-        if let execution { messageExecutionFooter(execution, task: task, remote: remote, voice: voice) }
+        if let execution { messageExecutionFooter(execution, message: message, task: task, remote: remote, voice: voice) }
       }
       if let researchSource, !message.isMine {
         localResearchDisclosure(for: researchSource)
@@ -175,7 +178,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
             onCancel: { onCancelAgentTask(task) }
           )
         } else if let execution, !hasReply(for: message) {
-          messageExecutionFooter(execution, task: task, remote: remote, voice: voice)
+          messageExecutionFooter(execution, message: message, task: task, remote: remote, voice: voice)
         }
         if let researchSource {
           localResearchDisclosure(for: researchSource)
@@ -350,6 +353,15 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
     .environment(\.agentReplyNativeParagraphs, true)
     .environment(\.peerTextSelection, requirementSelection(message))
     .foregroundColor(.galaxySSITextPrimary)
+    .background {
+      if AgentTurnReceiptBodyPolicy.eligible(message),
+         let key = store.turnReceiptKey(conversation: message.conversationId, turn: message.turnId) {
+        AgentTurnReceiptVisibilityProbe(observe: {
+          store.canReadAgentTranscript && store.profile.identityFingerprint == key.owner &&
+            store.activeAgentConversationId == key.conversation && store.turnReceiptStore.shouldObserve(key)
+        }, painted: { store.turnReceiptStore.visible(key) })
+      }
+    }
   }
 
   private func requirementSelection(_ message: ChatMessage) -> GalaxySSIPeerTextSelectionContext? {
@@ -472,7 +484,7 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
   }
 
   private func messageExecutionFooter(
-    _ progress: AgentTranscriptExecutionProgress, task: AgentTaskRecord?,
+    _ progress: AgentTranscriptExecutionProgress, message: ChatMessage, task: AgentTaskRecord?,
     remote: AgentRemoteTaskStatusSnapshot?, voice: VoiceAgentRunSnapshot?
   ) -> some View {
     let local = task.flatMap { AgentInteractiveProgressStatus($0.phase) == progress.status ? $0 : nil }
@@ -505,7 +517,11 @@ struct GalaxySSIAgentTranscriptMessagesView: View {
         else if voiceCanCancel, let voice { onCancelVoiceRun(voice) }
       },
       liveStartedAt: progress.startedAt,
-      liveDuration: elapsedDuration
+      liveDuration: elapsedDuration,
+      onReceipt: {
+        guard let key = store.turnReceiptKey(conversation: message.conversationId, turn: message.turnId) else { return }
+        receiptTarget = AgentTurnReceiptTarget(key: key, completedAt: progress.status == .completed ? progress.updatedAt : nil)
+      }
     )
   }
 }

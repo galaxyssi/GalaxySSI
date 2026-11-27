@@ -496,6 +496,7 @@ final class AgentNativeToolRegistry {
   private let nowMillis: () -> Int64
   private let descriptorCacheTtlMillis: Int64
   private var descriptorSnapshot: DescriptorSnapshot?
+  var resultObserver: ((String, AgentNativeToolInvocationContext, AgentNativeToolResult) -> Void)?
 
   private struct DescriptorSnapshot {
     var createdAtEpochMillis: Int64
@@ -948,6 +949,7 @@ final class AgentNativeToolRegistry {
       }
       appendAudit(result, context: effectiveContext, risk: descriptor.risk)
       hooks.onFinished(result)
+      resultObserver?(id, effectiveContext, result)
       return result
     }
 

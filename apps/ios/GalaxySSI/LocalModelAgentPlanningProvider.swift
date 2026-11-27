@@ -3,13 +3,19 @@ import Foundation
 struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
   var runtime: LocalModelInferenceRuntime
   var profile: LocalModelRuntimeProfile
+  var receiptStore: AgentTurnReceiptStore?
+  var receiptOwner: String
 
   init(
     runtime: LocalModelInferenceRuntime = .shared,
-    profile: LocalModelRuntimeProfile = LocalModelRuntimeSettings.selectedProfile()
+    profile: LocalModelRuntimeProfile = LocalModelRuntimeSettings.selectedProfile(),
+    receiptStore: AgentTurnReceiptStore? = nil,
+    receiptOwner: String = ""
   ) {
     self.runtime = runtime
     self.profile = profile
+    self.receiptStore = receiptStore
+    self.receiptOwner = receiptOwner
   }
 
   func rawPlan(invocation: AgentModelPlanningInvocation) async throws -> String {
@@ -38,6 +44,8 @@ struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
           invocation.request.conversationContext.conversationId
         )
       )
+      receiptStore?.localModel(.init(owner: receiptOwner, conversation: invocation.request.conversationContext.conversationId,
+        turn: invocation.request.executionTurnId), profile: result.profileId)
       return result.text
     } catch {
       throw AgentModelPlanningProviderError.unavailable(error.localizedDescription)
