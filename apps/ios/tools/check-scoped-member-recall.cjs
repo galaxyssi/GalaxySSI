@@ -1,7 +1,7 @@
 // Source contracts only. No Swift/ICU, Signal, database, thread confinement or device execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'dff8f994d56fb4741229a31abc535031cac467c2';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '1f369c69a76d879e4b31ef3babc98a37c1ff4075';
 const clean = s => s.replace(/\r\n/g, '\n'), read = f => clean(fs.readFileSync(path.join(root, f), 'utf8')), memo = new Map();
 function git(args) { return clean(cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})); }
 function show(ref, file) {
@@ -90,6 +90,13 @@ if (require.main === module) {
   assert.equal(policy, show(approved, policyFile)); assert.equal(tests, show(approved, testsFile));
   assert.equal((tests.match(/  func test/g) || []).length, 16);
   const services = read(app + 'GalaxySSIServices.swift');
+  const probe = services.slice(services.indexOf('  private func scopedMemberRecallProbe('), services.indexOf('  private func scopedMemberRecallIsCurrent('));
+  assert(probe.includes('if let parent = store.agentTask(id: context.team.taskId) {'));
+  assert(probe.includes('guard parent.sessionId == session.id, !parent.blocked,'));
+  assert(probe.includes('!PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId) else { return nil }'));
+  assert(services.includes('} else if memberAdmission == nil { return }'));
+  assert(services.includes('} else if memberAdmission == nil { return nil }'));
+  assert(services.includes('input["mode"] == .string("workspace"), parent?.blocked == false,'));
   const authorization = services.slice(services.indexOf('    if request.phase == "authorize" {'), services.indexOf('    guard let initial = scopedMemberRecallProbe(request, link: link)'));
   assert(authorization.includes('AgentScopedMemberRecall.authorize(request, replay: &replay'));
   assert(!/recallCollaborationOriginal|handleDesktopNativeEvidenceRecall|handleDesktopCollaborationExchange|\.execute\(|\.generate\(/.test(authorization), 'No data/effect callback in preflight');
