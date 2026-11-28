@@ -7,6 +7,7 @@
   objects = {
 
 /* Begin PBXBuildFile section */
+    C46940000000000000000005 /* CloudToolInvocationDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46940000000000000000006 /* CloudToolInvocationDatabase.swift */; };
     C46940000000000000000001 /* CloudToolInvocationJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46940000000000000000002 /* CloudToolInvocationJournal.swift */; };
     C46940000000000000000003 /* CloudToolInvocationJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46940000000000000000004 /* CloudToolInvocationJournalTests.swift */; };
     F30050000000000000000001 /* GalaxySSIMemory in Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; };
@@ -2457,6 +2458,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+    C46940000000000000000006 /* CloudToolInvocationDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudToolInvocationDatabase.swift; sourceTree = "<group>"; };
     C46940000000000000000002 /* CloudToolInvocationJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudToolInvocationJournal.swift; sourceTree = "<group>"; };
     C46940000000000000000004 /* CloudToolInvocationJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudToolInvocationJournalTests.swift; sourceTree = "<group>"; };
     F30050000000000000000003 /* GalaxySSIMemory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GalaxySSIMemory.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -6248,6 +6250,7 @@
         B20000000000000000000297 /* AgentModelLoopJournal.swift */,
         B20000000000000000000298 /* AgentInitialPlanningJournal.swift */,
         C46940000000000000000002 /* CloudToolInvocationJournal.swift */,
+        C46940000000000000000006 /* CloudToolInvocationDatabase.swift */,
         B20000000000000000000299 /* AgentPlannerModelSnapshot.swift */,
         A20000000000000000000157 /* AgentModelPlanParserModels.swift */,
         A20000000000000000000158 /* AgentModelPlanParser.swift */,
@@ -8728,6 +8731,7 @@
         B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */,
         B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */,
         C46940000000000000000001 /* CloudToolInvocationJournal.swift in Sources */,
+        C46940000000000000000005 /* CloudToolInvocationDatabase.swift in Sources */,
         B10000000000000000000299 /* AgentPlannerModelSnapshot.swift in Sources */,
         A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */,
         A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */,

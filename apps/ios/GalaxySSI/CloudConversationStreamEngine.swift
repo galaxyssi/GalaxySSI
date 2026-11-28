@@ -107,7 +107,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     elapsedMillis: @escaping () -> Int64 = CloudConversationStreamEngine.defaultElapsedMillis,
     timingClock: @escaping () -> Int64 = CloudModelRoundTiming.monotonicMillis,
     timingSink: @escaping CloudModelRoundTiming.Sink = CloudModelRoundTiming.log,
-    toolJournal: AgentModelLoopJournal = EncryptedAgentModelLoopJournal()
+    toolJournal: AgentModelLoopJournal = CloudToolInvocationDatabase()
   ) {
     self.modelClient = modelClient
     self.streamClient = streamClient

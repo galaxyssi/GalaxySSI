@@ -181,14 +181,14 @@ final class CloudToolInvocationJournalTests: XCTestCase {
     XCTAssertEqual(executions, 1)
   }
 
-  func testEncryptedReopenRetainsTheCompletedResult() async throws {
-    let domain = "cloud-tool-fixture-" + UUID().uuidString
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: domain))
-    defer { defaults.removePersistentDomain(forName: domain) }
+  func testSQLiteReopenRetainsTheCompletedResult() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("journal.sqlite")
     let secrets = InMemorySecretStore()
-    let first = CloudToolInvocationJournal(journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets))
+    let first = CloudToolInvocationJournal(journal: CloudToolInvocationDatabase(fileURL: file, secrets: secrets))
     _ = try await first.execute(binding: binding(), call: call(), validateOwner: {}) { "saved" }
-    let reopened = CloudToolInvocationJournal(journal: EncryptedAgentModelLoopJournal(defaults: defaults, secrets: secrets))
+    let reopened = CloudToolInvocationJournal(journal: CloudToolInvocationDatabase(fileURL: file, secrets: secrets))
     let result = try await reopened.execute(binding: binding(), call: call(), validateOwner: {}) {
       XCTFail("Completed tool replayed after reopen"); return "new"
     }
@@ -210,6 +210,78 @@ final class CloudToolInvocationJournalTests: XCTestCase {
     let context = CloudConversationToolExecutionContext(requestId: "fixture", conversationId: "conversation", turnId: "turn")
     XCTAssertThrowsError(try CloudImageAnnotationSession.restoreResult(
       "{\"tool\":\"untrusted\",\"image_saved\":true,\"image_index\":0,\"image_sha256\":\"../invalid\"}", context: context))
+  }
+
+  func testSQLiteLeaseRejectsAnotherDatabaseHandleForTheSameScope() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("journal.sqlite"), secrets = InMemorySecretStore()
+    let first = CloudToolInvocationDatabase(fileURL: file, secrets: secrets)
+    let second = CloudToolInvocationDatabase(fileURL: file, secrets: secrets)
+    try await first.withLease(scope: binding().scope) { _ in
+      do {
+        try await second.withLease(scope: self.binding().scope) { _ in XCTFail("Duplicate OS lease was admitted") }
+        XCTFail("Duplicate lease succeeded")
+      } catch { XCTAssertEqual((error as? AgentModelLoopRecoveryError)?.code, "model_loop_busy") }
+    }
+  }
+
+  func testCorruptSQLiteDoesNotExecuteATool() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("journal.sqlite")
+    try Data("not a SQLite database".utf8).write(to: file)
+    let runtime = CloudToolInvocationJournal(journal: CloudToolInvocationDatabase(fileURL: file, secrets: InMemorySecretStore()))
+    do {
+      _ = try await runtime.execute(binding: binding(), call: call(), validateOwner: {}) {
+        XCTFail("Corrupt storage admitted execution"); return "new"
+      }
+      XCTFail("Corrupt storage was replaced with empty state")
+    } catch {}
+  }
+
+  func testDataResetRejectsOldRecordWritersButAllowsANewLease() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("journal.sqlite"), secrets = InMemorySecretStore()
+    let database = CloudToolInvocationDatabase(fileURL: file, secrets: secrets)
+    try await database.withLease(scope: binding().scope) { records in
+      try records.write("fixture", data: Data("before".utf8))
+      CloudToolInvocationDatabase.destroyPersistentStore(fileURL: file, secrets: secrets)
+      XCTAssertThrowsError(try records.write("late", data: Data("after".utf8))) { error in
+        XCTAssertEqual((error as? AgentModelLoopRecoveryError)?.code, "cloud_tool_store_reset")
+      }
+    }
+    let runtime = CloudToolInvocationJournal(journal: database)
+    let result = try await runtime.execute(binding: binding(), call: call(), validateOwner: {}) { "new" }
+    XCTAssertEqual(result.output, "new")
+    XCTAssertFalse(result.replayed)
+  }
+
+  func testSQLiteRecordsAreImmutableAcrossTransactions() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let database = CloudToolInvocationDatabase(fileURL: root.appendingPathComponent("journal.sqlite"), secrets: InMemorySecretStore())
+    try await database.withLease(scope: binding().scope) { records in
+      try records.write("fixture", data: Data("first".utf8))
+      XCTAssertThrowsError(try records.write("fixture", data: Data("changed".utf8))) { error in
+        XCTAssertEqual((error as? AgentModelLoopRecoveryError)?.code, "model_loop_record_changed")
+      }
+      XCTAssertEqual(try records.read("fixture"), Data("first".utf8))
+    }
+  }
+
+  func testSQLitePayloadDoesNotContainPlaintextToolOutput() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("journal.sqlite")
+    let runtime = CloudToolInvocationJournal(journal: CloudToolInvocationDatabase(fileURL: file, secrets: InMemorySecretStore()))
+    let text = "synthetic-sensitive-tool-output-should-be-encrypted"
+    _ = try await runtime.execute(binding: binding(), call: call(), validateOwner: {}) { text }
+    for suffix in ["", "-wal"] where FileManager.default.fileExists(atPath: file.path + suffix) {
+      XCTAssertNil(try Data(contentsOf: URL(fileURLWithPath: file.path + suffix)).range(of: Data(text.utf8)))
+    }
   }
 
   private enum SyntheticFailure: Error { case injected }

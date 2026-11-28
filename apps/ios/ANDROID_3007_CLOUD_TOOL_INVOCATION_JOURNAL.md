@@ -7,8 +7,10 @@ loop. It is not full Android parity or a complete cloud round/session restorer.
 
 ## Implementation
 
-Reuse AgentModelLoopJournal and its existing encrypted store, immutable writes
-and process-local leases. Each provider request/round/slot is scoped to the
+Reuse the AgentModelLoopJournal interface with an encrypted SQLite implementation,
+WAL, synchronous FULL/fullfsync, immutable checked transactions and per-scope
+nonblocking OS file leases. The default does not use the existing UserDefaults
+writer, which returns before a checked database commit. Each request/round/slot is scoped to the
 profile, contact, conversation and turn. The pre-execution input record binds
 the serialized provider-request fingerprint, collaboration owner, exact call ID,
 tool name and parsed arguments. Changing these inputs in the same slot fails
@@ -64,13 +66,22 @@ actor hop. It does not replace full source/task authorization or reconcile
 historical cross-profile inputs. In-flight work can finish and retain its owned
 result. Existing journal storage growth and multi-process coordination limits
 remain. Restoring source evidence/receipts and complete session UI state remain
-separate from retaining an invocation's output.
+separate from retaining an invocation's output. SQLite commits and OS leases
+are not a guarantee against hardware failure or a coordinated multi-process data reset.
 
-Fifteen synthetic Swift fixture methods cover completed/encrypted replay, input
+The full private-data reset closes live database handles, destroys cached/master
+keys and removes the default storage directory. A process-local generation fence
+rejects old record writers after reset; fresh leases on the same engine can use
+new storage. Filesystem/key removal is best effort like the existing reset path;
+cross-process reset and physical erasure are not claimed.
+
+Twenty synthetic Swift fixture methods cover completed/encrypted replay, input
 drift, uncertain outcomes, pre/post claim write failure, result write failure,
 duplicate leases, separate owners/requests/rounds/slots, owner admission, late
 owner change, artifact-restoration failure, publication replay metadata and an
-invalid image record. They are authored, not compiled or executed.
+invalid image record, two-handle OS leases, corrupt SQLite, reset-era writers,
+immutable transaction rollback and encrypted database/WAL payloads. They are
+authored, not compiled or executed.
 
 Only JS/source contracts, iOS project structure and whitespace checks are used.
 No Swift/native build, XCTest, device/simulator/live model/network test, full
