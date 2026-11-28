@@ -729,6 +729,108 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertFalse(outcome.events.contains { $0.type == .toolRetryScheduled })
   }
 
+  func testSwiftTaskCancellationBeforeRunDoesNotRequestModelOrTool() async throws {
+    var executions = 0
+    let registry = try registry { _ in executions += 1; return .success() }
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("not-started")]))
+    let loop = loop(adapter: adapter, registry: registry)
+    let input = request()
+    let outcome = await Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return await loop.run(input)
+    }.value
+    XCTAssertEqual(outcome.status, .cancelled)
+    XCTAssertEqual(executions, 0)
+    XCTAssertTrue(adapter.requests.isEmpty)
+  }
+
+  func testSwiftTaskCancellationDuringModelRejectsReturnedToolCalls() async throws {
+    var executions = 0
+    let registry = try registry { _ in executions += 1; return .success() }
+    let adapter = ContextHandoffTestModelAdapter { _ in
+      withUnsafeCurrentTask { $0?.cancel() }
+      return AgentModelResponse(toolCalls: [self.call("cancelled-response")])
+    }
+    let loop = AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry)
+    let input = request()
+    let outcome = await Task { await loop.run(input) }.value
+    XCTAssertEqual(outcome.status, .cancelled)
+    XCTAssertEqual(executions, 0)
+    XCTAssertFalse(outcome.events.contains { $0.type == .toolStarted })
+  }
+
+  func testSwiftTaskCancellationReachesNativeWorkerCheckpoint() async throws {
+    var executions = 0
+    let registry = try registry { invocation in
+      executions += 1
+      withUnsafeCurrentTask { $0?.cancel() }
+      try DispatchQueue.global(qos: .utility).sync { try invocation.checkpoint() }
+      return .success()
+    }
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("worker-cancel")]))
+    let loop = loop(adapter: adapter, registry: registry)
+    let input = request()
+    let outcome = await Task { await loop.run(input) }.value
+    XCTAssertEqual(outcome.status, .cancelled)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(adapter.requests.count, 1)
+    XCTAssertEqual(outcome.messages.last?.toolResult?.status, AgentNativeToolResultStatus.cancelled.rawValue)
+  }
+
+  func testSwiftTaskCancellationBeforeApprovalResumePreventsExecution() async throws {
+    var executions = 0
+    let registry = try registry(consents: [.init(id: "fixture.consent", title: "Synthetic consent")]) { _ in
+      executions += 1
+      return .success()
+    }
+    let loop = loop(adapter: ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("resume-cancel")])), registry: registry)
+    let paused = await loop.run(request())
+    let handle = try XCTUnwrap(paused.approval)
+    let outcome = try await Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await loop.resume(handle, decision: .approved)
+    }.value
+    XCTAssertEqual(outcome.status, .cancelled)
+    XCTAssertEqual(executions, 0)
+    XCTAssertEqual(outcome.events.last?.type, .loopCancelled)
+  }
+
+  func testTaskBridgeSurvivesApprovalPauseWithoutCancellingIt() async throws {
+    var executions = 0
+    let registry = try registry(consents: [.init(id: "fixture.consent", title: "Synthetic consent")]) { _ in
+      executions += 1
+      return .success()
+    }
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("resume-valid")]),
+      AgentModelResponse(assistantText: "Done."))
+    let loop = loop(adapter: adapter, registry: registry)
+    let input = request()
+    let paused = await Task { await loop.run(input) }.value
+    let handle = try XCTUnwrap(paused.approval)
+    let outcome = try await Task { try await loop.resume(handle, decision: .approved) }.value
+    XCTAssertEqual(outcome.status, .completed)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(adapter.requests.count, 2)
+  }
+
+  func testSwiftTaskCancellationRemainsCancelledAcrossLoopRestart() async throws {
+    var executions = 0
+    let registry = try registry { _ in executions += 1; return .success() }
+    let journal = InMemoryAgentModelLoopJournal()
+    let input = request(loopId: "swift-task-cancelled")
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("never-replay")]))
+    let loop = AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, journal: journal)
+    let first = await Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return await loop.run(input)
+    }.value
+    XCTAssertEqual(first.status, .cancelled)
+    let reopened = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, journal: journal).run(input)
+    XCTAssertEqual(reopened.status, .cancelled)
+    XCTAssertEqual(executions, 0)
+    XCTAssertTrue(adapter.requests.isEmpty)
+  }
+
   func testAgentModelToolLoopPropagatesCancellationIntoActiveNativeTool() async throws {
     let cancellation = AgentModelToolLoopCancellationSource()
     var executions = 0
