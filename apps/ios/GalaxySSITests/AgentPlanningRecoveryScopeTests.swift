@@ -179,4 +179,72 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
     f.source.content = "Edited original request"
     XCTAssertFalse(f.matches(scope))
   }
+
+  private func rollingFixture(planning: Bool = false) -> Fixture {
+    var f = fixture(replanning: true)
+    f.task.lastNativeActionResult = .init(actionId: "prior-action", success: true, message: "Fixture returned",
+      metadata: ["awaiting_response": "false"])
+    if !planning {
+      f.task.phase = .waitingResponse
+      f.task.pendingPlanning = nil
+    }
+    return f
+  }
+
+  func testRollingContinuationBindsOnlyTheCompletedBatchWaitingScope() throws {
+    let f = rollingFixture()
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .rollingContinuation))
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    XCTAssertNil(f.scope())
+    XCTAssertNil(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .userReplan))
+  }
+
+  func testRollingContinuationCannotAdoptPendingExternalOrUnownedWork() {
+    let original = rollingFixture()
+    for variation in 0..<7 {
+      var f = original
+      if variation == 0 { f.task.lastNativeActionResult?.metadata["awaiting_response"] = "true" }
+      if variation == 1 { f.task.lastNativeActionResult = nil }
+      if variation == 2 { f.task.activePlan = nil }
+      if variation == 3 { f.task.phase = .completed }
+      if variation == 4 { f.task.phase = .cancelled }
+      if variation == 5 { f.task.phase = .failed }
+      if variation == 6 { f.task.phase = .planning }
+      XCTAssertNil(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+        source: f.source, conversation: f.conversation, use: .rollingContinuation))
+    }
+  }
+
+  func testRollingPendingSnapshotKeepsReferenceAndTrackingPauseWithoutGrantingExecution() throws {
+    var f = rollingFixture(planning: true)
+    f.task.blocked = true
+    f.conversation.trackingPaused = true
+    f.input.conversation.trackingPaused = true
+    f.task.pendingPlanning?.inputSha256 = AgentModelLoopRecoveryIdentity.sha256(f.input)
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .rollingContinuation))
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    XCTAssertTrue(scope.task.blocked)
+    XCTAssertNil(f.scope())
+    f.task.pendingPlanning?.inputSha256 = "changed-reference"
+    XCTAssertFalse(f.matches(scope))
+  }
+
+  func testRollingCallbackRejectsSamePhasePlanGoalSourceAndPrivacyChanges() throws {
+    let original = rollingFixture()
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: original.task,
+      source: original.source, conversation: original.conversation, use: .rollingContinuation))
+    for variation in 0..<4 {
+      var f = original
+      if variation == 0 { f.task.goal = "Changed same-phase goal" }
+      if variation == 1 { f.task.activePlan?.revision += 1 }
+      if variation == 2 { f.source.content = "Changed source" }
+      if variation == 3 { f.conversation.privateMode = true }
+      XCTAssertFalse(f.matches(scope))
+    }
+  }
 }

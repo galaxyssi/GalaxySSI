@@ -1,7 +1,7 @@
 import Foundation
 
 struct AgentPlanningRecoveryScope {
-  enum Use { case startupRecovery, userReplan }
+  enum Use { case startupRecovery, userReplan, rollingContinuation }
   let profile: String
   let task: AgentTaskRecord
   let source: ChatMessage
@@ -21,6 +21,9 @@ struct AgentPlanningRecoveryScope {
       guard task.phase == .planning, !task.blocked, !conversation.trackingPaused else { return nil }
     case .userReplan:
       guard [.failed, .blocked, .planning].contains(task.phase) else { return nil }
+    case .rollingContinuation:
+      guard [.waitingResponse, .planning].contains(task.phase), task.activePlan != nil,
+            let result = task.lastNativeActionResult, result.metadata["awaiting_response"] != "true" else { return nil }
     }
     if task.phase == .planning {
       guard let reference = task.pendingPlanning, !reference.inputSha256.isBlank,

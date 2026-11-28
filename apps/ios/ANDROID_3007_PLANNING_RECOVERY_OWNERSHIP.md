@@ -2,7 +2,8 @@
 
 iOS follow-up found during the Android #3007 execution/recovery comparison,
 based on main c6bad3465c673dfb2dcecb23b095185c129c7447. This covers the existing
-startup initial-planning/replanning recovery callbacks and explicit user replanning, not every planning entry
+startup initial-planning/replanning recovery callbacks, explicit user replanning
+and rolling-plan continuation, not every planning entry
 point or the full Android parity backlog.
 
 Both recovery paths formerly checked only phase and pending reference after
@@ -36,7 +37,7 @@ commit source/session/task state. Already-sent model calls are not retracted.
 
 The full task equality is conservative, including task-log changes. Rejected or
 locked/cancelled callbacks do not gain an immediate automatic retry. Existing
-explicit recovery/replanning remains responsible. Other live initial/rolling
+explicit recovery/replanning remains responsible. Other live initial-provider
 planning entry points and persisted cross-profile history still need separate
 review; no full recovery, privacy, storage or concurrency acceptance is claimed.
 
@@ -60,9 +61,26 @@ task and unchanged tracking-paused context used by this existing manual flow.
 It does not clear blocked state or grant model/effect permissions. Automatic
 startup recovery keeps its original unblocked/planning/unpaused requirements.
 Four further fixture methods cover those distinctions and no-plan callback drift,
-for twelve authored methods total. They are not executed. Live initial-provider
-and rolling-plan callbacks remain separate follow-up work; neither is claimed
-covered by this extension. Existing upsert fault handling remains unchanged.
+for twelve authored methods at that revision. They are not executed. Existing
+upsert fault handling remains unchanged.
+
+## Rolling Continuation
+
+continueRollingNativePlan now binds the completed-batch waiting task before the
+journal await, revalidates before changing it to pending planning, binds that
+pending snapshot, checks input before the model, and gates both success and
+error writes. The rolling identity scope accepts only waiting-response/planning
+states with a saved plan and a non-awaiting prior result. It does not authorize
+the next batch, erase uncertainty, or bypass the existing native connector wait,
+browser/readback, budget, permission, outcome or continuation gates.
+
+Like the existing live flow, blocked/readback and unchanged tracking-paused
+context can remain in the rolling identity snapshot; automatic startup recovery
+retains its stricter default admission. Four new fixture methods cover waiting
+identity, invalid external/live states, pending reference/tracking compatibility
+and stale same-phase callbacks, for sixteen authored methods total, not run.
+Live initial-provider callbacks remain separate follow-up work. Already-sent
+model calls, general upserts and immediate retry limitations remain unchanged.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,
