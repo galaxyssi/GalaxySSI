@@ -31,6 +31,9 @@ function retainedServices(s) {
   return s;
 }
 function retained(file, s) {
+  const pinned = path.join(__dirname, 'check-pinned-desktop-outbox.cjs');
+  if (['GalaxySSIServices+Outbox.swift', 'GalaxySSILinkReliability.swift'].some(name => file === app + name) && fs.existsSync(pinned))
+    s = require(pinned).retained(file, s);
   if (file.endsWith('/GalaxySSIServices.swift')) return retainedServices(s);
   if (file.endsWith('/GalaxySSIServices+Outbox.swift') && s.includes('struct AgentLearningOutboxScope:')) {
     const added = section(s, 'struct AgentLearningOutboxScope:', 'struct LinkOutboxReceiptWindow {');
