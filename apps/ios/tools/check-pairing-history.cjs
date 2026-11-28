@@ -16,6 +16,8 @@ function revocation(source) {
   return source.slice(begin, end);
 }
 function retainedPairingServices(source) {
+  const desktopTeam = path.join(__dirname, 'check-pinned-desktop-team.cjs');
+  if (fs.existsSync(desktopTeam)) source = require(desktopTeam).retainedServices(source);
   const planning = path.join(__dirname, 'check-planning-recovery-ownership.cjs');
   if (fs.existsSync(planning)) source = require(planning).retainedServices(source);
   const parallel = path.join(__dirname, 'check-parallel-native-dispatch-ownership.cjs');
