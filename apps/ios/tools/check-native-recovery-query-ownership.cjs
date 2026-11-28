@@ -16,6 +16,8 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retainedServices(s) {
+  const deadline = path.join(__dirname, 'check-connector-deadline-checkpoint.cjs');
+  if (fs.existsSync(deadline)) s = require(deadline).retainedServices(s);
   if (!s.includes('  private func managedNativeRecoveryMayQuery(')) return s;
   const first = '  private func managedNativeRecoveryMayQuery(', last = '  private func nativeConnectorObservationContext(';
   const block = section(s, first, last);
@@ -27,6 +29,8 @@ function retainedServices(s) {
     '      guard requests.count < 4, ready(record.binding) else { continue }');
 }
 function retained(f, s) {
+  const deadline = path.join(__dirname, 'check-connector-deadline-checkpoint.cjs');
+  if (fs.existsSync(deadline)) s = require(deadline).retained(f, s);
   if (f === file) return retainedServices(s);
   if ([app + 'AgentManagedResponseModels.swift', app + 'UserDefaultsAgentManagedResponseLedger.swift'].includes(f)) {
     if (!s.includes('nativeQueryScope')) return s;
