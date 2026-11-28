@@ -8491,6 +8491,10 @@ final class MessageCoordinator: ObservableObject {
       let offerTeamReview = !outgoing.readOnlyAnalysis && attachments.isEmpty && recall == nil && collaborationRecallScope == nil &&
         AgentLocalTeamReviewWindow.request(owner: disclosureOwner, conversation: outgoing.conversationId,
           turn: outgoing.turnId.ifBlank(outgoing.id.uuidString), objective: outgoing.content, profile: profile.id)
+      guard let fallbackScope = AgentPlanningRecoveryScope(profile: disclosureOwner, task: task, source: outgoing,
+        conversation: store.agentSession(id: task.sessionId), use: .localPlanningAdmission),
+        planningRecoveryIsCurrent(fallbackScope) else { return }
+      planningErrorScope = fallbackScope
       let completion = try await AgentIOSLocalModelWebToolRunner.run(
         prompt: prompt,
         profile: profile,
@@ -8506,8 +8510,14 @@ final class MessageCoordinator: ObservableObject {
         collaborationOwner: collaborationRecallScope,
         collaborationConversationDatabase: store.agentConversationDatabase,
         collaborationOriginalsOnly: true,
-        offerTeamReview: offerTeamReview
+        offerTeamReview: offerTeamReview,
+        validateOwner: { @MainActor [weak self] in
+          guard let self, self.planningRecoveryIsCurrent(fallbackScope) else {
+            throw AgentModelLoopRecoveryError(code: "local_web_loop_scope_changed")
+          }
+        }
       )
+      guard planningRecoveryIsCurrent(fallbackScope) else { return }
       store.persistLocalResearchDisclosure(completion.researchDisclosure, source: outgoing, owner: disclosureOwner)
       let response = completion.text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !response.isEmpty else {

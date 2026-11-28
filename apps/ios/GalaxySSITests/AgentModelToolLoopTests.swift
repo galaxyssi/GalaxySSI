@@ -3,6 +3,110 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentModelToolLoopTests: XCTestCase {
+  func testOwnedLoopRejectsBeforeModelOrToolExecution() async throws {
+    var executions = 0
+    let registry = try registry { _ in executions += 1; return .success(output: [:]) }
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("not-admitted")]))
+    let outcome = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, validateOwner: {
+      throw AgentModelLoopRecoveryError(code: "fixture_owner_changed")
+    }).run(request())
+    XCTAssertEqual(outcome.error?.code, "fixture_owner_changed")
+    XCTAssertTrue(adapter.requests.isEmpty)
+    XCTAssertEqual(executions, 0)
+  }
+
+  func testOwnedLoopRejectsAStaleModelResponseBeforeTools() async throws {
+    var current = true, executions = 0
+    let registry = try registry { _ in executions += 1; return .success(output: [:]) }
+    let adapter = ContextHandoffTestModelAdapter { _ in
+      current = false
+      return AgentModelResponse(toolCalls: [self.call("stale-response")])
+    }
+    let outcome = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, validateOwner: {
+      if !current { throw AgentModelLoopRecoveryError(code: "fixture_owner_changed") }
+    }).run(request())
+    XCTAssertEqual(outcome.error?.code, "fixture_owner_changed")
+    XCTAssertEqual(executions, 0)
+  }
+
+  func testOwnedLoopRevalidatesBetweenSerialTools() async throws {
+    var current = true, executions = 0
+    let registry = try registry(idempotency: .idempotent) { _ in
+      executions += 1
+      current = false
+      return .success(output: [:])
+    }
+    let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [
+      call("first", arguments: ["value": .string("first")]),
+      call("second", arguments: ["value": .string("second")])]))
+    let outcome = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, validateOwner: {
+      if !current { throw AgentModelLoopRecoveryError(code: "fixture_owner_changed") }
+    }).run(request())
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(outcome.error?.code, "fixture_owner_changed")
+  }
+
+  func testOwnedLoopRevalidatesBeforeResumingAnApproval() async throws {
+    var current = true, executions = 0
+    let registry = try registry(consents: [.init(id: "fixture.consent", title: "Synthetic consent")]) { _ in
+      executions += 1
+      return .success(output: [:])
+    }
+    let loop = AgentModelToolLoop(modelAdapter: ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("approval")])),
+      toolRegistry: registry, validateOwner: {
+        if !current { throw AgentModelLoopRecoveryError(code: "fixture_owner_changed") }
+      })
+    let paused = await loop.run(request())
+    let handle = try XCTUnwrap(paused.approval)
+    current = false
+    let outcome = try await loop.resume(handle, decision: .approved)
+    XCTAssertEqual(outcome.error?.code, "fixture_owner_changed")
+    XCTAssertEqual(executions, 0)
+  }
+
+  func testOwnedLoopRejectsRestorationWithoutChangingSavedExecutionResults() async throws {
+    var current = true, executions = 0
+    let registry = try registry(idempotency: .idempotent) { _ in
+      executions += 1
+      return .success(output: ["value": .string("saved")])
+    }
+    let journal = InMemoryAgentModelLoopJournal()
+    let input = request(loopId: "owned-restoration")
+    let first = await AgentModelToolLoop(modelAdapter: ScriptedModelAdapter(
+      AgentModelResponse(toolCalls: [call("original")]), AgentModelResponse(assistantText: "Saved answer.")),
+      toolRegistry: registry, journal: journal).run(input)
+    XCTAssertEqual(first.status, .completed)
+    let adapter = ScriptedModelAdapter(AgentModelResponse(assistantText: "Unexpected."))
+    let guarded = AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry, journal: journal, validateOwner: {
+      if !current { throw AgentModelLoopRecoveryError(code: "fixture_owner_changed") }
+    })
+    current = false
+    let rejected = await guarded.run(input)
+    XCTAssertEqual(rejected.error?.code, "fixture_owner_changed")
+    current = true
+    let restored = await guarded.run(input)
+    XCTAssertEqual(restored.status, .completed)
+    XCTAssertEqual(restored.assistantText, first.assistantText)
+    XCTAssertEqual(executions, 1)
+    XCTAssertTrue(adapter.requests.isEmpty)
+  }
+
+  func testOwnedLoopRetainsValidExecutionAndDefaultOptionalAdmission() async throws {
+    for guarded in [false, true] {
+      var executions = 0
+      let registry = try registry(idempotency: .idempotent) { _ in executions += 1; return .success(output: [:]) }
+      let adapter = ScriptedModelAdapter(AgentModelResponse(toolCalls: [call("valid")]),
+        AgentModelResponse(assistantText: "Done."))
+      let validator: (() async throws -> Void)?
+      if guarded { validator = {} } else { validator = nil }
+      let outcome = await AgentModelToolLoop(modelAdapter: adapter, toolRegistry: registry,
+        validateOwner: validator).run(request())
+      XCTAssertEqual(outcome.status, .completed)
+      XCTAssertEqual(outcome.assistantText, "Done.")
+      XCTAssertEqual(executions, 1)
+    }
+  }
+
   func testHistorySnapshotFiltersAndUTF16Chunks() throws {
     var history = AgentModelObservationHistory(owner: "loop-a")
     func add(_ record: Int, _ tool: String, _ status: AgentNativeToolResultStatus, _ text: String,

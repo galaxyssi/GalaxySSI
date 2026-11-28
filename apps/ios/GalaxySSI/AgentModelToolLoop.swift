@@ -8,6 +8,7 @@ final class AgentModelToolLoop {
   private let journal: AgentModelLoopJournal?
   private let nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)?
   private let browserHandoff: AgentManagedBrowserToolExecution?
+  private let validateOwner: (() async throws -> Void)?
   private let approvalLock = NSLock()
   private var pendingApprovals: [String: PendingApproval] = [:]
 
@@ -18,7 +19,8 @@ final class AgentModelToolLoop {
     idFactory: AgentModelToolLoopIdFactory = .uuids,
     journal: AgentModelLoopJournal? = nil,
     nativeObservation: ((AgentMcpJSONObject, AgentNativeToolResult) -> AgentMcpJSONObject?)? = nil,
-    browserHandoff: AgentManagedBrowserToolExecution? = nil
+    browserHandoff: AgentManagedBrowserToolExecution? = nil,
+    validateOwner: (() async throws -> Void)? = nil
   ) {
     self.modelAdapter = modelAdapter
     self.toolRegistry = toolRegistry
@@ -27,6 +29,7 @@ final class AgentModelToolLoop {
     self.journal = journal
     self.nativeObservation = nativeObservation
     self.browserHandoff = browserHandoff
+    self.validateOwner = validateOwner
   }
 
   func run(_ request: AgentModelToolLoopRequest) async -> AgentModelToolLoopOutcome {
@@ -45,6 +48,8 @@ final class AgentModelToolLoop {
     _ request: AgentModelToolLoopRequest,
     checkpoint: AgentModelLoopCheckpoint?
   ) async -> AgentModelToolLoopOutcome {
+    do { try await validateOwner?() }
+    catch { return recoveryFailed(request: request, error: error) }
     let startedAt = clock.nowEpochMillis()
     let descriptor = AgentModelObservationHistory.descriptor
     let owner = request.observationHistoryEnabled && !request.loopId.isBlank
@@ -110,6 +115,7 @@ final class AgentModelToolLoop {
     approvalLock.unlock()
 
     let state = pending.state
+    if let failure = await ownershipFailure(state) { return failure }
     if let terminal = terminalGuard(state) {
       return terminal
     }
@@ -162,6 +168,7 @@ final class AgentModelToolLoop {
   ) async -> AgentModelToolLoopOutcome {
     var calls = initialCalls
     while true {
+      if let failure = await ownershipFailure(state) { return failure }
       if let terminal = terminalGuard(state) {
         return terminal
       }
@@ -208,11 +215,13 @@ final class AgentModelToolLoop {
 
       let response: AgentModelResponse
       do {
+        try await validateOwner?()
         if let recordedResponse {
           response = recordedResponse
         } else {
           response = try await modelAdapter.complete(modelRequest)
         }
+        try await validateOwner?()
         try response.contextHandoff?.validate(prefix: state.messages, route: response.providerRoute)
         if recordedResponse == nil {
           state.checkpoint?.recordResponse(response, request: modelRequest)
@@ -314,8 +323,9 @@ final class AgentModelToolLoop {
     var parallelPlans: [AgentNativeResourceLockPlan] = []
     var parallelWorkload: AgentConcurrencyWorkload?
 
-    func flushParallelCalls() -> ProcessResult {
+    func flushParallelCalls() async -> ProcessResult {
       guard !parallelCalls.isEmpty, let workload = parallelWorkload else { return .continue }
+      if let failure = await ownershipFailure(state) { return .terminal(failure) }
       let prepared = parallelCalls
       parallelCalls.removeAll()
       parallelPlans.removeAll()
@@ -326,6 +336,7 @@ final class AgentModelToolLoop {
     }
 
     for index in calls.indices {
+      if let failure = await ownershipFailure(state) { return .terminal(failure) }
       if let terminal = terminalGuard(state) { return .terminal(terminal) }
       let proposed = calls[index]
       let candidate = parallelCandidate(state, proposedCall: proposed)
@@ -334,7 +345,7 @@ final class AgentModelToolLoop {
           !parallelPlans.contains(where: { $0.conflicts(with: candidate.resourcePlan) })
       } ?? false
       if !parallelCalls.isEmpty && !canJoinBatch {
-        let flushed = flushParallelCalls()
+        let flushed = await flushParallelCalls()
         if case .terminal = flushed { return flushed }
       }
       let remaining = Array(calls.dropFirst(index + 1))
@@ -349,14 +360,20 @@ final class AgentModelToolLoop {
           parallelPlans.append(candidate.resourcePlan)
           parallelWorkload = candidate.workload
         } else {
-          let flushed = flushParallelCalls()
+          let flushed = await flushParallelCalls()
           if case .terminal = flushed { return flushed }
+          if let failure = await ownershipFailure(state) { return .terminal(failure) }
           let executed = executePreparedCall(state, prepared: prepared)
           if case .terminal = executed { return executed }
         }
       }
     }
-    return flushParallelCalls()
+    return await flushParallelCalls()
+  }
+
+  private func ownershipFailure(_ state: LoopState) async -> AgentModelToolLoopOutcome? {
+    do { try await validateOwner?(); return nil }
+    catch { return recoveryFailed(state, error: error) }
   }
 
   private func parallelCandidate(

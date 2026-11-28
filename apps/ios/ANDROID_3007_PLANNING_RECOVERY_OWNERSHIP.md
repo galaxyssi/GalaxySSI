@@ -121,8 +121,35 @@ back to execution; it is not reused as authorization for later fallback inferenc
 Three more synthetic fixture methods cover existing-task admission, rejected
 blocked/pending/terminal states and rebinding after the journal callback, for
 twenty-four authored methods total, not executed. Earlier synchronous task setup,
-direct shortcuts, fallback inference/tool-loop callbacks and general upsert
-durability remain outside this change. No generic cloud-loop acceptance is claimed.
+direct shortcuts and general upsert durability remain outside this change.
+
+## Local Fallback Tool Loop
+
+The main local reply fallback now captures its executing task/source/session
+before the web-tool loop. Its async validator hops to the coordinator's main
+actor and uses the same full current-attempt check. The runner forwards it to
+the loop and inference adapter without changing cooperative model selection.
+The loop checks admission before restored state is used, on every iteration,
+before and after model responses (including restored responses), before serial
+tools or prepared parallel batches, and before approval resumption. Validation
+failure returns a recovery error without cancelling the durable journal or
+rewriting completed tool observations. The service rejects stale success/error
+callbacks before disclosure, receipt, target, reply or task projection writes.
+
+Inference checks run before and after generation, including citation repair;
+existing synchronous managed-owner validation also runs after repair generation
+before lastInference is updated. Existing journal claims, effect uncertainty,
+native permissions/consents, budgets and retry policies are unchanged.
+
+Six synthetic loop fixture methods cover rejection before the model, stale model
+responses, serial tools, approval resumption, retained results across rejected
+restoration, and valid/default admission. Combined with the 24 scope fixtures,
+30 methods are authored, not compiled or executed. Validation is a boundary
+check, not an atomic lock across a native batch or already-running network/model
+call. In-flight work is not forcibly interrupted; a currently admitted batch can
+finish and record observations. Other runner callers keep their existing policy
+unless they supply this optional validator. Generic cloud-loop persistence and
+full runtime/privacy/concurrency acceptance remain unverified.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,
