@@ -882,6 +882,24 @@ private final class AgentRecoveryRetryState: @unchecked Sendable {
 
 struct AgentStartupRecoverySequence {
   @MainActor
+  static func reconcileLocal(
+    cancellations: () -> Int,
+    cloud: () -> Int,
+    interruptedNodes: () -> Int,
+    planning: () async -> Int
+  ) async -> Int {
+    guard !Task.isCancelled else { return 0 }
+    var reconciled = cancellations()
+    guard !Task.isCancelled else { return reconciled }
+    reconciled += cloud()
+    guard !Task.isCancelled else { return reconciled }
+    reconciled += interruptedNodes()
+    // Planning recovery can start new tools. Scan old nodes before it yields or dispatches.
+    guard !Task.isCancelled else { return reconciled }
+    return reconciled + (await planning())
+  }
+
+  @MainActor
   static func run(
     recoverRuns: () async throws -> Int,
     reconcileLocalTasks: () async -> Int,
