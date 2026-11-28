@@ -16,8 +16,8 @@ struct GalaxySSIHealthTableSourceSample: Sendable {
     }
     rowNumbers = (0..<min(table.rows.count, rowLimit)).map { $0 + 1 }
     limited = table.headers.count > 12 || table.rows.count > rowLimit ||
-      table.headers.prefix(12).contains(where: { $0.count > cellLimit }) ||
-      table.rows.prefix(rowLimit).contains(where: { $0.prefix(12).contains { $0.count > cellLimit } })
+      table.headers.prefix(12).contains(where: { Self.length($0, limit: cellLimit) > cellLimit }) ||
+      table.rows.prefix(rowLimit).contains(where: { $0.prefix(12).contains { Self.length($0, limit: cellLimit) > cellLimit } })
   }
 
   init(sheetRows: [GalaxySSIHealthXLSX.SheetRow], rowLimit: Int = 30, cellLimit: Int = 256) {
@@ -39,15 +39,21 @@ struct GalaxySSIHealthTableSourceSample: Sendable {
     limited = sheetRows.count > rowLimit || lastColumn > 11 || firstRows.contains { row in
       columns.contains { column in
         let formula = row.formulaText[column] ?? ""
-        return (row.cells[column]?.count ?? 0) + (formula.isEmpty ? 0 : formula.count + 2) > cellLimit
+        return Self.length(row.cells[column] ?? "", limit: cellLimit) +
+          (formula.isEmpty ? 0 : Self.length(formula, limit: cellLimit) + 2) > cellLimit
       }
     }
   }
 
   private static func clip(_ text: String, limit: Int) -> String {
     // Legacy callers retain their existing 256-character contract.
-    guard limit == 512, text.count > limit else { return String(text.prefix(limit)) }
-    return String(text.prefix(limit - 1)) + "\u{2026}"
+    guard limit == 512 else { return String(text.prefix(limit)) }
+    guard text.utf16.count > limit else { return text }
+    return String(decoding: text.utf16.prefix(limit - 1), as: UTF16.self) + "\u{2026}"
+  }
+
+  private static func length(_ text: String, limit: Int) -> Int {
+    limit == 512 ? text.utf16.count : text.count
   }
 }
 

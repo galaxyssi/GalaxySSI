@@ -66,6 +66,20 @@ final class GalaxySSIHealthStructuredOriginalTests: XCTestCase {
     XCTAssertThrowsError(try GalaxySSIHealthStructuredOriginal.read(Data([0xff, 0xfe]), fileExtension: "csv"))
   }
 
+  func testUnicodeCombiningSequencesCannotBypassCellBudget() throws {
+    let text = "a" + String(repeating: "\u{0301}", count: 20_000)
+    let data = try JSONEncoder().encode(text)
+    let sample = try GalaxySSIHealthStructuredOriginal.read(data, fileExtension: "json").sample
+    XCTAssertTrue(sample.limited)
+    XCTAssertEqual(sample.rows[0][0].utf16.count, 512)
+    let sheet: [GalaxySSIHealthXLSX.SheetRow] = [
+      .init(number: 1, cells: [0: text], formulas: [], isoDates: [], formulaText: [:])
+    ]
+    let worksheet = GalaxySSIHealthTableSourceSample(sheetRows: sheet, rowLimit: 20, cellLimit: 512)
+    XCTAssertTrue(worksheet.limited)
+    XCTAssertEqual(worksheet.rows[0][0].utf16.count, 512)
+  }
+
   @MainActor
   func testRawStorageDoesNotCreateMeasurementsOrRecognitionJobs() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
