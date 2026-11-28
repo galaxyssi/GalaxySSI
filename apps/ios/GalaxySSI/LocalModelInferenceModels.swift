@@ -100,7 +100,30 @@ protocol LocalModelInferenceBackend: AnyObject {
     maximumTokens: Int,
     temperature: Double
   ) throws -> String
+  func generate(
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int,
+    temperature: Double,
+    cancellation: AgentModelToolLoopCancellationToken
+  ) throws -> String
   func unload()
+}
+
+extension LocalModelInferenceBackend {
+  func generate(
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int,
+    temperature: Double,
+    cancellation: AgentModelToolLoopCancellationToken
+  ) throws -> String {
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
+    let result = try generate(systemPrompt: systemPrompt, userPrompt: userPrompt,
+      maximumTokens: maximumTokens, temperature: temperature)
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
+    return result
+  }
 }
 
 final class UnavailableLocalModelInferenceBackend: LocalModelInferenceBackend {

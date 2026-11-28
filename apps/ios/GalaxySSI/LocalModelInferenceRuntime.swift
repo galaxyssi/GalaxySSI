@@ -81,8 +81,10 @@ final class LocalModelInferenceRuntime {
     temperature: Double = 0.3,
     thinkingMode: LocalModelThinkingMode = .automatic,
     workClass: LocalModelWorkClass = .interactive,
-    timing: AgentModelTiming
+    timing: AgentModelTiming,
+    cancellation: AgentModelToolLoopCancellationToken
   ) throws -> LocalModelInferenceResult {
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
     guard profile.supportsIOSRuntime else {
       throw LocalModelInferenceError.modelNotReady
     }
@@ -106,6 +108,7 @@ final class LocalModelInferenceRuntime {
     lock.lock()
     workerLockWait.completed()
     defer { lock.unlock() }
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
     timing.measure(.sdkInit) {
       refreshBackendIfNeededLocked()
     }
@@ -141,6 +144,7 @@ final class LocalModelInferenceRuntime {
     }
     let modelURL = preparation.0
     let estimate = preparation.1
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
 
     if loadedProfile != profile.id || loadedContextTokens != estimate.recommendedContextTokens {
       try timing.measure(.load) {
@@ -164,6 +168,7 @@ final class LocalModelInferenceRuntime {
       timing.measure(.reuse) {}
     }
     loadedTaskId = timingTaskId(timing)
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
 
     let startedAt = Date()
     let prompt = Self.prepareUserPrompt(
@@ -178,9 +183,12 @@ final class LocalModelInferenceRuntime {
           systemPrompt: systemPrompt,
           userPrompt: prompt,
           maximumTokens: max(1, maximumTokens),
-          temperature: max(0, temperature)
+          temperature: max(0, temperature),
+          cancellation: cancellation
         ).trimmingCharacters(in: .whitespacesAndNewlines)
       }
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       throw LocalModelInferenceError.generationFailed(error.localizedDescription)
     }
@@ -227,7 +235,8 @@ final class LocalModelInferenceRuntime {
                 temperature: temperature,
                 thinkingMode: thinkingMode,
                 workClass: workClass,
-                timing: timing
+                timing: timing,
+                cancellation: combined
               )
               guard !combined.isCancellationRequested else { throw CancellationError() }
               continuation.resume(returning: result)

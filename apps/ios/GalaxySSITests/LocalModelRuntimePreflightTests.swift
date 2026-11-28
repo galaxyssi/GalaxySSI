@@ -61,6 +61,60 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     } catch { XCTAssertFalse(error is CancellationError) }
   }
 
+  func testBackendCompatibilityRejectsCancellationBeforeLegacyGenerate() {
+    let source = AgentModelToolLoopCancellationSource()
+    source.cancel()
+    let fixture = LegacyCancellationFixtureBackend { "Should not run" }
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertThrowsError(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: source.token)) { error in
+      XCTAssertTrue(error is CancellationError)
+    }
+    XCTAssertEqual(fixture.executions, 0)
+  }
+
+  func testBackendCompatibilityRejectsLegacyResultAfterCancellation() {
+    let source = AgentModelToolLoopCancellationSource()
+    let fixture = LegacyCancellationFixtureBackend { source.cancel(); return "Partial synthetic result" }
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertThrowsError(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: source.token)) { error in
+      XCTAssertTrue(error is CancellationError)
+    }
+    XCTAssertEqual(fixture.executions, 1)
+  }
+
+  func testBackendCompatibilityRetainsUncancelledLegacySuccess() throws {
+    let fixture = LegacyCancellationFixtureBackend { "Complete synthetic result" }
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertEqual(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: .none), "Complete synthetic result")
+    XCTAssertEqual(fixture.executions, 1)
+  }
+
+  func testBackendCompatibilityRetainsOrdinaryLegacyFailure() {
+    let fixture = LegacyCancellationFixtureBackend { throw SyntheticInferenceFailure.unavailable }
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertThrowsError(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: .none)) { error in
+      XCTAssertTrue(error is SyntheticInferenceFailure)
+    }
+    XCTAssertEqual(fixture.executions, 1)
+  }
+
+  func testBackendCancellationOverloadDispatchesThroughProtocol() {
+    let source = AgentModelToolLoopCancellationSource()
+    source.cancel()
+    let fixture = AwareCancellationFixtureBackend()
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertThrowsError(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: source.token)) { error in
+      XCTAssertTrue(error is CancellationError)
+    }
+    XCTAssertEqual(fixture.awareExecutions, 1)
+    XCTAssertEqual(fixture.legacyExecutions, 0)
+  }
+
   func testLocalModelRuntimeEstimatorAcceptsNormalGemmaWorkload() {
     let estimate = estimate()
 
@@ -314,4 +368,41 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
   }
 
   private static let GIB: Int64 = 1_024 * 1_024 * 1_024
+}
+
+private enum SyntheticInferenceFailure: Error { case unavailable }
+
+private final class LegacyCancellationFixtureBackend: LocalModelInferenceBackend {
+  let isAvailable = false
+  let backendName = "Synthetic legacy backend"
+  let exposesSme = false
+  var executions = 0
+  private let operation: () throws -> String
+  init(_ operation: @escaping () throws -> String) { self.operation = operation }
+  func loadModel(at modelURL: URL, contextTokens: Int, threads: Int) throws {}
+  func unload() {}
+  func generate(systemPrompt: String, userPrompt: String, maximumTokens: Int, temperature: Double) throws -> String {
+    executions += 1
+    return try operation()
+  }
+}
+
+private final class AwareCancellationFixtureBackend: LocalModelInferenceBackend {
+  let isAvailable = false
+  let backendName = "Synthetic cancellation-aware backend"
+  let exposesSme = false
+  var awareExecutions = 0
+  var legacyExecutions = 0
+  func loadModel(at modelURL: URL, contextTokens: Int, threads: Int) throws {}
+  func unload() {}
+  func generate(systemPrompt: String, userPrompt: String, maximumTokens: Int, temperature: Double) throws -> String {
+    legacyExecutions += 1
+    return "Legacy method should not be selected"
+  }
+  func generate(systemPrompt: String, userPrompt: String, maximumTokens: Int, temperature: Double,
+                cancellation: AgentModelToolLoopCancellationToken) throws -> String {
+    awareExecutions += 1
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
+    return "Cancellation-aware overload"
+  }
 }
