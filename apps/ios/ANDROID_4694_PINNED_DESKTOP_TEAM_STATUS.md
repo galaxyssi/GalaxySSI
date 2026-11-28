@@ -27,14 +27,14 @@ the stored support flag. Compact children do not borrow parent model/adapter
 descriptions. Existing trust, pairing, route authorization and publication code
 are not changed by this increment.
 
-## Remaining Reference Scope
+## Scope At The Presence-Only Increment
 
-This is not completion of #4694. The new selected-Desktop confirmation UI, fresh
+The presence-only increment did not complete #4694. The selected-Desktop confirmation UI, fresh
 isolated group with the selected model/effort, single-use draft review, persisted
 confirmed original turn, stable team identity, dispatch/recovery pin validation,
 expanded clinical-identifier/local-only objective screening, empty foreground
 screen context for the pinned seed, and refusal of unsupported pins or provider
-handoff remain to be ported. Existing
+handoff were still pending then. Existing
 ordinary collaboration is not presented as that new end-to-end flow. The next
 increment below implements the entry and managed dispatch parts of this list.
 No new Desktop protocol support, version bump or deployment is claimed here.
