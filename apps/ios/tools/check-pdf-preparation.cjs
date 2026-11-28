@@ -20,6 +20,7 @@ function between(s, start, end) {
 const oldPreviewStart = '@MainActor\nprivate struct GalaxySSIHealthOriginalPDFPreview: View {';
 const historyStart = '}\n\n@MainActor\nstruct OriginalExportHistory: View {';
 function retainedView(source) {
+  source = structured(view, source);
   if (!source.includes('GalaxySSIHealthOriginalPDFPreview(data: pdf')) {
     assert(!source.includes('    var pdf: Data?')); return source;
   }
@@ -38,6 +39,7 @@ function retainedPDF(source) {
   return once(source, '    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in\n      clearPassword(); cancel(); selected = nil; files = []\n    }\n', '');
 }
 function validate(file, source) {
+  if (file === jobs) source = structured(file, source);
   if (file === view) {
     source = retainedView(source);
     const resave = path.join(__dirname, 'check-original-export-resave.cjs');
@@ -46,10 +48,14 @@ function validate(file, source) {
   } else if (file === pdf) assert.equal(retainedPDF(source), show(base, pdf), 'Existing decode, extraction permission, OCR and render transforms retained');
   else assert.equal(source, show(approved, file), 'Exact owned preparation/view/fixture source: ' + file);
 }
+function structured(file, source) {
+  const tool = path.join(__dirname, 'check-structured-originals.cjs');
+  return fs.existsSync(tool) ? require(tool).retained(file, source) : source;
+}
 module.exports = {retainedView};
 if (require.main === module) {
   for (const file of [jobs, pdf, view, preview, fixture]) validate(file, read(file));
-  const source = read(jobs), old = show(base, jobs);
+  const source = structured(jobs, read(jobs)), old = show(base, jobs);
   const normalized = once(source, between(source, '  static func pdfPageCount(', '  static func process('),
     between(old, '  static func pdfPageCount(', '  static func process('));
   const boundary = '@MainActor\nstruct GalaxySSIHealthRecognitionJobsView:';
