@@ -18,7 +18,7 @@ array advertisement for Codex, a paired link and matching Desktop identity.
 Boolean lookalikes, adapter-only markers and parent-level inheritance do not
 advertise the feature. Presence remains metadata, not an execution grant.
 
-For a compact same-identity update, preserve the inventory/hash and omitted
+For a compact update matching the same nonblank identity, preserve the inventory/hash and omitted
 protocol/adapter/provider/model metadata. Explicit fields still update. A changed
 Desktop fingerprint cannot retain the old routing/model metadata. Detailed
 inventories remove the marker and recompute its routing hash; an explicit empty

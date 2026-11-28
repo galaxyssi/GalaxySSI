@@ -2853,7 +2853,7 @@ final class GalaxySSIStore: ObservableObject {
       let connectorAdapterType = connectorAdapterType(from: payload)
       let now = Date()
       let priorContact = contact(id: contactId)
-      let preserveCompactMetadata = compactPinAdvertisement && priorContact?.desktopId == desktopId &&
+      let preserveCompactMetadata = compactPinAdvertisement && !desktopFingerprint.isBlank && priorContact?.desktopId == desktopId &&
         priorContact?.identityFingerprint.caseInsensitiveCompare(desktopFingerprint) == .orderedSame &&
         priorContact?.deliveryMode.isGalaxySSILinkFamily == true
       var contact = priorContact ?? GalaxySSIContact(
