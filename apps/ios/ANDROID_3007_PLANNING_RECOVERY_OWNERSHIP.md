@@ -2,7 +2,7 @@
 
 iOS follow-up found during the Android #3007 execution/recovery comparison,
 based on main c6bad3465c673dfb2dcecb23b095185c129c7447. This covers the existing
-startup initial-planning/replanning recovery callbacks, not every planning entry
+startup initial-planning/replanning recovery callbacks and explicit user replanning, not every planning entry
 point or the full Android parity backlog.
 
 Both recovery paths formerly checked only phase and pending reference after
@@ -36,15 +36,33 @@ commit source/session/task state. Already-sent model calls are not retracted.
 
 The full task equality is conservative, including task-log changes. Rejected or
 locked/cancelled callbacks do not gain an immediate automatic retry. Existing
-explicit recovery/replanning remains responsible. Other initial/rolling/manual
+explicit recovery/replanning remains responsible. Other live initial/rolling
 planning entry points and persisted cross-profile history still need separate
 review; no full recovery, privacy, storage or concurrency acceptance is claimed.
 
-Eight Swift fixtures are authored, not executed: valid initial/replanning scope,
+The initial eight Swift fixtures are authored, not executed: valid initial/replanning scope,
 profile/cancellation/missing state, task/reference/plan drift, original source
 drift, session privacy/tracking/archive/merge/preference changes, saved input
 scope/privacy mismatch, matching private identity-only scope, and invalid
 references. No model, native tool or network executes in these fixtures.
+
+## Explicit User Replanning
+
+The same PR now also fences replanLocalNativeAction with and without an existing
+plan. Capture the original failed/blocked task before awaiting the journal/model.
+Before a journal callback mutates state, revalidate that original owner; bind the
+new pending planning snapshot after the existing upsert, validate saved input,
+then gate success and error writes. The no-plan, nonjournaled model branch also
+rechecks the original owner before fallback or result use.
+
+The explicit userReplan scope is identity-only and accepts the already blocked
+task and unchanged tracking-paused context used by this existing manual flow.
+It does not clear blocked state or grant model/effect permissions. Automatic
+startup recovery keeps its original unblocked/planning/unpaused requirements.
+Four further fixture methods cover those distinctions and no-plan callback drift,
+for twelve authored methods total. They are not executed. Live initial-provider
+and rolling-plan callbacks remain separate follow-up work; neither is claimed
+covered by this extension. Existing upsert fault handling remains unchanged.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,

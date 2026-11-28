@@ -7225,6 +7225,9 @@ final class MessageCoordinator: ObservableObject {
       configuredMode: store.agentSafetySettings.taskExecutionMode
     ).mode
     let replanReason = "User requested a revised plan from the current phone state"
+    guard let attemptScope = AgentPlanningRecoveryScope(profile: store.profile.identityFingerprint, task: task,
+      source: outgoing, conversation: store.agentSession(id: task.sessionId), use: .userReplan),
+      planningRecoveryIsCurrent(attemptScope) else { return false }
     let modelOutcome: GuardedModelAgentPlanningResult?
     if let previousPlan, let continuationScope {
       let priorPhase = task.phase
@@ -7266,11 +7269,15 @@ final class MessageCoordinator: ObservableObject {
         )
       )
       var committedReference: AgentInitialPlanningReference?
+      var callbackScope: AgentPlanningRecoveryScope?
       do {
         modelOutcome = try await localInitialPlanningJournal.begin(
           sessionId: task.sessionId,
           input: input
         ) { reference in
+          guard self.planningRecoveryIsCurrent(attemptScope) else {
+            throw AgentModelLoopRecoveryError(code: "planning_recovery_scope_changed")
+          }
           committedReference = reference
           task.phase = .planning
           task.pendingPlanning = reference
@@ -7280,6 +7287,11 @@ final class MessageCoordinator: ObservableObject {
           )
           task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
           store.upsertAgentTask(task)
+          callbackScope = AgentPlanningRecoveryScope(profile: attemptScope.profile, task: task,
+            source: outgoing, conversation: store.agentSession(id: task.sessionId), use: .userReplan)
+          guard let owned = callbackScope, self.planningRecoveryIsCurrent(owned), owned.acceptsInput(input) else {
+            throw AgentModelLoopRecoveryError(code: "planning_recovery_scope_changed")
+          }
           return await modelPlannedLocalNativeActions(
             requestText: task.goal,
             attachments: [],
@@ -7295,6 +7307,7 @@ final class MessageCoordinator: ObservableObject {
           )
         }
       } catch {
+        guard planningRecoveryIsCurrent(callbackScope ?? attemptScope) else { return false }
         task.phase = .paused
         task.blocked = true
         task.verification = error.localizedDescription
@@ -7303,7 +7316,7 @@ final class MessageCoordinator: ObservableObject {
         store.upsertAgentTask(task)
         return false
       }
-      guard let reference = committedReference,
+      guard let owned = callbackScope, planningRecoveryIsCurrent(owned), let reference = committedReference,
             let persistedTask = store.agentTask(id: taskId),
             persistedTask.phase == .planning,
             persistedTask.pendingPlanning == reference else { return false }
@@ -7322,6 +7335,7 @@ final class MessageCoordinator: ObservableObject {
         replanReason: replanReason,
         completionRequirements: previousPlan?.completionRequirements
       )
+      guard planningRecoveryIsCurrent(attemptScope) else { return false }
     }
     if case let .recoveryRequired(reason)? = modelOutcome {
       blockModelPlanningRecovery(reason, task: &task)

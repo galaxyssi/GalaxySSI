@@ -127,4 +127,56 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
       XCTAssertNil(f.scope())
     }
   }
+
+  func testExplicitUserReplanCanBindTheExistingBlockedTaskWithoutGrantingExecution() throws {
+    var f = fixture()
+    f.task.phase = .blocked
+    f.task.blocked = true
+    f.task.pendingPlanning = nil
+    XCTAssertNil(f.scope())
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .userReplan))
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertEqual(scope.task.phase, .blocked)
+    XCTAssertTrue(scope.task.blocked)
+    XCTAssertNil(scope.task.pendingPlanning)
+  }
+
+  func testExplicitUserReplanKeepsUnchangedTrackingPauseWhileStartupStillSkipsIt() throws {
+    var f = fixture(replanning: true)
+    f.task.blocked = true
+    f.conversation.trackingPaused = true
+    f.input.conversation.trackingPaused = true
+    f.task.pendingPlanning?.inputSha256 = AgentModelLoopRecoveryIdentity.sha256(f.input)
+    XCTAssertNil(f.scope())
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .userReplan))
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    f.conversation.trackingPaused = false
+    XCTAssertFalse(f.matches(scope))
+  }
+
+  func testExplicitUserReplanCannotAdoptAnotherLiveOrTerminalPhase() {
+    for phase in [AgentPhase.executing, .completed, .cancelled, .waitingResponse] {
+      var f = fixture()
+      f.task.phase = phase
+      XCTAssertNil(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+        source: f.source, conversation: f.conversation, use: .userReplan))
+    }
+  }
+
+  func testUnjournaledUserReplanCallbackRejectsSamePhaseTaskAndSourceChanges() throws {
+    var f = fixture()
+    f.task.phase = .failed
+    f.task.pendingPlanning = nil
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .userReplan))
+    XCTAssertTrue(f.matches(scope))
+    f.task.goal = "A newer goal still in failed phase"
+    XCTAssertFalse(f.matches(scope))
+    f.task = scope.task
+    f.source.content = "Edited original request"
+    XCTAssertFalse(f.matches(scope))
+  }
 }
