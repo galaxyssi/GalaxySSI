@@ -16,6 +16,12 @@ function optional(name, method, file, source) {
 function normalizePending(file, source) {
   for (const name of ['check-connector-deadline-checkpoint', 'check-scoped-member-recall',
     'check-native-recovery-query-ownership']) source = optional(name, 'retained', file, source);
+  if (file.endsWith('/MqttDesktopConnectorProjection.swift') && source.includes('pinnedDesktop'))
+    source = optional('check-pinned-desktop-outbox', 'retained', file, source);
+  if (file.endsWith('/AgentPhoneNativeToolCatalog.swift'))
+    source = optional('check-mcp-readiness-preparation-scope', 'retained', file, source);
+  if (file.endsWith('/AgentPhoneNativeToolCatalogDefaults.swift'))
+    source = optional('check-workspace-preparation-scope', 'retained', file, source);
   if (file.endsWith('/GalaxySSIServices.swift')) {
     for (const [name, method] of [['check-pinned-desktop-team', 'retainedServices'],
       ['check-browser-view-ownership', 'retainedBrowserServices'],

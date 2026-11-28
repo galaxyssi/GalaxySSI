@@ -54,7 +54,23 @@ negative profile/journal/task/privacy/action/commit/generation/clock/effect/
 fixture/registration/translation mutations, and unrelated entry coexistence.
 They execute no Swift, persistence, Signal or device behavior.
 
+## Active Observation Follow-up
+
+The active-wake validator now uses the same immutable baseline, but retains its
+own MQTT diagnostic projection and every foreground, protected-data, execution,
+permission, cancellation, current task/source/generation, capacity, stage-clock
+and probe-throttle assertion. Its full coordinator, timing model and fixture
+source checks run before the original feature inversion. Exact pending catalog
+readiness/workspace and pinned-projection normalizers apply only to their owned
+files; they do not grant tools or fabricate provider readiness.
+
+Eighteen additional Node source cases execute the active validator and reject
+seventeen synthetic changes to those boundaries. They never start a timer,
+execute Swift or query a provider. Existing eight authored Swift wake fixtures
+remain source-only, not runtime acceptance. Status-reader compatibility belongs
+to this repair PR, rather than being duplicated by the deadline feature PR.
+
 Other historical whole-file validators still require their own audits; passing
-these two checks is not a full repository, native runtime or Android parity
+these three checks is not a full repository, native runtime or Android parity
 claim. No app code, platform version, CI policy, IPA, approval or remote merge
 changes are included.
