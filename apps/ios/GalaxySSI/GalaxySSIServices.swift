@@ -991,17 +991,32 @@ final class MessageCoordinator: ObservableObject {
     return recoveredTaskCount
   }
 
+  private func planningRecoveryIsCurrent(_ scope: AgentPlanningRecoveryScope) -> Bool {
+    store.canReadAgentTranscript && UIApplication.shared.isProtectedDataAvailable &&
+      scope.matches(profile: store.profile.identityFingerprint, task: store.agentTask(id: scope.task.taskId),
+        source: store.persistedMessage(id: scope.source.id, contactId: scope.source.contactId),
+        conversation: store.agentSession(id: scope.task.sessionId),
+        cancelled: Task.isCancelled || PhoneExecutionAuthority.isCancelled(taskId: scope.task.taskId))
+  }
+
   @discardableResult
   func recoverInterruptedInitialPlanning() async -> Int {
     var recoveredCount = await recoverInterruptedReplanning()
+    let recoveryProfile = store.profile.identityFingerprint
     let candidates = store.recentAgentTasks(limit: 500).filter {
       $0.phase == .planning && $0.activePlan == nil && $0.pendingPlanning != nil && !$0.blocked
     }
     for candidate in candidates {
+      guard !Task.isCancelled, recoveryProfile == store.profile.identityFingerprint else { break }
       guard let reference = candidate.pendingPlanning,
-            let outgoing = localOutgoingMessage(for: candidate) else { continue }
+            let outgoing = localOutgoingMessage(for: candidate),
+            let scope = AgentPlanningRecoveryScope(profile: recoveryProfile, task: candidate, source: outgoing,
+              conversation: store.agentSession(id: candidate.sessionId)), planningRecoveryIsCurrent(scope) else { continue }
       do {
         let outcome = try await localInitialPlanningJournal.restore(reference) { input in
+          guard self.planningRecoveryIsCurrent(scope), scope.acceptsInput(input) else {
+            throw AgentModelLoopRecoveryError(code: "planning_recovery_scope_changed")
+          }
           try self.validatePlannerSnapshot(input, expected: candidate.plannerSnapshot)
           guard let result = await self.modelPlannedLocalNativeActions(
             requestText: input.goal,
@@ -1018,7 +1033,7 @@ final class MessageCoordinator: ObservableObject {
           }
           return (result: result, mode: input.executionMode)
         }
-        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
+        guard planningRecoveryIsCurrent(scope), var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
               task.pendingPlanning == reference else { continue }
         task.pendingPlanning = nil
         task.phase = .executing
@@ -1046,7 +1061,7 @@ final class MessageCoordinator: ObservableObject {
         }
         recoveredCount += 1
       } catch {
-        guard var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
+        guard planningRecoveryIsCurrent(scope), var task = store.agentTask(id: candidate.taskId), task.phase == .planning,
               task.pendingPlanning == reference else { continue }
         task.phase = .paused
         task.blocked = true
@@ -1062,10 +1077,12 @@ final class MessageCoordinator: ObservableObject {
 
   private func recoverInterruptedReplanning() async -> Int {
     var recoveredCount = 0
+    let recoveryProfile = store.profile.identityFingerprint
     let candidates = store.recentAgentTasks(limit: 500).filter {
       $0.phase == .planning && $0.activePlan != nil && $0.pendingPlanning?.isReplanning == true
     }
     for candidate in candidates {
+      guard !Task.isCancelled, recoveryProfile == store.profile.identityFingerprint else { break }
       guard let reference = candidate.pendingPlanning,
             let basePlan = candidate.activePlan,
             let outgoing = localOutgoingMessage(for: candidate),
@@ -1076,9 +1093,14 @@ final class MessageCoordinator: ObservableObject {
               activeConversationId: outgoing.conversationId,
               activeTurnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
               sessionId: candidate.sessionId
-            ) else { continue }
+            ),
+            let scope = AgentPlanningRecoveryScope(profile: recoveryProfile, task: candidate, source: outgoing,
+              conversation: store.agentSession(id: candidate.sessionId)), planningRecoveryIsCurrent(scope) else { continue }
       do {
         let outcome = try await localInitialPlanningJournal.restore(reference) { input in
+          guard self.planningRecoveryIsCurrent(scope), scope.acceptsInput(input) else {
+            throw AgentModelLoopRecoveryError(code: "planning_recovery_scope_changed")
+          }
           guard let intent = input.replanning else {
             throw AgentModelLoopRecoveryError(code: "replanning_intent_missing")
           }
@@ -1105,7 +1127,7 @@ final class MessageCoordinator: ObservableObject {
             plannerSnapshotOverride: input.plannerSnapshot
           )
         }
-        guard var task = store.agentTask(id: candidate.taskId),
+        guard planningRecoveryIsCurrent(scope), var task = store.agentTask(id: candidate.taskId),
               task.phase == .planning,
               task.pendingPlanning == reference else { continue }
         task.pendingPlanning = nil
@@ -1121,7 +1143,7 @@ final class MessageCoordinator: ObservableObject {
         )
         recoveredCount += 1
       } catch {
-        guard var task = store.agentTask(id: candidate.taskId),
+        guard planningRecoveryIsCurrent(scope), var task = store.agentTask(id: candidate.taskId),
               task.phase == .planning,
               task.pendingPlanning == reference else { continue }
         task.phase = .paused
