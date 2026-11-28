@@ -72,14 +72,13 @@ struct GalaxySSIHealthKitImportView: View {
                   set: { enabled in
                     var updated = scopes
                     if enabled { updated.insert(scope) } else { updated.remove(scope) }
-                    scopes = updated
                     saveSourceState { $0.selected = updated }
                     preview = nil
                   }
                 ))
               }
             }
-            .disabled(task != nil)
+            .disabled(task != nil || sourceLedger == nil)
           }
           Picker(t("period", "Recent days"), selection: $days) {
             ForEach([7, 14, 30], id: \.self) { Text(String($0)).tag($0) }
@@ -105,7 +104,6 @@ struct GalaxySSIHealthKitImportView: View {
           if requestedScope == nil {
             Button(t("disconnect", "Clear import selection")) {
               clear()
-              scopes = []
               saveSourceState { $0.selected.removeAll() }
             }
           }
@@ -117,6 +115,10 @@ struct GalaxySSIHealthKitImportView: View {
         if let problem { Text(problem).foregroundColor(.secondary) }
         if sourceStateUnavailable {
           Text(t("recovery_unavailable", "Source recovery information is unavailable.")).foregroundColor(.secondary)
+          Button(GalaxySSILocalization.string("galaxyssi.health.sources_retry", fallback: "Retry sources", language: language)) {
+            loadSourceState()
+            loadImportHistory()
+          }.disabled(task != nil)
         }
       }
     }
@@ -202,10 +204,12 @@ struct GalaxySSIHealthKitImportView: View {
   }
 
   private func saveSourceState(_ update: (inout GalaxySSIHealthSourceAttention) -> Void) {
+    guard scene == .active else { return }
     do {
       try records.updateSourceAttention(update)
       loadSourceState()
     } catch {
+      loadSourceState()
       sourceStateUnavailable = true
     }
   }
