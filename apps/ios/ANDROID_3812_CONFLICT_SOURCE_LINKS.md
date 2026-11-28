@@ -10,7 +10,8 @@ were processed before the selected new revisions existed and therefore skipped.
 - After validated replacements are appended in memory, bind only their backup
   source frames through the existing restoreSourceFrames policy, before staging
   originals or committing the archive/receipt. No selection means no extra work.
-- Decode the same immutable unlocked input; require exact selected IDs present in
+- Reuse the immutable payload already decoded by the fresh restore preview work,
+  without decoding the whole backup again. Require exact selected IDs present in
   backup readings and current proposed records. Restrict frames to selected IDs.
 - Reuse authenticated existing/staged report mapping and table digest aliases.
   Bind eligible secondary sources to the new selected revision. Unselected

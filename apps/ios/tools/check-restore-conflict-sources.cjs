@@ -1,7 +1,7 @@
 // Source checks only; no Swift compilation, XCTest, restore faults or device execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..');
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '58a3512bf210ec45e7d36e81fab25bfb0a5913a2';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '74fa96a50577890353d7a1cea8a51b955e8bf0b8';
 const file = 'apps/ios/GalaxySSI/GalaxySSIHealthPortableBackup.swift';
 const fixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthRestoreConflictSourceTests.swift';
 const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj', fixtureName = path.basename(fixture);
@@ -14,7 +14,7 @@ function show(ref, f) {
 function once(s, from, to) { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 const helperStart = '  @MainActor\n  private static func restoreSelectedSources(';
 const helperEnd = '  private enum SourceSlot: Hashable {\n';
-const call = '      try restoreSelectedSources(input, selected: selected, archive: &archive, staged: files,\n' +
+const call = '      try restoreSelectedSources(payload, selected: selected, archive: &archive, staged: files,\n' +
   '                                 originals: originals, lease: lease)\n';
 const append = '      archive.revisions.append(contentsOf: replacements)\n';
 function helper(source) {
@@ -26,6 +26,10 @@ function retainedBackup(source) {
   const block = helper(show(approved, file)); assert.equal(helper(source), block, 'Exact selected-only source binding helper');
   assert(source.includes(append + call + '      let receipt = UUID()'), 'Bind after new revisions, before staging/commit');
   source = once(source, call, ''); source = once(source, block, '');
+  source = once(source, 'let (fresh, proposed, files, payload) = try restoreWork(', 'let (fresh, proposed, files) = try restoreWork(');
+  source = once(source, '-> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)], Payload) {',
+    '-> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)]) {');
+  source = once(source, 'return (preview, archive, files, payload)', 'return (preview, archive, files)');
   source = once(source, 'columns: source.columns,\n            dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904)))',
     'columns: source.columns)))');
   source = once(source, 'columns: source.columns, dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904))',
@@ -34,6 +38,7 @@ function retainedBackup(source) {
 }
 function validateSource(source) {
   assert(source.includes(helperStart), 'Actual selected-revision binding is installed');
+  assert(!helper(source).includes('JSONDecoder'), 'Reuse the already validated decoded payload');
   source = retainedBackup(source);
   const recovery = path.join(__dirname, 'check-restore-file-finalization.cjs');
   if (fs.existsSync(recovery)) source = require(recovery).retained(file, source);
@@ -56,7 +61,7 @@ if (require.main === module) {
   const mutations = [
     [call, ''],
     [append + call, call + append],
-    ['try restoreSelectedSources(input, selected: selected', 'try? restoreSelectedSources(input, selected: selected'],
+    ['try restoreSelectedSources(payload, selected: selected', 'try? restoreSelectedSources(payload, selected: selected'],
     ['guard !selected.isEmpty else { return }', ''],
     ['let readings = payload.readings.filter { selected.contains($0.id) }', 'let readings = payload.readings'],
     ['Set(readings.map(\\.id)) == selected, selected.allSatisfy({ current[$0] != nil })', 'true'],
