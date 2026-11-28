@@ -79,7 +79,7 @@ struct GalaxySSIHealthOriginalsView: View {
   @State private var pendingSingle: GalaxySSIHealthOriginalStore.Original?
   @State private var reviewAfterPreview = false
   @State private var singleVerified = false
-  @State private var exportAttempt: GalaxySSIHealthOriginalStore.ExportAttempt?
+  @State private var exportAttempt: GalaxySSIHealthOriginalExportSave.Request?
   @State private var verifying = false
   @State private var receiptFailed = false
   @State private var preparedForShare = false
@@ -356,7 +356,7 @@ struct GalaxySSIHealthOriginalsView: View {
       switch result {
       case .success(let url): verify(url, attempt: attempt)
       case .failure:
-        do { try store.finishExport(id: attempt.id, verified: false) } catch {}
+        do { try store.finishExportSave(attempt, verified: false) } catch {}
         receiptFailed = true
       }
     }
@@ -671,7 +671,8 @@ struct GalaxySSIHealthOriginalsView: View {
     guard scene == .active, !verifying else { return }
     receiptFailed = false
     do {
-      let (data, attempt) = try store.prepareExport(selected)
+      let (_, prepared) = try store.prepareExport(selected)
+      let (data, attempt) = try store.beginExportSave(prepared)
       singleAttempt = nil
       exportAttempt = attempt
       exportType = .zip
@@ -712,14 +713,14 @@ struct GalaxySSIHealthOriginalsView: View {
     } catch { error = true }
   }
 
-  private func verify(_ url: URL, attempt: GalaxySSIHealthOriginalStore.ExportAttempt) {
+  private func verify(_ url: URL, attempt: GalaxySSIHealthOriginalExportSave.Request) {
     verifying = true
     Task {
       let verified = await Task.detached(priority: .utility) {
-        (try? GalaxySSIHealthOriginalStore.verifyDestination(url, for: attempt)) == true
+        (try? GalaxySSIHealthOriginalStore.verifyDestination(url, for: attempt.export)) == true
       }.value
       do {
-        try store.finishExport(id: attempt.id, verified: verified)
+        try store.finishExportSave(attempt, verified: verified)
         receiptFailed = !verified
       } catch { receiptFailed = true }
       verifying = false
@@ -836,6 +837,7 @@ struct OriginalExportHistory: View {
   @State private var confirmShare = false
   @State private var shareFailure = false
   @State private var sharing: SharePayload?
+  @State private var savingExport = false
 
   private struct SharePayload: Identifiable {
     let id: UUID
@@ -887,9 +889,15 @@ struct OriginalExportHistory: View {
     .navigationTitle(t("file_save_history", "File save history"))
     .galaxySSIHealthTheme()
     .onAppear(perform: reload)
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthOriginalStore.indexChanged)) {
+      if $0.object as? String == store.owner { reload() }
+    }
     .onChange(of: scene) {
       if $0 == .active { reload() }
-      else { selected = nil; history = []; singleHistory = []; confirmShare = false; sharing = nil }
+      else {
+        if !savingExport { selected = nil }
+        history = []; singleHistory = []; confirmShare = false; sharing = nil
+      }
     }
     .sheet(item: $selected) { entry in
       NavigationView {
@@ -903,10 +911,12 @@ struct OriginalExportHistory: View {
               ForEach(entry.originals.prefix(scopeLimit)) { item in Text(item.name) }
               if entry.originals.count > scopeLimit { Button(t("more", "Show more")) { scopeLimit += 30 } }
             }
+            GalaxySSIHealthOriginalExportSaveControl(store: store, attempt: entry) { savingExport = $0 }
             if store.hasShareArtifact(entry) {
               Button { confirmShare = true } label: {
                 Label(t("share_zip", "Share ZIP"), systemImage: "square.and.arrow.up")
               }
+              .disabled(savingExport)
             } else {
               Text(t("artifact_unavailable", "The private ZIP is no longer available.")).foregroundColor(.secondary)
             }
@@ -916,7 +926,7 @@ struct OriginalExportHistory: View {
         .navigationTitle(t("export_history", "ZIP export history"))
         .galaxySSIHealthTheme()
         .toolbar { ToolbarItem(placement: .confirmationAction) {
-          Button(t("close", "Close")) { selected = nil }
+          Button(t("close", "Close")) { selected = nil }.disabled(savingExport)
         } }
         .confirmationDialog(t("share_plain_zip", "Share this unencrypted ZIP?"), isPresented: $confirmShare,
                             titleVisibility: .visible) {
@@ -942,7 +952,12 @@ struct OriginalExportHistory: View {
 
   private func reload() {
     guard scene == .active else { return }
-    do { history = try store.exportHistory(); unavailable = false }
+    do {
+      try store.recoverExportSaves()
+      history = try store.exportHistory()
+      if let selected { self.selected = history.first(where: { $0.id == selected.id }) }
+      unavailable = false
+    }
     catch { history = []; unavailable = true }
     do { singleHistory = try store.singleSaveHistory(); singleHistoryUnavailable = false }
     catch { singleHistory = []; singleHistoryUnavailable = true }

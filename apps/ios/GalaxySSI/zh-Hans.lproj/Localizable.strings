@@ -8105,3 +8105,9 @@
 "galaxyssi.conversation_team.pattern_final_audit" = "(?:^|请|并|再|然后|需要)(?:安排|进行|做一次)?独立(?:审核|复核|审查|评审)(?:一下)?(?:最后|最终)(?:的)?(?:答复|答案|回复|结论|报告|草稿)";
 "galaxyssi.conversation_team.final_audit_missing" = "计划没有独立的最终审核者，团队已在派发 worker 前停止，没有发布草稿。";
 "galaxyssi.conversation_team.schema_endpoint" = "严格团队计划解码需要规范的本机 loopback OpenAI 端点。";
+"galaxyssi.health.originals.last_verified" = "上次验证成功的保存";
+"galaxyssi.health.originals.save_again" = "将 ZIP 保存到文件";
+"galaxyssi.health.originals.save_plain_zip" = "保存这份未加密的 ZIP？";
+"galaxyssi.health.originals.save_pending" = "保存待完成";
+"galaxyssi.health.originals.save_interrupted" = "上次保存已中断";
+"galaxyssi.health.originals.save_receipt_failed" = "无法验证保存结果或保存回执，请检查历史后重试。";
