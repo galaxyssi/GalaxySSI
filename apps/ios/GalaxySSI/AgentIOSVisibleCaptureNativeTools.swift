@@ -212,14 +212,19 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
   static let maxCompletedByCharacters = 64
 
   static let toolIds: Set<String> = [cameraCapture, microphoneRecord]
+  static let uncheckedAvailability = AgentNativeToolAvailability(
+    status: .unavailable, reason: "Capture readiness has not been checked"
+  )
 
   static func definitions(
-    provider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider()
+    provider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider(),
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     [
       definition(
         provider: provider,
         kind: .photo,
+        initialAvailability: initialAvailability,
         id: cameraCapture,
         title: "Capture a user-visible photo",
         description: "Opens one foreground iOS camera capture flow and returns only a bounded artifact URI receipt.",
@@ -237,6 +242,7 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
       definition(
         provider: provider,
         kind: .audio,
+        initialAvailability: initialAvailability,
         id: microphoneRecord,
         title: "Record user-visible audio",
         description: "Opens one foreground iOS audio recording flow for a bounded duration and returns only an artifact URI receipt.",
@@ -302,6 +308,7 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
   private static func definition(
     provider: AgentIOSVisibleCaptureToolProviding,
     kind: AgentIOSVisibleCaptureKind,
+    initialAvailability: AgentNativeToolAvailability?,
     id: String,
     title: String,
     description: String,
@@ -335,7 +342,7 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
       ],
       timeoutMillis: timeoutMillis,
       idempotency: .nonIdempotent,
-      availability: provider.availability(kind: kind)
+      availability: initialAvailability ?? provider.availability(kind: kind)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -346,7 +353,10 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
         "privacy_indicator": "ios_managed",
         "background_capture": "false",
         "artifact_contract": "content-uri-v1"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(kind: kind)
+      }
     )
   }
 
