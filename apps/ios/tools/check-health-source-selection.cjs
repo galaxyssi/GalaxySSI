@@ -35,8 +35,12 @@ if (require.main === module) {
   const reference = show(android, 'apps/android/app/src/main/java/com/galaxyssi/chat/HealthConnectActivity.kt');
   for (const token of ['val previous = selection(context)', 'if (previous == selected) return',
     'context.contentResolver.notifyChange(changes(context), null)']) assert(reference.includes(token), token);
-  for (const name of ['GalaxySSIHealthRecords', 'GalaxySSIHealthSourceAttention', 'GalaxySSIHealthKitImport', 'GalaxySSIHealthCenterView'])
-    assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ': unchanged storage/query/overview');
+  for (const name of ['GalaxySSIHealthRecords', 'GalaxySSIHealthSourceAttention', 'GalaxySSIHealthKitImport', 'GalaxySSIHealthCenterView']) {
+    const file = app + name + '.swift', tool = path.join(__dirname, 'check-photo-original-retention.cjs');
+    const source = name === 'GalaxySSIHealthRecords' && fs.existsSync(tool)
+      ? require(tool).retained(file, read(file)) : read(file);
+    assert.equal(source, show(base, file), name + ': unchanged storage/query/overview outside exact photo retention');
+  }
   assert(read(app + 'zh-Hans.lproj/Localizable.strings').includes('"galaxyssi.health.sources_retry" = "'));
   assert(!source.includes('scopes = updated'), 'A toggle cannot publish an uncommitted selection');
   const mutations = [
