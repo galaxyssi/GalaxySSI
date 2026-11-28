@@ -31,6 +31,8 @@ were processed before the selected new revisions existed and therefore skipped.
 - Keep the newest 100 detailed receipts without pruning the separate staging
   authority set. The history page initially shows ten and supports older entries,
   current language/date formatting, owner/foreground reload and inactive clearing.
+  The completion panel selects only a newly committed authority ID, never an
+  older receipt merely because its timestamp sorts first after a clock rollback.
   Counts describe committed outcomes, not current original-file delivery. The
   separate #4713 pending-original recovery remains authoritative for that state.
 - Use the unlocked payload SHA256 as an opaque backup fingerprint, not an invented
@@ -52,7 +54,7 @@ finalization normalizer composes separately; no recovery app code is duplicated.
 The existing source slot policy remains unchanged. The guard also checks the
 dedicated fixture source, four project registration entries and 19 negative source
 mutations. A separate `check-restore-receipts.cjs` owns the precise receipt hooks,
-model/history view, eight app target registrations, 21 localized strings and 16
+model/history view, eight app target registrations, 21 localized strings and 17
 additional negative source mutations. It composes inverses with the selected
 source, finalization and photo-retention checks without copying their app changes.
 These checks do not typecheck Swift or execute restore behavior.

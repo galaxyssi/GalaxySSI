@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', prior = '74fa96a50577890353d7a1cea8a51b955e8bf0b8';
-const approved = '12df30faf';
+const approved = '05a1f4832';
 const backup = app + 'GalaxySSIHealthPortableBackup.swift', records = app + 'GalaxySSIHealthRecords.swift';
 const view = app + 'GalaxySSIHealthBackupView.swift', model = app + 'GalaxySSIHealthRestoreReceipt.swift';
 const history = app + 'GalaxySSIHealthRestoreHistoryView.swift';
@@ -48,7 +48,8 @@ function viewBlocks() {
   return [
     '  @State private var latestRestoreReceipt: GalaxySSIHealthRestoreReceipt?\n',
     between(approvedView, '          if let latestRestoreReceipt {', '        }\n        if let outcome {'),
-    '      let receipt = (try? records.load())?.restoreHistory?.first\n',
+    '      let previousReceipts = try records.load().restoreReceipts ?? []\n',
+    '      let receipt = (try? records.load())?.restoreHistory?.first { !previousReceipts.contains($0.id) }\n',
     '      latestRestoreReceipt = receipt\n',
     '    latestRestoreReceipt = nil\n'
   ];
@@ -105,7 +106,8 @@ if (require.main === module) {
     [model, 'sources == sourcesAdded + sourcesReused + sourcesSkipped', 'true'],
     [history, 'if $0 == .active { reload() } else { clear() }', 'if $0 == .active { reload() }'],
     [history, 'committed: archive.restoreReceipts ?? []', 'committed: Set(history.map(\\.id))'],
-    [view, 'latestRestoreReceipt = receipt', 'latestRestoreReceipt = nil']
+    [view, 'latestRestoreReceipt = receipt', 'latestRestoreReceipt = nil'],
+    [view, '.first { !previousReceipts.contains($0.id) }', '.first']
   ];
   for (const [file, from, to] of mutations) {
     assert(read(file).includes(from), from); assert.throws(() => validate(file, read(file).replace(from, to)), undefined, from);
