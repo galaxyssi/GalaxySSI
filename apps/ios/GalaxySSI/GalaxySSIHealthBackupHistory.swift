@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 struct GalaxySSIHealthBackupHistory {
+  static let changed = Notification.Name("galaxyssi.health.backup.history.changed")
   struct Entry: Codable, Identifiable, Sendable {
     enum Generation: String, Codable, Sendable { case pending, ready, interrupted }
     enum Save: String, Codable, Sendable { case pending, verified, unverified, interrupted }
@@ -13,6 +14,8 @@ struct GalaxySSIHealthBackupHistory {
     var sha256: String?
     var latestSave: Save?
     var lastVerifiedAt: Date?
+    var generationToken: UUID?
+    var saveToken: UUID?
   }
 
   let owner: String
@@ -20,6 +23,9 @@ struct GalaxySSIHealthBackupHistory {
   var fixtureDirectory: URL? = nil
   private var context: Data { Data(("galaxyssi.health.backup.history.v1:" + owner).utf8) }
   private var account: String { "health.backup.history.v1." + owner }
+  private var scope: GalaxySSIHealthBackupOperation.Scope { .init(owner: owner, directory: fixtureDirectory) }
+
+  private func notify() { NotificationCenter.default.post(name: Self.changed, object: owner) }
 
   func begin() throws -> UUID {
     var entries = try load()
@@ -30,11 +36,15 @@ struct GalaxySSIHealthBackupHistory {
   }
 
   func publish(_ data: Data, id: UUID) throws {
+    try publishData(data, id: id, generationToken: nil)
+  }
+
+  private func publishData(_ data: Data, id: UUID, generationToken: UUID?) throws {
     guard (1...GalaxySSIHealthPortableBackup.maximumFileBytes).contains(data.count) else {
       throw GalaxySSIHealthPortableBackup.Failure.limit
     }
     var entries = try load()
-    guard let index = entries.firstIndex(where: { $0.id == id && $0.generation == .pending }) else {
+    guard let index = entries.firstIndex(where: { $0.id == id && $0.generation == .pending && $0.generationToken == generationToken }) else {
       throw GalaxySSIHealthPortableBackup.Failure.stale
     }
     entries[index].bytes = data.count
@@ -44,28 +54,31 @@ struct GalaxySSIHealthBackupHistory {
     entries[index].generation = .ready
     try persist(entries)
     try? prune(entries)
+    notify()
   }
 
   func recover() throws {
     var entries = try load()
     var changed = false
     for index in entries.indices {
-      if entries[index].generation == .pending {
+      if entries[index].generation == .pending && !GalaxySSIHealthBackupOperation.isActive(entries[index].generationToken,
+        kind: .generation, entry: entries[index].id, scope: scope) {
         entries[index].generation = (try? checkedPackage(entries[index])) != nil ? .ready : .interrupted
         changed = true
       }
-      if entries[index].latestSave == .pending {
+      if entries[index].latestSave == .pending && !isSaving(entries[index]) {
         entries[index].latestSave = .interrupted
         changed = true
       }
     }
-    if changed { try persist(entries) }
+    if changed { try persist(entries); notify() }
     try prune(entries)
   }
 
   func beginSave(_ id: UUID) throws -> Entry {
     var entries = try load()
     guard let index = entries.firstIndex(where: { $0.id == id && $0.generation == .ready }),
+          entries[index].generationToken == nil, entries[index].saveToken == nil,
           entries[index].latestSave != .pending else { throw GalaxySSIHealthPortableBackup.Failure.stale }
     entries[index].latestSave = .pending
     try persist(entries)
@@ -74,12 +87,69 @@ struct GalaxySSIHealthBackupHistory {
 
   func finishSave(_ id: UUID, verified: Bool) throws {
     var entries = try load()
-    guard let index = entries.firstIndex(where: { $0.id == id && $0.latestSave == .pending }) else {
+    guard let index = entries.firstIndex(where: { $0.id == id && $0.latestSave == .pending && $0.generationToken == nil && $0.saveToken == nil }) else {
       throw GalaxySSIHealthPortableBackup.Failure.stale
     }
     entries[index].latestSave = verified ? .verified : .unverified
     if verified { entries[index].lastVerifiedAt = Date() }
     try persist(entries)
+  }
+
+  func beginGeneration() throws -> GalaxySSIHealthBackupOperation.Request {
+    var entries = try load()
+    let token = UUID()
+    var entry = Entry(id: UUID(), at: Date())
+    entry.generationToken = token
+    entries.insert(entry, at: 0)
+    try persist(Array(entries.prefix(100)))
+    let request = GalaxySSIHealthBackupOperation.Request(scope: scope, kind: .generation, entry: entry, token: token)
+    GalaxySSIHealthBackupOperation.register(request)
+    notify()
+    return request
+  }
+
+  func publish(_ data: Data, request: GalaxySSIHealthBackupOperation.Request) throws {
+    guard request.scope == scope, request.kind == .generation, GalaxySSIHealthBackupOperation.owns(request) else {
+      throw GalaxySSIHealthPortableBackup.Failure.stale
+    }
+    defer { GalaxySSIHealthBackupOperation.release(request) }
+    try publishData(data, id: request.entry.id, generationToken: request.token)
+  }
+
+  func prepareSave(_ entry: Entry) throws -> (Data, GalaxySSIHealthBackupOperation.Request) {
+    var entries = try load()
+    guard let index = entries.firstIndex(where: { GalaxySSIHealthBackupOperation.sameBackup($0, entry) }),
+          !isSaving(entries[index]), entries[index].latestSave != .pending || entries[index].saveToken != nil else {
+      throw GalaxySSIHealthPortableBackup.Failure.stale
+    }
+    let data = try checkedPackage(entries[index])
+    let token = UUID()
+    entries[index].saveToken = token
+    entries[index].latestSave = .pending
+    try persist(entries)
+    let request = GalaxySSIHealthBackupOperation.Request(scope: scope, kind: .save, entry: entries[index], token: token)
+    GalaxySSIHealthBackupOperation.register(request)
+    notify()
+    return (data, request)
+  }
+
+  func finishSave(_ request: GalaxySSIHealthBackupOperation.Request, verified: Bool) throws {
+    guard request.scope == scope, request.kind == .save, GalaxySSIHealthBackupOperation.owns(request) else {
+      throw GalaxySSIHealthPortableBackup.Failure.stale
+    }
+    defer { GalaxySSIHealthBackupOperation.release(request) }
+    var entries = try load()
+    guard let index = entries.firstIndex(where: {
+      GalaxySSIHealthBackupOperation.sameBackup($0, request.entry) && $0.latestSave == .pending && $0.saveToken == request.token
+    }) else { throw GalaxySSIHealthPortableBackup.Failure.stale }
+    entries[index].latestSave = verified ? .verified : .unverified
+    if verified { entries[index].lastVerifiedAt = Date() }
+    try persist(entries)
+    notify()
+  }
+
+  func isSaving(_ entry: Entry) -> Bool {
+    entry.latestSave == .pending && GalaxySSIHealthBackupOperation.isActive(entry.saveToken, kind: .save, entry: entry.id, scope: scope)
   }
 
   func entries() throws -> [Entry] { try load() }
