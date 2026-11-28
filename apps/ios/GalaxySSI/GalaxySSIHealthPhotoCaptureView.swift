@@ -197,7 +197,9 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     staging = true; failed = false; submittedBatchID = nil
     let token = generation
     stagingTask = Task {
-      let inspector = Task.detached(priority: .userInitiated) { try GalaxySSIHealthPhotoDraft.inspectCapture(data, mode: request.mode) }
+      let inspector = Task.detached(priority: .userInitiated) { [mode = request.mode] in
+        try GalaxySSIHealthPhotoDraft.inspectCapture(data, mode: mode)
+      }
       do {
         let inspection = try await withTaskCancellationHandler(operation: { try await inspector.value },
           onCancel: { inspector.cancel() })
