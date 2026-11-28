@@ -6934,6 +6934,13 @@
 "galaxyssi.health.record_center.entry" = "记录健康数据";
 "galaxyssi.health.record_center.camera" = "拍摄报告";
 "galaxyssi.health.record_center.photos" = "采集健康照片";
+"galaxyssi.health.record_center.scan" = "拍照识别";
+"galaxyssi.health.record_center.manual" = "手动输入";
+"galaxyssi.health.record_center.devices" = "连接外设";
+"galaxyssi.health.record_center.photo_note" = "检验报告与仪器读数";
+"galaxyssi.health.record_center.manual_note" = "数值、单位、时间与测量条件";
+"galaxyssi.health.record_center.import_note" = "照片、PDF 报告和表格";
+"galaxyssi.health.record_center.sources_note" = "健康平台与蓝牙设备";
 "galaxyssi.health.photo_capture.title" = "健康照片";
 "galaxyssi.health.photo_capture.collection" = "照片草稿";
 "galaxyssi.health.photo_capture.mode" = "采集模式";

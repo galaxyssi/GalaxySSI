@@ -31,6 +31,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.locale) private var locale
+  @ScaledMetric(relativeTo: .body) private var entryMinimumWidth: CGFloat = 325
   let records: GalaxySSIHealthRecords
   let devices: () -> Devices
   let addManual: (GalaxySSIHealthMetric?) -> Void
@@ -39,6 +40,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
   @State private var failed = false
   @State private var pendingLimit = 3
   @State private var recentLimit = 3
+  @State private var entryWidth: CGFloat = 0
   private var originals: GalaxySSIHealthOriginalStore {
     GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)
   }
@@ -47,18 +49,8 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     List {
       if scene == .active {
         Section(t("record_center.entry", "Record health data")) {
-          NavigationLink {
-            GalaxySSIHealthPhotoCaptureView(records: records, originals: originals)
-          } label: { Label(t("record_center.photos", "Capture health photos"), systemImage: "camera") }
-          Button { addManual(nil) } label: {
-            Label(t("manual", "Record measurement"), systemImage: "square.and.pencil")
-          }
-          NavigationLink {
-            GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
-          } label: { Label(t("record_center.files", "Import files"), systemImage: "folder") }
-          NavigationLink(destination: devices) {
-            Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
-          }
+          entries
+            .listRowSeparator(.hidden)
         }
         if failed {
           Text(t("unavailable", "Health records could not be accessed."))
@@ -128,6 +120,54 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner { reload() }
     }
+  }
+
+  private var entries: some View {
+    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8),
+                            count: entryWidth < entryMinimumWidth ? 1 : 2), alignment: .leading, spacing: 8) {
+      NavigationLink {
+        GalaxySSIHealthPhotoCaptureView(records: records, originals: originals)
+      } label: {
+        entry(t("record_center.scan", "Scan with camera"),
+              t("record_center.photo_note", "Lab reports and device readings"), icon: "camera", accent: .orange)
+      }.accessibilityIdentifier("health-record-center-camera")
+      Button { addManual(nil) } label: {
+        entry(t("record_center.manual", "Enter manually"),
+              t("record_center.manual_note", "Values, units, time, and conditions"), icon: "square.and.pencil", accent: .green)
+      }.accessibilityIdentifier("health-record-center-manual")
+      NavigationLink {
+        GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
+      } label: {
+        entry(t("record_center.files", "Import files"),
+              t("record_center.import_note", "Photos, PDF reports, and tables"), icon: "square.and.arrow.down", accent: .blue)
+      }.accessibilityIdentifier("health-record-center-import")
+      NavigationLink(destination: devices) {
+        entry(t("record_center.devices", "Connect a device"),
+              t("record_center.sources_note", "Health platforms and Bluetooth devices"),
+              icon: "externaldrive.connected.to.line.below", accent: .purple)
+      }.accessibilityIdentifier("health-record-center-sources")
+    }
+    .buttonStyle(.plain)
+    .background(GeometryReader { geometry in
+      Color.clear.onAppear { entryWidth = geometry.size.width }
+        .onChange(of: geometry.size.width) { entryWidth = $0 }
+    })
+  }
+
+  private func entry(_ title: String, _ note: String, icon: String, accent: Color) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Image(systemName: icon).font(.system(size: 20))
+        .frame(width: 36, height: 36).foregroundColor(accent)
+        .background(RoundedRectangle(cornerRadius: 8).fill(accent.opacity(0.12)))
+        .accessibilityHidden(true)
+      Text(title).font(.body.weight(.semibold)).foregroundColor(.primary)
+      Text(note).font(.subheadline).foregroundColor(.secondary)
+    }
+    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+    .padding(12).frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
+    .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
   }
 
   private func summary(_ reading: GalaxySSIHealthReading) -> String {
