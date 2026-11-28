@@ -860,9 +860,9 @@ _BUILD_TERMS = (
 _ARTIFACT_TERMS = (
     "return the file", "send the file", "export", "generate image", "create file",
     "downloadable", "zip project", "apk",
-    "\u53d1\u56de\u6587\u4ef6", "\u8fd4\u56de\u6587\u4ef6", "\u5bfc\u51fa",
+    "\u53d1\u56de\u6587\u4ef6", "\u8fd4\u56de\u6587\u4ef6",
     "\u751f\u6210\u56fe\u7247", "\u6253\u5305", "\u538b\u7f29\u5305",
-    "\u767c\u56de\u6a94\u6848", "\u8fd4\u56de\u6a94\u6848", "\u532f\u51fa",
+    "\u767c\u56de\u6a94\u6848", "\u8fd4\u56de\u6a94\u6848",
     "\u751f\u6210\u5716\u7247", "\u6253\u5305", "\u58d3\u7e2e\u5305",
     "\u53d1\u5230\u624b\u673a", "\u767c\u5230\u624b\u6a5f",
 )
@@ -939,7 +939,7 @@ def execution_policy_for(
     request_kind: str = "",
     requested_result_contract: str = "",
 ) -> AgentExecutionPolicy:
-    from artifact_request_policy import office_artifact_requested, pdf_artifact_requested, positive_term
+    from artifact_request_policy import CHINESE_EXPORT, office_artifact_requested, pdf_artifact_requested, positive_term
     from installation_request_policy import installation_request
 
     normalized = " ".join(str(prompt or "").lower().split())
@@ -954,6 +954,7 @@ def execution_policy_for(
     has_office_request = office_artifact_requested(str(prompt or ""))
     has_artifact_request = (
         _contains_any(normalized, _ARTIFACT_TERMS)
+        or CHINESE_EXPORT.search(normalized) is not None
         or has_office_request
         or pdf_artifact_requested(str(prompt or ""))
         or video_creation_requested(normalized)

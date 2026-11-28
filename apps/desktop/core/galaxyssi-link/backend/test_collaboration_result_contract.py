@@ -1,4 +1,6 @@
 import ast
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -43,6 +45,40 @@ class CollaborationResultContractTests(unittest.TestCase):
         self.assertTrue(execution_policy_for(prompt).requires_artifact)
         for value in (None, "", "workspace", COLLABORATION_WORKSPACE_RESULT + " "):
             self.assertTrue(execution_policy_for(prompt, requested_result_contract=value).requires_artifact)
+
+    def test_timetable_inference_and_export_are_distinct_at_file_verification(self):
+        publication = json.dumps({
+            "format": "galaxyssi.research-artifact.v1", "summary": "Buses depart ten minutes apart.",
+            "workspace": [{"id": "interval", "base_revision": 0, "kind": "evidence", "title": "Bus interval",
+                           "body": {"content": "Departures at 09:00 and 09:10."}, "parents": []}],
+        })
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"GALAXYSSI_WORKSPACE_ROOT": folder}):
+            for infer, export in (
+                ("\u63a8\u5bfc\u51fa", "\u5bfc\u51fa"),  # Simplified
+                ("\u63a8\u5c0e\u51fa", "\u532f\u51fa"),  # Traditional
+                ("\u63a8\u5c0e\u51fa", "\u5c0e\u51fa"),
+            ):
+                # Derive the interval; export the timetable. CSV itself does not request a file.
+                inference = f"Compare bus timetables by route code. {infer}\u73ed\u8ddd"
+                direct = f"{export} CSV"
+                for prompt, required in ((inference, False), (direct, True), (inference + "; " + direct, True)):
+                    with self.subTest(prompt=prompt):
+                        policy = self.policy(prompt)
+                        self.assertEqual(required, execution_policy_for(prompt).requires_artifact)
+                        self.assertEqual(required, policy.requires_artifact)
+                        if not required:
+                            self.assertEqual(("code",), policy.task_intent_signals)
+                        result = finalize_task_artifacts("timetable", prompt, "fixture", reply_content=publication,
+                                                         execution_policy=policy)
+                        self.assertEqual((), result.output_files)
+                        self.assertEqual("failed" if required else "passed", result.verification["status"])
+
+    def test_inference_from_existing_timetable_documents_is_not_an_export(self):
+        for verb in ("\u63a8\u5bfc\u51fa", "\u63a8\u5c0e\u51fa"):
+            for source in ("PDF", "Excel"):
+                prompt = f"{verb} {source} \u73ed\u6b21\u8868\u4e2d\u7684\u73ed\u8ddd"
+                with self.subTest(prompt=prompt):
+                    self.assertFalse(self.policy(prompt).requires_artifact)
 
     def test_read_only_and_plan_only_stay_read_only(self):
         for options in ({"request_kind": "screen_analysis"}, {"requested_execution_mode": AgentExecutionMode.PLAN_ONLY}):
