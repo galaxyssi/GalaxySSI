@@ -16,6 +16,9 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retained(file, s) {
+  const media = path.join(__dirname, 'check-media-readiness-registration.cjs');
+  if (file.endsWith('/AgentPhoneNativeToolCatalog.swift') && fs.existsSync(media))
+    s = require(media).retained(file, s);
   const runtime = path.join(__dirname, 'check-live-runtime-tool-readiness-scope.cjs');
   if (file.endsWith('/AgentPhoneNativeToolCatalog.swift') && fs.existsSync(runtime))
     s = require(runtime).retained(file, s);
