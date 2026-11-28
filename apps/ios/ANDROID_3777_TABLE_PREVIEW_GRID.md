@@ -8,8 +8,10 @@ Android reference: `69c58da3a`, especially `HealthStructuredOriginalPreview.kt`.
 
 - Replace per-row disclosure groups with a vertically and horizontally scrollable
   grid, column letters, source headers, alternating rows and fixed cell geometry.
-- Show at most 20 data rows, 12 columns and 512 UTF-16 code units per cell. CSV/JSON
-  import headers are column headings, not an extra numbered data row. XLSX keeps
+- Show at most 20 data rows, 12 columns and 512 UTF-16 code units per cell. Raw CSV
+  includes its first record; JSON uses key/value or single-value columns. The
+  existing batch route uses this same reader, with linked measurement provenance
+  retained below the grid. XLSX keeps
   physical worksheet row numbers and the existing formula/cache display; nothing
   evaluates formulas. A bounded cell/header detail sheet avoids losing multiline
   values to three-line grid clipping. Clipped values end with an ellipsis.
@@ -23,7 +25,7 @@ Android reference: `69c58da3a`, especially `HealthStructuredOriginalPreview.kt`.
   linked-record presentation, confirmations and selected cell. Encrypted records
   reads, linked export preparation and document export stay on their existing path.
 - Keep original and linked ZIP save confirmation, fresh linked-reading scope,
-  date-only provenance, clinical mapping and storage/recognition formats unchanged.
+  date-only provenance and clinical mapping. Raw-library kind changes are listed below.
 
 ## Raw original-library extension
 
@@ -55,8 +57,9 @@ uses the stored canonical extension plus exact content/size/digest validation.
 
 ## Remaining differences and verification limits
 
-Input is limited to 1 MiB (Android's text-preview budget is 2 MiB). Existing XLSX
-ZIP expansion/shared-string/cell budgets still apply. Preview-only CSV/XLSX tails
+Input is limited to 1 MiB (Android's text-preview budget is 2 MiB). CSV retains its
+8,192-byte field guard. Existing XLSX ZIP expansion/shared-string/cell budgets
+still apply. Preview-only CSV/XLSX tails
 after the lookahead are not validated or described as fully imported; original
 bytes are kept intact. JSON validation can reject Foundation-unrepresentable
 numbers despite valid JSON syntax. Nested JSON uses raw fragments rather than
