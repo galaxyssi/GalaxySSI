@@ -20,6 +20,10 @@ function retained(file, source) {
     if (source.includes('AgentLearningOutboxScope')) {
       // Preserve the separately owned learning scope, including both adjacent optional arguments.
       const bridges = [
+        ['  var backgroundLearning = false\n  var learningScope: AgentLearningOutboxScope? = nil\n  var attachmentDeclaration: String? = nil\n  var fileReadScope: String? = nil\n  var pinnedDesktopRunID: String? = nil',
+          '  var backgroundLearning = false\n  var attachmentDeclaration: String? = nil\n  var fileReadScope: String? = nil\n  var pinnedDesktopRunID: String? = nil',
+          '  var backgroundLearning = false\n  var attachmentDeclaration:',
+          '  var backgroundLearning = false\n  var learningScope: AgentLearningOutboxScope? = nil\n  var attachmentDeclaration:'],
         ['    fileReadScope: String? = nil,\n    learningScope: AgentLearningOutboxScope? = nil,\n    pinnedDesktopRunID: String? = nil',
           '    fileReadScope: String? = nil,\n    pinnedDesktopRunID: String? = nil',
           '    fileReadScope: String? = nil\n', '    fileReadScope: String? = nil,\n    learningScope: AgentLearningOutboxScope? = nil\n'],
