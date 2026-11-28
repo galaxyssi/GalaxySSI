@@ -13,6 +13,7 @@ actor MqttDeliveryDispatch {
     let encodeAttempt: (MqttDeliveryEnvelope.Frame) throws -> Data
     let authorized: (String, Int64) -> Bool
     var interactiveFinal = false
+    var applicationAuthorization: (@Sendable () async -> Bool)? = nil
   }
   struct Publication {
     let topic: String
@@ -21,6 +22,7 @@ actor MqttDeliveryDispatch {
     let receiveTopics: Set<String>
     let secretFingerprint: String
     let authorized: (String, Int64) -> Bool
+    var applicationAuthorization: (@Sendable () async -> Bool)? = nil
   }
   struct Diagnostics {
     let messages: Int
@@ -244,7 +246,8 @@ actor MqttDeliveryDispatch {
         job.attempts.insert(id)
         sent[id] = Sent(job: job, frame: frame)
         let queued = await publish(Publication(topic: job.topic, payload: payload, frame: frame,
-          receiveTopics: delivery.receiveTopics, secretFingerprint: delivery.secretFingerprint, authorized: delivery.authorized))
+          receiveTopics: delivery.receiveTopics, secretFingerprint: delivery.secretFingerprint, authorized: delivery.authorized,
+          applicationAuthorization: delivery.applicationAuthorization))
         // A callback may have completed, or close() may have run, during the enqueue await.
         guard !closed, jobs[job.key] === job else { return }
         if !queued, sent[id]?.pending == true {

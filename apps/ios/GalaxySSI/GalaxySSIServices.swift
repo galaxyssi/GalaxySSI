@@ -3162,9 +3162,61 @@ final class MessageCoordinator: ObservableObject {
       : AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: target.peer.remoteSignalName,
           agentId: contact.connectorAgentId, identity: identity)
     guard let binding, try checkedTeamObserverRecovery(binding) != nil else { return nil }
+    if context.team.pinnedDesktop != nil || roster.pinnedDesktop != nil {
+      guard try pinnedDesktopQueuedSendIsCurrent(context, source: message, contact: contact,
+        identity: identity, routes: target.routes) else { return nil }
+    }
     return .init(message: message, team: context.owner, teamID: context.team.teamId,
       maySend: (!context.team.state.isTerminal || context.team.state == .interrupted) &&
-        (!context.member.status.isTerminal || context.member.status == .interrupted))
+        (!context.member.status.isTerminal || context.member.status == .interrupted), pinnedDesktop: context.team.pinnedDesktop)
+  }
+
+  private func pinnedDesktopQueuedSendIsCurrent(_ context: AgentTeamReplyRecoveryContext, source: ChatMessage,
+      contact: GalaxySSIContact, identity: AgentTaskIdentity, routes: GalaxySSILinkRoutes) throws -> Bool {
+    guard UIApplication.shared.isProtectedDataAvailable, let pin = context.team.pinnedDesktop,
+      AgentTaskExecutionModePolicy.resolve(request: pin.objective,
+        configuredMode: store.agentSafetySettings.taskExecutionMode).mode == .autoComplete,
+      let roster = store.agentSession(id: pin.conversation)?.collaborationRoster, roster.pinnedDesktop == pin,
+      AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()),
+      context.team.teamId == pin.teamID, context.team.taskId == pin.turn, context.team.conversationId == pin.conversation,
+      context.team.supervisorRunId == AgentTeamDispatchIds.supervisorRunId(teamId: pin.teamID),
+      context.team.primaryMemberId == pin.coordinator.uuidString.lowercased(),
+      source.isMine, !source.isSystem, source.content == pin.objective, !source.readOnlyAnalysis,
+      source.conversationId == pin.conversation, source.turnId == pin.turn,
+      identity.conversationId == pin.conversation, identity.turnId == pin.turn,
+      identity.taskId == context.owner.sourceMessageId, identity.clientRouteId == pin.route.clientRoute,
+      contact.id == pin.route.target, routes.clientRouteId == pin.route.clientRoute,
+      routes.remoteFingerprint.caseInsensitiveCompare(pin.route.fingerprint) == .orderedSame,
+      context.team.members.count == 2, Set(context.team.members.map(\.memberId)) == Set(roster.members.map { $0.id.uuidString.lowercased() }),
+      roster.members.contains(where: { $0.id.uuidString.lowercased() == context.owner.memberId && $0.resourceId == contact.id }),
+      (!context.team.state.isTerminal || context.team.state == .interrupted),
+      (!context.member.status.isTerminal || context.member.status == .interrupted),
+      context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted else { return false }
+    if let task = store.agentTask(id: context.team.taskId), task.sessionId == pin.conversation,
+      [.paused, .cancelled, .failed, .blocked].contains(task.phase) { return false }
+    let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: pin.owner, team: context.team,
+      hostContextDigest: managedBrowserContextDigest(context.team))
+    return try managedBrowserContinuations.control(scope: scope) == .run
+  }
+
+  func pinnedDesktopOutboxAllowed(_ item: PendingLinkMessage) -> Bool? {
+    guard let runID = item.pinnedDesktopRunID else {
+      if let identity = taskIdentityStore.identity(contactId: item.contactId, sourceMessageId: item.clientSourceMessageId),
+        store.agentSession(id: identity.conversationId)?.collaborationRoster?.pinnedDesktop != nil { return false }
+      return nil
+    }
+    guard usesLegacyMqtt, let identity = taskIdentityStore.identity(contactId: item.contactId, sourceMessageId: item.clientSourceMessageId),
+      let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: item.clientSourceMessageId,
+        conversation: identity.conversationId, turn: identity.turnId, contact: item.contactId),
+      context.team.supervisorRunId == runID, let source = originalTeamPrimarySource(context.team),
+      let contact = store.contact(id: item.contactId),
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
+      link.routes.upTopic == item.topic,
+      deliveryStore.containsOutboxMessage(item.messageId),
+      item.attachmentTransferId.isEmpty, item.blockedByAttachmentTransferIds.isEmpty,
+      item.deferredTaskPayload == nil else { return false }
+    return (try? pinnedDesktopQueuedSendIsCurrent(context, source: source, contact: contact,
+      identity: identity, routes: link.routes)) == true
   }
 
   func recordJournalTeamAttachmentFailure(_ owner: AgentTeamReplyOwner) throws {
@@ -5654,6 +5706,7 @@ final class MessageCoordinator: ObservableObject {
     voiceSessionId: String = "",
     voiceAppAnchor: VoiceAppCaptureAnchor? = nil,
     requiredAgentConversationID: String? = nil,
+    pinnedDesktopTeamTurn: String? = nil,
     peerMessageKind: String = "",
     peerDurationMillis: Int64 = 0,
     requestKind: AgentRequestKind = .conversation,
@@ -5697,6 +5750,19 @@ final class MessageCoordinator: ObservableObject {
     )
     let groupSession = contact.id == "hermes" ? store.agentSession(id: store.activeAgentConversationId) : nil
     let groupRoster = groupSession?.collaborationRoster
+    if let pin = groupRoster?.pinnedDesktop {
+      guard pin.turn == pinnedDesktopTeamTurn, pin.objective == trimmed, attachments.isEmpty,
+        agentGoalOverride.isBlank, requestKind == .conversation,
+        voiceSessionId.isEmpty, voiceAppAnchor == nil, !readOnlyAnalysis, researchRetrySource == nil,
+        requiredAgentConversationID == pin.conversation,
+        AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId:
+          AgentTeamDispatchIds.supervisorRunId(teamId: pin.teamID)) == nil,
+        AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()) else {
+        lastError = localizedReply("galaxyssi.pinned_desktop_team.binding_changed",
+          fallback: "The confirmed Desktop research binding is no longer current. No substitute was sent.")
+        return false
+      }
+    } else if pinnedDesktopTeamTurn != nil { return false }
     let groupMentions = groupRoster.map {
       AgentCollaborationMentionText.parse(trimmed, roster: $0)
     }
@@ -5857,7 +5923,7 @@ final class MessageCoordinator: ObservableObject {
     let outgoing = store.appendOutgoing(
       displayText,
       to: contact.id,
-      turnId: voiceSessionId,
+      turnId: pinnedDesktopTeamTurn ?? voiceSessionId,
       richOutputJson: richOutputJson,
       messageId: outgoingMessageId,
       requestKind: requestKind,
@@ -9745,9 +9811,9 @@ final class MessageCoordinator: ObservableObject {
     }
     let request = AgentPlanRequest(
       goal: goal,
-      screen: currentAgentScreenContext,
+      screen: roster?.pinnedDesktop == nil ? currentAgentScreenContext : AgentScreenContext(foregroundApp: ""),
       targets: targets,
-      nativeTools: localNativeToolRuntime?.registry.descriptors() ?? [],
+      nativeTools: roster?.pinnedDesktop == nil ? (localNativeToolRuntime?.registry.descriptors() ?? []) : [],
       responseLanguage: store.languagePolicy.responseLanguage,
       executionMode: AgentTaskExecutionModePolicy.resolve(
         request: goal,
@@ -9806,7 +9872,7 @@ final class MessageCoordinator: ObservableObject {
     guard let action = plan.actions.first else { return nil }
     let isCollaboration = action.parameters["agent_selection_source"] == "collaboration_roster"
     let targetsById = Dictionary(uniqueKeysWithValues: targets.map { ($0.id, $0) })
-    if requestedMembers.count == 1,
+    if !isCollaboration, requestedMembers.count == 1,
       let requested = requestedMembers.first,
       let target = targetsById[requested.agentId] {
       return try await publishRequestedSingleTarget(
@@ -9853,6 +9919,16 @@ final class MessageCoordinator: ObservableObject {
         throw GalaxySSIError.invalidPayload(localizedReply("galaxyssi.collaboration.member_binding_invalid",
           fallback: "A collaboration member or its assigned model changed. Check the group settings and try again."))
       }
+      if let pin = roster.pinnedDesktop {
+        guard outgoing.turnId == pin.turn, outgoing.content == pin.objective, attachments.isEmpty,
+          action.parameters[AgentPinnedDesktopTeam.pinKey] == pin.route.digest,
+          action.parameters["manual_target_locked"] == "true",
+          action.parameters["manual_model_id"] == pin.route.model,
+          action.parameters["agent_reasoning_effort"] == pin.route.effort.rawValue,
+          AgentPinnedDesktopTeam.owns(spec, binding: pin, roster: roster) else {
+          throw GalaxySSIError.invalidPayload("The confirmed Desktop research plan changed")
+        }
+      }
       guard let schedule = AgentTeamPlanCompiler.collaborationDispatchOrder(spec.definition.members) else {
         throw GalaxySSIError.invalidPayload("Invalid collaboration stage dependencies")
       }
@@ -9882,6 +9958,7 @@ final class MessageCoordinator: ObservableObject {
         researchStage: $0.context["_galaxyssi_research_stage"]) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
+    savedTeam.pinnedDesktop = store.agentSession(id: outgoing.conversationId)?.collaborationRoster?.pinnedDesktop
     if isCollaboration {
       let roster = store.agentSession(id: outgoing.conversationId)?.collaborationRoster
       for (index, member) in ordered.enumerated() {
@@ -9904,6 +9981,18 @@ final class MessageCoordinator: ObservableObject {
     } else if (isCollaboration && !saveTeamHistory) ||
         (saveTeamHistory && !AgentTeamExecutionHistoryStore.shared.upsert(savedTeam)) {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
+    }
+    if let pin = store.agentSession(id: outgoing.conversationId)?.collaborationRoster?.pinnedDesktop {
+      let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: pin.owner, team: savedTeam,
+        hostContextDigest: managedBrowserContextDigest(savedTeam))
+      if try managedBrowserContinuations.control(scope: scope) == nil {
+        guard recovery == nil, try managedBrowserContinuations.writeControl(.run, scope: scope) else {
+          throw AgentManagedBrowserContinuationStore.Failure.unavailable
+        }
+      }
+      guard try managedBrowserContinuations.control(scope: scope) == .run else {
+        throw AgentManagedBrowserContinuationStore.Failure.notReady
+      }
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
     var primaryPublished = false
@@ -10318,6 +10407,11 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func collaborationMemberRouteIsCurrent(_ member: AgentTeamMember, roster: AgentCollaborationRoster) -> Bool {
+    if let pin = roster.pinnedDesktop {
+      guard AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()),
+        member.context[AgentPinnedDesktopTeam.pinKey] == pin.route.digest,
+        member.context[AgentPinnedDesktopTeam.personKey] == member.memberId else { return false }
+    } else if member.context[AgentPinnedDesktopTeam.pinKey] != nil { return false }
     guard let entry = AgentTeamPlanCompiler.rosterMember(for: member, in: roster) else { return false }
     if entry.resourceId == "local-llm" { return entry.modelId.isBlank && entry.reasoningEffort == nil }
     guard let contact = store.contact(id: entry.resourceId), contact.id == entry.resourceId, contact.isCommunicable else {
@@ -17980,24 +18074,35 @@ final class MessageCoordinator: ObservableObject {
             attachments.isEmpty, voiceSessionId.isBlank else { throw GalaxySSIError.transportUnavailable }
     }
     let session = store.agentSession(id: conversationId)
+    let desktopPin = session?.collaborationRoster?.pinnedDesktop
+    if desktopPin != nil || teamContext?.member.context[AgentPinnedDesktopTeam.pinKey] != nil {
+      guard let pin = desktopPin, let roster = session?.collaborationRoster, let teamContext,
+        attachments.isEmpty, voiceSessionId.isEmpty, codexReplay == nil, !peerChat, !outgoing.readOnlyAnalysis,
+        executionMode == .autoComplete, outgoing.turnId == pin.turn, outgoing.content == pin.objective,
+        contact.id == pin.route.target, link.desktopId == pin.route.desktop,
+        AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()),
+        AgentPinnedDesktopTeam.owns(teamContext, binding: pin, roster: roster) else {
+        throw GalaxySSIError.invalidPayload("The confirmed Desktop research binding changed; no substitute is permitted")
+      }
+    }
     let conversationContext = AgentConversationContext(
       conversationId: conversationId,
-      summary: recentLocalConversationContext(
+      summary: desktopPin == nil ? recentLocalConversationContext(
         contactId: contact.id,
         excluding: outgoing.id
-      ),
+      ) : "",
       turns: [],
       privateMode: session?.privateMode ?? true,
-      globalContext: GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
+      globalContext: desktopPin == nil ? GalaxySSIGlobalAgentRuntimeBridge.compiledConversationContext(
         store: store,
         query: text,
         conversationId: conversationId,
         turnId: turnId,
         runId: taskId,
         realtimeProvider: scopedGlobalRealtimeContextProvider()
-      ),
+      ) : "",
       trackingPaused: session?.trackingPaused ?? false,
-      sessionRequirement: AgentSessionRequirement.value(session, owner: conversationId)
+      sessionRequirement: desktopPin == nil ? AgentSessionRequirement.value(session, owner: conversationId) : ""
     ).applyingGlobalContextDispatchPolicy(
       query: text,
       hasAttachments: !attachments.isEmpty
@@ -18070,12 +18175,12 @@ final class MessageCoordinator: ObservableObject {
       payload["_galaxyssi_conversation_id"] = taskIdentity.conversationId
       payload["_galaxyssi_conversation_context"] = codexReplay?.codexReplay?.transportContext ?? conversationContext.asTransportBlock(
         maximumTokens: 10_000,
-        includeGlobalContext: true
+        includeGlobalContext: desktopPin == nil
       )
       payload["_galaxyssi_conversation_has_attachments"] = (!attachments.isEmpty).description
       payload["_galaxyssi_turn_id"] = taskIdentity.turnId
       payload["_galaxyssi_task_id"] = taskIdentity.taskId
-      payload["_galaxyssi_long_term_write_allowed"] = (codexReplay == nil && !conversationContext.privateMode).description
+      payload["_galaxyssi_long_term_write_allowed"] = (desktopPin == nil && codexReplay == nil && !conversationContext.privateMode).description
       payload["_galaxyssi_task_execution_mode"] = executionMode.rawValue
       payload["original_goal"] = String(text.prefix(500))
     }
@@ -18121,6 +18226,25 @@ final class MessageCoordinator: ObservableObject {
           payload["agent_invocation"] = invocation
         }
       }
+    }
+    if let pin = desktopPin {
+      let invocation = payload["agent_invocation"] as? [String: String]
+      guard payload.string("result_contract") == AgentOutboundTeamContext.workspaceResultContract,
+        invocation == AgentInvocationRequestJsonCodec.encode(modelId: pin.route.model, reasoningEffort: pin.route.effort) else {
+        throw GalaxySSIError.invalidPayload("The Desktop research model or workspace result contract changed")
+      }
+      payload[AgentPinnedDesktopTeam.pinKey] = pin.route.digest
+      payload[AgentPinnedDesktopTeam.personKey] = teamContext?.member.memberId
+      guard let saved = AgentTeamExecutionHistoryStore.shared.snapshot(supervisorRunId:
+        AgentTeamDispatchIds.supervisorRunId(teamId: pin.teamID)), saved.conversationId == pin.conversation,
+        saved.taskId == pin.turn, saved.teamId == pin.teamID, !saved.state.deliverable,
+        saved.state != .failed, saved.state != .cancelled else {
+        throw GalaxySSIError.invalidPayload("The Desktop research run identity could not be restored")
+      }
+      let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: pin.owner, team: saved,
+        hostContextDigest: managedBrowserContextDigest(saved))
+      let control = try managedBrowserContinuations.control(scope: scope)
+      guard control == .run else { throw CancellationError() }
     }
     if !peerChat, let key = store.turnReceiptKey(conversation: conversationId, turn: turnId) {
       let invocation = payload["agent_invocation"] as? [String: Any] ?? [:]
@@ -18369,8 +18493,13 @@ final class MessageCoordinator: ObservableObject {
       wirePayload: wire.wireText,
       requiresValidatedNetwork: requiresValidatedNetwork,
       clientSourceMessageId: sourceMessageId,
-      contactId: contact.id
+      contactId: contact.id,
+      pinnedDesktopRunID: desktopPin.map { AgentTeamDispatchIds.supervisorRunId(teamId: $0.teamID) }
     )
+    if desktopPin != nil {
+      scheduleOutboxFlush(after: 0)
+      return .queued
+    }
     if requiresValidatedNetwork {
       store.appendDeliveryTrace(
         outgoing.id,

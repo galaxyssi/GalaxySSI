@@ -2845,12 +2845,18 @@ final class GalaxySSIStore: ObservableObject {
       )
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
-      let connectorCapabilities = connectorCapabilities(from: payload)
+      let capabilityInventory = AgentPinnedDesktopCodexCapability.inventory(payload)
+      let connectorCapabilities = capabilityInventory.map { normalizedStrings($0.capabilities) }
+      let compactPinAdvertisement = AgentPinnedDesktopCodexCapability.compact(payload)
       let connectorProtocols = connectorProtocols(from: payload)
       let connectorProtocolFeatures = connectorProtocolFeatures(from: payload)
       let connectorAdapterType = connectorAdapterType(from: payload)
       let now = Date()
-      var contact = contact(id: contactId) ?? GalaxySSIContact(
+      let priorContact = contact(id: contactId)
+      let preserveCompactMetadata = compactPinAdvertisement && !desktopFingerprint.isBlank && priorContact?.desktopId == desktopId &&
+        priorContact?.identityFingerprint.caseInsensitiveCompare(desktopFingerprint) == .orderedSame &&
+        priorContact?.deliveryMode.isGalaxySSILinkFamily == true
+      var contact = priorContact ?? GalaxySSIContact(
         id: contactId,
         galaxySSIId: contactId,
         name: displayName,
@@ -2894,19 +2900,37 @@ final class GalaxySSIStore: ObservableObject {
       contact.desktopAccessScopes = desktopAccessScopes.isEmpty ? nil : desktopAccessScopes
       contact.mqttTopic = payload.string("mqtt_topic").ifBlank(link?.routes.upTopic ?? "")
       contact.mqttInboxTopic = payload.string("mqtt_inbox_topic").ifBlank(link?.routes.downTopic ?? "")
-      contact.connectorCapabilities = connectorCapabilities.isEmpty ? nil : connectorCapabilities
-      contact.connectorCapabilitiesHash = payload.string("capabilities_hash")
-        .ifBlank(capabilitiesHash(for: connectorCapabilities))
-        .nonEmpty
-      contact.connectorProtocols = connectorProtocols.isEmpty ? nil : connectorProtocols
-      contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
-      contact.connectorAdapterType = connectorAdapterType.nonEmpty
-      contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
+      if let connectorCapabilities {
+        contact.connectorCapabilities = connectorCapabilities.isEmpty ? nil : connectorCapabilities
+        contact.connectorCapabilitiesHash = (capabilityInventory?.markerRemoved == true ? "" : payload.string("capabilities_hash"))
+          .ifBlank(capabilitiesHash(for: connectorCapabilities)).nonEmpty
+      } else if !preserveCompactMetadata {
+        contact.connectorCapabilities = nil
+        contact.connectorCapabilitiesHash = nil
+      }
+      contact.pinned_team_codex_v1 = AgentPinnedDesktopCodexCapability.boundAdvertisement(payload, agentID: agentId,
+        desktopID: desktopId, fingerprint: desktopFingerprint, link: link) ? true : nil
+      if !preserveCompactMetadata || payload["protocols"] != nil {
+        contact.connectorProtocols = connectorProtocols.isEmpty ? nil : connectorProtocols
+      }
+      if !preserveCompactMetadata || payload["protocol_features"] != nil {
+        contact.connectorProtocolFeatures = connectorProtocolFeatures.isEmpty ? nil : connectorProtocolFeatures
+      }
+      if !preserveCompactMetadata || payload["adapter_type"] != nil {
+        contact.connectorAdapterType = connectorAdapterType.nonEmpty
+      }
+      if !preserveCompactMetadata || payload["provider_profile"] != nil {
+        contact.connectorProviderProfileJSON = providerProfileJSON(from: payload)
+      }
       contact.private_health_report_vision_v1 = payload["private_health_report_vision_v1"] as? Bool == true && isPaired ? true : nil
-      if let invocationProfile = invocationProfileJSON(from: payload),
-         invocationProfile != contact.connectorInvocationProfileJSON {
+      if let invocationProfile = invocationProfileJSON(from: payload) {
+        if invocationProfile != contact.connectorInvocationProfileJSON {
+          AgentInvocationProfile.clearMetadataCache()
+          contact.connectorInvocationProfileJSON = invocationProfile
+        }
+      } else if compactPinAdvertisement && !preserveCompactMetadata {
         AgentInvocationProfile.clearMetadataCache()
-        contact.connectorInvocationProfileJSON = invocationProfile
+        contact.connectorInvocationProfileJSON = nil
       }
       contact.deleted = false
       contact.deletedAt = nil
@@ -3011,7 +3035,8 @@ final class GalaxySSIStore: ObservableObject {
           payload["desktop_access_scopes"] = scopes
         }
       }
-      [
+      let compactPinAdvertisement = AgentPinnedDesktopCodexCapability.compact(agent)
+      let inheritedMetadataKeys = [
         "capabilities",
         "capabilities_hash",
         "protocols",
@@ -3020,9 +3045,11 @@ final class GalaxySSIStore: ObservableObject {
         "invocation_profile",
         "adapter",
         "reputation"
-      ].forEach { key in
+      ]
+      inheritedMetadataKeys.forEach { key in
+        if compactPinAdvertisement, ["adapter", "provider_profile", "invocation_profile"].contains(key) { return }
         if payload[key] == nil, let value = parentPayload[key] {
-          payload[key] = value
+          payload[key] = key == "capabilities" ? AgentPinnedDesktopCodexCapability.inheritedCapabilities(value) : value
         }
       }
       if payload.string("status").isEmpty {
@@ -3163,13 +3190,6 @@ final class GalaxySSIStore: ObservableObject {
 
   private func normalizedAgentQRCodeValue(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-  }
-
-  private func connectorCapabilities(from payload: [String: Any]) -> [String] {
-    let adapter = payload.dictionary("adapter")
-    return normalizedStrings(
-      payload.stringArray("capabilities").ifEmpty(adapter?.stringArray("capabilities") ?? [])
-    )
   }
 
   private func connectorProtocols(from payload: [String: Any]) -> [String] {

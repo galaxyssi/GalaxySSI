@@ -20,7 +20,11 @@ struct GalaxySSIConversationalTeamSheet: ViewModifier {
   let applied: (AgentConversationalTeamLaunch) -> Void
   func body(content: Content) -> some View {
     content.sheet(item: $launch) { item in
-      GalaxySSIConversationalTeamView(launch: item, valid: { valid(item) }, applied: { applied(item) })
+      if AgentPinnedDesktopTeam.manualCodex(item.selection), case .start = item.command, item.source == nil {
+        GalaxySSIPinnedDesktopTeamView(launch: item, valid: { valid(item) }, applied: { applied(item) })
+      } else {
+        GalaxySSIConversationalTeamView(launch: item, valid: { valid(item) }, applied: { applied(item) })
+      }
     }
     .onChange(of: scene) { if $0 != .active { launch = nil } }
     .onChange(of: store.profile.identityFingerprint) { _ in launch = nil }

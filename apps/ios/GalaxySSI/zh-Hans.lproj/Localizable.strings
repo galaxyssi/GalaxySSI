@@ -8105,3 +8105,12 @@
 "galaxyssi.conversation_team.pattern_final_audit" = "(?:^|请|并|再|然后|需要)(?:安排|进行|做一次)?独立(?:审核|复核|审查|评审)(?:一下)?(?:最后|最终)(?:的)?(?:答复|答案|回复|结论|报告|草稿)";
 "galaxyssi.conversation_team.final_audit_missing" = "计划没有独立的最终审核者，团队已在派发 worker 前停止，没有发布草稿。";
 "galaxyssi.conversation_team.schema_endpoint" = "严格团队计划解码需要规范的本机 loopback OpenAI 端点。";
+"galaxyssi.pinned_desktop_team.title" = "Desktop 研究组";
+"galaxyssi.pinned_desktop_team.destination" = "已确认的 Desktop";
+"galaxyssi.pinned_desktop_team.objective" = "完整目标";
+"galaxyssi.pinned_desktop_team.consent" = "在此 Desktop 和模型上创建独立研究组，由两个角色协作。仅共享本次目标及组内结果，不包含原会话历史或手机屏幕上下文。Desktop 工具仍受已有权限约束，模型调用可能产生费用。";
+"galaxyssi.pinned_desktop_team.authorize" = "创建研究组";
+"galaxyssi.pinned_desktop_team.unavailable" = "选中的 Desktop 必须已配对、在线，并明确支持锁定团队及所选模型和推理强度。请更新 Desktop 或重新选择模型，不会替换为其他资源。";
+"galaxyssi.pinned_desktop_team.changed" = "输入内容或 Desktop 绑定已变化，或研究组保存失败。原会话未发送，请重新打开确认页。";
+"galaxyssi.pinned_desktop_team.close" = "关闭";
+"galaxyssi.pinned_desktop_team.binding_changed" = "已确认的 Desktop 研究组绑定已失效，未发送到其他资源。";

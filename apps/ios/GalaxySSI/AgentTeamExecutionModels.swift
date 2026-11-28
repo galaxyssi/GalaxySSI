@@ -1664,6 +1664,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
 }
 
 struct AgentTeamExecutionSnapshot: Codable, Equatable {
+  var pinnedDesktop: AgentPinnedDesktopTeam.Binding? = nil
   var supervisorRunId: String
   var teamId: String
   var conversationId: String
@@ -1727,6 +1728,7 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case supervisorRunId = "supervisor_run_id"
+    case pinnedDesktop = "pinned_desktop"
     case teamId = "team_id"
     case conversationId = "conversation_id"
     case taskId = "task_id"
@@ -1765,6 +1767,7 @@ struct AgentTeamExecutionSnapshot: Codable, Equatable {
       executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis),
       executionEndedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionEndedAtMillis)
     )
+    pinnedDesktop = try container.decodeIfPresent(AgentPinnedDesktopTeam.Binding.self, forKey: .pinnedDesktop)
   }
 
   var primaryRichOutput: String {

@@ -419,6 +419,7 @@ final class MqttPeerRoutes {
 
   func publishChunk(topic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
                     query: MqttChunkReceipts.Query, selection: MqttOutgoingChunks.Selection, attempted: Set<String>,
+                    applicationAuthorization: (@Sendable () async -> Bool)? = nil,
                     isPending: @escaping () throws -> Bool) async throws -> String? {
     let candidate: (Data, Int, MqttMultipathPolicy.Dispatch, Set<String>, String, (String, Int64) -> Bool)? = try locked {
       guard outgoing[topic] == identity.scope, let peer = peers[identity.scope], ready(peer),
@@ -462,7 +463,7 @@ final class MqttPeerRoutes {
     // This frame is local QoS1 attribution only. Chunk wire packets carry a query, not a business frame.
     let packet = MqttSealedPathPublication(publication: .init(topic: topic, payload: payload,
       frame: .init(message: message, attempt: attempt), receiveTopics: receiveTopics, secretFingerprint: fingerprint,
-      authorized: authorized), completed: { accepted in
+      authorized: authorized, applicationAuthorization: applicationAuthorization), completed: { accepted in
         policy.discardAttempt(attempt.attemptID)
         if !accepted, isFragment { policy.discardChunk(peer: identity.scope, chunk: observation) }
       }, fragmentTransferID: isFragment ? identity.binding + ":" + query.transfer : nil)

@@ -305,6 +305,9 @@ enum AgentTeamPlanCompiler {
     guard plan.validation.valid, roster.isValid, let coordinatorId = roster.coordinatorId,
           mentionedMemberIds.isSubset(of: Set(roster.members.map(\.id))),
           let template = plan.actions.first else { return nil }
+    if let pin = roster.pinnedDesktop {
+      guard pin.matches(roster), mentionedMemberIds.isEmpty, plan.goal == pin.objective else { return nil }
+    }
     let selected = roster.members.filter {
       $0.id == coordinatorId ||
         (mentionedMemberIds.isEmpty ? !$0.mentionOnly : mentionedMemberIds.contains($0.id))
@@ -326,7 +329,8 @@ enum AgentTeamPlanCompiler {
     guard counts.allSatisfy({ id, count in
       guard available[id] != nil, let registration = registered[id],
             [.online, .idle, .busy].contains(registration.status) else { return false }
-      return count <= max(0, registration.maxParallelRuns - registration.activeRuns)
+      let requiredSlots = roster.pinnedDesktop == nil ? count : 1
+      return requiredSlots <= max(0, registration.maxParallelRuns - registration.activeRuns)
     }), let coordinator = selected.first(where: { $0.id == coordinatorId }),
         let primaryTarget = available[coordinator.resourceId] else { return nil }
 
@@ -374,6 +378,10 @@ enum AgentTeamPlanCompiler {
         "_galaxyssi_research_stage": stage
       ]
       memberContext[AgentCollaborationReasoningSelection.contextKey] = member.reasoningEffort
+      if let pin = roster.pinnedDesktop {
+        memberContext[AgentPinnedDesktopTeam.pinKey] = pin.route.digest
+        memberContext[AgentPinnedDesktopTeam.personKey] = member.id.uuidString.lowercased()
+      }
       return AgentTeamMember(
         agentId: target.id, deliveryMode: isCoordinator ? .respond : .observe,
         requiredCapabilities: Set(target.capabilities), role: role,
@@ -417,7 +425,7 @@ enum AgentTeamPlanCompiler {
       }
       return identity
     }
-    let teamId = AgentTeamDispatchIds.teamId(plan: plan, actions: identityActions)
+    let teamId = roster.pinnedDesktop?.teamID ?? AgentTeamDispatchIds.teamId(plan: plan, actions: identityActions)
     let definition = AgentTeamDefinition(teamId: teamId, primaryAgentId: primaryTarget.id,
       members: members, visibilityMode: .background,
       collectiveCapabilities: Set(members.flatMap(\.requiredCapabilities)), primaryInstanceId: primaryId)
@@ -427,6 +435,13 @@ enum AgentTeamPlanCompiler {
           let wire = compiled.actions[0].parameters[agentTeamSpecParameter],
           AgentTeamDispatchSpecCodec.decode(wire)?.definition == definition else { return nil }
     compiled.actions[0].parameters["agent_selection_source"] = "collaboration_roster"
+    if let pin = roster.pinnedDesktop {
+      compiled.actions[0].parameters[AgentPinnedDesktopTeam.pinKey] = pin.route.digest
+      compiled.actions[0].parameters["manual_target_locked"] = "true"
+      compiled.actions[0].parameters["manual_model_id"] = pin.route.model
+      compiled.actions[0].parameters["agent_model_id"] = pin.route.model
+      compiled.actions[0].parameters["agent_reasoning_effort"] = pin.route.effort.rawValue
+    }
     compiled.plannerProfile += "+collaboration-roster"
     compiled.validation = AgentPlanValidator.validate(compiled)
     return compiled.validation.valid ? compiled : nil
@@ -752,6 +767,7 @@ enum AgentTeamPlanCompiler {
   }
 
   static func rekeyAgentTeamForRetry(_ action: AgentAction) -> AgentAction {
+    if action.parameters[AgentPinnedDesktopTeam.pinKey] != nil { return action }
     guard let spec = AgentTeamDispatchSpecCodec.decode(action.parameters[agentTeamSpecParameter] ?? "") else {
       return action
     }

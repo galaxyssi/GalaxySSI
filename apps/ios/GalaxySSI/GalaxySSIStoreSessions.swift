@@ -732,6 +732,39 @@ extension GalaxySSIStore {
     return session
   }
 
+  func createPinnedDesktopTeam(objective: String, route: AgentPinnedDesktopTeam.Route,
+                               source: String, owner: String) -> AgentConversation? {
+    guard owner == profile.identityFingerprint, source == activeAgentConversationId,
+      AgentConversationGoalRuntime.eligible(agentSession(id: source)),
+      agentSession(id: source)?.parentConversationId.isBlank == true,
+      AgentPinnedDesktopTeam.eligibleObjective(objective, language: languagePolicy.interfaceLanguage) else { return nil }
+    let id = "ios-agent-\(UUID().uuidString.lowercased())"
+    let coordinator = UUID(), researcher = UUID()
+    let binding = AgentPinnedDesktopTeam.Binding(owner: owner, conversation: id,
+      turn: UUID().uuidString.lowercased(), objective: objective, route: route,
+      coordinator: coordinator, researcher: researcher)
+    let effort = route.effort == .automatic ? nil : route.effort.rawValue
+    var roster = AgentCollaborationRoster(members: [
+      .init(id: coordinator, name: "Coordinator", role: "Synthesize verified research and remaining gaps",
+        resourceId: route.target, modelId: route.model, reasoningEffort: effort),
+      .init(id: researcher, name: "Researcher", role: "Explore independently and cite verifiable evidence",
+        resourceId: route.target, modelId: route.model, reasoningEffort: effort)
+    ], coordinatorId: coordinator, workflow: .research)
+    roster.pinnedDesktop = binding
+    guard roster.isValid, binding.matches(roster) else { return nil }
+    AgentModelSelectionSettings.selectManual(for: id, targetId: route.target, modelId: route.model,
+      displayName: route.name, reasoningEffort: route.effort, rememberAsDefault: false, defaults: defaults)
+    let saved = AgentModelSelectionSettings.selection(for: id, defaults: defaults)
+    guard saved.mode == .manual, saved.targetId == route.target, saved.modelId == route.model,
+      saved.reasoningEffort == route.effort else { return nil }
+    let now = Self.nowMillis()
+    let session = AgentConversation(id: id, title: String(objective.prefix(60)), createdAt: now, updatedAt: now,
+      selectedModelOrAgent: route.model, privateMode: false, collaborationRoster: roster)
+    guard agentConversationDatabase.upsert(session), agentConversationDatabase.read(id) == session else { return nil }
+    cacheAgentConversation(session)
+    return session
+  }
+
   func saveAgentCollaborationRoster(_ roster: AgentCollaborationRoster, title: String,
                                     conversationId: String?) -> AgentConversation? {
     guard roster.isValid else { return nil }
@@ -744,6 +777,9 @@ extension GalaxySSIStore {
     }
     guard var session = agentSession(id: conversationId), session.id == conversationId,
           let current = session.collaborationRoster, session.mergedIntoConversationId.isBlank else { return nil }
+    if let pin = current.pinnedDesktop {
+      guard roster.pinnedDesktop == pin, pin.matches(roster) else { return nil }
+    } else if roster.pinnedDesktop != nil { return nil }
     var roster = roster
     let handled = Set(roster.handledRecruitmentIDs ?? []).union(current.handledRecruitmentIDs ?? [])
     roster.handledRecruitmentIDs = handled.isEmpty ? nil : handled.sorted { $0.uuidString < $1.uuidString }
@@ -767,6 +803,7 @@ extension GalaxySSIStore {
           session.status == .active, !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank,
           let roster = session.collaborationRoster else { return false }
     let updated = projection.applying(to: roster)
+    if let pin = roster.pinnedDesktop, updated.pinnedDesktop != pin || !pin.matches(updated) { return false }
     guard updated != roster else { return true }
     guard updated.isValid else { return false }
     session.collaborationRoster = updated

@@ -727,6 +727,7 @@ struct AgentCollaborationRoster: Codable, Equatable {
   var independentReview = false
   var workflow: Workflow?
   var handledRecruitmentIDs: [UUID]? = nil
+  var pinnedDesktop: AgentPinnedDesktopTeam.Binding? = nil
 
   var isValid: Bool {
     guard !members.isEmpty, members.count <= Self.maximumMembers,

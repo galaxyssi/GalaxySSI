@@ -139,6 +139,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     var pathCompletion: MqttPhysicalCompletion? = nil
     var transientQuery = false
     var transientPriority = false
+    var applicationAuthorization: (@Sendable () async -> Bool)? = nil
   }
   private struct InFlightTiming {
     var attemptId: String
@@ -175,6 +176,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   private var receiveBuffer = Data()
   private var packetIdentifier: UInt16 = 1
   private var pendingPacketPublishes: [PendingPublish] = []
+  private var applicationAdmission: UUID?
   private var inFlightPublishes: [UInt16: PendingPublish] = [:]
   private var inFlightTimings: [UInt16: InFlightTiming] = [:]
   private var peerReceiptStartedAt: [String: Int64] = [:]
@@ -251,7 +253,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
           brokerAckTimeoutSeconds: MqttBrokerAckTimeoutPolicy.timeoutSeconds(wirePayloadBytes: packet.payload.count),
           attemptId: packet.frame.attempt.attemptID, logicalMessageId: packet.frame.message.messageID,
           durableMessageId: packet.frame.message.messageID, enqueuedAtMillis: Self.nowMillis(),
-          pathGate: publication.authorization, pathCompletion: MqttPhysicalCompletion(publication.completed)))
+          pathGate: publication.authorization, pathCompletion: MqttPhysicalCompletion(publication.completed),
+          applicationAuthorization: packet.applicationAuthorization))
         self.pumpPendingPublishes()
         self.scheduleBrokerAckWatchdog()
         continuation.resume(returning: .queued)
@@ -301,6 +304,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func stopTransport() {
+    applicationAdmission = nil
     intentionallyDisconnected = true
     networkMonitor?.cancel()
     networkMonitor = nil
@@ -515,6 +519,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     topic: String,
     payload: Data,
     messageId: String,
+    applicationAuthorization: (@Sendable () async -> Bool)? = nil,
     brokerAcknowledged: @escaping (@escaping () -> Void) -> Void
   ) async -> MqttDurablePublishResult {
     await withCheckedContinuation { continuation in
@@ -533,7 +538,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
                 durableMessageId: messageId,
                 durableBrokerAcknowledged: brokerAcknowledged,
                 admissionDeferred: { deferred = true },
-                physicallySubmitted: { submitted = $0 }
+                physicallySubmitted: { submitted = $0 },
+                applicationAuthorization: applicationAuthorization
               ) else {
           continuation.resume(returning: deferred ? .deferred : .failed)
           return
@@ -804,7 +810,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
     trackPeerReceipt: Bool = true,
     admissionDeferred: (() -> Void)? = nil,
     physicallySubmitted: ((Bool) -> Void)? = nil,
-    transientQuery: Bool = false
+    transientQuery: Bool = false,
+    applicationAuthorization: (@Sendable () async -> Bool)? = nil
   ) -> Bool {
     let wirePayload = String(decoding: payload, as: UTF8.self)
     let logicalMessageId = trackPeerReceipt ? Self.logicalMessageId(payload) : ""
@@ -856,7 +863,8 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         pathGate: pathGate,
         acknowledgementGroup: acknowledgements,
         fragmentIndex: index,
-        transientQuery: transientQuery
+        transientQuery: transientQuery,
+        applicationAuthorization: applicationAuthorization
       )
     })
     pumpPendingPublishes()
@@ -883,18 +891,54 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
       return invalid
     }
     while mqttInflightPacketIds.count < Self.maximumMqttInflight {
-      let priority = pendingPacketPublishes.firstIndex(where: { $0.transientPriority && canSend($0) })
+      let priority = pendingPacketPublishes.firstIndex(where: {
+        $0.transientPriority && canSend($0) && (applicationAdmission == nil || $0.applicationAuthorization == nil)
+      })
       let ordinary = MqttTransientControlPolicy.admits(inflight: mqttInflightPacketIds.count,
         totalLimit: Self.maximumMqttInflight, priority: false)
-        ? pendingPacketPublishes.firstIndex(where: { canSend($0) }) : nil
+        ? pendingPacketPublishes.firstIndex(where: {
+          canSend($0) && (applicationAdmission == nil || $0.applicationAuthorization == nil)
+        }) : nil
       guard let index = priority ?? ordinary else {
         break
+      }
+      let candidate = pendingPacketPublishes[index]
+      if let authorize = candidate.applicationAuthorization {
+        let ticket = UUID(), generation = connectionGeneration
+        applicationAdmission = ticket
+        // Keep the packet in the bounded queue while application ownership is checked off this queue.
+        Task { [weak self] in
+          let allowed = await authorize()
+          guard let self else { return }
+          self.queue.async {
+            guard self.applicationAdmission == ticket else { return }
+            self.applicationAdmission = nil
+            if let current = self.pendingPacketPublishes.firstIndex(where: { $0.attemptId == candidate.attemptId }) {
+              let pending = self.pendingPacketPublishes.remove(at: current)
+              if allowed, self.hasLiveTransport(), self.connectionGeneration == generation,
+                self.mqttInflightPacketIds.count < Self.maximumMqttInflight, self.canSend(pending),
+                pending.pathGate.map({ self.authorizes($0) }) ?? true {
+                self.writePendingPublication(pending)
+              } else {
+                self.finishPhysical(pending, acknowledged: false)
+              }
+            }
+            self.pumpPendingPublishes()
+            self.scheduleBrokerAckWatchdog()
+          }
+        }
+        return
       }
       let pending = pendingPacketPublishes.remove(at: index)
       if let gate = pending.pathGate, !authorizes(gate) {
         finishPhysical(pending, acknowledged: false)
         continue
       }
+      writePendingPublication(pending)
+    }
+  }
+
+  private func writePendingPublication(_ pending: PendingPublish) {
       let sentAtMillis = Self.nowMillis()
       let packetId = sendPublish(topic: pending.topic, payload: pending.payload)
       mqttInflightPacketIds.insert(packetId)
@@ -925,7 +969,6 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
         pendingPacketPublishes.removeAll { $0.transferId == transferId }
         pendingPacketPublishes.append(contentsOf: sameTransfer)
       }
-    }
   }
 
   private func canSend(_ pending: PendingPublish) -> Bool {
@@ -1476,6 +1519,7 @@ final class GalaxySSIMqttClient: ObservableObject, GalaxySSILinkTransport, MqttB
   }
 
   private func resetOutboundInflightForReconnect() {
+    applicationAdmission = nil
     pendingPacketPublishes.removeAll { pending in
       guard pending.pathGate != nil || pending.transientQuery else { return false }
       finishPhysical(pending, acknowledged: false)

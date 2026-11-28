@@ -2,6 +2,33 @@ import XCTest
 @testable import GalaxySSI
 
 final class MqttDeliveryDispatchTests: XCTestCase {
+  func testApplicationAdmissionSurvivesEveryDelayedPhysicalCopy() async throws {
+    let fixture = DispatchFixture(), permission = PinnedDispatchPermission()
+    fixture.onPublish = { publication in
+      guard let authorize = publication.applicationAuthorization, await authorize() else { return false }
+      await permission.sent()
+      return true
+    }
+    var delivery = try fixture.delivery(bound: 87_500)
+    delivery.interactiveFinal = true
+    delivery.applicationAuthorization = { await permission.permits() }
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: delivery)
+    await permission.revoke()
+    fixture.time = 250
+    await fixture.dispatch.tick()
+    fixture.time = 500
+    await fixture.dispatch.tick()
+    let counts = await permission.counts()
+    XCTAssertEqual(counts.sent, 1)
+    XCTAssertGreaterThan(counts.checked, 1)
+    XCTAssertTrue(fixture.publications.allSatisfy { $0.applicationAuthorization != nil })
+  }
+
+  func testOrdinaryCopiesDoNotAcquireApplicationAdmission() async throws {
+    let fixture = DispatchFixture()
+    _ = try await fixture.dispatch.submit(topic: "outbox", delivery: fixture.delivery())
+    XCTAssertNil(try XCTUnwrap(fixture.publications.first).applicationAuthorization)
+  }
   func testInteractiveRequestCopiesShareLogicalIdentityAndStopOnCommittedReceipt() async throws {
     let fixture = DispatchFixture()
     var delivery = try fixture.delivery(bound: 87_500)
@@ -318,6 +345,16 @@ final class MqttDeliveryDispatchTests: XCTestCase {
     XCTAssertEqual(state.messages, 0)
     XCTAssertEqual(state.trackedAttempts, 0)
   }
+}
+
+private actor PinnedDispatchPermission {
+  private var allowed = true
+  private var checks = 0
+  private var publications = 0
+  func permits() -> Bool { checks += 1; return allowed }
+  func revoke() { allowed = false }
+  func sent() { publications += 1 }
+  func counts() -> (checked: Int, sent: Int) { (checks, publications) }
 }
 
 private final class DispatchFixture {
