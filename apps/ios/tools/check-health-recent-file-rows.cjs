@@ -1,7 +1,7 @@
 // Source contracts only. No SwiftUI, Foundation date formatting or Health I/O execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'e6cf3a9c62974b04cea75a86011687ba1bb8661d';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '4f673a5a6f5742d89f50f849cc6823d880666999';
 const android = 'b687358302662293cd6a648b8ba0b04422572a7b', file = app + 'GalaxySSIHealthDataFilesView.swift';
 const clean = s => s.replace(/\r\n/g, '\n'), read = f => clean(fs.readFileSync(path.join(root, f), 'utf8')), memo = new Map();
 function show(ref, name) {
@@ -36,9 +36,17 @@ if (require.main === module) {
   const row = section(source);
   for (const token of ['fileDate(original.importedAt)', 'Locale(identifier: language)', 'formatter.timeZone = timeZone',
     'formatter.dateStyle = .medium', 'formatter.timeStyle = .short', '[fileDate(original.importedAt), source, size]',
-    'Text(status).font(.caption.weight(.semibold))', 'item.status == .linked ? .green : .orange',
+    'Text(status).font(.caption.weight(.semibold))', 'item.status == .linked ? RecentFileInk.linked : RecentFileInk.warning',
     'original.kind == .image ? .orange : .blue', '.lineLimit(2)', '.frame(minHeight: 64)',
     '.fixedSize(horizontal: false, vertical: true)', '.accessibilityElement(children: .combine)']) assert(row.includes(token), token);
+  const light = show(android, 'apps/android/app/src/main/res/values/health_data_files_colors.xml');
+  const dark = show(android, 'apps/android/app/src/main/res/values-night/health_data_files_colors.xml');
+  for (const [role, name, day, night] of [['linked', 'link', '1E6444', 'A0DEBE'],
+    ['warning', 'warning', '934D1A', 'F2B98F'], ['metadata', 'meta', '626A65', 'B5BDB9']]) {
+    assert(light.includes(`<color name="health_data_${name}_text">#${day}</color>`));
+    assert(dark.includes(`<color name="health_data_${name}_text">#${night}</color>`));
+    assert(row.includes(`static let ${role} = adaptive(light: 0x${day}, dark: 0x${night})`));
+  }
   assert(!/Data\(contentsOf:|FileManager|URLSession|\.write\(|\.store\(/.test(row), 'Formatting cannot read/decrypt/export originals');
   for (const name of ['GalaxySSIHealthDataFiles', 'GalaxySSIHealthRecords', 'GalaxySSIHealthOriginalStore'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ': unchanged backing logic');
@@ -49,15 +57,17 @@ if (require.main === module) {
     ['formatter.dateStyle = .medium', 'formatter.dateStyle = .none'],
     ['formatter.timeStyle = .short', 'formatter.timeStyle = .none'],
     ['Text(status).font(.caption.weight(.semibold))', 'Text(source).font(.caption.weight(.semibold))'],
-    ['item.status == .linked ? .green : .orange', 'item.status == .unlinked ? .green : .orange'],
+    ['item.status == .linked ? RecentFileInk.linked : RecentFileInk.warning', 'item.status == .unlinked ? RecentFileInk.linked : RecentFileInk.warning'],
     ['original.kind == .image ? .orange : .blue', 'original.kind == .image ? .blue : .blue'],
     ['.lineLimit(2)', '.lineLimit(1)'],
-    ['.fixedSize(horizontal: false, vertical: true)', '.fixedSize(horizontal: true, vertical: false)']
+    ['.fixedSize(horizontal: false, vertical: true)', '.fixedSize(horizontal: true, vertical: false)'],
+    ['adaptive(light: 0x934D1A, dark: 0xF2B98F)', 'adaptive(light: 0x934D1A, dark: 0x934D1A)'],
+    ['traits.userInterfaceStyle == .dark ? dark : light', 'traits.userInterfaceStyle == .dark ? light : dark']
   ];
   for (const [from, to] of mutations) {
     assert(source.includes(from), from); const changed = source.replace(from, to);
     assert.throws(() => validate(changed), undefined, from);
     assert.throws(() => retainedView(changed), undefined, 'Unknown row edits cannot normalize away');
   }
-  console.log('Android #3943 recent-file presentation and 10 negative source mutations checked; no native UI/date execution.');
+  console.log('Android #3943 recent-file presentation and 12 negative source mutations checked; no native UI/date execution.');
 }

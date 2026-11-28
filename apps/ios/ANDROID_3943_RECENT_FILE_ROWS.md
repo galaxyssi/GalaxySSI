@@ -14,7 +14,9 @@ and collapsed the status into one metadata line with a uniformly blue icon.
 The row now shows the original import timestamp formatted using the configured
 interface language and SwiftUI time-zone environment, source and native file-size
 formatting. A separate semibold status uses green only for linked, available
-files; unlinked or unavailable rows use the warning color. Images use an orange
+files; unlinked or unavailable rows use the warning color. Status and metadata
+text use Android's exact light/dark resource colors through dynamic UIColor
+providers, independent of the current source/availability classification. Images use an orange
 icon and PDFs a blue one. Filenames retain two lines, metadata/status wrap, and
 the full row remains an accessible combined tappable target.
 
@@ -27,9 +29,11 @@ Existing import/export/backup/review actions and localization keys are retained.
 ## Verification Boundary
 
 The source checker pins the reference Android row, complete reviewed iOS view,
-ten negative source mutations and all three backing data/records/original stores.
+twelve negative source mutations and all three backing data/records/original stores.
 Every other view line is retained outside the row/date formatter and time-zone
-environment property. Project structure and whitespace checks are separate.
+environment property, including the scoped dynamic text palette. The three
+day/night text color pairs are pinned to Android resources. Project structure
+and whitespace checks are separate.
 
 No Swift compilation, XCTest, simulator/device screenshots, actual DateFormatter
 locale/time-zone output, Dynamic Type, accessibility or pixel/layout acceptance
