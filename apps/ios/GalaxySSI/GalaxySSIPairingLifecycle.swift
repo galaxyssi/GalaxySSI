@@ -7,6 +7,12 @@ struct GalaxySSIMqttApplicationPeer {
 
 @MainActor
 enum GalaxySSIPairingLifecycle {
+  static func canRestoreHistory(_ contact: GalaxySSIContact, pairedFingerprint: String?) -> Bool {
+    guard contact.isDesktopHistoryOnly else { return true }
+    guard let pairedFingerprint, MqttRouteProtocol.hex(pairedFingerprint.lowercased(), count: 64),
+      MqttRouteProtocol.hex(contact.identityFingerprint.lowercased(), count: 64) else { return false }
+    return contact.identityFingerprint.caseInsensitiveCompare(pairedFingerprint) == .orderedSame
+  }
   static func disconnectTarget(desktopId: String, fingerprint: String, links: [ServerLink]) -> ServerLink? {
     let id = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !id.isEmpty, MqttRouteProtocol.hex(fingerprint.lowercased(), count: 64) else { return nil }
@@ -61,8 +67,8 @@ enum GalaxySSIPairingLifecycle {
   @discardableResult
   static func remove(
     desktopId: String,
-    deleteMessages: Bool = true,
-    preserveHistory: Bool = false,
+    deleteMessages: Bool = false,
+    preserveHistory: Bool = true,
     store: GalaxySSIStore,
     mqttClient: GalaxySSIMqttClient,
     deliveryStore: GalaxySSILinkDeliveryStore,

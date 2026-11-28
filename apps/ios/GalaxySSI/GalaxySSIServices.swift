@@ -2298,7 +2298,7 @@ final class MessageCoordinator: ObservableObject {
   }
 
   @discardableResult
-  func revokeDesktopPairing(desktopId: String, deleteMessages: Bool = true) async -> Bool {
+  func revokeDesktopPairing(desktopId: String) async -> Bool {
     let cleanDesktopId = desktopId.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !cleanDesktopId.isEmpty else { return false }
     guard let link = store.serverLinks.first(where: { $0.desktopId == cleanDesktopId }) else {
@@ -2310,7 +2310,7 @@ final class MessageCoordinator: ObservableObject {
       guard store.serverLinks.contains(where: { $0.desktopId == link.desktopId && $0.routes == link.routes }) else {
         return published
       }
-      let removed = removeDesktopPairingState(desktopId: link.desktopId, deleteMessages: deleteMessages)
+      let removed = removeDesktopPairingState(desktopId: link.desktopId)
       blobRelayConfigurationStore.remove(desktopId: link.desktopId)
       remoteWhisperNodeRegistry.remove(desktopID: link.desktopId)
       recordPairingRevocation(contactIds: removed)
@@ -2327,14 +2327,12 @@ final class MessageCoordinator: ObservableObject {
     ]
     guard let wire = try? linkWirePayload(payload, link: link) else {
       _ = removeDesktopPairingState(
-        desktopId: cleanDesktopId,
-        deleteMessages: deleteMessages
+        desktopId: cleanDesktopId
       )
       return false
     }
     _ = removeDesktopPairingState(
-      desktopId: cleanDesktopId,
-      deleteMessages: deleteMessages
+      desktopId: cleanDesktopId
     )
     deliveryStore.enqueue(
       messageId: wire.messageId,
@@ -2362,8 +2360,8 @@ final class MessageCoordinator: ObservableObject {
   @discardableResult
   private func removeDesktopPairingState(
     desktopId: String,
-    deleteMessages: Bool = true,
-    preserveHistory: Bool = false
+    deleteMessages: Bool = false,
+    preserveHistory: Bool = true
   ) -> Set<String> {
     desktopControlLiveFrames.removeValue(forKey: desktopId)
     desktopControlFrameUpdates.send(desktopId)

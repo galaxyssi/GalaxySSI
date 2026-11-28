@@ -1172,6 +1172,31 @@ final class GalaxySSIChatHistoryDatabase: AgentDesktopReplyRecoveryPersisting, G
     delete(whereClause: "contact_id = ?", value: contactId)
   }
 
+  func deleteContactHistories(_ contactIds: Set<String>) throws {
+    guard !contactIds.isEmpty else { return }
+    try locked {
+      guard contactIds.count <= 10_000, !contactIds.contains(where: \.isBlank),
+        execute("PRAGMA synchronous = FULL"), execute("PRAGMA fullfsync = ON"),
+        execute("BEGIN IMMEDIATE TRANSACTION") else { throw MqttChunkStorageError.databaseFailure }
+      var committed = false
+      defer { if !committed { _ = execute("ROLLBACK") } }
+      for id in contactIds.sorted() {
+        for sql in ["""
+          INSERT OR IGNORE INTO chat_message_deletions (contact_id, message_id, remote_message_id, is_mine)
+          SELECT contact_id, message_id, remote_message_id, is_mine FROM chat_messages WHERE contact_id = ?
+          """, "DELETE FROM chat_messages WHERE contact_id = ?"] {
+          guard let statement = prepare(sql) else { throw MqttChunkStorageError.databaseFailure }
+          bind(id, at: 1, to: statement)
+          let succeeded = sqlite3_step(statement) == SQLITE_DONE
+          sqlite3_finalize(statement)
+          guard succeeded else { throw MqttChunkStorageError.databaseFailure }
+        }
+      }
+      guard execute("COMMIT") else { throw MqttChunkStorageError.databaseFailure }
+      committed = true; rowCache.clear()
+    }
+  }
+
   func deleteConversation(_ conversationId: String) {
     delete(whereClause: "conversation_id = ?", value: conversationId)
   }
