@@ -84,6 +84,8 @@ roster/route, original text/turn, current model/effort, paired fingerprint and
 explicit durable run control. Enqueue-time payload validation also checks the
 pin/person, route, invocation, workspace result contract and absence of files.
 This does not re-encrypt or reconstruct already prepared Signal ciphertext.
+Changing to plan-only mode or pausing, cancelling, blocking or failing the
+parent task also denies a later queued send.
 
 Each journal direct copy and fragment carries an optional async application
 admission into the physical client queue. The actual packet remains in the

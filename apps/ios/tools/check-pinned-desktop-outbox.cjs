@@ -1,7 +1,7 @@
 // Source contracts only. Async fixtures are authored, not executed; no socket/device acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '320d47d69ffaed94011a630664c6b08302eeaeec', approved = 'cf6c1716e0bf51a8954ca6bfac38a949a37b995a';
+const base = '320d47d69ffaed94011a630664c6b08302eeaeec', approved = 'bec54c2dd2460fe3efd30a28a80c61b9219e997f';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function git(args) { return clean(cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})); }
@@ -105,6 +105,7 @@ if (require.main === module) {
   assert(outbox.indexOf('pinnedDesktopOutboxAllowed(item) == false') < outbox.indexOf('await mqttClient.publishDurable('));
   const tokens = new Map([
     ['GalaxySSIServices', ['roster.pinnedDesktop == pin', 'routes.remoteFingerprint.caseInsensitiveCompare(pin.route.fingerprint) == .orderedSame',
+      'AgentTaskExecutionModePolicy.resolve(request: pin.objective,', '[.paused, .cancelled, .failed, .blocked].contains(task.phase)',
       'identity.taskId == context.owner.sourceMessageId, identity.clientRouteId == pin.route.clientRoute', 'source.content == pin.objective',
       'return try managedBrowserContinuations.control(scope: scope) == .run',
       'savedTeam.pinnedDesktop = store.agentSession', 'pinnedDesktopRunID: desktopPin.map']],
