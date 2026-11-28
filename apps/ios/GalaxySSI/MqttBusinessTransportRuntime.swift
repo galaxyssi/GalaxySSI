@@ -283,6 +283,29 @@ final class MqttBusinessTransportRuntime {
     try enqueueExactControl(desktopConnector.outgoingCancellation(payload, target: target))
   }
 
+  func publishScopedMemberRecallResult(_ payload: [String: Any], link: ServerLink,
+      valid: () -> Bool) async throws -> Bool {
+    guard started, !stopped, valid(), let projection = peerChatProjection,
+      AgentScopedMemberRecall.acceptsResponse(payload) else { return false }
+    try refreshDirectPeerBindings()
+    let matches = projection.currentDestinations().filter {
+      $0.desktop && $0.peer.remoteSignalName == link.desktopId && $0.routes == link.routes &&
+        !revokingScopes.contains($0.peer.binding.scope)
+    }
+    guard matches.count == 1, let target = matches.first,
+      payload.string("client_route_id") == target.routeId else { return false }
+    var response = payload
+    response["message_id"] = UUID().uuidString
+    let request = try MqttSignalSendRequest(identity: MqttBusinessIdentity(target.peer.binding), payload: response,
+      remoteName: link.desktopId, topic: target.peer.binding.sendTopic, clientRouteID: target.routeId,
+      traffic: .control, contactID: payload.string("contact_id"))
+    let wire = try routes.withOutgoing(identity: request.identity, topics: [request.topic]) {
+      try engine.makeScopedMemberRecallResultWire(request)
+    }
+    guard valid(), !stopped else { return false }
+    return await routes.publishTransientControl(topic: request.topic, wire: wire, secret: target.peer.binding.secret).accepted
+  }
+
   private func desktopBlobDestination(_ attachment: AgentPreparedOutboundAttachment) throws -> MqttPeerChatProjection.Destination {
     guard started, !stopped, let projection = peerChatProjection else { throw MqttDeliveryDispatch.Failure.unavailable }
     try refreshDirectPeerBindings()
@@ -1132,6 +1155,11 @@ final class MqttBusinessTransportRuntime {
     guard let target = try projection.currentDestination(item.identity),
           payload["message_id"] as? String == item.messageID else { throw MqttRouteError.identityChanged }
     let type = payload.string("type")
+    if AgentScopedMemberRecall.handles(payload) {
+      guard target.desktop, let receive = desktopConnector?.receiveScopedMemberRecall else { throw MqttRouteError.identityChanged }
+      try await receive(payload, target)
+      return
+    }
     if target.desktop, privateReports.handlesAdmission(payload) {
       privateReports.receiveAdmission(payload, desktop: target.peer.remoteSignalName, route: target.routeId)
       return
