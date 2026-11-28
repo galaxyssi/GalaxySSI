@@ -200,10 +200,10 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 4) {
         Text(original.name).font(.body.weight(.semibold)).lineLimit(2)
-        Text(metadata).font(.caption).foregroundColor(.secondary)
+        Text(metadata).font(.caption).foregroundColor(RecentFileInk.metadata)
           .fixedSize(horizontal: false, vertical: true)
         Text(status).font(.caption.weight(.semibold))
-          .foregroundColor(item.status == .linked ? .green : .orange)
+          .foregroundColor(item.status == .linked ? RecentFileInk.linked : RecentFileInk.warning)
           .fixedSize(horizontal: false, vertical: true)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -221,6 +221,20 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
     return formatter.string(from: date)
+  }
+
+  private enum RecentFileInk {
+    static let linked = adaptive(light: 0x1E6444, dark: 0xA0DEBE)
+    static let warning = adaptive(light: 0x934D1A, dark: 0xF2B98F)
+    static let metadata = adaptive(light: 0x626A65, dark: 0xB5BDB9)
+
+    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+      Color(uiColor: UIColor { traits in
+        let rgb = traits.userInterfaceStyle == .dark ? dark : light
+        return UIColor(red: CGFloat((rgb >> 16) & 0xff) / 255,
+          green: CGFloat((rgb >> 8) & 0xff) / 255, blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
+      })
+    }
   }
 
   private func heading(_ text: String, size: Font = .headline) -> some View {
