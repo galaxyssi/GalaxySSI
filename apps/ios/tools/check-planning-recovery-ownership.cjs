@@ -1,0 +1,79 @@
+// Source contracts only; no Swift, model, native effects or callback/concurrency execution.
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
+const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '6319374fad67af385cde7846e3454fc91157e381';
+const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
+const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+function show(ref, f) {
+  const key = ref + ':' + f;
+  if (!memo.has(key)) memo.set(key, clean(cp.execFileSync('git', ['show', key], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})));
+  return memo.get(key);
+}
+function once(s, from, to = '') { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
+function section(s, first, last) {
+  assert.equal(s.split(first).length, 2, first);
+  const a = s.indexOf(first), b = s.indexOf(last, a + first.length);
+  assert(b > a, last); return s.slice(a, b);
+}
+function retainedServices(s) {
+  if (!s.includes('  private func planningRecoveryIsCurrent(')) return s;
+  const first = '  private func planningRecoveryIsCurrent(', last = '  func resumePendingAgentDelivery() {';
+  const block = section(s, first, last);
+  assert.equal(block, section(show(approved, file), first, last), 'Exact recovery-attempt input/callback ownership only');
+  return once(s, block, section(show(base, file), '  @discardableResult\n  func recoverInterruptedInitialPlanning()', last));
+}
+module.exports = {retainedServices};
+if (require.main === module) {
+  const services = read(file); let unchanged = retainedServices(services);
+  for (const [name, method] of [['check-parallel-native-dispatch-ownership', 'retainedServices'],
+    ['check-native-recovery-query-ownership', 'retainedServices'], ['check-native-observation-expiry-scope', 'retainedServices'],
+    ['check-observation-job-lifecycle-scope', 'retainedServices'], ['check-unplanned-native-dispatch', 'retainedUnplannedDispatchServices'],
+    ['check-browser-view-ownership', 'retainedBrowserServices'], ['check-pairing-history', 'retainedPairingServices']]) {
+    const optional = path.join(__dirname, name + '.cjs');
+    if (fs.existsSync(optional)) unchanged = require(optional)[method](unchanged);
+  }
+  assert.equal(unchanged, show(base, file), 'All other coordinator, provider selection and dispatch policy retained');
+  const recovery = section(services, '  private func planningRecoveryIsCurrent(', '  func resumePendingAgentDelivery() {');
+  assert.equal((recovery.match(/planningRecoveryIsCurrent\(scope\)/g) || []).length, 8);
+  assert.equal((recovery.match(/scope.acceptsInput\(input\)/g) || []).length, 2);
+  assert.equal((recovery.match(/recoveryProfile == store.profile.identityFingerprint/g) || []).length, 2);
+  const initial = section(recovery, '  func recoverInterruptedInitialPlanning()', '  private func recoverInterruptedReplanning()');
+  const replan = recovery.slice(recovery.indexOf('  private func recoverInterruptedReplanning()'));
+  for (const block of [initial, replan]) {
+    assert(block.indexOf('scope.acceptsInput(input)') < block.indexOf('self.modelPlannedLocalNativeActions('));
+    const caught = block.slice(block.indexOf('      } catch {'));
+    assert(caught.indexOf('planningRecoveryIsCurrent(scope)') < caught.indexOf('task.phase = .paused'));
+    assert(block.includes('guard planningRecoveryIsCurrent(scope), var task = store.agentTask(id: candidate.taskId)'));
+  }
+  const helperFile = app + 'AgentPlanningRecoveryScope.swift', helper = read(helperFile);
+  assert.equal(helper, show(approved, helperFile));
+  for (const token of ['task.phase == .planning, !task.blocked', 'reference.sessionId == task.sessionId',
+    'reference.turnId == task.taskId', 'task.activePlan?.revision == reference.baseRevision',
+    'input.conversation.privateMode == privateMode && !input.conversation.trackingPaused',
+    '!cancelled, profile == self.profile, task == self.task', 'conversation.status == .active',
+    '!conversation.trackingPaused, conversation.mergedIntoConversationId.isBlank',
+    'conversation.sessionRequirement == sessionRequirement', 'source.richOutputJson == self.source.richOutputJson',
+    'source.voiceTranscript == self.source.voiceTranscript']) assert(helper.includes(token), token);
+  assert(!/FileManager|UserDefaults|URLSession|\.execute\(|\.publish\(|\.claim\(|\.remove\(|grantedPermissions/.test(helper));
+  const mutations = [recovery.replace('self.planningRecoveryIsCurrent(scope), scope.acceptsInput(input)', 'scope.acceptsInput(input)'),
+    recovery.replace('self.planningRecoveryIsCurrent(scope), scope.acceptsInput(input)', 'self.planningRecoveryIsCurrent(scope)'),
+    recovery.replace('guard planningRecoveryIsCurrent(scope), var task', 'guard var task'),
+    recovery.replace('      } catch {\n        guard planningRecoveryIsCurrent(scope), var task', '      } catch {\n        guard var task'),
+    recovery.replace('recoveryProfile == store.profile.identityFingerprint', 'true'),
+    recovery.replace('store.canReadAgentTranscript && ', ''),
+    recovery.replace('Task.isCancelled || PhoneExecutionAuthority.isCancelled(taskId: scope.task.taskId)', 'false'),
+    recovery.replace('source: store.persistedMessage(id: scope.source.id, contactId: scope.source.contactId)', 'source: scope.source')];
+  for (const mutation of mutations) {
+    assert.notEqual(mutation, recovery); assert.throws(() => retainedServices(services.replace(recovery, mutation)), assert.AssertionError);
+  }
+  for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
+    assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
+  const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 8);
+  assert(!/\p{Script=Han}/u.test(helper + tests));
+  const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
+  const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
+  assert.equal(registrations(read(projectFile)).length, 8);
+  assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
+  console.log('Two real recovery paths, eight live ownership fences, input privacy, stale error rejection, eight negative mutations and eight authored fixtures checked; no native execution.');
+}
