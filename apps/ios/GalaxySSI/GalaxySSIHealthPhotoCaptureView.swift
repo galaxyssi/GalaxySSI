@@ -10,6 +10,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     let mode: GalaxySSIHealthPhotoDraft.Mode
     let replacement: UUID?
     let acquisition: GalaxySSIHealthOriginalStore.Acquisition
+    let retainOriginal: Bool
   }
 
   let records: GalaxySSIHealthRecords
@@ -31,20 +32,30 @@ struct GalaxySSIHealthPhotoCaptureView: View {
   @State private var failed = false
   @State private var loaded = false
   @State private var initialCameraStarted = false
+  @State private var retentionDefault: Bool?
+  @State private var retentionChoice = GalaxySSIHealthImportRetentionChoice.useDefault
 
   var body: some View {
     List {
       if scene == .active {
         Section(t("collection", "Photo collection")) {
+          if let draft {
+            Text(draft.keepsOriginals ? t("retention_keep", "Keep originals for this collection")
+                                     : t("retention_review", "Keep photos only while needed for review"))
+              .font(.subheadline).foregroundColor(.secondary)
+          } else {
+            GalaxySSIHealthImportRetentionPicker(currentDefault: retentionDefault, choice: $retentionChoice)
+              .disabled(staging)
+          }
           Picker(t("mode", "Capture mode"), selection: $mode) {
             Text(t("report", "Report")).tag(GalaxySSIHealthPhotoDraft.Mode.report)
             Text(t("device", "Device reading")).tag(GalaxySSIHealthPhotoDraft.Mode.device)
           }.disabled(draft != nil || staging)
           Button { start(.camera) } label: {
-            Label(t("take", "Take and keep photo"), systemImage: "camera")
+            Label(t("take", "Take photo"), systemImage: "camera")
           }.disabled(!canAdd)
           Button { start(.uploaded) } label: {
-            Label(t("album", "Choose and keep photo"), systemImage: "photo.on.rectangle")
+            Label(t("album", "Choose photo"), systemImage: "photo.on.rectangle")
           }.disabled(!canAdd)
           if staging { ProgressView() }
         }
@@ -92,6 +103,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     .galaxySSIHealthTheme()
     .privacySensitive()
     .onAppear {
+      cleanup()
       reload()
       if initialCamera, !initialCameraStarted, canAdd {
         initialCameraStarted = true
@@ -102,7 +114,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
       if camera == nil && gallery == nil && cropOriginal == nil { clearTransient() }
     }
     .onChange(of: scene) {
-      if $0 == .active { reload() }
+      if $0 == .active { cleanup(); reload() }
       else if $0 == .background { clearTransient() }
     }
     .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in clearTransient() }
@@ -138,7 +150,8 @@ struct GalaxySSIHealthPhotoCaptureView: View {
         if let draft { edit(draft, page: nil) }
       }
     } message: {
-      Text(t("keep_originals", "Saved originals remain in Health Originals."))
+      Text(draft?.keepsOriginals != false ? t("keep_originals", "Saved originals remain in Health Originals.")
+        : t("discard_review", "Review-only photos can be removed once no longer in use. Other saved originals remain."))
     }
   }
 
@@ -180,9 +193,16 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 
   private func start(_ acquisition: GalaxySSIHealthOriginalStore.Acquisition, replacing: UUID? = nil) {
     guard scene == .active, loaded, !staging, originals.owner == records.owner else { return }
-    let request = Capture(version: draft?.version, mode: draft?.mode ?? mode, replacement: replacing,
-      acquisition: acquisition)
-    if acquisition == .camera { camera = request } else { gallery = request }
+    do {
+      let archive = try records.load()
+      guard archive.photoCaptureDraft?.version == draft?.version else { reload(); return }
+      guard let retain = archive.photoCaptureDraft?.keepsOriginals ?? retentionChoice.resolve(default: archive.keepsNewImportOriginals)
+      else { failed = true; return }
+      let request = Capture(version: draft?.version, mode: draft?.mode ?? mode, replacement: replacing,
+        acquisition: acquisition, retainOriginal: retain)
+      retentionChoice = .useDefault
+      if acquisition == .camera { camera = request } else { gallery = request }
+    } catch { failed = true }
   }
 
   private func stage(_ data: Data, request: Capture) {
@@ -200,7 +220,8 @@ struct GalaxySSIHealthPhotoCaptureView: View {
         }
         let name = "Health-Photo-" + String(UUID().uuidString.prefix(8))
         try originals.storePhotoCapturePage(data, name: name, acquisition: request.acquisition, mode: request.mode,
-          expected: request.version, replacing: request.replacement, hints: hints)
+          expected: request.version, replacing: request.replacement, hints: hints, retainOriginal: request.retainOriginal)
+        cleanup()
         reload()
       } catch {
         if !Task.isCancelled, generation == token { failed = true }
@@ -211,17 +232,24 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 
   private func edit(_ draft: GalaxySSIHealthPhotoDraft.Batch, page: UUID?, offset: Int? = nil) {
     guard scene == .active, !staging else { return }
-    do { try records.editPhotoCaptureDraft(expected: draft.version, page: page, offset: offset); reload() }
+    do { try records.editPhotoCaptureDraft(expected: draft.version, page: page, offset: offset); cleanup(); reload() }
     catch { failed = true }
   }
 
   private func reload() {
     guard scene == .active else { return }
     do {
-      draft = try records.load().photoCaptureDraft
+      let archive = try records.load()
+      draft = archive.photoCaptureDraft
+      retentionDefault = archive.keepsNewImportOriginals
       if let draft { mode = draft.mode }
       loaded = true; failed = false
-    } catch { draft = nil; loaded = false; failed = true }
+    } catch { draft = nil; retentionDefault = nil; loaded = false; failed = true }
+  }
+
+  private func cleanup() {
+    guard scene == .active, originals.owner == records.owner else { return }
+    originals.releaseUnusedPhotoOriginals()
   }
 
   private func clearTransient() {
@@ -230,6 +258,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     camera = nil; gallery = nil; cropOriginal = nil; draft = nil
     staging = false; loaded = false; confirmingDiscard = false
     submittedBatchID = nil; failed = false
+    retentionDefault = nil; retentionChoice = .useDefault
   }
 
   private func qualityHint(_ hint: GalaxySSIHealthPhotoDraft.Hint) -> String {

@@ -6939,8 +6939,11 @@
 "galaxyssi.health.photo_capture.mode" = "采集模式";
 "galaxyssi.health.photo_capture.report" = "报告";
 "galaxyssi.health.photo_capture.device" = "设备读数";
-"galaxyssi.health.photo_capture.take" = "拍摄并保留照片";
-"galaxyssi.health.photo_capture.album" = "选择并保留照片";
+"galaxyssi.health.photo_capture.take" = "拍照";
+"galaxyssi.health.photo_capture.album" = "选择照片";
+"galaxyssi.health.photo_capture.retention_keep" = "本批照片保留原件";
+"galaxyssi.health.photo_capture.retention_review" = "照片仅在审核仍需使用时暂存";
+"galaxyssi.health.photo_capture.discard_review" = "不再使用的仅供审核照片可被清理，其他已保存的原件不受影响。";
 "galaxyssi.health.photo_capture.pages" = "照片顺序";
 "galaxyssi.health.photo_capture.submit" = "将照片加入识别队列";
 "galaxyssi.health.photo_capture.discard" = "放弃照片草稿";

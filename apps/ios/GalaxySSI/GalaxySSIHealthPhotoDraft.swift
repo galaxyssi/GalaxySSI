@@ -22,7 +22,10 @@ enum GalaxySSIHealthPhotoDraft {
     var id = UUID()
     var version = UUID()
     let mode: Mode
+    var retainOriginal: Bool?
     var pages: [Entry] = []
+
+    var keepsOriginals: Bool { retainOriginal ?? true }
 
     mutating func install(_ original: GalaxySSIHealthOriginalStore.Original, hints: [Hint], replacing pageID: UUID?) throws {
       guard original.kind == .image,

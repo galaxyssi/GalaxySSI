@@ -3435,6 +3435,173 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testPhotoRetentionFreezesDefaultAcrossRetakeAndRejectsChangedChoice() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    func photo(_ color: UIColor) -> Data {
+      UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { $0.cgContext.setFillColor(color.cgColor); $0.cgContext.fill(CGRect(x: 0, y: 0, width: 8, height: 8)) }
+    }
+    let firstBytes = photo(.black), replacementBytes = photo(.white)
+    try records.setPrivacy(.importOriginals, enabled: false)
+    try store.storePhotoCapturePage(firstBytes, name: "first.png", acquisition: .camera, mode: .report,
+      expected: nil, replacing: nil, hints: [])
+    let initial = try XCTUnwrap(records.load().photoCaptureDraft), first = try XCTUnwrap(initial.pages.first)
+    XCTAssertFalse(initial.keepsOriginals)
+    XCTAssertTrue(try records.load().reviewOnlyReportOriginals?.contains(first.original.id) == true)
+    XCTAssertEqual(try records.load().photoReviewOriginals?[first.original.id], first.original)
+    try records.setPrivacy(.importOriginals, enabled: true)
+    XCTAssertThrowsError(try store.storePhotoCapturePage(replacementBytes, name: "changed.png", acquisition: .camera,
+      mode: .report, expected: initial.version, replacing: first.id, hints: [], retainOriginal: true))
+    XCTAssertEqual(try records.load().photoCaptureDraft?.version, initial.version)
+    try store.storePhotoCapturePage(replacementBytes, name: "replacement.png", acquisition: .camera, mode: .report,
+      expected: initial.version, replacing: first.id, hints: [])
+    let replaced = try XCTUnwrap(records.load().photoCaptureDraft), page = try XCTUnwrap(replaced.pages.first)
+    XCTAssertFalse(replaced.keepsOriginals)
+    XCTAssertEqual(page.id, first.id)
+    store.releaseUnusedPhotoOriginals()
+    XCTAssertThrowsError(try store.read(first.original))
+    XCTAssertEqual(try store.read(page.original), replacementBytes)
+    XCTAssertTrue(try records.load().reviewOnlyReportOriginals?.contains(page.original.id) == true)
+  }
+
+  @MainActor
+  func testPhotoRetentionCannotDemoteExistingSavedOriginalOrDeleteItOnDiscard() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in }
+    try store.store(bytes, name: "kept.png")
+    let saved = try XCTUnwrap(store.list().originals.first)
+    try records.setPrivacy(.importOriginals, enabled: false)
+    try store.storePhotoCapturePage(bytes, name: "duplicate.png", acquisition: .uploaded, mode: .device,
+      expected: nil, replacing: nil, hints: [])
+    let draft = try XCTUnwrap(records.load().photoCaptureDraft)
+    XCTAssertFalse(draft.keepsOriginals)
+    XCTAssertEqual(draft.pages.first?.original.id, saved.id)
+    XCTAssertFalse(try records.load().reviewOnlyReportOriginals?.contains(saved.id) == true)
+    XCTAssertNil(try records.load().photoReviewOriginals?[saved.id])
+    try records.editPhotoCaptureDraft(expected: draft.version, page: nil)
+    store.releaseUnusedPhotoOriginals()
+    XCTAssertEqual(try store.read(saved), bytes)
+  }
+
+  @MainActor
+  func testPhotoRetentionOrphanCleanupSurvivesReopeningAndLeavesActiveDraftUntouched() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    func open() -> GalaxySSIHealthOriginalStore { .init(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file) }
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in }
+    try records.write(.init(metric: .weight, value: 60))
+    try open().storePhotoCapturePage(bytes, name: "temporary.png", acquisition: .camera, mode: .report,
+      expected: nil, replacing: nil, hints: [], retainOriginal: false)
+    let draft = try XCTUnwrap(records.load().photoCaptureDraft), original = try XCTUnwrap(draft.pages.first?.original)
+    open().releaseUnusedPhotoOriginals()
+    XCTAssertEqual(try open().read(original), bytes)
+    try records.editPhotoCaptureDraft(expected: draft.version, page: nil)
+    let reopened = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    XCTAssertEqual(try reopened.load().photoReviewOriginals?[original.id], original)
+    open().releaseUnusedPhotoOriginals()
+    open().releaseUnusedPhotoOriginals()
+    XCTAssertThrowsError(try open().read(original))
+    XCTAssertFalse(try reopened.load().reviewOnlyReportOriginals?.contains(original.id) == true)
+    XCTAssertNil(try reopened.load().photoReviewOriginals?[original.id])
+    XCTAssertEqual(try reopened.load().current.first?.value, 60)
+  }
+
+  @MainActor
+  func testPhotoRetentionMalformedCleanupInventoryCannotDeleteAnotherSource() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in }
+    try store.storePhotoCapturePage(bytes, name: "temporary.png", acquisition: .camera, mode: .report,
+      expected: nil, replacing: nil, hints: [], retainOriginal: false)
+    let draft = try XCTUnwrap(records.load().photoCaptureDraft), original = try XCTUnwrap(draft.pages.first?.original)
+    try records.editPhotoCaptureDraft(expected: draft.version, page: nil)
+    var malformed = try records.load()
+    let foreignID = UUID()
+    malformed.photoReviewOriginals = [foreignID: original]
+    malformed.reviewOnlyReportOriginals?.insert(foreignID)
+    try records.persistPhotoCaptureDraft(malformed, expected: nil)
+    store.releaseUnusedPhotoOriginals()
+    XCTAssertEqual(try store.read(original), bytes)
+    XCTAssertEqual(try records.load().photoReviewOriginals?[foreignID], original)
+  }
+
+  @MainActor
+  func testPhotoRetentionSharedSourcesWaitForEveryReviewAndJob() throws {
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: HealthFixtureSecrets())
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "synthetic.png", kind: .image,
+      fileExtension: "png", importedAt: Date(), bytes: 10, sha256: String(repeating: "a", count: 64))
+    var archive = GalaxySSIHealthRecords.Archive()
+    XCTAssertTrue(try records.canReleaseReviewOriginal(original.id, in: archive))
+    var batch = GalaxySSIHealthPhotoDraft.Batch(mode: .report, retainOriginal: false)
+    try batch.install(original, hints: [], replacing: nil)
+    archive.photoCaptureDraft = batch
+    XCTAssertFalse(try records.canReleaseReviewOriginal(original.id, in: archive))
+    archive.photoCaptureDraft = nil
+    archive.reportReview = [.init(version: UUID(), source: .init(original: original.id, sha256: original.sha256,
+      page: 1, region: 1, fromOCR: true), excerpt: "Synthetic", reading: .init(metric: .weight, value: 60))]
+    XCTAssertFalse(try records.canReleaseReviewOriginal(original.id, in: archive))
+    archive.reportReview = nil
+    var cancelled = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
+    cancelled.phase = .cancelled
+    archive.recognitionJobs = [cancelled]
+    XCTAssertTrue(try records.canReleaseReviewOriginal(original.id, in: archive))
+    var other = GalaxySSIHealthRecognitionJobs.Job(original: original, addedAt: Date(), pageCount: 1)
+    for phase in [GalaxySSIHealthRecognitionJobs.Phase.running, .interrupted, .failed, .completed] {
+      other.phase = phase
+      archive.recognitionJobs = [cancelled, other]
+      XCTAssertFalse(try records.canReleaseReviewOriginal(original.id, in: archive))
+    }
+  }
+
+  func testPhotoRetentionLegacyBatchDecodingKeepsSavedOriginals() throws {
+    let batch = GalaxySSIHealthPhotoDraft.Batch(mode: .report)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(batch)) as? [String: Any])
+    object.removeValue(forKey: "retainOriginal")
+    let decoded = try JSONDecoder().decode(GalaxySSIHealthPhotoDraft.Batch.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertTrue(decoded.keepsOriginals)
+    XCTAssertNil(decoded.retainOriginal)
+  }
+
+  @MainActor
+  func testPhotoRetentionExplicitKeepPromotesTemporarySourceWithoutReplayingItsJob() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { _ in }
+    let job = try store.storeReportImage(bytes, name: "temporary.png", retainOriginal: false)
+    try store.storePhotoCapturePage(bytes, name: "keep.png", acquisition: .uploaded, mode: .report,
+      expected: nil, replacing: nil, hints: [], retainOriginal: true)
+    let draft = try XCTUnwrap(records.load().photoCaptureDraft)
+    XCTAssertTrue(draft.keepsOriginals)
+    XCTAssertFalse(try records.load().reviewOnlyReportOriginals?.contains(job.original.id) == true)
+    XCTAssertNil(try records.load().photoReviewOriginals?[job.original.id])
+    try records.editPhotoCaptureDraft(expected: draft.version, page: nil)
+    store.releaseUnusedPhotoOriginals()
+    XCTAssertEqual(try store.read(job.original), bytes)
+    XCTAssertEqual(try records.load().recognitionJobs?.map(\.id), [job.id])
+    XCTAssertEqual(try records.load().recognitionJobs?.first?.phase, .queued)
+  }
+
+  @MainActor
   func testHealthPhotoDraftSubmitsOnlyVerifiedPagesInFinalOrder() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
