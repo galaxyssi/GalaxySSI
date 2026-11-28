@@ -112,6 +112,19 @@ extension GalaxySSIStore {
     return updated
   }
 
+  func commitNativeAgentTaskState(expected: AgentTaskRecord, updated: AgentTaskRecord) -> AgentTaskRecord? {
+    guard updated.taskId == expected.taskId, updated.sessionId == expected.sessionId,
+          updated.taskId == updated.taskId.trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
+    let guarded = AgentOutcomeContinuation.guardCompletion(updated, previous: expected,
+      message: GalaxySSILocalization.string("galaxyssi.agent.effect_recovery.unavailable",
+        fallback: "The original outcome is still unverified. Inspect it before resuming.",
+        language: languagePolicy.interfaceLanguage))
+    guard commitOwnedAgentTaskState(expected: expected, updated: guarded) else { return nil }
+    if expected != guarded { projectLocalToolWorkspace(guarded, previous: expected, recovered: []) }
+    _ = UserDefaultsAgentSelfModelStore.shared.observe(task: guarded)
+    return guarded
+  }
+
   private func projectLocalToolWorkspace(_ task: AgentTaskRecord, previous: AgentTaskRecord?, recovered: [AgentActionResult]) {
     guard task.routeKind == .localSystem,
           task.executionLocationKind == .phone || task.executionLocationKind == .unknown,

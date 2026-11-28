@@ -13905,9 +13905,12 @@ final class MessageCoordinator: ObservableObject {
   ) async {
     guard var task = store.agentTask(id: taskId),
           task.phase == .executing,
+          task.activePlan == plan,
           let runtime = localNativeToolRuntime else {
       return
     }
+    let previous = task
+    let dispatchProfile = store.profile.identityFingerprint
     for action in actions {
       if rejectReadOnlyAnalysisAction(action, outgoing: outgoing, task: &task) { return }
     }
@@ -13940,7 +13943,18 @@ final class MessageCoordinator: ObservableObject {
     task.activePlan = journaledPlan
     task.planContext = AgentTaskPlanContext(plan: journaledPlan)
     task.updatedAtMillis = Int64(Date().timeIntervalSince1970 * 1_000)
-    store.upsertAgentTask(task)
+    guard let proposedScope = AgentParallelNativeDispatchScope(profile: dispatchProfile, task: task,
+            source: outgoing, actions: actions),
+          proposedScope.matches(profile: store.profile.identityFingerprint, task: task,
+            source: store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+            cancelled: PhoneExecutionAuthority.isCancelled(taskId: taskId)),
+          let committed = store.commitNativeAgentTaskState(expected: previous, updated: task) else { return }
+    task = committed
+    guard let dispatchScope = AgentParallelNativeDispatchScope(profile: dispatchProfile, task: task,
+      source: outgoing, actions: actions),
+      dispatchScope.matches(profile: store.profile.identityFingerprint, task: store.agentTask(id: taskId),
+        source: store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+        cancelled: PhoneExecutionAuthority.isCancelled(taskId: taskId)) else { return }
     localRecordedRunStore.recordNativeExecution(task: task, outgoing: outgoing, status: .running)
     let executionActions = actions.map { action in
       let routed = refreshAutomaticConnectorAction(action, outgoing: outgoing, goal: task.goal)
@@ -14032,8 +14046,25 @@ final class MessageCoordinator: ObservableObject {
       )
     }.value
     guard results.count == actions.count,
-          store.agentTask(id: taskId)?.phase == .executing else {
+          dispatchScope.matches(profile: store.profile.identityFingerprint, task: store.agentTask(id: taskId),
+            source: store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+            cancelled: PhoneExecutionAuthority.isCancelled(taskId: taskId)) else {
       return
+    }
+
+    func commitResults(_ projected: inout AgentTaskRecord) -> Bool {
+      guard dispatchScope.matches(profile: store.profile.identityFingerprint, task: store.agentTask(id: taskId),
+              source: store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
+              cancelled: PhoneExecutionAuthority.isCancelled(taskId: taskId)),
+            let committed = store.commitNativeAgentTaskState(expected: dispatchScope.task, updated: projected) else { return false }
+      projected = committed
+      for index in actions.indices {
+        let result = results[index]
+        AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
+        store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "local_native_tool_progress",
+          detail: actions[index].parameters["tool_id"] ?? actions[index].target, status: result.success ? .sent : .failed)
+      }
+      return true
     }
 
     var updatedPlan = journaledPlan
@@ -14047,7 +14078,6 @@ final class MessageCoordinator: ObservableObject {
         recordAutomaticConnectorTarget(executionAction, result: result, outgoing: outgoing)
       }
       rememberUnverifiedEffect(result, action: action, outgoing: outgoing, task: &task)
-      AgentIOSNativeToolHandoffPresenter.openIfNeeded(result)
       let stepReply = localizedNativeToolReply(result).ifBlank(result.message)
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .ifBlank(result.success
@@ -14081,13 +14111,6 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append(
         "Native tool \(toolId): \(result.success ? "completed" : "failed") in \(parallelMode.rawValue) batch"
       )
-      store.appendDeliveryTrace(
-        outgoing.id,
-        contactId: outgoing.contactId,
-        stage: "local_native_tool_progress",
-        detail: toolId,
-        status: result.success ? .sent : .failed
-      )
     }
     updatedPlan.validation = AgentPlanValidator.validate(updatedPlan)
     task.planContext = AgentTaskPlanContext(plan: updatedPlan)
@@ -14107,7 +14130,7 @@ final class MessageCoordinator: ObservableObject {
         fallback: "The original effect is still unverified. Its affected state could not be confirmed; nothing was repeated.")
       task.result = task.verification
       task.executionLog.append("Native batch: readback required before execution can continue")
-      store.upsertAgentTask(task)
+      guard commitResults(&task) else { return }
       localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .running)
       let plan = updatedPlan
       Task { @MainActor [weak self] in
@@ -14125,7 +14148,7 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append(
         "Native tools: \(parallelMode.rawValue) batch completed with \(failedActions.count) failure(s)"
       )
-      store.upsertAgentTask(task)
+      guard commitResults(&task) else { return }
       localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .failed)
       _ = store.appendIncoming(
         task.result,
@@ -14146,7 +14169,7 @@ final class MessageCoordinator: ObservableObject {
       task.executionLog.append(
         "Native tools: \(parallelMode.rawValue) batch completed; continuing remaining actions"
       )
-      store.upsertAgentTask(task)
+      guard commitResults(&task) else { return }
       localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .running)
       _ = applyLocalNativeActions(
         actions: task.pendingActions,
@@ -14179,7 +14202,7 @@ final class MessageCoordinator: ObservableObject {
     task.executionLog.append(rollingBatchBoundary
       ? "Rolling plan: parallel batch completed; requesting model assessment"
       : "Native tools: \(parallelMode.rawValue) batch completed")
-    task = store.upsertAgentTask(task)
+    guard commitResults(&task) else { return }
     if task.phase == .blocked, AgentOutcomeContinuation.isUnverified(task) {
       localRecordedRunStore.recordNativeExecution(observations, task: task, outgoing: outgoing, status: .running)
       store.appendDeliveryTrace(outgoing.id, contactId: outgoing.contactId, stage: "local_native_tool_failed",
