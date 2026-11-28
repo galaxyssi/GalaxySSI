@@ -60,27 +60,7 @@ enum CloudImageAnnotationSession {
     if !FileManager.default.fileExists(atPath: url.path) {
       try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
     }
-    let block = AgentRichBlock(
-      id: "annotation-\(digest)",
-      type: .image,
-      title: "Annotated image \(plan.imageIndex + 1)",
-      uri: url.absoluteString,
-      mimeType: "image/png",
-      fallbackText: "Annotated copy of \(context.images[plan.imageIndex].displayName)",
-      metadata: [
-        "local_image_annotation": "true",
-        "sha256": digest,
-        "size_bytes": String(data.count)
-      ]
-    )
-    locked {
-      var blocks = blocksByRequest[context.requestId] ?? [:]
-      blocks[plan.imageIndex] = block
-      blocksByRequest[context.requestId] = blocks
-      var rendered = renderedByRequest[context.requestId] ?? [:]
-      rendered["\(plan.imageIndex):\(digest)"] = block
-      renderedByRequest[context.requestId] = rendered
-    }
+    recordRendered(data: data, digest: digest, index: plan.imageIndex, url: url, context: context)
     return AgentMcpJSONCodec.stringify([
       "status": .string("completed"),
       "tool": .string(CloudImageAnnotationPlan.toolName),
@@ -90,6 +70,53 @@ enum CloudImageAnnotationSession {
       "image_saved": .bool(true),
       "presentation": .string("The app appends the verified image card; do not create image links.")
     ])
+  }
+
+  static func restoreResult(_ output: String, context: CloudConversationToolExecutionContext) throws {
+    let value = try CloudModelStreamJSON.mcpObject(from: output)
+    guard value["tool"] == .string(CloudImageAnnotationPlan.toolName), value["image_saved"] == .bool(true),
+      let position = value["image_index"]?.integerForSchema, position >= 0, position < context.images.count,
+      let digest = value["image_sha256"]?.strictStringValue, digest.utf8.count == 64,
+      digest.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+      throw AgentModelLoopRecoveryError(code: "cloud_tool_annotation_record_invalid")
+    }
+    let url = try outputDirectory().appendingPathComponent(digest + ".png")
+    let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+    guard let size = attributes[.size] as? NSNumber, size.int64Value > 0,
+      size.int64Value <= 12 * 1_024 * 1_024 else {
+      throw AgentModelLoopRecoveryError(code: "cloud_tool_annotation_artifact_unavailable")
+    }
+    let data = try Data(contentsOf: url)
+    guard data.count <= 12 * 1_024 * 1_024,
+      SHA256.hash(data: data).map({ String(format: "%02x", $0) }).joined() == digest else {
+      throw AgentModelLoopRecoveryError(code: "cloud_tool_annotation_artifact_changed")
+    }
+    recordRendered(data: data, digest: digest, index: Int(position), url: url, context: context)
+  }
+
+  private static func recordRendered(data: Data, digest: String, index: Int, url: URL,
+                                     context: CloudConversationToolExecutionContext) {
+    let block = AgentRichBlock(
+      id: "annotation-\(digest)",
+      type: .image,
+      title: "Annotated image \(index + 1)",
+      uri: url.absoluteString,
+      mimeType: "image/png",
+      fallbackText: "Annotated copy of \(context.images[index].displayName)",
+      metadata: [
+        "local_image_annotation": "true",
+        "sha256": digest,
+        "size_bytes": String(data.count)
+      ]
+    )
+    locked {
+      var blocks = blocksByRequest[context.requestId] ?? [:]
+      blocks[index] = block
+      blocksByRequest[context.requestId] = blocks
+      var rendered = renderedByRequest[context.requestId] ?? [:]
+      rendered["\(index):\(digest)"] = block
+      renderedByRequest[context.requestId] = rendered
+    }
   }
 
   static func artifactSuffix(requestId: String) -> String {
