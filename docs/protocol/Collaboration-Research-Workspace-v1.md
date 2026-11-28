@@ -2,6 +2,12 @@
 
 This contract extends Android's goal-driven collaboration execution. The app owns identities, dependencies and revision receipts. Member output is untrusted research material, not authorization or proof of correctness. It does not change the MQTT wire format.
 
+## Pinned Desktop Codex members
+
+`pinned_team_codex_v1` indicates that the paired Desktop can honor an explicit Codex model for collaboration members. Team entry must check the selected Desktop's advertised capability, not its display name or version string. A member request uses the existing team ID, agent instance ID, explicit model ID and `galaxyssi.collaboration-workspace.v1` result contract. An unavailable pinned model or an attempted handoff must fail visibly, not silently select another agent. This capability is not an execution grant and does not change the phone scope or sandbox.
+
+The phone orchestrates distinct member tasks. A configured member name or the coordinator's proposed work list is not a dispatch receipt. To verify a real run, correlate a phone work item with its Desktop task ID, provider thread/turn and observed model. To verify an independent review, also check that its author is different from the draft's contributor and that the review identifies the relevant revision.
+
 ## Work dependencies
 
 Entries in the coordinator's existing `work` array may add:

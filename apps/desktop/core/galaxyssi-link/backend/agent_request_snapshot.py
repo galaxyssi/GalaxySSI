@@ -46,6 +46,10 @@ def build_request_snapshot(payload: dict, *, model_id: str, reasoning_effort: st
             if key in ATTACHMENT_FIELDS and isinstance(value, (str, int, float, bool))
         })
     options["agent_invocation"] = {"model_id": model_id, "reasoning_effort": reasoning_effort}
+    # Only an explicitly pinned member restores team scope. Ordinary snapshots
+    # also store resolved defaults; those must not become pins on recovery.
+    if policy.get("pinned_codex_model"):
+        options["team_id"] = payload["team_id"]
     options["execution_mode"] = policy.get("execution_mode", options.get("execution_mode", "auto_complete"))
     options["task_budget"] = policy.get("task_budget", {})
     return snapshot_copy({"version": 1, "options": options})
@@ -56,4 +60,4 @@ def restore_request_options(snapshot: dict) -> dict:
     options = value.get("options", {})
     # Identity and security grants are deliberately not restorable options.
     return {key: item for key, item in options.items()
-            if key in OPTION_FIELDS or key in {"attachments", "agent_invocation", "task_budget"}}
+            if key in OPTION_FIELDS or key in {"attachments", "agent_invocation", "task_budget", "team_id"}}

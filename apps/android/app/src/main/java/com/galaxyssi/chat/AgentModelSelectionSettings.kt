@@ -216,10 +216,11 @@ object AgentModelSelectionSettings {
         return readSelection(preferences) { field -> key(scope, field) }
     }
 
-    internal fun initializeConversation(context: Context, conversationId: String, useRememberedSelection: Boolean) {
+    internal fun initializeConversation(context: Context, conversationId: String, useRememberedSelection: Boolean,
+        initialSelection: AgentModelSelection? = null) {
         val scope = requireConversationId(conversationId)
         val preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-        val initial = if (useRememberedSelection) defaultSelection(context) else AgentModelSelection()
+        val initial = initialSelection ?: if (useRememberedSelection) defaultSelection(context) else AgentModelSelection()
         writeSelection(preferences.edit(), { field -> key(scope, field) }, initial).apply()
     }
 

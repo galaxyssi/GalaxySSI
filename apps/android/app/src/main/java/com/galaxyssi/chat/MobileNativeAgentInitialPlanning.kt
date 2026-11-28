@@ -5,15 +5,16 @@ import android.util.Log
 
 internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlanner, planningStartedAt: Long = SystemClock.elapsedRealtime()): AgentUiState {
     var stageStartedAt = planningStartedAt
+    val pinnedGroup = (planningPlanner as? AgentSelectedNativeActionPlanner)?.pinnedDesktopGroup == true
     val healthScope = if (activeConversationContext.privateMode)
         HealthCareDiscussion.planningScope(appContext, activeConversationContext.conversationId, activeConversationTurnId)
     else null
     val planningInputs = AgentPlanningContextLoader.load(
         connectorsProvider = { connectorRegistry.planningSnapshot().let { healthScope?.connectors(it) ?: it } },
         memoriesProvider = {
-            if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
+            if (pinnedGroup || activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         },
-        knowledgeProvider = { if (healthScope == null) knowledgeStore.querySnapshot(currentGoal) else AgentKnowledgeQuerySnapshot() },
+        knowledgeProvider = { if (!pinnedGroup && healthScope == null) knowledgeStore.querySnapshot(currentGoal) else AgentKnowledgeQuerySnapshot() },
         settingsProvider = ::modelPlannerSettings,
         runtimeProvider = { planningRuntimeSnapshot().let { healthScope?.runtime(it) ?: it } }
     )
@@ -76,7 +77,7 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
         .take(5)
         .joinToString("\n") { "- ${it.title}: ${it.summary.ifBlank { it.content }.take(1_200)}" }
     val screenPrompt = if (
-        healthScope == null && planningInputs.settings.shareScreenText && currentScreen.sensitiveFlagCount == 0
+        !pinnedGroup && healthScope == null && planningInputs.settings.shareScreenText && currentScreen.sensitiveFlagCount == 0
     ) {
         buildString {
             append("App: ").append(currentScreen.foregroundApp).append('\n')
@@ -129,6 +130,9 @@ internal fun MobileNativeAgent.executeInitialPlanning(planningPlanner: AgentPlan
         reputation = reputationLedger
     )
     val safetyReview = safetyPolicy.review(draftPlan, sessionId)
+    if (pinnedGroup) check(!draftPlan.actions.singleOrNull()?.parameters?.get(AGENT_TEAM_SPEC_PARAMETER).isNullOrBlank()) {
+        "Confirmed collaboration did not compile to a team"
+    }
     logPlanningLatency("team_and_safety", stageStartedAt, planningStartedAt)
     if (activeTaskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
         val proposedPlan = draftPlan.copy(

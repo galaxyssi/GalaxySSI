@@ -404,7 +404,9 @@ internal object AgentTeamPlanCompiler {
                 requiresConfirmation = false
             )
         }
-        val teamId = AgentTeamDispatchIds.teamId(plan, memberActions)
+        val teamId = if (plan.actions.singleOrNull()?.parameters?.containsKey(PinnedDesktopTeam.PIN) == true)
+            PinnedDesktopTeam.teamId(primaryRequest.collaborationGroupId.also { require(it.isNotBlank()) })
+        else AgentTeamDispatchIds.teamId(plan, memberActions)
         val runId = AgentTeamDispatchIds.supervisorRunId(teamId)
         val definition = AgentTeamDefinition(
             teamId = teamId,
@@ -764,6 +766,7 @@ internal object AgentTeamDispatchSpecCodec {
 }
 
 internal fun AgentAction.rekeyAgentTeamForRetry(): AgentAction {
+    if (PinnedDesktopTeam.PIN in parameters) return this
     val spec = AgentTeamDispatchSpecCodec.decode(parameters[AGENT_TEAM_SPEC_PARAMETER].orEmpty())
         ?: return this
     val nextTeamId = UUID.randomUUID().toString()

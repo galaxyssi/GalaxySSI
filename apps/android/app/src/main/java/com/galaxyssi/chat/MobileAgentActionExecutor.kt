@@ -529,6 +529,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 ?: return AgentActionResult(action.id, false, "Agent team plan is invalid")
             return dispatchAgentTeam(action, spec)
         }
+        if (action.parameters["team_id"] == PinnedDesktopTeam.teamId(action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()) &&
+            PinnedDesktopTeam.PIN !in action.parameters) return rejectedDesktopTeam(action)
         val basePrompt = action.managedTeamAssignmentPrompt() ?: if (action.parameters["connector_task_mode"] in setOf(
                 PHONE_DEVELOPMENT_CONNECTOR_MODE,
                 PHONE_SUPERVISED_PROJECT_CONNECTOR_MODE
@@ -546,6 +548,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             }
         }
         val effectiveTurnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
+        val pinned = PinnedDesktopTeam.PIN in action.parameters
+        if (pinned && !PinnedDesktopTeam.sendAllowed(context, action, action.parameters["connector_id"].orEmpty()))
+            return rejectedDesktopTeam(action)
         val researchConversation = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
         val recoveryScope = AgentResearchCheckpoint.scope(researchConversation, effectiveTurnId)
         val handoff = if (recoveryScope.isNotBlank() &&
@@ -561,7 +566,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         val responseRequested = deliveryMode(preparedAction) == AgentDeliveryMode.RESPOND
         val directCaptureRequest = action.parameters["original_goal"].orEmpty().ifBlank { prompt }
         val recentUserMessages = if (
-            responseRequested &&
+            !pinned && responseRequested &&
             AgentPhonePublicHtmlAttachment.shouldUseConversationContext(directCaptureRequest)
         ) {
             action.parameters[INTERNAL_CONVERSATION_ID].orEmpty().takeIf(String::isNotBlank)
@@ -579,7 +584,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             currentRequest = directCaptureRequest,
             recentUserMessages = recentUserMessages
         )
-        val phoneHtml = if (responseRequested) {
+        val phoneHtml = if (responseRequested && !pinned) {
             AgentPhonePublicHtmlAttachment.prepareAll(
                 context = context,
                 turnId = effectiveTurnId,
@@ -662,6 +667,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 fun withHistory(input: String) = AgentConversationProjection.replace(
                     context, routedAction, input, targets.firstOrNull { it.id == connectorId })
                 when {
+                    pinned -> dispatchContactTask(routedAction, connectorId, basePrompt)
                     connectorId == "local-llm" ->
                         dispatchLocalModelTask(routedAction, withHistory(inlineEvidencePrompt))
                     connectorAliases("cloud-models").any { it == connectorId } ->
@@ -922,6 +928,16 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             )
         }
         val conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        val pin = action.parameters[PinnedDesktopTeam.PIN]
+        if (pin != null || spec.definition.teamId == PinnedDesktopTeam.teamId(conversationId)) {
+            val route = pin?.let { PinnedDesktopTeam.current(context, conversationId, it) }
+            if (route == null || !PinnedDesktopTeam.ownsSpec(CollaborationGroupStore(context).load(conversationId), spec,
+                    action.parameters[INTERNAL_TURN_ID].orEmpty(), route) ||
+                AgentTeamDurableControl(context).get(spec.supervisorRunId) != AgentTeamUserControl.RUN ||
+                action.parameters["agent_reasoning_effort"] != route.effort.wireValue ||
+                AgentTurnAttachmentRegistry.get(action.parameters[INTERNAL_TURN_ID].orEmpty()).isNotEmpty())
+                return rejectedDesktopTeam(action)
+        }
         val turnId = action.parameters[INTERNAL_TURN_ID].orEmpty().ifBlank { action.id }
         val runtime = GlobalSuperAgentRuntime.get(context)
         val existing = runtime.agentTeamSnapshot(spec.supervisorRunId)
@@ -942,6 +958,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             val primaryCapabilities = spec.definition.members
                 .first { it.agentId == spec.definition.primaryAgentId }
                 .requiredCapabilities
+            if (pin != null) {
+                requestContext.clear()
+                requestContext[PinnedDesktopTeam.PIN] = pin
+                requestContext["agent_reasoning_effort"] = action.parameters.getValue("agent_reasoning_effort")
+                requestContext[INTERNAL_TASK_EXECUTION_MODE] = action.parameters[INTERNAL_TASK_EXECUTION_MODE].orEmpty()
+                requestContext["team_action_id"] = action.id
+                requestContext["team_source_message_id"] = spec.sourceMessageId
+            }
             val request = AgentRunRequest(
                 conversationId = conversationId,
                 messageId = turnId,
@@ -1152,7 +1176,8 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             ChatHistoryStore.reserveMessageId(context)
         }
         traceDispatchStage("message_id_reserved")
-        val observed = if (PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action)) emptyList()
+        val pinned = PinnedDesktopTeam.PIN in action.parameters
+        val observed = if (pinned || PhoneAssistantTaskControl.isIndependentReadOnlyRequest(action)) emptyList()
             else observationContextStore.peek(observationTargetId, conversationId)
         traceDispatchStage("observed_context_loaded")
         val clientConversationId = AgentTaskIdentityPolicy.conversationId(
@@ -1171,7 +1196,9 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             turnId = clientTurnId
         )
         traceDispatchStage("identity_ready")
-        AgentManagedDispatchIntent.persist(context, action, messageId, contactId, clientConversationId, clientTurnId, remoteTaskId)
+        fun persistIntent() = AgentManagedDispatchIntent.persist(context, action, messageId, contactId,
+            clientConversationId, clientTurnId, remoteTaskId)
+        if (!pinned) persistIntent()
         val voiceAgentRun = if (
             messageId > 0L && VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(context)
         ) {
@@ -1200,7 +1227,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         }
         traceDispatchStage("run_bridge_ready")
         val promptAssemblyStartedAt = SystemClock.elapsedRealtime()
-        val outboundPrompt = promptWithConversationContext(
+        val outboundPrompt = if (pinned) prompt else promptWithConversationContext(
             action,
             promptWithObservedContext(prompt, observed),
             managedByDesktop = AppStore.usesPcConnectorTunnel(context, contactId)
@@ -1215,6 +1242,14 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             AgentPendingDelivery(messageId, clientConversationId, clientTurnId, remoteTaskId, contactId)
         } else null
         var dispatch = MqttPublishResult.FAILED
+        if (pinned) {
+            if (!PinnedDesktopTeam.sendAllowed(context, action, contactId)) {
+                voiceAgentRun?.snapshot?.runId?.let { VoiceAgentRunBridge.get(context).markDispatchFailed(it,
+                    context.getString(R.string.auto_goal_team_route_changed)) }
+                return rejectedDesktopTeam(action)
+            }
+            persistIntent()
+        }
         val published = AgentConnectorDispatchBinding.publish(
             delivery = pendingDelivery,
             register = { AgentPendingDeliveryStore.put(context, it) },
@@ -1330,6 +1365,12 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                         "local_outbox_full" else "local_publish_failed")
             }
         )
+    }
+
+    private fun rejectedDesktopTeam(action: AgentAction): AgentActionResult {
+        val notice = PinnedDesktopTeam.inspect(context, action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()).notice
+        return AgentActionResult(action.id, false, context.getString(notice), metadata = mapOf("non_retriable" to "true",
+            "manual_target_locked" to "true"))
     }
 
     internal fun dispatchCloudModelTask(

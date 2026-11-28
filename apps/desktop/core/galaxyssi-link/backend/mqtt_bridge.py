@@ -4597,14 +4597,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
     from agent_gateway import _command_for, all_agent_specs
-    from agent_invocation_profiles import effective_agent_invocation, requested_agent_invocation
-
-    invocation_spec = all_agent_specs().get(agent_id)
-    agent_invocation = requested_agent_invocation(
-        agent_id,
-        payload.get("agent_invocation"),
-        _command_for(invocation_spec) if invocation_spec is not None else None,
-    )
+    from agent_invocation_profiles import AgentInvocationSelection, effective_agent_invocation, requested_agent_invocation
+    from agent_execution_harness import requested_team_codex_model
     source_message_id = str(payload.get("client_message_id") or payload.get("message_id") or "")
     client_route_id = str(wire_payload.get("_client_route_id") or "")
     task_identity = _remote_task_identity(payload, client_route_id)
@@ -4666,6 +4660,25 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             return
     elif payload.get("_recovered_task") is True:
         raise RuntimeError("Recovered Agent task is no longer available")
+    contact_agent = _agent_id_from_contact(contact_id) if payload.get("contact_id") else agent_id
+    specs = all_agent_specs()
+    pinned_model = requested_team_codex_model("codex" if contact_agent == "codex" else agent_id, payload)
+    admission_error = ""
+    if pinned_model and (agent_id != "codex" or (contact_agent in specs and contact_agent != agent_id)):
+        admission_error = f"Pinned Codex model {pinned_model}: conflicting contact and agent route"
+    if existing_task is not None:
+        saved_pin = (getattr(existing_task, "execution_policy", {}) or {}).get("pinned_codex_model")
+        if saved_pin and saved_pin != pinned_model:
+            admission_error = f"Pinned Codex model {saved_pin}: recovery request does not match the admitted route"
+    invocation_spec = specs.get(agent_id)
+    try:
+        agent_invocation = requested_agent_invocation(agent_id, payload.get("agent_invocation"),
+            _command_for(invocation_spec) if invocation_spec is not None else None)
+    except ValueError as exc:
+        if not pinned_model and not admission_error:
+            raise
+        admission_error = admission_error or f"Pinned Codex model {pinned_model}: {exc}"
+        agent_invocation = AgentInvocationSelection(model_id=pinned_model)
     from agent_request_snapshot import build_request_snapshot, never_dispatched
     restart_queued_request = (
         payload.get("_recovered_task") is True and never_dispatched(existing_task)
@@ -4726,7 +4739,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     structured_connector_response = is_structured_connector_task_mode(connector_task_mode)
     active_conversation_task = None
     read_only_screen_analysis = payload.get("request_kind") == "screen_analysis"
-    if payload.get("_recovered_task") is not True and not read_only_screen_analysis:
+    if not pinned_model and payload.get("_recovered_task") is not True and not read_only_screen_analysis:
         active_conversation_task = agent_task_manager.active_for_conversation(
             backend_conversation_id,
             agent_id=agent_id,
@@ -4800,9 +4813,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             reasoning_effort=AgentReasoningEffort(turn_agent_invocation.reasoning_effort),
         )
     selected_agent_model = turn_agent_invocation.model_id
+    if pinned_model:
+        if selected_agent_model != pinned_model or invocation_spec is None:
+            admission_error = admission_error or f"Pinned Codex model {pinned_model} unavailable; substitution is disabled"
+        execution_policy = replace(execution_policy, pinned_codex_model=pinned_model)
     recovery_snapshot = build_request_snapshot(
         {**payload, "attachments": []} if private_report else payload,
-        model_id=selected_agent_model or ("gpt-5.6-sol" if agent_id == "codex" else ""),
+        model_id=pinned_model or selected_agent_model or ("gpt-5.6-sol" if agent_id == "codex" else ""),
         reasoning_effort=turn_agent_invocation.reasoning_effort,
         policy=execution_policy.public(),
     )
@@ -4823,6 +4840,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 reject_experiment("structured_text_mode_required")
             recovery_snapshot[codex_experiments.MARKER] = codex_experiment.marker
     except ExperimentBoundaryError as error:
+        admission_error = str(error)
+    if admission_error:
         # Persist and deliver rejection; an admission failure must not leave the phone waiting.
         def rejected_event(value):
             _enqueue_task_event(mqttc, wire_payload, value, trace)
@@ -4836,11 +4855,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 execution_policy=execution_policy.public(),
             )
         agent_task_manager.update(requested_task_id, "failed", on_event=rejected_event,
-            current_step="", result="", error=str(error))
+            current_step="", result="", error=admission_error)
         return
     from video_generation_policy import video_creation_requested
     programmatic_video_requested = (
-        not plan_only and not structured_connector_response and not read_only_screen_analysis
+        not pinned_model and not plan_only and not structured_connector_response and not read_only_screen_analysis
         and video_creation_requested(current_user_request)
     )
     fast_chat_delivery = (
@@ -5742,8 +5761,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     if (
         not structured_connector_response
-        and
-        clarification.mode == AgentClarificationMode.ASK_LOCALLY
+        and not pinned_model
+        and clarification.mode == AgentClarificationMode.ASK_LOCALLY
         and payload.get("_recovered_task") is not True
     ):
         clarification_reply = clarification_question(
@@ -5792,7 +5811,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         add_task_trace("desktop_task_created", created.task_id)
         return
 
-    if (agent_id == "codex" and full_desktop_executor and active_conversation_task is None
+    if (agent_id == "codex" and not pinned_model and full_desktop_executor and active_conversation_task is None
             and not programmatic_video_requested and not image_artifact_required
             and not structured_connector_response and payload.get("_recovered_task") is not True):
         from agent_worker_app_admission import dispatch_app_request
@@ -6186,7 +6205,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 event.get("result"),
                 event.get("error"),
             )
-            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
+            if event_status == "completed" and not pinned_model and not parallel_codex_task and codex_experiment is None:
                 from agent_conversation_sessions import agent_conversation_sessions
 
                 sessions = agent_conversation_sessions()
@@ -6200,6 +6219,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 event_result = parsed_recovery.visible_reply
                 decision = parsed_recovery.decision
+                if pinned_model and decision and decision.action == ModelRecoveryAction.SWITCH_AGENT:
+                    event_status = "failed"
+                    event_result = event["error"] = f"Pinned Codex model {pinned_model}: recovery agent handoff refused"
+                    decision = None
                 if (
                     decision is not None
                     and decision.action in {
@@ -6481,7 +6504,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         "This run did not produce a valid answer to your latest request."
                     )
                     event["error"] = response_review.diagnostic
-            if event_status == "completed" and not parallel_codex_task and codex_experiment is None:
+            if event_status == "completed" and not pinned_model and not parallel_codex_task and codex_experiment is None:
                 completed_task = agent_task_manager.get(task_id)
                 mark_conversation_synced("codex", completed_task)
             if event_status == "running" and visible_progress is not None:
@@ -6624,7 +6647,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 sessions = agent_conversation_sessions()
                 session_binding = (
                     None
-                    if plan_only or read_only_screen_analysis or codex_experiment is not None
+                    if pinned_model or plan_only or read_only_screen_analysis or codex_experiment is not None
                     else sessions.get("codex", codex_conversation_id)
                 )
                 restored_context_paths: list[Path] = []
@@ -6808,7 +6831,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         current_step="Preparing task",
                     )
                 fast_result = None
-                if not plan_only and not read_only_screen_analysis and input_paths:
+                if not pinned_model and not plan_only and not read_only_screen_analysis and input_paths:
                     add_task_trace("desktop_file_tool_checked", f"inputs={len(input_paths)}")
                     try:
                         fast_result = try_execute_explicit_file_task(
@@ -6853,10 +6876,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
                     )
-                    if not parallel_codex_task and codex_experiment is None:
+                    if not pinned_model and not parallel_codex_task and codex_experiment is None:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
-                    if codex_experiment is not None or planner_session:
+                    if pinned_model or codex_experiment is not None or planner_session:
                         raise  # Never fork or steer a different goal when its scoped thread is busy.
                     busy_task = agent_task_manager.get(busy.active_task_id)
                     busy_decision = (
@@ -6913,6 +6936,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 add_task_trace("codex_turn_submitted", task.task_id)
             except Exception as exc:
                 error = str(exc)[:500]
+                if pinned_model:
+                    error = f"Pinned Codex model {pinned_model} unavailable: {error}"[:500]
                 add_task_trace("codex_runtime_failed", error, meaningful_progress=True)
                 codex_mutations.update(
                     task.task_id, "failed", on_event=publish_event,
@@ -8370,8 +8395,11 @@ def mobile_connector_agents(
         if isinstance(agent.get("invocation_profile"), dict):
             entry["invocation_profile"] = dict(agent["invocation_profile"])
         if agent_id == "codex":
+            from agent_execution_harness import PINNED_TEAM_CODEX_CAPABILITY
             from codex_phone_policy import HEALTH_REPORT_FEATURE
             entry[HEALTH_REPORT_FEATURE] = True
+            capabilities = [*capabilities, PINNED_TEAM_CODEX_CAPABILITY]
+            entry["capabilities"] = [PINNED_TEAM_CODEX_CAPABILITY]
         if detailed:
             entry.update({
                 "adapter": agent.get("adapter") or {},

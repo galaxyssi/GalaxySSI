@@ -36,7 +36,8 @@ internal data class CollaborationGroup(
     val members: List<CollaborationMember> = emptyList(),
     val coordinatorId: String = members.firstOrNull()?.id.orEmpty(),
     val revision: Long = 0,
-    val workflow: CollaborationWorkflow = CollaborationWorkflow.AUTO
+    val workflow: CollaborationWorkflow = CollaborationWorkflow.AUTO,
+    val confirmedDesktopTurn: String = ""
 ) {
     fun validate(): CollaborationGroup {
         require(conversationId.isNotBlank())
@@ -104,6 +105,7 @@ internal object CollaborationGroupCodec {
         .put("coordinator_id", group.coordinatorId)
         .put("revision", group.revision)
         .put("workflow", group.workflow.name)
+        .apply { if (group.confirmedDesktopTurn.isNotBlank()) put("confirmed_desktop_turn", group.confirmedDesktopTurn) }
         .put("members", JSONArray().apply {
             group.members.forEach { member -> put(JSONObject()
                 .put("id", member.id).put("name", member.name).put("agent_id", member.agentId)
@@ -121,6 +123,7 @@ internal object CollaborationGroupCodec {
             conversationId = json.getString("conversation_id"),
             coordinatorId = json.getString("coordinator_id"),
             revision = json.optLong("revision"),
+            confirmedDesktopTurn = json.optString("confirmed_desktop_turn"),
             workflow = runCatching { CollaborationWorkflow.valueOf(json.optString("workflow")) }.getOrDefault(CollaborationWorkflow.AUTO),
             members = (0 until array.length()).map { index ->
                 val member = array.getJSONObject(index)
