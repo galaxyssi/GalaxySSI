@@ -15,6 +15,34 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retained(file, source) {
+  if (file.endsWith('/GalaxySSILinkReliability.swift')) {
+    if (!source.includes('pinnedDesktopRunID')) return source;
+    if (source.includes('AgentLearningOutboxScope')) {
+      // Preserve the separately owned learning scope, including both adjacent optional arguments.
+      const bridges = [
+        ['    fileReadScope: String? = nil,\n    learningScope: AgentLearningOutboxScope? = nil,\n    pinnedDesktopRunID: String? = nil',
+          '    fileReadScope: String? = nil,\n    pinnedDesktopRunID: String? = nil',
+          '    fileReadScope: String? = nil\n', '    fileReadScope: String? = nil,\n    learningScope: AgentLearningOutboxScope? = nil\n'],
+        ['    backgroundLearning: Bool = false,\n    learningScope: AgentLearningOutboxScope? = nil,\n    pinnedDesktopRunID: String? = nil,',
+          '    backgroundLearning: Bool = false,\n    pinnedDesktopRunID: String? = nil,',
+          '    backgroundLearning: Bool = false,\n    now: Date', '    backgroundLearning: Bool = false,\n    learningScope: AgentLearningOutboxScope? = nil,\n    now: Date'],
+        ['          backgroundLearning: backgroundLearning,\n          learningScope: learningScope,\n          pinnedDesktopRunID: pinnedDesktopRunID',
+          '          backgroundLearning: backgroundLearning,\n          pinnedDesktopRunID: pinnedDesktopRunID',
+          '          backgroundLearning: backgroundLearning\n', '          backgroundLearning: backgroundLearning,\n          learningScope: learningScope\n'],
+        ['          attachmentDeclaration: request.attachmentDeclaration,\n          learningScope: request.learningScope,\n          pinnedDesktopRunID: request.pinnedDesktopRunID',
+          '          attachmentDeclaration: request.attachmentDeclaration,\n          pinnedDesktopRunID: request.pinnedDesktopRunID',
+          '          attachmentDeclaration: request.attachmentDeclaration\n', '          attachmentDeclaration: request.attachmentDeclaration,\n          learningScope: request.learningScope\n']
+      ];
+      for (const [from, to] of bridges) source = once(source, from, to);
+      source = retainedExact(file, source);
+      for (const [, , from, to] of bridges) source = once(source, from, to);
+      return source;
+    }
+  }
+  if (file.endsWith('/GalaxySSIServices+Outbox.swift') && !source.includes('pinnedDesktopOutboxAllowed')) return source;
+  return retainedExact(file, source);
+}
+function retainedExact(file, source) {
   const patch = git(['diff', '--no-ext-diff', '--no-color', '--unified=3', base, approved, '--', file]);
   let old = [], current = [], active = false;
   function flush() {
@@ -77,6 +105,8 @@ if (require.main === module) {
       'return try managedBrowserContinuations.control(scope: scope) == .run',
       'savedTeam.pinnedDesktop = store.agentSession', 'pinnedDesktopRunID: desktopPin.map']],
     ['AgentTeamExecutionHistoryStore', ['current.pinnedDesktop == incoming.pinnedDesktop']],
+    ['GalaxySSILinkReliability', ['self.pinnedDesktopRunID = pinnedDesktopRunID', 'case pinnedDesktopRunID = "pinned_desktop_run_id"',
+      'pinnedDesktopRunID: request.pinnedDesktopRunID']],
     ['MqttBusinessSendDrain', ['direct.applicationAuthorization =', 'saved.wireHash == message.contentHash', 'return (try? await authorize(saved)) == true']],
     ['MqttDesktopConnectorProjection', ['payload.string(AgentPinnedDesktopTeam.pinKey) == pin.route.digest',
       'payload.string(AgentPinnedDesktopTeam.personKey) == team.memberId',
