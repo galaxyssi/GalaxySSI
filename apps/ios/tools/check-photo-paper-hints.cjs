@@ -1,7 +1,7 @@
 // Source contracts only. No Swift, Vision, encrypted storage or native UI execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'dfff021a8';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '6eaffcd5b';
 const draft = app + 'GalaxySSIHealthPhotoDraft.swift', capture = app + 'GalaxySSIHealthPhotoCaptureView.swift';
 const store = app + 'GalaxySSIHealthOriginalStore.swift', crop = app + 'GalaxySSIHealthReportCrop.swift';
 const fixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthPhotoPaperHintTests.swift';
@@ -44,7 +44,8 @@ function retained(file, source) {
       ['store: originals, bounds: page.validatedPaper?.bounds)', 'store: originals)'],
       ['        if let paper = page.validatedPaper {\n          Text(paper.bounds != nil ? t("edges_found", "Paper edges found") : t("edges_unclear", "Paper edges are unclear; check the original"))\n            .font(.caption).foregroundColor(.secondary)\n        }\n', ''],
       ['        } label: {\n          Label(page.validatedPaper?.bounds != nil ? t("suggested_crop", "Review suggested crop") : t("crop", "Crop page"), systemImage: "crop")\n        }', '        } label: { Label(t("crop", "Crop page"), systemImage: "crop") }'],
-      ['GalaxySSIHealthPhotoDraft.inspectCapture(data, mode: request.mode)', 'GalaxySSIHealthPhotoDraft.inspect(data)'],
+      ['      let inspector = Task.detached(priority: .userInitiated) { [mode = request.mode] in\n        try GalaxySSIHealthPhotoDraft.inspectCapture(data, mode: mode)\n      }',
+        '      let inspector = Task.detached(priority: .userInitiated) { try GalaxySSIHealthPhotoDraft.inspect(data) }'],
       ['let inspection = try await withTaskCancellationHandler', 'let hints = try await withTaskCancellationHandler'],
       ['paper: inspection.paper, hints: inspection.hints', 'hints: hints']
     ];
@@ -93,6 +94,7 @@ if (require.main === module) {
     [capture, 'bounds.minX * width, y: bounds.minY * height', 'bounds.minX * 52, y: bounds.minY * 52'],
     [capture, 'min(geometry.size.width / CGFloat(image.width), geometry.size.height / CGFloat(image.height))', '1.0'],
     [capture, 'paper: inspection.paper, hints: inspection.hints', 'paper: nil, hints: inspection.hints'],
+    [capture, '[mode = request.mode] in', '[request] in'],
     [crop, 'initialPaper.sha256 == item.sha256', 'true'],
     [crop, 'item.id == initialOriginalID, let initialPaper', 'let initialPaper'],
     [crop, 'if !modified, let bounds = initialPaper.bounds', 'if let bounds = initialPaper.bounds'],

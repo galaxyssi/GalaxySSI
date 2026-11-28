@@ -37,7 +37,7 @@ encrypted page reload and failed foreign-hint commit, device inspection exclusio
 Four Xcode test registrations; the large existing health fixture file is unchanged.
 
 `check-photo-paper-hints.cjs` pins the exact new hooks, three localized resources,
-registration and 18 negative source mutations. It removes only owned hooks and
+registration and 19 negative source mutations. It removes only owned hooks and
 composes with the photo-retention guard if present, preserving all prior crop
 encoding, detection, persistence, retention and owner/version checks. Source checks
 do not compile Swift or run these scenarios.
