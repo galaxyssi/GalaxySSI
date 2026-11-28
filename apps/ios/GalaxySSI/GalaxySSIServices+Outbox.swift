@@ -135,6 +135,7 @@ extension MessageCoordinator {
         _ = deliveryStore.discardClientSourceMessage(item.clientSourceMessageId)
         continue
       }
+      if pinnedDesktopOutboxAllowed(item) == false { continue }
       guard learningOutboxEligibility()(item) else { continue }
       if activeMessageIds.contains(item.messageId) || !deliveryStore.containsOutboxMessage(item.messageId) {
         continue
@@ -210,7 +211,10 @@ extension MessageCoordinator {
       let result = await mqttClient.publishDurable(
         topic: item.topic,
         payload: Data(item.wirePayload.utf8),
-        messageId: item.messageId
+        messageId: item.messageId,
+        applicationAuthorization: item.pinnedDesktopRunID == nil ? nil : { [weak self, item] in
+          await self?.pinnedDesktopOutboxAllowed(item) == true
+        }
       ) { [weak self] persisted in
         Task { @MainActor [weak self] in
           guard let self else {

@@ -37,7 +37,7 @@ actor MqttBusinessSendDrain {
 
   func drain(identities: [MqttBusinessIdentity], validatedNetwork: Bool, limit: Int = 16,
              interactiveFinal: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in false },
-             authorize: @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in true }) async throws -> Result {
+             authorize: @escaping @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool = { _ in true }) async throws -> Result {
     guard (1...64).contains(limit), identities.count <= 10_000,
           Set(identities.map(\.scope)).count == identities.count else { throw MqttRouteError.invalidPayload }
     try identities.forEach { try $0.validate() }
@@ -114,6 +114,11 @@ actor MqttBusinessSendDrain {
               guard var direct = try routes.prepareDelivery(topic: topic, wire: wire, messageID: message.messageID,
                 traffic: traffic) else { return nil }
               direct.interactiveFinal = interactive
+              direct.applicationAuthorization = { [outbox] in
+                guard let saved = try? outbox.entry(identity: identity, messageID: message.messageID),
+                  saved.isPrepared, saved.wireHash == message.contentHash else { return false }
+                return (try? await authorize(saved)) == true
+              }
               prepared = .direct(direct)
             }
             if case .direct = prepared {
@@ -129,7 +134,7 @@ actor MqttBusinessSendDrain {
             submitted = true
           case .fragments(let message, let batch):
             submitted = try await publishFragments(topic: topic, storedTopic: item.message.topic,
-              identity: identity, message: message, batch: batch)
+              identity: identity, message: message, batch: batch, authorize: authorize)
             if submitted {
               try routes.withOutgoing(identity: identity, topics: [topic]) {
                 try outbox.updateRetry(identity: identity, messageID: message.messageID, published: false, now: now())
@@ -150,7 +155,8 @@ actor MqttBusinessSendDrain {
   }
 
   private func publishFragments(topic: String, storedTopic: String, identity: MqttBusinessIdentity, message: MqttDeliveryEnvelope.Message,
-                                batch: MqttOutgoingChunks.Batch) async throws -> Bool {
+                                batch: MqttOutgoingChunks.Batch,
+                                authorize: @escaping @Sendable (MqttBusinessOutbox.Entry) async throws -> Bool) async throws -> Bool {
     var submitted = false
     let query = batch.query
     for selection in batch.selected {
@@ -160,6 +166,11 @@ actor MqttBusinessSendDrain {
       if routes.chunkPending(identity: identity, query: query, index: index) { continue }
       let broker = try await routes.publishChunk(topic: topic, identity: identity, message: message,
         query: query, selection: selection, attempted: batch.attempted(index: index),
+        applicationAuthorization: { [outbox] in
+          guard let saved = try? outbox.entry(identity: identity, messageID: message.messageID),
+            saved.isPrepared, saved.wireHash == message.contentHash else { return false }
+          return (try? await authorize(saved)) == true
+        },
         isPending: { [outbox, chunks] in
           guard let entry = try outbox.entry(identity: identity, messageID: message.messageID),
                 entry.isPrepared, entry.wireHash == message.contentHash, entry.message.topic == storedTopic else { return false }

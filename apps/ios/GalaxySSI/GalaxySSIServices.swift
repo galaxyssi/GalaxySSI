@@ -3162,9 +3162,57 @@ final class MessageCoordinator: ObservableObject {
       : AgentDesktopReplyBinding.teamObserver(owner: context.owner, desktopId: target.peer.remoteSignalName,
           agentId: contact.connectorAgentId, identity: identity)
     guard let binding, try checkedTeamObserverRecovery(binding) != nil else { return nil }
+    if context.team.pinnedDesktop != nil || roster.pinnedDesktop != nil {
+      guard try pinnedDesktopQueuedSendIsCurrent(context, source: message, contact: contact,
+        identity: identity, routes: target.routes) else { return nil }
+    }
     return .init(message: message, team: context.owner, teamID: context.team.teamId,
       maySend: (!context.team.state.isTerminal || context.team.state == .interrupted) &&
-        (!context.member.status.isTerminal || context.member.status == .interrupted))
+        (!context.member.status.isTerminal || context.member.status == .interrupted), pinnedDesktop: context.team.pinnedDesktop)
+  }
+
+  private func pinnedDesktopQueuedSendIsCurrent(_ context: AgentTeamReplyRecoveryContext, source: ChatMessage,
+      contact: GalaxySSIContact, identity: AgentTaskIdentity, routes: GalaxySSILinkRoutes) throws -> Bool {
+    guard UIApplication.shared.isProtectedDataAvailable, let pin = context.team.pinnedDesktop,
+      let roster = store.agentSession(id: pin.conversation)?.collaborationRoster, roster.pinnedDesktop == pin,
+      AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()),
+      context.team.teamId == pin.teamID, context.team.taskId == pin.turn, context.team.conversationId == pin.conversation,
+      context.team.supervisorRunId == AgentTeamDispatchIds.supervisorRunId(teamId: pin.teamID),
+      context.team.primaryMemberId == pin.coordinator.uuidString.lowercased(),
+      source.isMine, !source.isSystem, source.content == pin.objective, !source.readOnlyAnalysis,
+      source.conversationId == pin.conversation, source.turnId == pin.turn,
+      identity.conversationId == pin.conversation, identity.turnId == pin.turn,
+      identity.taskId == context.owner.sourceMessageId, identity.clientRouteId == pin.route.clientRoute,
+      contact.id == pin.route.target, routes.clientRouteId == pin.route.clientRoute,
+      routes.remoteFingerprint.caseInsensitiveCompare(pin.route.fingerprint) == .orderedSame,
+      context.team.members.count == 2, Set(context.team.members.map(\.memberId)) == Set(roster.members.map { $0.id.uuidString.lowercased() }),
+      roster.members.contains(where: { $0.id.uuidString.lowercased() == context.owner.memberId && $0.resourceId == contact.id }),
+      (!context.team.state.isTerminal || context.team.state == .interrupted),
+      (!context.member.status.isTerminal || context.member.status == .interrupted),
+      context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted else { return false }
+    let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: pin.owner, team: context.team,
+      hostContextDigest: managedBrowserContextDigest(context.team))
+    return try managedBrowserContinuations.control(scope: scope) == .run
+  }
+
+  func pinnedDesktopOutboxAllowed(_ item: PendingLinkMessage) -> Bool? {
+    guard let runID = item.pinnedDesktopRunID else {
+      if let identity = taskIdentityStore.identity(contactId: item.contactId, sourceMessageId: item.clientSourceMessageId),
+        store.agentSession(id: identity.conversationId)?.collaborationRoster?.pinnedDesktop != nil { return false }
+      return nil
+    }
+    guard usesLegacyMqtt, let identity = taskIdentityStore.identity(contactId: item.contactId, sourceMessageId: item.clientSourceMessageId),
+      let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: item.clientSourceMessageId,
+        conversation: identity.conversationId, turn: identity.turnId, contact: item.contactId),
+      context.team.supervisorRunId == runID, let source = originalTeamPrimarySource(context.team),
+      let contact = store.contact(id: item.contactId),
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
+      link.routes.upTopic == item.topic,
+      deliveryStore.containsOutboxMessage(item.messageId),
+      item.attachmentTransferId.isEmpty, item.blockedByAttachmentTransferIds.isEmpty,
+      item.deferredTaskPayload == nil else { return false }
+    return (try? pinnedDesktopQueuedSendIsCurrent(context, source: source, contact: contact,
+      identity: identity, routes: link.routes)) == true
   }
 
   func recordJournalTeamAttachmentFailure(_ owner: AgentTeamReplyOwner) throws {
@@ -9906,6 +9954,7 @@ final class MessageCoordinator: ObservableObject {
         researchStage: $0.context["_galaxyssi_research_stage"]) },
       createdAtMillis: teamCreatedAt, updatedAtMillis: teamCreatedAt,
       primaryInstanceId: spec.definition.primaryMemberId)
+    savedTeam.pinnedDesktop = store.agentSession(id: outgoing.conversationId)?.collaborationRoster?.pinnedDesktop
     if isCollaboration {
       let roster = store.agentSession(id: outgoing.conversationId)?.collaborationRoster
       for (index, member) in ordered.enumerated() {
@@ -18440,8 +18489,13 @@ final class MessageCoordinator: ObservableObject {
       wirePayload: wire.wireText,
       requiresValidatedNetwork: requiresValidatedNetwork,
       clientSourceMessageId: sourceMessageId,
-      contactId: contact.id
+      contactId: contact.id,
+      pinnedDesktopRunID: desktopPin.map { AgentTeamDispatchIds.supervisorRunId(teamId: $0.teamID) }
     )
+    if desktopPin != nil {
+      scheduleOutboxFlush(after: 0)
+      return .queued
+    }
     if requiresValidatedNetwork {
       store.appendDeliveryTrace(
         outgoing.id,

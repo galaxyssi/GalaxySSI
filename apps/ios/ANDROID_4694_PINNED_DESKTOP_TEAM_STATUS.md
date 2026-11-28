@@ -69,11 +69,45 @@ managed continuation and source-message identities remain in use. A second
 ordinary send cannot restart the confirmed turn under a fresh identity. This
 does not deploy the required Desktop implementation.
 
-Still unverified/unported: late revocation of an already queued encrypted MQTT
-publication, cross-process/device recovery acceptance, dynamically recruited
+Still unverified/unported: cross-process/device recovery acceptance, dynamically recruited
 pinned teams, and live provider refusal/handoff behavior. Those are not inferred
 from source contracts. The group deliberately fails closed on roster expansion
 until a reviewed pinned-recruitment flow exists. No full #4694 parity claim.
+
+## Durable Queue And Physical Admission
+
+Team history now archives the original optional binding separately from editable
+conversation settings. General history upsert cannot replace or erase it. Old
+snapshots decode with no pin; a pinned session without the archived binding is
+not authorized to send. Journal queue owners require the archived profile, exact
+roster/route, original text/turn, current model/effort, paired fingerprint and
+explicit durable run control. Enqueue-time payload validation also checks the
+pin/person, route, invocation, workspace result contract and absence of files.
+This does not re-encrypt or reconstruct already prepared Signal ciphertext.
+
+Each journal direct copy and fragment carries an optional async application
+admission into the physical client queue. The actual packet remains in the
+bounded queue while the current business owner is checked. Delayed copies and
+reconnect retries do not inherit an earlier Boolean approval. After the await,
+the client rechecks its unique admission ticket, connection generation, live
+transport, route authorization and inflight/fragment capacity before writing.
+Ungated priority/control packets can still drain during an admission. Stop and
+reconnect invalidate late admission callbacks. Existing route AEAD, retry/hash,
+PUBACK and business receipt semantics are not replaced.
+
+Legacy pinned sends now queue with an optional opaque run ID instead of taking
+the immediate publish path. Flush and each physical packet require the same
+archived binding and run control. Old ordinary queue records decode without the
+field. A recognized old pinned session with missing scope is held, not promoted
+to an ordinary send. Historical unscoped legacy entries whose source/session
+records are already missing are not proven recoverable or classifiable here.
+
+Authorization has a last application-check point before the transport write;
+this is not an atomic transaction with remote execution or a recall of packets
+already written to the network. Socket timing, real interruption/restart,
+provider refusal/handoff and device acceptance remain unverified. Seven new
+outbox Swift fixture methods and two synthetic dispatcher propagation methods
+are authored, not compiled or run; fake admission callbacks are not socket tests.
 
 Twelve synthetic Swift fixture methods cover strict advertisements, compact vs
 detailed inventories, marker removal, inheritance, actual Store retention/hash/

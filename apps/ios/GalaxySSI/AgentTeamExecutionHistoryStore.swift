@@ -171,7 +171,9 @@ final class AgentTeamExecutionHistoryStore {
         }
         if let current = try database.snapshots(runId: incoming.supervisorRunId).first {
           guard current.teamId == incoming.teamId, current.conversationId == incoming.conversationId,
-                current.taskId == incoming.taskId else { throw AgentTeamHistoryDatabase.Failure.stale }
+                current.taskId == incoming.taskId, current.pinnedDesktop == incoming.pinnedDesktop else {
+            throw AgentTeamHistoryDatabase.Failure.stale
+          }
           if current.goal != incoming.goal {
             let pinned = try database.goalCheckpoints(runId: incoming.supervisorRunId, newestOnly: true)
             if !pinned.isEmpty || current.members.contains(where: { $0.dispatchCheckpoint != nil }) {

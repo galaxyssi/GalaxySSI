@@ -51,6 +51,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var attachmentDeclaration: String?
   var capabilitySnapshot: LinkCapabilitySnapshot? = nil
   var fileReadScope: String? = nil
+  var pinnedDesktopRunID: String? = nil
 
   var replaceableCapability: LinkCapabilitySnapshot? {
     guard status == "queued", attempts == 0, clientSourceMessageId.isEmpty,
@@ -86,7 +87,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     contactId: String = "",
     backgroundLearning: Bool = false,
     attachmentDeclaration: String? = nil,
-    fileReadScope: String? = nil
+    fileReadScope: String? = nil,
+    pinnedDesktopRunID: String? = nil
   ) {
     self.messageId = messageId
     self.topic = topic
@@ -106,6 +108,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.retryClassified = true
     self.attachmentDeclaration = attachmentDeclaration
     self.fileReadScope = fileReadScope
+    self.pinnedDesktopRunID = pinnedDesktopRunID
   }
 
   enum CodingKeys: String, CodingKey {
@@ -129,12 +132,14 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case attachmentDeclaration = "attachment_declaration"
     case capabilitySnapshot = "capability_snapshot"
     case fileReadScope = "file_read_scope"
+    case pinnedDesktopRunID = "pinned_desktop_run_id"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     capabilitySnapshot = try container.decodeIfPresent(LinkCapabilitySnapshot.self, forKey: .capabilitySnapshot)
     fileReadScope = try container.decodeIfPresent(String.self, forKey: .fileReadScope)
+    pinnedDesktopRunID = try container.decodeIfPresent(String.self, forKey: .pinnedDesktopRunID)
     messageId = try container.decode(String.self, forKey: .messageId)
     topic = try container.decode(String.self, forKey: .topic)
     wirePayload = try container.decodeIfPresent(String.self, forKey: .wirePayload) ?? ""
@@ -190,6 +195,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var backgroundLearning = false
   var attachmentDeclaration: String? = nil
   var fileReadScope: String? = nil
+  var pinnedDesktopRunID: String? = nil
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -489,7 +495,8 @@ final class GalaxySSILinkDeliveryStore {
     guard journal != nil, journalHealthy, !payload.isEmpty, payload.utf8.count <= 2 * 1024 * 1024,
           !dependencies.isEmpty, !attachments.isEmpty, task.wirePayload.isEmpty,
           ids.count == requests.count, !ids.contains(""),
-          requests.allSatisfy({ $0.topic == task.topic && $0.recoverableEnvelope.isEmpty && $0.fileReadScope == task.fileReadScope }),
+          requests.allSatisfy({ $0.topic == task.topic && $0.recoverableEnvelope.isEmpty &&
+            $0.fileReadScope == task.fileReadScope && $0.pinnedDesktopRunID == task.pinnedDesktopRunID }),
           task.fileReadScope.map({ UUID(uuidString: $0) != nil }) ?? true,
           attachments.allSatisfy({ !$0.wirePayload.isEmpty && dependencies.contains($0.attachmentTransferId) }),
           Set(attachments.map(\.attachmentTransferId)) == Set(dependencies),
@@ -501,7 +508,8 @@ final class GalaxySSILinkDeliveryStore {
         createdAt: now, updatedAt: now, requiresValidatedNetwork: request.requiresValidatedNetwork,
         blockedByAttachmentTransferIds: request.blockedByAttachmentTransferIds,
         attachmentTransferId: request.attachmentTransferId, clientSourceMessageId: request.clientSourceMessageId,
-        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration, fileReadScope: request.fileReadScope)
+        contactId: request.contactId, attachmentDeclaration: request.attachmentDeclaration, fileReadScope: request.fileReadScope,
+        pinnedDesktopRunID: request.pinnedDesktopRunID)
       if request.messageId == task.messageId { item.deferredTaskPayload = payload }
       state.outbox.append(item)
     }
@@ -559,6 +567,7 @@ final class GalaxySSILinkDeliveryStore {
     contactId: String = "",
     recoverableEnvelope: String = "",
     backgroundLearning: Bool = false,
+    pinnedDesktopRunID: String? = nil,
     now: Date = Date()
   ) {
     enqueueBatch(
@@ -573,7 +582,8 @@ final class GalaxySSILinkDeliveryStore {
           contactId: contactId,
           recoverableEnvelope: recoverableEnvelope,
           attachmentTransferId: attachmentTransferId,
-          backgroundLearning: backgroundLearning
+          backgroundLearning: backgroundLearning,
+          pinnedDesktopRunID: pinnedDesktopRunID
         )
       ],
       now: now
@@ -632,7 +642,8 @@ final class GalaxySSILinkDeliveryStore {
           clientSourceMessageId: request.clientSourceMessageId,
           contactId: request.contactId,
           backgroundLearning: request.backgroundLearning,
-          attachmentDeclaration: request.attachmentDeclaration
+          attachmentDeclaration: request.attachmentDeclaration,
+          pinnedDesktopRunID: request.pinnedDesktopRunID
         )
       )
       if Data(request.recoverableEnvelope.utf8).count <= Self.maximumRecoverableEnvelopeBytes {

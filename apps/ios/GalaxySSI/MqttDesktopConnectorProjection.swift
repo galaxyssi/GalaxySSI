@@ -9,10 +9,22 @@ struct MqttDesktopConnectorProjection {
     var maySend = true
     var managedOwnerRunID: String? = nil
     var codexReplay: AgentDesktopReplyRecoveryRecord? = nil
+    var pinnedDesktop: AgentPinnedDesktopTeam.Binding? = nil
 
     var projectsAttachmentToTranscript: Bool { team?.deliveryMode != .observe }
 
     func matches(_ payload: [String: Any]) -> Bool {
+      if let pin = pinnedDesktop {
+        guard let team, let teamID, teamID == pin.teamID, team.conversationId == pin.conversation,
+          team.turnId == pin.turn, payload.string(AgentPinnedDesktopTeam.pinKey) == pin.route.digest,
+          payload.string(AgentPinnedDesktopTeam.personKey) == team.memberId,
+          payload.string("contact_id") == pin.route.target, payload.string("desktop_id") == pin.route.desktop,
+          payload.string("conversation_id") == pin.conversation, payload.string("turn_id") == pin.turn,
+          payload.string("client_route_id") == pin.route.clientRoute,
+          payload.string("result_contract") == AgentOutboundTeamContext.workspaceResultContract,
+          payload["agent_invocation"] as? [String: String] == AgentInvocationRequestJsonCodec.encode(modelId: pin.route.model, reasoningEffort: pin.route.effort),
+          payload["attachments"] == nil || (payload["attachments"] as? [Any])?.isEmpty == true else { return false }
+      } else if payload[AgentPinnedDesktopTeam.pinKey] != nil { return false }
       if let codexReplay { return AgentJournalCodexReplayPolicy.matchesRequest(payload, record: codexReplay, source: message) }
       guard let team else { return payload["agent_team_message"] as? Bool != true }
       guard let teamID else { return false }
