@@ -2059,6 +2059,8 @@
     A10000000000000000009B35 /* AgentModelObservationHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000009B35 /* AgentModelObservationHistory.swift */; };
     B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000297 /* AgentModelLoopJournal.swift */; };
     B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000298 /* AgentInitialPlanningJournal.swift */; };
+    C46930000000000000000001 /* AgentPlanningRecoveryScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46930000000000000000002 /* AgentPlanningRecoveryScope.swift */; };
+    C46930000000000000000003 /* AgentPlanningRecoveryScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46930000000000000000004 /* AgentPlanningRecoveryScopeTests.swift */; };
     B10000000000000000000299 /* AgentPlannerModelSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000299 /* AgentPlannerModelSnapshot.swift */; };
     A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000157 /* AgentModelPlanParserModels.swift */; };
     A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000158 /* AgentModelPlanParser.swift */; };
@@ -4467,6 +4469,8 @@
     A20000000000000000009B35 /* AgentModelObservationHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelObservationHistory.swift; sourceTree = "<group>"; };
     B20000000000000000000297 /* AgentModelLoopJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelLoopJournal.swift; sourceTree = "<group>"; };
     B20000000000000000000298 /* AgentInitialPlanningJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInitialPlanningJournal.swift; sourceTree = "<group>"; };
+    C46930000000000000000002 /* AgentPlanningRecoveryScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningRecoveryScope.swift; sourceTree = "<group>"; };
+    C46930000000000000000004 /* AgentPlanningRecoveryScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanningRecoveryScopeTests.swift; sourceTree = "<group>"; };
     B20000000000000000000299 /* AgentPlannerModelSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlannerModelSnapshot.swift; sourceTree = "<group>"; };
     A20000000000000000000157 /* AgentModelPlanParserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParserModels.swift; sourceTree = "<group>"; };
     A20000000000000000000158 /* AgentModelPlanParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParser.swift; sourceTree = "<group>"; };
@@ -6243,6 +6247,7 @@
         A20000000000000000009B35 /* AgentModelObservationHistory.swift */,
         B20000000000000000000297 /* AgentModelLoopJournal.swift */,
         B20000000000000000000298 /* AgentInitialPlanningJournal.swift */,
+        C46930000000000000000002 /* AgentPlanningRecoveryScope.swift */,
         B20000000000000000000299 /* AgentPlannerModelSnapshot.swift */,
         A20000000000000000000157 /* AgentModelPlanParserModels.swift */,
         A20000000000000000000158 /* AgentModelPlanParser.swift */,
@@ -7045,6 +7050,7 @@
         A20000000000000000000204 /* AgentWorkspacePlanTests.swift */,
         A20000000000000000000205 /* AgentTeamDelegationTests.swift */,
         A20000000000000000000206 /* AgentRunPolicyTests.swift */,
+        C46930000000000000000004 /* AgentPlanningRecoveryScopeTests.swift */,
         A200000000000000000099C8 /* AgentOwnedOperationContextTests.swift */,
         A20000000000000000000672 /* AgentTaskCenterTests.swift */,
         A20000000000000000000674 /* AgentWorkspaceStoreTests.swift */,
@@ -8721,6 +8727,7 @@
         A10000000000000000009B35 /* AgentModelObservationHistory.swift in Sources */,
         B10000000000000000000297 /* AgentModelLoopJournal.swift in Sources */,
         B10000000000000000000298 /* AgentInitialPlanningJournal.swift in Sources */,
+        C46930000000000000000001 /* AgentPlanningRecoveryScope.swift in Sources */,
         B10000000000000000000299 /* AgentPlannerModelSnapshot.swift in Sources */,
         A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */,
         A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */,
@@ -9628,6 +9635,7 @@
         A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */,
         A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */,
         A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */,
+        C46930000000000000000003 /* AgentPlanningRecoveryScopeTests.swift in Sources */,
         A100000000000000000099C8 /* AgentOwnedOperationContextTests.swift in Sources */,
         A10000000000000000000672 /* AgentTaskCenterTests.swift in Sources */,
         A10000000000000000000674 /* AgentWorkspaceStoreTests.swift in Sources */,

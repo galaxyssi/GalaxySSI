@@ -36,6 +36,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
   private let baseSystemPrompt: String
   private let taskID: String
   private let beforeInference: (() throws -> Void)?
+  private let validateOwner: (() async throws -> Void)?
   private let inferenceCancellation: AgentModelToolLoopCancellationToken
   private let goalAssessmentOnly: Bool
   private let offerTeamReview: Bool
@@ -55,7 +56,8 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     goalAssessmentOnly: Bool = false,
     offerTeamReview: Bool = false,
     currentCatalog: ((AgentModelRequest) throws -> [AgentNativeToolDescriptor])? = nil,
-    beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil
+    beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil,
+    validateOwner: (() async throws -> Void)? = nil
   ) {
     self.catalog = catalog
     self.currentCatalog = currentCatalog
@@ -65,6 +67,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
     self.baseSystemPrompt = baseSystemPrompt
     self.taskID = taskID
     self.beforeInference = beforeInference
+    self.validateOwner = validateOwner
     self.inferenceCancellation = inferenceCancellation
     self.goalAssessmentOnly = goalAssessmentOnly
     self.offerTeamReview = offerTeamReview
@@ -139,12 +142,16 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
 
   private func infer(systemPrompt: String, userPrompt: String,
                      cancellation: AgentModelToolLoopCancellationToken) async throws -> LocalModelInferenceResult {
+    try await validateOwner?()
+    try beforeInference?()
     if beforeInference != nil {
       let result = try await LocalModelInferenceRuntime.shared.generateAsync(profile: fallbackProfile,
         systemPrompt: systemPrompt, userPrompt: userPrompt, maximumTokens: goalAssessmentOnly ? 4_096 : 1_500,
         temperature: 0.1, taskId: taskID, cancellation: AgentModelToolLoopCancellationToken {
           cancellation.isCancellationRequested || self.inferenceCancellation.isCancellationRequested
         })
+      try await validateOwner?()
+      try beforeInference?()
       guard result.profileId == preferredProfileID else { throw AgentManagedBrowserContinuationStore.Failure.scopeChanged }
       lastInference = result
       return result
@@ -160,6 +167,7 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
       preferredProfileId: preferredProfileID,
       taskId: taskID
     )
+    try await validateOwner?()
     lastInference = result
     return result
   }
@@ -360,8 +368,10 @@ enum AgentIOSLocalModelWebToolRunner {
     goalWorkMilestone: GoalWorkMilestone? = nil,
     workInputPublisher: AgentCollaborationWorkInputBindings.Publisher? = nil,
     desktopEvidenceRefresh: CloudConversationStreamEngine.DesktopEvidenceRefresh? = nil,
-    offerTeamReview: Bool = false
+    offerTeamReview: Bool = false,
+    validateOwner: (() async throws -> Void)? = nil
   ) async throws -> AgentIOSLocalModelWebToolCompletion {
+    try await validateOwner?()
     let owner = collaborationOwner ?? collaborationRecallScope
     let effectiveTurn = turnID.ifBlank(taskID)
     if let owner {
@@ -478,7 +488,8 @@ enum AgentIOSLocalModelWebToolRunner {
       beforeDesktopEvidenceRecall: collaborationRecallScope.flatMap { scope -> ((AgentMcpJSONObject) async -> Void)? in
         guard let desktopEvidenceRefresh else { return nil }
         return { input in _ = await desktopEvidenceRefresh(input, scope) }
-      }
+      },
+      validateOwner: validateOwner
     )
     let outcome = await AgentModelToolLoop(
       modelAdapter: session,
@@ -486,8 +497,10 @@ enum AgentIOSLocalModelWebToolRunner {
       journal: managedJournal ?? (owner == nil && goalWorkMilestone == nil && workInputPublisher == nil
         ? EncryptedAgentModelLoopJournal() : InMemoryAgentModelLoopJournal()),
       nativeObservation: goalCoordinator?.recordObservation ?? nativeObservation,
-      browserHandoff: managedBrowser
+      browserHandoff: managedBrowser,
+      validateOwner: validateOwner
     ).run(request)
+    try await validateOwner?()
     if outcome.status == .waitingForBrowserControl { throw AgentIOSLocalModelWebToolError.waitingForBrowserControl }
     if managedBrowser != nil, outcome.status == .cancelled { throw AgentIOSLocalModelWebToolError.managedBrowserCancelled }
     guard outcome.status == .completed, !outcome.assistantText.isBlank else {
