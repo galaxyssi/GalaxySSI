@@ -8,6 +8,26 @@ enum AgentManagedResponseState: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+struct AgentNativeConnectorQueryScope: Codable, Equatable {
+  let profile: String
+  let actionId: String
+  let outgoingId: UUID
+
+  var isValid: Bool {
+    !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && profile.utf8.count <= 512 &&
+      !actionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && actionId.utf8.count <= 1_024
+  }
+
+  static func capture(action: AgentAction, receipt: AgentActionResult) -> Self? {
+    guard let dispatch = AgentIOSConnectorDispatch(action: action, receipt: receipt),
+          let agent = receipt.metadata["control_plane_agent_id"], !agent.isBlank,
+          dispatch.owner == AgentControlPlaneActionExecutor.connectorRunId(action: action, agentId: agent),
+          let profile = action.parameters[AgentIOSConnectorDispatch.profileKey] else { return nil }
+    let scope = Self(profile: profile, actionId: action.id, outgoingId: dispatch.outgoingId)
+    return scope.isValid ? scope : nil
+  }
+}
+
 struct AgentManagedResponseRecord: Codable, Equatable {
   var ownerRunId: String
   var supervisorRunId: String
@@ -24,6 +44,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
   var createdAtMillis: Int64
   var completedAtMillis: Int64
   var desktopResultReceipt: AgentResultReceipt? = nil
+  var nativeQueryScope: AgentNativeConnectorQueryScope?
 
   init(
     ownerRunId: String,
@@ -39,7 +60,8 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     state: AgentManagedResponseState = .pending,
     response: AgentConnectorResponse? = nil,
     createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
-    completedAtMillis: Int64 = 0
+    completedAtMillis: Int64 = 0,
+    nativeQueryScope: AgentNativeConnectorQueryScope? = nil
   ) {
     self.ownerRunId = ownerRunId
     self.supervisorRunId = supervisorRunId
@@ -57,6 +79,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     self.response = response
     self.createdAtMillis = max(createdAtMillis, 0)
     self.completedAtMillis = max(completedAtMillis, 0)
+    self.nativeQueryScope = nativeQueryScope
   }
 
   enum CodingKeys: String, CodingKey {
@@ -75,6 +98,7 @@ struct AgentManagedResponseRecord: Codable, Equatable {
     case createdAtMillis = "created_at_millis"
     case completedAtMillis = "completed_at_millis"
     case desktopResultReceipt = "desktop_result_receipt"
+    case nativeQueryScope = "native_query_scope"
   }
 
   init(from decoder: Decoder) throws {
@@ -96,6 +120,13 @@ struct AgentManagedResponseRecord: Codable, Equatable {
       completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
     )
     desktopResultReceipt = try container.decodeIfPresent(AgentResultReceipt.self, forKey: .desktopResultReceipt)
+    if container.contains(.nativeQueryScope) {
+      nativeQueryScope = try container.decode(AgentNativeConnectorQueryScope.self, forKey: .nativeQueryScope)
+    }
+    if let scope = nativeQueryScope, !scope.isValid {
+      throw DecodingError.dataCorruptedError(forKey: .nativeQueryScope, in: container,
+        debugDescription: "Invalid native connector query ownership")
+    }
   }
 
   func correlates(_ response: AgentConnectorResponse) -> Bool {
@@ -150,7 +181,7 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
 
   func register(_ record: AgentManagedResponseRecord) throws {
     guard !record.ownerRunId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      record.sourceMessageId > 0 else {
+      record.sourceMessageId > 0, record.nativeQueryScope?.isValid != false else {
       throw AgentRuntimeCapabilityError.invalid("Managed response records require owner run id and source message id")
     }
     lock.lock()
@@ -182,7 +213,8 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       state: .completed,
       response: response,
       createdAtMillis: current.createdAtMillis,
-      completedAtMillis: response.receivedAtMillis
+      completedAtMillis: response.receivedAtMillis,
+      nativeQueryScope: current.nativeQueryScope
     )
     records[key] = completed
     AgentLateManagedResponseBus.shared.publish(completed)
@@ -210,7 +242,8 @@ final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
       state: .applied,
       response: response,
       createdAtMillis: current.createdAtMillis,
-      completedAtMillis: response.receivedAtMillis
+      completedAtMillis: response.receivedAtMillis,
+      nativeQueryScope: current.nativeQueryScope
     )
     records[key] = acknowledged
     return acknowledged
@@ -332,6 +365,11 @@ enum AgentManagedResponseCodec {
           from: Data(AgentMcpJSONCodec.stringify(receipt).utf8)) else { return nil }
         record.desktopResultReceipt = decoded
       }
+      if let value = object["native_query_scope"] {
+        guard let scope = try? JSONDecoder().decode(AgentNativeConnectorQueryScope.self,
+          from: Data(AgentMcpJSONCodec.stringify(value).utf8)), scope.isValid else { return nil }
+        record.nativeQueryScope = scope
+      }
       return record
     }
   }
@@ -356,6 +394,12 @@ enum AgentManagedResponseCodec {
     if let receipt = record.desktopResultReceipt, let encoded = try? JSONEncoder().encode(receipt),
        let value = try? JSONDecoder().decode(AgentMcpJSONValue.self, from: encoded) {
       object["desktop_result_receipt"] = value
+    }
+    if let scope = record.nativeQueryScope {
+      object["native_query_scope"] = .object([
+        "profile": .string(scope.profile), "actionId": .string(scope.actionId),
+        "outgoingId": .string(scope.outgoingId.uuidString)
+      ])
     }
     return .object(object)
   }

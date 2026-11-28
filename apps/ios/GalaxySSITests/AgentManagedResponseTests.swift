@@ -1,6 +1,99 @@
 import XCTest
 @testable import GalaxySSI
 
+// Native query ownership fixtures; these do not publish MQTT or start a connector.
+extension GalaxySSIStoreTests {
+  private func nativeQueryRecord() -> AgentManagedResponseRecord {
+    AgentManagedResponseRecord(ownerRunId: "native-owner", supervisorRunId: "parent", agentId: "agent",
+      deliveryMode: .respond, sourceMessageId: 73, contactId: "desktop:codex", conversationId: "conversation",
+      turnId: "turn", taskId: "remote-task", nativeQueryScope: AgentNativeConnectorQueryScope(
+        profile: "profile-a", actionId: "action", outgoingId: UUID()))
+  }
+
+  func testNativeQueryScopeRoundTripsBothRecordCodecs() throws {
+    let record = nativeQueryRecord()
+    XCTAssertEqual(try JSONDecoder().decode(AgentManagedResponseRecord.self,
+      from: JSONEncoder().encode(record)), record)
+    XCTAssertEqual(AgentManagedResponseCodec.decode(AgentManagedResponseCodec.encode([record])), [record])
+  }
+
+  func testLegacyManagedRecordHasNoInventedNativeScope() throws {
+    var record = nativeQueryRecord()
+    record.nativeQueryScope = nil
+    let data = try JSONEncoder().encode(record)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertNil(object["native_query_scope"])
+    XCTAssertNil(try JSONDecoder().decode(AgentManagedResponseRecord.self, from: data).nativeQueryScope)
+    XCTAssertEqual(AgentManagedResponseCodec.decode(AgentManagedResponseCodec.encode([record])), [record])
+  }
+
+  func testMalformedNativeScopeCannotDecodeAsLegacyOwner() throws {
+    let record = nativeQueryRecord()
+    let encoded = try JSONEncoder().encode(record)
+    let initial = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let invalidValues: [Any] = [NSNull(), ["profile": "", "actionId": "action", "outgoingId": UUID().uuidString],
+      ["profile": "profile-a", "actionId": "action", "outgoingId": "invalid"]]
+    for value in invalidValues {
+      var object = initial
+      object["native_query_scope"] = value
+      let data = try JSONSerialization.data(withJSONObject: object)
+      XCTAssertThrowsError(try JSONDecoder().decode(AgentManagedResponseRecord.self, from: data))
+      let array = try JSONSerialization.data(withJSONObject: [object])
+      XCTAssertTrue(AgentManagedResponseCodec.decode(try XCTUnwrap(String(data: array, encoding: .utf8))).isEmpty)
+    }
+  }
+
+  func testNativeQueryScopeSurvivesLateCompletionAndAcknowledgement() throws {
+    let record = nativeQueryRecord()
+    let ledger = InMemoryAgentManagedResponseLedger()
+    try ledger.register(record)
+    let response = AgentConnectorResponse(sourceMessageId: record.sourceMessageId, contactId: record.contactId,
+      content: "Original late result", conversationId: record.conversationId, turnId: record.turnId,
+      taskId: record.taskId, success: true)
+    XCTAssertEqual(ledger.complete(response)?.nativeQueryScope, record.nativeQueryScope)
+    XCTAssertEqual(ledger.acknowledge(response)?.nativeQueryScope, record.nativeQueryScope)
+  }
+
+  func testPersistedNativeQueryScopeRejectsSameGenerationOwnerSubstitution() throws {
+    let suite = "native-query-owner-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("managed.sqlite"), secrets = InMemorySecretStore()
+    let record = nativeQueryRecord()
+    do {
+      let ledger = UserDefaultsAgentManagedResponseLedger(defaults: defaults, fileURL: file, secrets: secrets)
+      try ledger.register(record)
+      var substituted = record
+      substituted.nativeQueryScope = AgentNativeConnectorQueryScope(profile: "other-profile",
+        actionId: "action", outgoingId: UUID())
+      XCTAssertThrowsError(try ledger.register(substituted))
+      substituted.nativeQueryScope = nil
+      XCTAssertThrowsError(try ledger.register(substituted))
+    }
+    let reopened = UserDefaultsAgentManagedResponseLedger(defaults: defaults, fileURL: file, secrets: secrets)
+    XCTAssertEqual(try reopened.recoveryRecord(owner: record.ownerRunId), record)
+  }
+
+  func testNativeQueryScopeCaptureRequiresHostBoundDispatchOwner() throws {
+    let outgoing = UUID()
+    let action = AgentAction(id: "action", kind: .callConnector, target: "desktop:codex", risk: .low,
+      status: .running, description: "Request", parameters: ["connector_id": "desktop:codex", "prompt": "Hello",
+        "_galaxyssi_conversation_id": "conversation", "_galaxyssi_turn_id": "turn", "_galaxyssi_task_id": "turn",
+        "_galaxyssi_session_id": "session", AgentIOSConnectorDispatch.sourceKey: outgoing.uuidString,
+        AgentIOSConnectorDispatch.profileKey: "profile-a", AgentIOSConnectorDispatch.permissionKey: "approved"],
+      requiresConfirmation: false)
+    var receipt = AgentIOSConnectorDispatch.prepare(action)
+    receipt.metadata["control_plane_agent_id"] = "agent"
+    receipt.metadata["control_plane_run_id"] = AgentControlPlaneActionExecutor.connectorRunId(action: action, agentId: "agent")
+    let scope = try XCTUnwrap(AgentNativeConnectorQueryScope.capture(action: action, receipt: receipt))
+    XCTAssertEqual(scope.outgoingId, outgoing)
+    XCTAssertEqual(scope.profile, "profile-a")
+    receipt.metadata["control_plane_run_id"] = "substituted-owner"
+    XCTAssertNil(AgentNativeConnectorQueryScope.capture(action: action, receipt: receipt))
+  }
+}
+
 extension GalaxySSIStoreTests {
   func testManagedCollaborationRepliesRecoverAfterExtendedOfflineReopen() throws {
     let suite = "offline-managed-response-\(UUID().uuidString)"

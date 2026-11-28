@@ -21,7 +21,8 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
   }
 
   func register(_ record: AgentManagedResponseRecord) throws {
-    guard !record.ownerRunId.isBlank, record.sourceMessageId > 0 else {
+    guard !record.ownerRunId.isBlank, record.sourceMessageId > 0,
+          record.nativeQueryScope?.isValid != false else {
       throw AgentRuntimeCapabilityError.invalid("Managed response records require owner run id and source message id")
     }
     try access { database in
@@ -32,7 +33,8 @@ final class UserDefaultsAgentManagedResponseLedger: AgentManagedResponseLedger {
         if current.executionGeneration == record.executionGeneration {
           guard current.sourceMessageId == record.sourceMessageId, current.contactId == record.contactId,
                 current.conversationId == record.conversationId, current.turnId == record.turnId,
-                current.taskId == record.taskId, current.supervisorRunId == record.supervisorRunId else {
+                current.taskId == record.taskId, current.supervisorRunId == record.supervisorRunId,
+                current.nativeQueryScope == record.nativeQueryScope else {
             throw AgentManagedResponseDatabase.Failure.ambiguous
           }
           return
