@@ -1571,6 +1571,7 @@
 "galaxyssi.health.backup.created" = "加密备份已准备好";
 "galaxyssi.health.backup.verified" = "备份已验证";
 "galaxyssi.health.backup.history" = "备份历史";
+"galaxyssi.health.backup.save_pending" = "正在保存备份";
 "galaxyssi.health.backup.history_ready" = "已生成";
 "galaxyssi.health.backup.history_interrupted" = "生成已中断";
 "galaxyssi.health.backup.copy_available" = "有私有副本";

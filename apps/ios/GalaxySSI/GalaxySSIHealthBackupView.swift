@@ -19,14 +19,16 @@ struct GalaxySSIHealthBackupView: View {
   @State private var token: UUID?
   @State private var choosing = false
   @State private var exporting = false
-  @State private var generationID: UUID?
-  @State private var saveAttempt: GalaxySSIHealthBackupHistory.Entry?
+  @State private var generationRequest: GalaxySSIHealthBackupOperation.Request?
+  @State private var saveAttempt: GalaxySSIHealthBackupOperation.Request?
   @State private var exportDocument: BackupFile?
   @State private var verifyingSave = false
   @State private var entries: [GalaxySSIHealthBackupHistory.Entry] = []
   @State private var historyLoaded = false
   @State private var historyLimit = 10
   @State private var saveUnverified = false
+
+  private var generationID: UUID? { generationRequest?.entry.id }
 
   private var history: GalaxySSIHealthBackupHistory {
     GalaxySSIHealthBackupHistory(owner: records.owner, secrets: records.secrets)
@@ -82,7 +84,9 @@ struct GalaxySSIHealthBackupView: View {
           if saveUnverified { Text(t("save_unverified", "The external file could not be verified.")) }
           if verifyingSave { ProgressView(t("working", "Processing backup")) }
           if saveAttempt != nil && !verifyingSave {
-            Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
+            Button(t("dismiss_save", "Dismiss unverified save")) {
+              if let attempt = saveAttempt { finishSave(attempt, result: .failure(CancellationError())) }
+            }
           }
         }
         if let outcome {
@@ -109,15 +113,21 @@ struct GalaxySSIHealthBackupView: View {
     .navigationTitle(t("title", "Health Backup"))
     .galaxySSIHealthTheme()
     .onAppear {
-      guard !historyLoaded else { return }
-      do {
-        try history.recover()
-        entries = try history.entries()
-        historyLoaded = true
-      } catch { error = true }
+      if !historyLoaded { reloadHistory(recover: true) }
     }
     .onChange(of: scene) { phase in
-      if phase == .background && !exporting { reset() }
+      if phase == .active { reloadHistory(recover: true) }
+      else if phase == .background && !exporting { reset() }
+    }
+    .onChange(of: records.owner) { _ in
+      clearSavePresentation(); reset(); entries = []; historyLoaded = false
+      reloadHistory(recover: true)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthBackupHistory.changed)) {
+      if $0.object as? String == records.owner, historyLoaded { reloadHistory() }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      clearSavePresentation(); reset(); entries = []; historyLoaded = false
     }
     .onDisappear { reset() }
     .fileImporter(isPresented: $choosing, allowedContentTypes: [.data]) { result in
@@ -134,9 +144,11 @@ struct GalaxySSIHealthBackupView: View {
         verificationInput = data
       } catch { error = true }
     }
-    .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .data,
-                  defaultFilename: "GalaxySSI-Health.galaxyhealth") { result in
-      finishSave(result)
+    .background {
+      if let attempt = saveAttempt, let document = exportDocument {
+        BackupSavePresenter(attempt: attempt, document: document, exporting: $exporting, completed: finishSave)
+          .id(attempt.token)
+      }
     }
   }
 
@@ -156,9 +168,10 @@ struct GalaxySSIHealthBackupView: View {
           if entry.latestSave == .unverified || entry.latestSave == .interrupted {
             Text(t("save_unverified", "The external file could not be verified.")).foregroundColor(.secondary)
           }
+          if entry.latestSave == .pending { Text(t("save_pending", "Saving backup")) }
           if history.hasCopy(entry) {
             Button(t("save", "Save encrypted backup")) { save(entry) }
-              .disabled(task != nil || saveAttempt != nil)
+              .disabled(task != nil || saveAttempt != nil || history.isSaving(entry))
           }
         }
       }
@@ -171,33 +184,51 @@ struct GalaxySSIHealthBackupView: View {
   private func save(_ entry: GalaxySSIHealthBackupHistory.Entry) {
     guard scene == .active, saveAttempt == nil else { return }
     do {
-      let data = try history.readCopy(entry)
-      saveAttempt = try history.beginSave(entry.id)
+      let (data, attempt) = try history.prepareSave(entry)
+      saveAttempt = attempt
       exportDocument = BackupFile(data: data)
       saveUnverified = false
       exporting = true
     } catch { error = true }
   }
 
-  private func finishSave(_ result: Result<URL, Error>) {
-    guard let attempt = saveAttempt, !verifyingSave else { return }
+  private func finishSave(_ attempt: GalaxySSIHealthBackupOperation.Request, result: Result<URL, Error>) {
+    guard let current = saveAttempt, current === attempt, !verifyingSave else { return }
+    let targetHistory = history
     verifyingSave = true
     Task {
       let verified: Bool
       if case .success(let url) = result {
         verified = await Task.detached(priority: .utility) {
-          (try? GalaxySSIHealthBackupHistory.verifyDestination(url, entry: attempt)) == true
+          (try? GalaxySSIHealthBackupHistory.verifyDestination(url, entry: attempt.entry)) == true
         }.value
       } else { verified = false }
+      let refreshed: [GalaxySSIHealthBackupHistory.Entry]?
       do {
-        try history.finishSave(attempt.id, verified: verified)
-        entries = try history.entries()
-        saveUnverified = !verified
-      } catch { error = true }
+        try targetHistory.finishSave(attempt, verified: verified)
+        refreshed = try targetHistory.entries()
+      } catch { refreshed = nil }
+      guard let current = saveAttempt, current === attempt else { return }
+      if let refreshed { entries = refreshed; saveUnverified = !verified }
+      else { error = true }
       saveAttempt = nil
       exportDocument = nil
       verifyingSave = false
     }
+  }
+
+  private func clearSavePresentation() {
+    if let attempt = saveAttempt { GalaxySSIHealthBackupOperation.release(attempt) }
+    saveAttempt = nil; exportDocument = nil; exporting = false; verifyingSave = false
+  }
+
+  private func reloadHistory(recover: Bool = false) {
+    guard scene == .active else { return }
+    do {
+      if recover { try history.recover() }
+      entries = try history.entries()
+      historyLoaded = true
+    } catch { error = true }
   }
 
   private var passwordForm: some View {
@@ -311,21 +342,23 @@ struct GalaxySSIHealthBackupView: View {
   }
 
   private func generate() {
-    guard scene == .active, let plan, password == repeated else { return }
+    guard scene == .active, task == nil, let plan, password == repeated else { return }
     do {
       let (bytes, summary) = try GalaxySSIHealthPortableBackup.prepare(plan, records: records, originals: originals)
-      generationID = try history.begin()
+      generationRequest = try history.beginGeneration()
       entries = try history.entries()
       run { [secret = password] in
         .created(try GalaxySSIHealthPortableBackup.seal(bytes, password: secret), summary)
       }
     } catch {
+      if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }
+      generationRequest = nil
       password = ""; repeated = ""; error = true
     }
   }
 
   private func verify() {
-    guard scene == .active, let verificationInput else { return }
+    guard scene == .active, task == nil, let verificationInput else { return }
     run { [secret = password, restoring] in
       if restoring { return .unlocked(try GalaxySSIHealthPortableBackup.unlock(verificationInput, password: secret)) }
       return .verified(try GalaxySSIHealthPortableBackup.verify(verificationInput, password: secret))
@@ -358,8 +391,8 @@ struct GalaxySSIHealthBackupView: View {
         guard token == request, scene != .background else { return }
         switch result {
         case .created(let data, let summary):
-          guard let generationID else { throw GalaxySSIHealthPortableBackup.Failure.stale }
-          try history.publish(data, id: generationID)
+          guard let generationRequest else { throw GalaxySSIHealthPortableBackup.Failure.stale }
+          try history.publish(data, request: generationRequest)
           entries = try history.entries()
           generated = BackupFile(data: data)
           outcome = summary
@@ -373,6 +406,7 @@ struct GalaxySSIHealthBackupView: View {
       } catch {
         guard token == request, scene != .background else { return }
         if generationID != nil {
+          if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }
           try? history.recover()
           if let refreshed = try? history.entries() { entries = refreshed }
         }
@@ -383,11 +417,12 @@ struct GalaxySSIHealthBackupView: View {
   }
 
   private func reset() {
+    if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }
     if generationID != nil, task != nil, saveAttempt == nil {
       try? history.recover()
       if let refreshed = try? history.entries() { entries = refreshed }
     }
-    generationID = nil
+    generationRequest = nil
     task?.cancel(); task = nil; token = nil
     password = ""; repeated = ""
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
@@ -397,6 +432,22 @@ struct GalaxySSIHealthBackupView: View {
 
   private func t(_ key: String, _ fallback: String) -> String {
     GalaxySSILocalization.string("galaxyssi.health.backup." + key, fallback: fallback, language: language)
+  }
+}
+
+@MainActor
+private struct BackupSavePresenter: View {
+  let attempt: GalaxySSIHealthBackupOperation.Request
+  let document: BackupFile
+  @Binding var exporting: Bool
+  let completed: @MainActor (GalaxySSIHealthBackupOperation.Request, Result<URL, Error>) -> Void
+
+  var body: some View {
+    Color.clear.frame(width: 0, height: 0)
+      .fileExporter(isPresented: $exporting, document: document, contentType: .data,
+                    defaultFilename: "GalaxySSI-Health.galaxyhealth") { result in
+        completed(attempt, result)
+      }
   }
 }
 
