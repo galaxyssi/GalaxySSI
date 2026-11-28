@@ -3367,17 +3367,19 @@ final class MessageCoordinator: ObservableObject {
           let roster = session.collaborationRoster,
           let person = AgentCollaborationMemberIdentity(nodeID: context.member.memberId)?.member(in: roster),
           person.resourceId == contact,
-          let parent = store.agentTask(id: context.team.taskId),
-          !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
-          parent.phase == .executing || parent.phase == .waitingResponse
+          !PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId)
     else { return }
+    let parent = store.agentTask(id: context.team.taskId)
+    if let parent {
+      guard !parent.blocked, parent.phase == .executing || parent.phase == .waitingResponse else { return }
+    } else if memberAdmission == nil { return }
     if let memberAdmission {
       guard let request = AgentScopedMemberRecall.Request(payload, now: now),
         scopedMemberRecallProbe(request, link: link)?.offer == memberAdmission else { return }
     }
     let coordinatorUpdates = !publishing && input["mode"] == .string(AgentCollaborationCoordinatorUpdates.mode)
-    let canReadCoordinatorOffers = roster.coordinatorId == person.id && !parent.blocked &&
-      !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId)
+    let canReadCoordinatorOffers = roster.coordinatorId == person.id && parent?.blocked != true &&
+      !PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId)
     if (publishing && AgentCollaborationGoalAssessmentPolicy.isCoordinatorMutation(phase)) || coordinatorUpdates {
       guard canReadCoordinatorOffers, !coordinatorUpdates || phase == "read" else { return }
     }
@@ -3442,14 +3444,14 @@ final class MessageCoordinator: ObservableObject {
       result = page
     } else if publishing {
       do {
-        let fileAuthority = !parent.blocked && !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId) ? fileHandoff : nil
+        let fileAuthority = parent?.blocked == false && !PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId) ? fileHandoff : nil
         result = try history.publishCollaborationMilestone(input, scope: scope, desktopWire: true, desktopFile: fileAuthority,
           transportAllowsInterim: context.owner.deliveryMode == .observe)
       } catch AgentTeamHistoryDatabase.Failure.corrupt {
         result["status"] = .string("invalid_artifact")
       } catch {}
-    } else if phase == "read", input["mode"] == .string("workspace"), !parent.blocked,
-              !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
+    } else if phase == "read", input["mode"] == .string("workspace"), parent?.blocked == false,
+              !PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId),
               let page = try? history.recallDesktopFileHandoff(input, scope: scope, reader: fileHandoff) {
       result = page
     } else if ["method_history", "workspace", "capabilities", AgentCollaborationCoordinatorUpdates.mode].contains(input.string("mode")),
@@ -3626,9 +3628,11 @@ final class MessageCoordinator: ObservableObject {
       (person.reasoningEffort ?? "auto") == offer.effort.rawValue,
       AgentCollaborationReasoningSelection.rosterInvocation(model: person.modelId, effort: person.reasoningEffort,
         adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) != nil,
-      let parent = store.agentTask(id: context.team.taskId), parent.sessionId == session.id,
-      !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
-      parent.phase == .executing || parent.phase == .waitingResponse else { return nil }
+      !PhoneExecutionAuthority.isCancelled(taskId: context.team.taskId) else { return nil }
+    if let parent = store.agentTask(id: context.team.taskId) {
+      guard parent.sessionId == session.id, !parent.blocked,
+        parent.phase == .executing || parent.phase == .waitingResponse else { return nil }
+    }
     let run = AgentManagedBrowserContinuationStore.RunScope(profileID: offer.profile, team: context.team,
       hostContextDigest: managedBrowserContextDigest(context.team))
     guard (try? managedBrowserContinuations.control(scope: run)) == .run else { return nil }
@@ -3997,9 +4001,11 @@ final class MessageCoordinator: ObservableObject {
             session.collaborationRoster?.members.contains(where: {
               $0.id.uuidString.lowercased() == AgentTeamProgressPolicy.stableCollaborationMemberId(context.member.memberId) &&
                 $0.resourceId == contact
-            }) == true,
-            let task = store.agentTask(id: identity.turnId), task.phase == .executing || task.phase == .waitingResponse
+            }) == true
       else { return nil }
+      if let task = store.agentTask(id: identity.turnId) {
+        guard task.phase == .executing || task.phase == .waitingResponse else { return nil }
+      } else if memberAdmission == nil { return nil }
       return .init(runId: context.team.supervisorRunId, conversationId: identity.conversationId,
         turnId: identity.turnId, memberId: context.member.memberId, sourceId: source)
     }

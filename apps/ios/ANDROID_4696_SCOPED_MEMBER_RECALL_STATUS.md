@@ -37,9 +37,13 @@ fresh bounded challenge.
 
 Read and confirm require the exact Boolean marker, registered source identity,
 current pair/route/secret binding, original archived offer, active non-private
-research session and roster person/model/effort, unblocked running parent,
+research session and roster person/model/effort, root cancellation authority,
 explicit durable RUN, open current execution generation and existing research
-access. Recheck after async evidence refresh and before read/confirm callbacks
+access. Direct homepage research groups need no fabricated generic parent task.
+When a parent exists, require the same session and an unblocked executing or
+waiting state. Unmarked legacy reads still require their existing parent task;
+workspace file handoff is not enabled by the optional-parent scoped path.
+Recheck after async evidence refresh and before read/confirm callbacks
 and response publication. Receipt/replay hashes include the original offer.
 Existing original-revision grants, selector constraints, evidence read coverage
 and native HMAC confirmation remain authoritative. There is no filesystem,
