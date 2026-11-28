@@ -3174,6 +3174,8 @@ final class MessageCoordinator: ObservableObject {
   private func pinnedDesktopQueuedSendIsCurrent(_ context: AgentTeamReplyRecoveryContext, source: ChatMessage,
       contact: GalaxySSIContact, identity: AgentTaskIdentity, routes: GalaxySSILinkRoutes) throws -> Bool {
     guard UIApplication.shared.isProtectedDataAvailable, let pin = context.team.pinnedDesktop,
+      AgentTaskExecutionModePolicy.resolve(request: pin.objective,
+        configuredMode: store.agentSafetySettings.taskExecutionMode).mode == .autoComplete,
       let roster = store.agentSession(id: pin.conversation)?.collaborationRoster, roster.pinnedDesktop == pin,
       AgentPinnedDesktopTeam.current(pin, store: store, blocked: healthDisclosureStore.blockedDestinationIds()),
       context.team.teamId == pin.teamID, context.team.taskId == pin.turn, context.team.conversationId == pin.conversation,
@@ -3190,6 +3192,8 @@ final class MessageCoordinator: ObservableObject {
       (!context.team.state.isTerminal || context.team.state == .interrupted),
       (!context.member.status.isTerminal || context.member.status == .interrupted),
       context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted else { return false }
+    if let task = store.agentTask(id: context.team.taskId), task.sessionId == pin.conversation,
+      [.paused, .cancelled, .failed, .blocked].contains(task.phase) { return false }
     let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: pin.owner, team: context.team,
       hostContextDigest: managedBrowserContextDigest(context.team))
     return try managedBrowserContinuations.control(scope: scope) == .run
