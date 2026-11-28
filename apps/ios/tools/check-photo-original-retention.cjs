@@ -51,6 +51,8 @@ if (require.main === module) {
     assert.equal(typeof normalize, 'function', 'Record-center fixture composition must remain explicit');
     tests = normalize(tests);
   }
+  const restoreCheck = path.join(__dirname, 'check-restore-file-finalization.cjs');
+  if (fs.existsSync(restoreCheck)) tests = require(restoreCheck).retainedFixtures(tests);
   assert.equal(tests, show(base, fixture), 'All preexisting native fixture source retained');
   const translations = app + 'zh-Hans.lproj/Localizable.strings';
   for (const key of ['take', 'album', 'retention_keep', 'retention_review', 'discard_review']) {
