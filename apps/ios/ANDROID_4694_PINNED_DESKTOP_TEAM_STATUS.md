@@ -32,7 +32,9 @@ are not changed by this increment.
 This is not completion of #4694. The new selected-Desktop confirmation UI, fresh
 isolated group with the selected model/effort, single-use draft review, persisted
 confirmed original turn, stable team identity, dispatch/recovery pin validation,
-and refusal of unsupported pins or provider handoff remain to be ported. Existing
+expanded clinical-identifier/local-only objective screening, empty foreground
+screen context for the pinned seed, and refusal of unsupported pins or provider
+handoff remain to be ported. Existing
 ordinary collaboration is not presented as that new end-to-end flow. No new
 Desktop protocol support, version bump or deployment is claimed here.
 
