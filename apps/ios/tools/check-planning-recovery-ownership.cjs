@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '17f1cc6757c9dda3e38588ac21b80dd865f81826';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '85908f850e5d0cc2954080a8247bb20b69995188';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -50,6 +50,33 @@ function retainedServices(s) {
   return s;
 }
 module.exports = {retainedServices};
+function retainedLoop(s) {
+  assert.equal(s, show(approved, app + 'AgentModelToolLoop.swift'));
+  s = once(s, '  private let validateOwner: (() async throws -> Void)?\n');
+  s = once(s, '    browserHandoff: AgentManagedBrowserToolExecution? = nil,\n    validateOwner: (() async throws -> Void)? = nil',
+    '    browserHandoff: AgentManagedBrowserToolExecution? = nil');
+  s = once(s, '    self.validateOwner = validateOwner\n');
+  s = once(s, '    do { try await validateOwner?() }\n    catch { return recoveryFailed(request: request, error: error) }\n');
+  s = once(s, '  private func ownershipFailure(_ state: LoopState) async -> AgentModelToolLoopOutcome? {\n' +
+    '    do { try await validateOwner?(); return nil }\n    catch { return recoveryFailed(state, error: error) }\n  }\n\n');
+  s = s.split('\n').filter(line => !line.includes('if let failure = await ownershipFailure(state)') &&
+    !line.includes('try await validateOwner?()')).join('\n');
+  s = once(s, 'func flushParallelCalls() async -> ProcessResult', 'func flushParallelCalls() -> ProcessResult');
+  return s.replaceAll('await flushParallelCalls()', 'flushParallelCalls()');
+}
+function retainedAdapter(s) {
+  assert.equal(s, show(approved, app + 'AgentIOSLocalModelWebToolAdapter.swift'));
+  s = once(s, '  private let validateOwner: (() async throws -> Void)?\n');
+  s = once(s, '    self.validateOwner = validateOwner\n');
+  s = once(s, '    beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil,\n' +
+    '    validateOwner: (() async throws -> Void)? = nil', '    beforeDesktopEvidenceRecall: ((AgentMcpJSONObject) async -> Void)? = nil');
+  s = once(s, '    offerTeamReview: Bool = false,\n    validateOwner: (() async throws -> Void)? = nil', '    offerTeamReview: Bool = false');
+  s = once(s, '      },\n      validateOwner: validateOwner\n', '      }\n');
+  s = once(s, '      browserHandoff: managedBrowser,\n      validateOwner: validateOwner', '      browserHandoff: managedBrowser');
+  s = s.split('\n').filter(line => !line.includes('try await validateOwner?()')).join('\n');
+  s = once(s, '    try beforeInference?()\n    if beforeInference != nil', '    if beforeInference != nil');
+  return once(s, '      try beforeInference?()\n      guard result.profileId', '      guard result.profileId');
+}
 if (require.main === module) {
   const services = read(file); let unchanged = retainedServices(services);
   for (const [name, method] of [['check-parallel-native-dispatch-ownership', 'retainedServices'],
@@ -150,7 +177,7 @@ if (require.main === module) {
     assert.notEqual(mutation, provider); assert.throws(() => retainedServices(services.replace(provider, mutation)), assert.AssertionError);
   }
   const local = section(services, '  private func receiveLocalModelReply(', '  private func deterministicLocalNativePlan(');
-  assert.equal((local.match(/planningRecoveryIsCurrent\(/g) || []).length, 5);
+  assert.equal((local.match(/planningRecoveryIsCurrent\(/g) || []).length, 8);
   assert(local.indexOf('use: .localPlanningAdmission') < local.indexOf('localInitialPlanningJournal.begin('));
   assert(local.indexOf('self.planningRecoveryIsCurrent(attemptScope)') < local.indexOf('task.pendingPlanning = reference'));
   assert(local.indexOf('owned.acceptsInput(planningInput)') < local.indexOf('await modelPlannedLocalNativeActions('));
@@ -167,7 +194,31 @@ if (require.main === module) {
   for (const mutation of localMutations) {
     assert.notEqual(mutation, local); assert.throws(() => retainedServices(services.replace(local, mutation)), assert.AssertionError);
   }
-  for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
+  const fallback = local.slice(local.indexOf('      guard let fallbackScope ='));
+  assert(fallback.indexOf('planningErrorScope = fallbackScope') < fallback.indexOf('AgentIOSLocalModelWebToolRunner.run('));
+  assert(fallback.indexOf('guard planningRecoveryIsCurrent(fallbackScope)') < fallback.indexOf('store.persistLocalResearchDisclosure'));
+  const loop = read(app + 'AgentModelToolLoop.swift'), adapter = read(app + 'AgentIOSLocalModelWebToolAdapter.swift');
+  assert.equal(retainedLoop(loop), show(base, app + 'AgentModelToolLoop.swift'), 'Loop changes limited to optional ownership boundaries');
+  assert.equal(retainedAdapter(adapter), show(base, app + 'AgentIOSLocalModelWebToolAdapter.swift'), 'Adapter retains model selection, decoding, tool catalog and existing owner policies');
+  const fallbackMutations = [local.replace('planningRecoveryIsCurrent(fallbackScope) else { return }', 'true else { return }'),
+    local.replace('self.planningRecoveryIsCurrent(fallbackScope)', 'true'),
+    local.replace('      planningErrorScope = fallbackScope\n', ''),
+    local.replace('      guard planningRecoveryIsCurrent(fallbackScope) else { return }\n', '')];
+  for (const mutation of fallbackMutations) {
+    assert.notEqual(mutation, local); assert.throws(() => retainedServices(services.replace(local, mutation)), assert.AssertionError);
+  }
+  const ownerLines = [...loop.matchAll(/^.*(?:if let failure = await ownershipFailure\(state\)|^\s*try await validateOwner\?\(\)$).*\n/gm)];
+  assert.equal(ownerLines.length, 7);
+  for (const line of ownerLines) assert.throws(() => retainedLoop(loop.slice(0, line.index) + loop.slice(line.index + line[0].length)), assert.AssertionError);
+  for (const token of ['    try await validateOwner?()\n', '      try await validateOwner?()\n',
+    '      try beforeInference?()\n      guard result.profileId', '      validateOwner: validateOwner\n']) {
+    const mutation = adapter.replace(token, ''); assert.notEqual(mutation, adapter);
+    assert.throws(() => retainedAdapter(mutation), assert.AssertionError);
+  }
+  const loopTests = read('apps/ios/GalaxySSITests/AgentModelToolLoopTests.swift');
+  assert.equal(loopTests, show(approved, 'apps/ios/GalaxySSITests/AgentModelToolLoopTests.swift'));
+  assert.equal((loopTests.match(/  func testOwnedLoop/g) || []).length, 6);
+  for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
   assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 24);
@@ -176,5 +227,5 @@ if (require.main === module) {
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Startup/manual/rolling/initial planning ownership, thirty-one negative source mutations and twenty-four authored fixtures checked; no native execution.');
+  console.log('Planning and local fallback ownership, forty-six negative source mutations and thirty authored fixtures checked; no native execution.');
 }
