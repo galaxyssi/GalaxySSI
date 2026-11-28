@@ -246,6 +246,7 @@ struct GalaxySSIHealthOriginalStore {
 
   func storePhotoCapturePage(_ data: Data, name: String, acquisition: Acquisition,
                              mode: GalaxySSIHealthPhotoDraft.Mode, expected: UUID?, replacing page: UUID?,
+                             paper: GalaxySSIHealthPhotoDraft.PaperHint? = nil,
                              hints: [GalaxySSIHealthPhotoDraft.Hint]) throws {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
@@ -254,7 +255,7 @@ struct GalaxySSIHealthOriginalStore {
           guard archive.photoCaptureDraft?.version == expected else { throw GalaxySSIHealthRecords.Failure.stale }
           var batch = archive.photoCaptureDraft ?? .init(mode: mode)
           guard batch.mode == mode else { throw GalaxySSIHealthRecords.Failure.stale }
-          try batch.install(original, hints: hints, replacing: page)
+          try batch.install(original, hints: hints, replacing: page, paper: paper)
           archive.photoCaptureDraft = batch
         })
     }

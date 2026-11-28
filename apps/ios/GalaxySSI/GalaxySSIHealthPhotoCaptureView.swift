@@ -116,7 +116,8 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     }
     .sheet(item: $cropOriginal) { original in
       NavigationView {
-        GalaxySSIHealthReportCropView(store: originals, initialOriginalID: original.id)
+        GalaxySSIHealthReportCropView(store: originals, initialOriginalID: original.id,
+          initialPaper: draft?.pages.first(where: { $0.original == original })?.validatedPaper)
           .toolbar {
             ToolbarItem(placement: .cancellationAction) {
               Button(t("close", "Close")) { cropOriginal = nil }
@@ -148,9 +149,13 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 
   private func row(_ page: GalaxySSIHealthPhotoDraft.Entry, index: Int, draft: GalaxySSIHealthPhotoDraft.Batch) -> some View {
     HStack(spacing: 10) {
-      GalaxySSIHealthPhotoThumbnail(original: page.original, store: originals)
+      GalaxySSIHealthPhotoThumbnail(original: page.original, store: originals, bounds: page.validatedPaper?.bounds)
       VStack(alignment: .leading, spacing: 4) {
         Text(String(format: t("page", "Page %lld"), Int64(index + 1))).font(.headline)
+        if let paper = page.validatedPaper {
+          Text(paper.bounds != nil ? t("edges_found", "Paper edges found") : t("edges_unclear", "Paper edges are unclear; check the original"))
+            .font(.caption).foregroundColor(.secondary)
+        }
         ForEach(page.hints, id: \.rawValue) { hint in
           Text(qualityHint(hint)).font(.caption).foregroundColor(.secondary)
         }
@@ -168,7 +173,9 @@ struct GalaxySSIHealthPhotoCaptureView: View {
         }
         Button {
           cropOriginal = page.original
-        } label: { Label(t("crop", "Crop page"), systemImage: "crop") }
+        } label: {
+          Label(page.validatedPaper?.bounds != nil ? t("suggested_crop", "Review suggested crop") : t("crop", "Crop page"), systemImage: "crop")
+        }
         Button(role: .destructive) { edit(draft, page: page.id) } label: {
           Label(t("remove", "Remove page"), systemImage: "trash")
         }
@@ -190,9 +197,11 @@ struct GalaxySSIHealthPhotoCaptureView: View {
     staging = true; failed = false; submittedBatchID = nil
     let token = generation
     stagingTask = Task {
-      let inspector = Task.detached(priority: .userInitiated) { try GalaxySSIHealthPhotoDraft.inspect(data) }
+      let inspector = Task.detached(priority: .userInitiated) { [mode = request.mode] in
+        try GalaxySSIHealthPhotoDraft.inspectCapture(data, mode: mode)
+      }
       do {
-        let hints = try await withTaskCancellationHandler(operation: { try await inspector.value },
+        let inspection = try await withTaskCancellationHandler(operation: { try await inspector.value },
           onCancel: { inspector.cancel() })
         guard !Task.isCancelled, generation == token, scene == .active else {
           if generation == token { staging = false; stagingTask = nil }
@@ -200,7 +209,7 @@ struct GalaxySSIHealthPhotoCaptureView: View {
         }
         let name = "Health-Photo-" + String(UUID().uuidString.prefix(8))
         try originals.storePhotoCapturePage(data, name: name, acquisition: request.acquisition, mode: request.mode,
-          expected: request.version, replacing: request.replacement, hints: hints)
+          expected: request.version, replacing: request.replacement, paper: inspection.paper, hints: inspection.hints)
         reload()
       } catch {
         if !Task.isCancelled, generation == token { failed = true }
@@ -250,12 +259,29 @@ struct GalaxySSIHealthPhotoCaptureView: View {
 private struct GalaxySSIHealthPhotoThumbnail: View {
   let original: GalaxySSIHealthOriginalStore.Original
   let store: GalaxySSIHealthOriginalStore
+  var bounds: CGRect? = nil
   @State private var image: CGImage?
   @Environment(\.scenePhase) private var scene
 
   var body: some View {
     Group {
-      if scene == .active, let image { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+      if scene == .active, let image {
+        GeometryReader { geometry in
+          let scale = min(geometry.size.width / CGFloat(image.width), geometry.size.height / CGFloat(image.height))
+          let width = CGFloat(image.width) * scale, height = CGFloat(image.height) * scale
+          ZStack(alignment: .topLeading) {
+            Image(decorative: image, scale: 1).resizable().frame(width: width, height: height)
+            if let bounds, GalaxySSIHealthCropEncoder.valid(bounds) {
+              Rectangle().strokeBorder(Color.accentColor, lineWidth: 1)
+                .frame(width: bounds.width * width, height: bounds.height * height)
+                .offset(x: bounds.minX * width, y: bounds.minY * height)
+                .accessibilityHidden(true)
+            }
+          }
+          .frame(width: width, height: height)
+          .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+        }
+      }
       else { Image(systemName: "photo") }
     }
     .frame(width: 52, height: 52)
