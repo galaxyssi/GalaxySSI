@@ -48,8 +48,12 @@ if (require.main === module) {
     assert(row.includes(`static let ${role} = adaptive(light: 0x${day}, dark: 0x${night})`));
   }
   assert(!/Data\(contentsOf:|FileManager|URLSession|\.write\(|\.store\(/.test(row), 'Formatting cannot read/decrypt/export originals');
-  for (const name of ['GalaxySSIHealthDataFiles', 'GalaxySSIHealthRecords', 'GalaxySSIHealthOriginalStore'])
-    assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ': unchanged backing logic');
+  for (const name of ['GalaxySSIHealthDataFiles', 'GalaxySSIHealthRecords', 'GalaxySSIHealthOriginalStore']) {
+    const file = app + name + '.swift', tool = path.join(__dirname, 'check-photo-original-retention.cjs');
+    const source = name !== 'GalaxySSIHealthDataFiles' && fs.existsSync(tool)
+      ? require(tool).retained(file, read(file)) : read(file);
+    assert.equal(source, show(base, file), name + ': unchanged backing logic outside exact photo retention');
+  }
   const mutations = [
     ['fileDate(original.importedAt)', 'fileDate(Date())'],
     ['formatter.locale = Locale(identifier: language)', 'formatter.locale = Locale.current'],
