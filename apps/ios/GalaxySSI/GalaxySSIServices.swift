@@ -14683,7 +14683,7 @@ final class MessageCoordinator: ObservableObject {
       executionAction.parameters[AgentIOSConnectorDispatch.permissionKey] = store.agentSafetySettings.permissionMode.rawValue
     }
     var dispatch: AgentSequentialPlanNodeDispatch.Prepared?
-    if priorDispatch == nil, task.activePlan != nil || executionAction.kind == .callConnector {
+    if priorDispatch == nil {
       guard let prepared = checkpointSequentialPlanNodeDispatch(executionAction, outgoing: outgoing, screen: screen, task: &task) else { return true }
       dispatch = prepared
     }
@@ -14696,7 +14696,7 @@ final class MessageCoordinator: ObservableObject {
         runtime.actionExecutor.execute(action: executionAction, screen: screen)
       }
     } else {
-      result = runtime.actionExecutor.execute(action: executionAction, screen: screen)
+      return true
     }
     if !result.success,
        action.kind == .callConnector,
@@ -15400,7 +15400,10 @@ final class MessageCoordinator: ObservableObject {
   private func checkpointSequentialPlanNodeDispatch(_ action: AgentAction, outgoing: ChatMessage,
     screen: AgentScreenContext, task: inout AgentTaskRecord) -> AgentSequentialPlanNodeDispatch.Prepared? {
     let previous = store.agentTask(id: task.taskId)
-    if let plan = task.activePlan, let prepared = AgentSequentialPlanNodeDispatch.prepare(plan: plan, action: action,
+    if !store.agentSafetySettings.executionPaused, store.agentSafetySettings.taskExecutionMode != .planOnly,
+      !PhoneExecutionAuthority.isCancelled(taskId: task.taskId),
+      let plan = AgentUnplannedNativeDispatch.plan(task: task, action: action, outgoing: outgoing, screen: screen),
+      let prepared = AgentSequentialPlanNodeDispatch.prepare(plan: plan, action: action,
       screen: screen, sessionId: task.sessionId.ifBlank(outgoing.conversationId), conversationId: outgoing.conversationId,
       turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) {
       task.activePlan = prepared.plan
