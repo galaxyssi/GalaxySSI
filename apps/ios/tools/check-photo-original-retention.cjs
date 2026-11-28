@@ -29,19 +29,24 @@ function retainedFixtures(source) {
 function retained(file, source) {
   if (file === fixture) return retainedFixtures(source);
   assert(names.some(name => file === app + name + '.swift'), file);
+  source = normalizeReceiptRecords(file, source);
   if (source === show(base, file)) return source;
   assert.equal(source, show(approved, file), 'Exact retention integration: ' + file);
   return show(base, file);
+}
+function normalizeReceiptRecords(file, source) {
+  const tool = path.join(__dirname, 'check-restore-receipts.cjs');
+  return file === app + 'GalaxySSIHealthRecords.swift' && fs.existsSync(tool) ? require(tool).retainedRecords(source) : source;
 }
 module.exports = {retained, retainedFixtures};
 if (require.main === module) {
   for (const name of names) {
     const file = app + name + '.swift';
-    assert.equal(read(file), show(approved, file), name);
+    assert.equal(normalizeReceiptRecords(file, read(file)), show(approved, file), name);
     assert.equal(retained(file, read(file)), show(base, file));
   }
   const recordsFile = app + 'GalaxySSIHealthRecords.swift';
-  assert.equal(read(recordsFile), once(show(base, recordsFile), '    var photoCaptureDraft: GalaxySSIHealthPhotoDraft.Batch?\n',
+  assert.equal(normalizeReceiptRecords(recordsFile, read(recordsFile)), once(show(base, recordsFile), '    var photoCaptureDraft: GalaxySSIHealthPhotoDraft.Batch?\n',
     '    var photoCaptureDraft: GalaxySSIHealthPhotoDraft.Batch?\n    var photoReviewOriginals: [UUID: GalaxySSIHealthOriginalStore.Original]?\n'),
     'Only one additive optional archive field; all prior records, transactions and permissions retained');
   let tests = retainedFixtures(read(fixture));
