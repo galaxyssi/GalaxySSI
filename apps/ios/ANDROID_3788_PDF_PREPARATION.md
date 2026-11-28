@@ -26,7 +26,7 @@ remaining synchronous PDFKit password/page-count and preview work from UI action
   recognition still require it; no OCR fallback bypasses a restriction. Existing
   page processing/commit/source/crop/failure-settlement loop remains verbatim.
 - Inactive/disappearing or runtime plaintext clearing invalidates work and drops
-  password/image references. Passwords remain transient Swift strings, never new
+  UI-held password/image references. Passwords remain transient Swift strings, never new
   durable fields. No claim of secure heap zeroization or preempting an in-progress
   native PDFKit call; cancellation fences its returned result. Existing original
   encrypted reads and archive/index I/O remain synchronous on MainActor, so this
