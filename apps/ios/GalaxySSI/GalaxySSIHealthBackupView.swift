@@ -85,6 +85,19 @@ struct GalaxySSIHealthBackupView: View {
           if saveAttempt != nil && !verifyingSave {
             Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
           }
+          if let latestRestoreReceipt {
+            Section {
+              GalaxySSIHealthRestoreReceiptRows(receipt: latestRestoreReceipt)
+            }
+          }
+          if entry == .all || entry == .restore || entry == .history {
+            Section {
+              NavigationLink(destination: GalaxySSIHealthRestoreHistoryView(records: records)) {
+                Label(GalaxySSILocalization.string("galaxyssi.health.restore_receipt.title", fallback: "Restore history", language: language),
+                      systemImage: "clock.arrow.circlepath")
+              }
+            }
+          }
         }
         if let outcome {
           Section(generated != nil ? t("created", "Encrypted backup ready") : t("verified", "Backup verified")) {
@@ -99,19 +112,6 @@ struct GalaxySSIHealthBackupView: View {
         }
         if let restorePreview { restoreSection(restorePreview) }
         if restored { Text(t("restored", "Health backup restored")) }
-        if let latestRestoreReceipt {
-          Section {
-            GalaxySSIHealthRestoreReceiptRows(receipt: latestRestoreReceipt)
-          }
-        }
-        if entry == .all || entry == .restore || entry == .history {
-          Section {
-            NavigationLink(destination: GalaxySSIHealthRestoreHistoryView(records: records)) {
-              Label(GalaxySSILocalization.string("galaxyssi.health.restore_receipt.title", fallback: "Restore history", language: language),
-                    systemImage: "clock.arrow.circlepath")
-            }
-          }
-        }
         if task != nil { ProgressView(t("working", "Processing backup")) }
         if error {
           Text(restoring ? t("restore_failed", "Could not restore this backup. Check its password, owner and contents, or reopen it if local data changed.") :
