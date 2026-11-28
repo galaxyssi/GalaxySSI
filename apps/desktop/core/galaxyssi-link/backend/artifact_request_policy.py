@@ -15,14 +15,16 @@ _NEGATIVE_PREFIX = re.compile(
     re.IGNORECASE,
 )
 _ASCII_WORD = re.compile(r"[a-z0-9_]", re.IGNORECASE)
+# Match an export occurrence, not the suffix of the Chinese verb "derive".
+CHINESE_EXPORT = re.compile(r"(?<!\u63a8)[\u5bfc\u5c0e]\u51fa|\u532f\u51fa")
 _OFFICE_REQUEST = re.compile(
-    r"(?:\b(?:create|generate|export|produce)\b|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|\u5bfc\u51fa)"
+    rf"(?:\b(?:create|generate|export|produce)\b|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|{CHINESE_EXPORT.pattern})"
     r"[^\u3002\uff01\uff1f.!?;\uff1b\n]{0,60}?"
     r"(?<![a-z0-9_])(?:docx|word|xlsx|excel|pptx|ppt|powerpoint)(?![a-z0-9_])",
     re.IGNORECASE,
 )
 _PDF_REQUEST = re.compile(
-    r"(?:\b(?:create|generate|export|produce|convert)\b|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|\u5bfc\u51fa|\u8f6c\u6362|\u8f6c\u6210)"
+    rf"(?:\b(?:create|generate|export|produce|convert)\b|\u751f\u6210|\u5236\u4f5c|\u521b\u5efa|{CHINESE_EXPORT.pattern}|\u8f6c\u6362|\u8f6c\u6210)"
     r"[^\u3002\uff01\uff1f.!?;\uff1b\n]{0,60}?"
     r"(?<![a-z0-9_])pdf(?![a-z0-9_])",
     re.IGNORECASE,
