@@ -70,7 +70,27 @@ execute Swift or query a provider. Existing eight authored Swift wake fixtures
 remain source-only, not runtime acceptance. Status-reader compatibility belongs
 to this repair PR, rather than being duplicated by the deadline feature PR.
 
+## Observation Timing Follow-up
+
+The timing checker retains the pinned Android reference, exact 15/45/60-second
+interactive and 60/90/180-second attachment windows, stage-specific anchors,
+positive/nonfuture clock checks, overflow handling and four informational output
+keys. Complete reviewed models, coordinator, fixture and dependency source are
+checked before legacy policy/hook inversion. Existing six authored timing Swift
+fixtures remain unexecuted source, not native clock acceptance.
+
+When #4687 is present, the real timing projection lives in its separate expiry
+helper. Verify that complete helper against its explicitly approved immutable
+source and verify the timing call there; the pending coordinator transformation
+remains separately exact. Do not claim that checking only a restored historical
+coordinator proves the current helper is intact.
+
+Eighteen further Node source cases validate the actual composed timing contract
+and reject seventeen synthetic anchor/window/clock/status/output/hook/fixture
+changes. The hook mutation targets the actual current helper when installed and
+the original coordinator otherwise. No clock, Swift or task execution occurs.
+
 Other historical whole-file validators still require their own audits; passing
-these three checks is not a full repository, native runtime or Android parity
+these four checks is not a full repository, native runtime or Android parity
 claim. No app code, platform version, CI policy, IPA, approval or remote merge
 changes are included.
