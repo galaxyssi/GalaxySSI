@@ -1,7 +1,7 @@
 // Presence source contracts only, not Swift, pairing, MQTT or Desktop execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'ac093da473260cc270ffc9b3bd7063aae11f4bb4';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '280195ad2021a2cf6bb8cf1c48ea1f97b01be129';
 const memo = new Map(), clean = s => s.replace(/\r\n/g, '\n');
 const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
 function show(ref, file) {
@@ -57,6 +57,7 @@ if (require.main === module) {
     'fingerprint.caseInsensitiveCompare(link.desktopFingerprint) == .orderedSame']) assert(helper.includes(token), token);
   assert(!/URLSession|\.execute\(|\.publish\(|grantedPermissions|grantedConsents|\.claim\(/.test(helper));
   for (const token of ['if let connectorCapabilities {', 'else if !preserveCompactMetadata',
+    'compactPinAdvertisement && !desktopFingerprint.isBlank &&',
     'priorContact?.identityFingerprint.caseInsensitiveCompare(desktopFingerprint) == .orderedSame',
     'priorContact?.deliveryMode.isGalaxySSILinkFamily == true',
     'compactPinAdvertisement && !preserveCompactMetadata', 'capabilityInventory?.markerRemoved == true',
@@ -69,6 +70,7 @@ if (require.main === module) {
     assert(helper.includes(token)); assert.throws(() => assert.equal(helper.replace(token, ''), show(approved, helperFile)), assert.AssertionError); negatives++;
   }
   for (const token of ['if let connectorCapabilities {', 'else if !preserveCompactMetadata',
+    'compactPinAdvertisement && !desktopFingerprint.isBlank &&',
     'priorContact?.identityFingerprint.caseInsensitiveCompare(desktopFingerprint) == .orderedSame',
     'priorContact?.deliveryMode.isGalaxySSILinkFamily == true', 'capabilityInventory?.markerRemoved == true',
     'AgentPinnedDesktopCodexCapability.boundAdvertisement(payload',
