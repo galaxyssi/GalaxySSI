@@ -35,13 +35,53 @@ confirmed original turn, stable team identity, dispatch/recovery pin validation,
 expanded clinical-identifier/local-only objective screening, empty foreground
 screen context for the pinned seed, and refusal of unsupported pins or provider
 handoff remain to be ported. Existing
-ordinary collaboration is not presented as that new end-to-end flow. No new
-Desktop protocol support, version bump or deployment is claimed here.
+ordinary collaboration is not presented as that new end-to-end flow. The next
+increment below implements the entry and managed dispatch parts of this list.
+No new Desktop protocol support, version bump or deployment is claimed here.
+
+## Selected Desktop Entry And Managed Dispatch
+
+Manual Codex team commands now open a dedicated English/Chinese review showing
+the actual paired Desktop, exact advertised model, reasoning effort and full
+objective. The launch is tied to the foreground source/draft revision and saved
+selection; its one-shot review is consumed even after a rejected claim. No
+attachments, screen-assistant request, private/child/global conversation, clinical
+identifier fields or local-only objective is admitted. Missing explicit Desktop
+support, ambiguous bare Codex contacts, changed fingerprint, blocked disclosure,
+private budget or unavailable exact model/effort is rejected without substitution.
+
+Confirmation saves a fresh independent research conversation before switching or
+clearing the source draft. It copies only the explicit model/effort selection,
+not source history, screen contents, global context or session requirements. The
+two initial roles share that exact route and execute EXPLORE then DELIVER, so
+one free Desktop execution slot is sufficient. An optional Codable binding
+stores the profile, conversation, original turn, objective and both person IDs.
+Existing rosters decode without that field. Editing/recruitment cannot silently
+remove the binding or redirect a pinned member.
+
+The production collaboration compiler retains conversation:desktop-team and its
+stable supervisor run on retries. Per-member dispatch and restored frozen plans
+check the stored route, original turn, exact two-person research graph, person,
+model/effort and managed workspace result contract. Initial dispatch persists an
+explicit run control before sending; stopped/paused/unavailable or missing
+restored controls do not grant execution. The existing serial member history,
+managed continuation and source-message identities remain in use. A second
+ordinary send cannot restart the confirmed turn under a fresh identity. This
+does not deploy the required Desktop implementation.
+
+Still unverified/unported: late revocation of an already queued encrypted MQTT
+publication, cross-process/device recovery acceptance, dynamically recruited
+pinned teams, and live provider refusal/handoff behavior. Those are not inferred
+from source contracts. The group deliberately fails closed on roster expansion
+until a reviewed pinned-recruitment flow exists. No full #4694 parity claim.
 
 Twelve synthetic Swift fixture methods cover strict advertisements, compact vs
 detailed inventories, marker removal, inheritance, actual Store retention/hash/
 revocation, other agents, unpaired links, fingerprint drift, parent metadata and
 optional contact decoding. They are authored, not compiled or executed.
+Thirteen additional Swift fixture methods describe binding/graph mutations,
+stable retries, workspace ownership, one-shot review and objective screening;
+they too are authored only, not executed.
 
 Verification is limited to JS/source contracts, iOS project structure and
 whitespace. No Swift/native build, XCTest, device/simulator/live Desktop/model/
