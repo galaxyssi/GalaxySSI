@@ -31,3 +31,11 @@ they are not concurrency, OS callback, UI, device or successful capture acceptan
 
 No Swift/native compilation, XCTest execution, simulator/device/live media,
 full repository check, CI inspection or IPA generation is included.
+
+Formal PR #4690 is main-based and not draft. Local integration through #4690
+retains the independent pending changes without a text conflict. All 26 scoped
+source checks passed after adding exact readiness normalization to #4673's
+capture-persistence guard; the other checks had passed in the combined sweep and
+that guard was rerun after its update. `npm run check:ios` and `git diff --check`
+also passed. #4685 adds only an optional exact catalog-normalizer import.
+Neither older PR duplicates this feature code. Native acceptance remains unproven.
