@@ -56,6 +56,8 @@ if (require.main === module) {
     let retained = name === 'AgentApprovedCaptureDispatch' && captureEnvelope ? captureEnvelope(source) : source;
     if (name === 'AgentPlanRunModels' && browser) retained = browser.retainedBrowserTaskModels(retained);
     if (name === 'GalaxySSIStore' && pairing) retained = pairing.retainedPairingStore(retained);
+    const planning = path.join(__dirname, 'check-planning-recovery-ownership.cjs');
+    if (name === 'AgentModelToolLoop' && fs.existsSync(planning)) retained = require(planning).retainedLoop(retained);
     assert.equal(retained, old(app + name + '.swift'), name);
   }
   const tests = read('apps/ios/GalaxySSITests/AgentUnplannedNativeDispatchTests.swift');
