@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '0eced2061d62eeef896e6d5080609364d3782a85';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '99764b9ae699558b5dbadd90b2aacbbe9e490272';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -22,11 +22,17 @@ function retainedServices(s) {
     assert.equal(block, section(show(approved, file), first, last), 'Exact recovery-attempt input/callback ownership only');
     s = once(s, block, section(show(base, file), '  @discardableResult\n  func recoverInterruptedInitialPlanning()', last));
   }
-  if (s.includes('    guard let attemptScope = AgentPlanningRecoveryScope(')) {
+  if (s.includes('use: .userReplan')) {
     const first = '  @discardableResult\n  @MainActor\n  func replanLocalNativeAction(',
       last = '  @discardableResult\n  func retryFailedLocalNativeAction(';
     const block = section(s, first, last);
     assert.equal(block, section(show(approved, file), first, last), 'Exact explicit replanning attempt/callback ownership only');
+    s = once(s, block, section(show(base, file), first, last));
+  }
+  if (s.includes('use: .rollingContinuation')) {
+    const first = '  private func continueRollingNativePlan(', last = '  @discardableResult\n  private func acceptRollingPlanningOutcome(';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, file), first, last), 'Exact rolling continuation attempt/callback ownership only');
     s = once(s, block, section(show(base, file), first, last));
   }
   return s;
@@ -94,14 +100,32 @@ if (require.main === module) {
   for (const mutation of manualMutations) {
     assert.notEqual(mutation, manual); assert.throws(() => retainedServices(services.replace(manual, mutation)), assert.AssertionError);
   }
+  const rolling = section(services, '  private func continueRollingNativePlan(',
+    '  @discardableResult\n  private func acceptRollingPlanningOutcome(');
+  assert.equal((rolling.match(/planningRecoveryIsCurrent\(/g) || []).length, 5);
+  assert.equal((rolling.match(/use: \.rollingContinuation/g) || []).length, 2);
+  assert(rolling.includes('!AgentNativeConnectorContinuation.hasWaitingAction(task)'));
+  assert(rolling.includes('previousResult.metadata["awaiting_response"] != "true"'));
+  assert(rolling.indexOf('self.planningRecoveryIsCurrent(attemptScope)') < rolling.indexOf('committedReference = reference'));
+  assert(rolling.indexOf('owned.acceptsInput(planningInput)') < rolling.indexOf('await modelPlannedLocalNativeActions('));
+  assert(rolling.indexOf('planningRecoveryIsCurrent(owned), let reference = committedReference') < rolling.indexOf('task.pendingPlanning = nil'));
+  const rollingMutations = [rolling.replace('planningRecoveryIsCurrent(attemptScope) else { return }', 'true else { return }'),
+    rolling.replace('self.planningRecoveryIsCurrent(attemptScope)', 'true'),
+    rolling.replace('self.planningRecoveryIsCurrent(owned), owned.acceptsInput(planningInput)', 'self.planningRecoveryIsCurrent(owned)'),
+    rolling.replace('      guard planningRecoveryIsCurrent(callbackScope ?? attemptScope) else { return }\n', ''),
+    rolling.replace('let owned = callbackScope, planningRecoveryIsCurrent(owned), let reference', 'let owned = callbackScope, let reference'),
+    rolling.replace('!AgentNativeConnectorContinuation.hasWaitingAction(task)', 'true')];
+  for (const mutation of rollingMutations) {
+    assert.notEqual(mutation, rolling); assert.throws(() => retainedServices(services.replace(rolling, mutation)), assert.AssertionError);
+  }
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
-  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 12);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 16);
   assert(!/\p{Script=Han}/u.test(helper + tests));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Startup/manual planning ownership, fourteen source mutations, retained automatic versus explicit policy and twelve authored fixtures checked; no native execution.');
+  console.log('Startup/manual/rolling planning ownership, twenty negative source mutations, retained existing admission and sixteen authored fixtures checked; no native execution.');
 }
