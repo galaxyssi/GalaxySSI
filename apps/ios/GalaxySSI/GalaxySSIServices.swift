@@ -14052,7 +14052,7 @@ final class MessageCoordinator: ObservableObject {
       return
     }
 
-    func commitResults(_ projected: inout AgentTaskRecord) -> Bool {
+    @MainActor func commitResults(_ projected: inout AgentTaskRecord) -> Bool {
       guard dispatchScope.matches(profile: store.profile.identityFingerprint, task: store.agentTask(id: taskId),
               source: store.persistedMessage(id: outgoing.id, contactId: outgoing.contactId),
               cancelled: PhoneExecutionAuthority.isCancelled(taskId: taskId)),
