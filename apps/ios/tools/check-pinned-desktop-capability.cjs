@@ -14,6 +14,7 @@ function section(s, first, last) {
   const a = s.indexOf(first), b = s.indexOf(last, a + first.length); assert(b > a, last); return s.slice(a, b);
 }
 function once(s, from, to = '') { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
+const historyGuard = s => section(s, '      if contact.isDesktopHistoryOnly', '      contact.desktop_disconnected = nil');
 function retainedStore(s) {
   if (!s.includes('      let capabilityInventory = AgentPinnedDesktopCodexCapability.inventory(payload)')) return s;
   const file = app + 'GalaxySSIStore.swift';
@@ -22,8 +23,16 @@ function retainedStore(s) {
     ['  private func desktopAgentPayloads(\n    from agents:', '  private func singleDesktopAgentPayload(']
   ]) {
     const block = section(s, first, last);
-    assert.equal(block, section(show(approved, file), first, last), 'Exact compact presence reception/inheritance only');
-    s = once(s, block, section(show(base, file), first, last));
+    let normalized = block, original = section(show(base, file), first, last);
+    if (first.includes('upsertDesktopAgentContacts')) {
+      const paired = historyGuard(show('c1a85545b107b89f353fe73c7003008cbf5629ed', file));
+      if (historyGuard(block) === paired) {
+        normalized = once(normalized, paired, historyGuard(original));
+        original = once(original, historyGuard(original), paired);
+      }
+    }
+    assert.equal(normalized, section(show(approved, file), first, last), 'Exact compact presence reception/inheritance only');
+    s = once(s, block, original);
   }
   const marker = '  private func connectorProtocols(from payload:';
   return once(s, marker, section(show(base, file), '  private func connectorCapabilities(from payload:', marker) + marker);
@@ -67,6 +76,11 @@ if (require.main === module) {
     '["adapter", "provider_profile", "invocation_profile"].contains(key)']) {
     assert(source.includes(token)); assert.throws(() => retainedStore(source.replace(token, '')), assert.AssertionError); negatives++;
   }
+  const paired = historyGuard(show('c1a85545b107b89f353fe73c7003008cbf5629ed', file));
+  const combined = once(source, historyGuard(source), paired);
+  assert.equal(historyGuard(retainedStore(combined)), paired, 'Pending stronger fingerprint restoration remains intact');
+  assert.throws(() => retainedStore(combined.replace('GalaxySSIPairingLifecycle.canRestoreHistory(contact, pairedFingerprint: current.desktopFingerprint)', 'true')), assert.AssertionError);
+  negatives++;
   for (const name of ['AgentConnectorModels', 'AgentNetworkRoutingModels', 'AgentPlanLifecyclePolicy'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' execution/selection policy unchanged');
   assert.equal((tests.match(/  func test/g) || []).length, 12);
