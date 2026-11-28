@@ -294,6 +294,8 @@ extension GalaxySSIHealthPortableBackup {
         replacements.append(revision)
       }
       archive.revisions.append(contentsOf: replacements)
+      try restoreSelectedSources(input, selected: selected, archive: &archive, staged: files,
+                                 originals: originals, lease: lease)
       let receipt = UUID()
       do {
         try originals.stageRestore(files, receipt: receipt, lease: lease)
@@ -437,6 +439,21 @@ extension GalaxySSIHealthPortableBackup {
     return (preview, archive, files)
   }
 
+  @MainActor
+  private static func restoreSelectedSources(_ input: RestoreInput, selected: Set<UUID>, archive: inout GalaxySSIHealthRecords.Archive,
+                                            staged: [(GalaxySSIHealthOriginalStore.Original, Data)],
+                                            originals: GalaxySSIHealthOriginalStore,
+                                            lease: GalaxySSIHealthOriginalStore.RestoreLease) throws {
+    guard !selected.isEmpty else { return }
+    let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
+    let readings = payload.readings.filter { selected.contains($0.id) }
+    let current = Dictionary(uniqueKeysWithValues: archive.current.map { ($0.id, $0) })
+    guard Set(readings.map(\.id)) == selected, selected.allSatisfy({ current[$0] != nil }) else { throw Failure.stale }
+    let frames = (payload.sourceFrames ?? []).filter { $0.target.map { selected.contains($0.record) } == true }
+    _ = try restoreSourceFrames(frames, readings: readings, archive: &archive, previous: current,
+      listing: originals.list(lease: lease), staged: staged, originals: originals, lease: lease)
+  }
+
   private enum SourceSlot: Hashable {
     case report(GalaxySSIHealthReportReview.Source)
     case table(String, String?, Int)
@@ -552,7 +569,8 @@ extension GalaxySSIHealthPortableBackup {
         if tableIDs[source.sha256] == nil { missing.insert("table:\(source.sha256)") }
         mapped = .init(report: nil, table: .init(target: .init(record: target.record, revision: target.revision),
           source: .init(batch: tableIDs[source.sha256] ?? source.batch, row: source.row, sha256: source.sha256,
-            sheet: source.sheet, worksheetPath: source.worksheetPath, columns: source.columns)))
+            sheet: source.sheet, worksheetPath: source.worksheetPath, columns: source.columns,
+            dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904)))
       } else { throw Failure.invalid }
       if let owners = slots[slot] {
         guard owners == Set([target]) else { result.skipped += 1; continue }
@@ -569,7 +587,7 @@ extension GalaxySSIHealthPortableBackup {
           let source = existing.source
           priorTables[index] = .init(target: existing.target, source: .init(batch: link.source.batch,
             row: source.row, sha256: source.sha256, sheet: source.sheet, worksheetPath: source.worksheetPath,
-            columns: source.columns))
+            columns: source.columns, dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904))
           result.repaired += 1
         }
       } else {
