@@ -83,9 +83,13 @@ if (require.main === module) {
   const nav = '  func webView(_ webView: WKWebView, decidePolicyFor action:';
   assert.equal(view.slice(view.indexOf(nav)), old(app + 'GalaxySSIManagedBrowserHandoffView.swift').slice(old(app + 'GalaxySSIManagedBrowserHandoffView.swift').indexOf(nav)),
     'All WebKit URL/DNS/response/cookie/observation policies unchanged');
-  for (const name of ['AgentModelToolLoop', 'AgentModelLoopJournal', 'AgentSupervisedBrowserWait', 'GalaxySSIStore', 'AgentPlanNodeJournal', 'AgentActionEffectExecutor'])
-    assert.equal(name === 'GalaxySSIStore' && pairing ? pairing.retainedPairingStore(read(app + name + '.swift')) : read(app + name + '.swift'),
-      old(app + name + '.swift'), name + ' unchanged outside the exact approved pairing version');
+  for (const name of ['AgentModelToolLoop', 'AgentModelLoopJournal', 'AgentSupervisedBrowserWait', 'GalaxySSIStore', 'AgentPlanNodeJournal', 'AgentActionEffectExecutor']) {
+    let source = read(app + name + '.swift');
+    if (name === 'GalaxySSIStore' && pairing) source = pairing.retainedPairingStore(source);
+    const planning = path.join(__dirname, 'check-planning-recovery-ownership.cjs');
+    if (name === 'AgentModelToolLoop' && fs.existsSync(planning)) source = require(planning).retainedLoop(source);
+    assert.equal(source, old(app + name + '.swift'), name + ' retained outside exact approved pairing and fallback owner hooks');
+  }
   const tests = read('apps/ios/GalaxySSITests/AgentBrowserViewLeaseTests.swift');
   assert.equal((tests.match(/func test/g) || []).length, 8);
   for (const token of ['testFailedPersistenceLeavesNoActiveAuthorityForTheCandidate', 'testManagedStoreReopensOnlyTheSameLiveViewThenRecordsDurableLoss',
