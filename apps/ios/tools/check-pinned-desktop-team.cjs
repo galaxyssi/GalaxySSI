@@ -16,6 +16,8 @@ function once(source, from, to) {
 }
 // Reverse only exact application hunks, not an entire coordinator or arbitrary later changes.
 function retained(file, source) {
+  const scoped = path.join(__dirname, 'check-scoped-member-recall.cjs');
+  if (fs.existsSync(scoped)) source = require(scoped).retained(file, source);
   const patch = git(['diff', '--no-ext-diff', '--no-color', '--unified=3', base, approved, '--', file]);
   let old = [], current = [], active = false;
   function flush() {
@@ -34,12 +36,14 @@ function retained(file, source) {
   return source;
 }
 function retainedServices(source) {
+  const scoped = path.join(__dirname, 'check-scoped-member-recall.cjs');
+  if (fs.existsSync(scoped)) source = require(scoped).retainedServices(source);
   const outbox = path.join(__dirname, 'check-pinned-desktop-outbox.cjs');
   if (fs.existsSync(outbox)) source = require(outbox).retainedServices(source);
   if (!source.includes('    pinnedDesktopTeamTurn: String? = nil,')) return source;
   return retained(app + 'GalaxySSIServices.swift', source);
 }
-module.exports = {retainedServices};
+module.exports = {retainedServices, retained};
 if (require.main === module) {
   const serviceFile = app + 'GalaxySSIServices.swift', services = read(serviceFile);
   let normalized = retainedServices(services);

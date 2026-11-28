@@ -15,6 +15,8 @@ function once(source, from, to) {
   return source.replace(from, to);
 }
 function retained(file, source) {
+  const scoped = path.join(__dirname, 'check-scoped-member-recall.cjs');
+  if (fs.existsSync(scoped)) source = require(scoped).retained(file, source);
   if (file.endsWith('/GalaxySSILinkReliability.swift')) {
     if (!source.includes('pinnedDesktopRunID')) return source;
     if (source.includes('AgentLearningOutboxScope')) {
