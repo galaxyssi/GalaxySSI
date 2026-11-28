@@ -21,6 +21,13 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retained(f, s) {
+  if (f.endsWith('/AgentRunPolicyTests.swift') && s.includes('  // Startup local-stage ordering fixtures;')) {
+    const first = '  // Startup local-stage ordering fixtures;',
+      last = '  @MainActor\n  func testAgentStartupRecoveryReconcilesBeforeDispatchAndFailsClosed()';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, f), first, last), 'Exact four authored startup-order fixtures only');
+    return once(s, block);
+  }
   if (f.endsWith('/AgentRunRecoveryCoordinator.swift') && s.includes('  static func reconcileLocal(')) {
     const first = '  @MainActor\n  static func reconcileLocal(', last = '  @MainActor\n  static func run(';
     const block = section(s, first, last);
