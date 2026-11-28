@@ -433,10 +433,12 @@ private struct GalaxySSIRuntimeRoot: View {
         runtime.agentStartupRecovery.start(
           store: runtime.store,
           reconcileLocalTasks: {
-            let cancellations = runtime.coordinator.reconcileInterruptedLocalCancellations()
-            let cloud = runtime.store.reconcileCloudDispatches()
-            let planning = await runtime.coordinator.recoverInterruptedInitialPlanning()
-            return cancellations + cloud + planning + runtime.coordinator.reconcileInterruptedLocalPlanNodes()
+            await AgentStartupRecoverySequence.reconcileLocal(
+              cancellations: { runtime.coordinator.reconcileInterruptedLocalCancellations() },
+              cloud: { runtime.store.reconcileCloudDispatches() },
+              interruptedNodes: { runtime.coordinator.reconcileInterruptedLocalPlanNodes() },
+              planning: { await runtime.coordinator.recoverInterruptedInitialPlanning() }
+            )
           },
           completion: {
             runtime.coordinator.start()

@@ -4940,6 +4940,75 @@ extension GalaxySSIStoreTests {
     second.close()
   }
 
+  // Startup local-stage ordering fixtures; no planner, provider or native tool is run.
+  @MainActor
+  func testLocalStartupRecoveryScansInterruptedNodesBeforePlanning() async {
+    var events: [String] = []
+    let count = await AgentStartupRecoverySequence.reconcileLocal(
+      cancellations: { events.append("cancellations"); return 1 },
+      cloud: { events.append("cloud"); return 2 },
+      interruptedNodes: { events.append("nodes"); return 3 },
+      planning: { events.append("planning"); return 4 })
+    XCTAssertEqual(events, ["cancellations", "cloud", "nodes", "planning"])
+    XCTAssertEqual(count, 10)
+  }
+
+  @MainActor
+  func testPlanningRecoveryNewWorkIsNotScannedAsOldInterruption() async {
+    var running = Set(["old-node"]), paused = Set<String>()
+    let count = await AgentStartupRecoverySequence.reconcileLocal(
+      cancellations: { 0 }, cloud: { 0 },
+      interruptedNodes: {
+        paused.formUnion(running)
+        running.removeAll()
+        return paused.count
+      },
+      planning: {
+        running.insert("new-planning-node")
+        await Task.yield()
+        return 1
+      })
+    XCTAssertEqual(count, 2)
+    XCTAssertEqual(paused, ["old-node"])
+    XCTAssertEqual(running, ["new-planning-node"])
+  }
+
+  @MainActor
+  func testCancelledStartupLocalRecoveryDoesNotStartAnyStage() async {
+    let task = Task { @MainActor in
+      var calls = 0
+      let count = await AgentStartupRecoverySequence.reconcileLocal(
+        cancellations: { calls += 1; return 1 }, cloud: { calls += 1; return 1 },
+        interruptedNodes: { calls += 1; return 1 }, planning: { calls += 1; return 1 })
+      return (count, calls)
+    }
+    task.cancel()
+    let result = await task.value
+    XCTAssertEqual(result.0, 0)
+    XCTAssertEqual(result.1, 0)
+  }
+
+  @MainActor
+  func testLocalStartupRecoveryChecksCancellationBetweenEveryStage() async {
+    for stop in 0..<3 {
+      let task = Task { @MainActor in
+        var events: [Int] = []
+        func stage(_ index: Int) -> Int {
+          events.append(index)
+          if index == stop { withUnsafeCurrentTask { $0?.cancel() } }
+          return 1
+        }
+        let count = await AgentStartupRecoverySequence.reconcileLocal(
+          cancellations: { stage(0) }, cloud: { stage(1) },
+          interruptedNodes: { stage(2) }, planning: { stage(3) })
+        return (count, events)
+      }
+      let result = await task.value
+      XCTAssertEqual(result.0, stop + 1)
+      XCTAssertEqual(result.1, Array(0...stop))
+    }
+  }
+
   @MainActor
   func testAgentStartupRecoveryReconcilesBeforeDispatchAndFailsClosed() async throws {
     var events: [String] = []
