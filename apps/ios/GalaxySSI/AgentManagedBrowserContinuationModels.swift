@@ -119,6 +119,7 @@ struct AgentManagedBrowserHandoff: Codable, Equatable, Identifiable {
   enum Interruption: String, Codable {
     case appProcessChanged = "app_process_changed"
     case webContentProcessExited = "web_content_process_exited"
+    case browserViewClosed = "browser_view_closed"
 
     var output: AgentMcpJSONObject {
       ["state": .string("interrupted"), "interruption": .string(rawValue),

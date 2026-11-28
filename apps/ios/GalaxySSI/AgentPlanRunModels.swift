@@ -131,6 +131,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var teamResultRichOutput: String? = nil
   var capturePermission: AgentCapturePermissionContinuation? = nil
   var supervisedBrowserWait: AgentSupervisedBrowserWait? = nil
+  var browserViewLease: AgentBrowserViewLease? = nil
   var localOperationProcessId: String? = nil
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
@@ -240,6 +241,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case teamResultRichOutput = "team_result_rich_output"
     case capturePermission = "capture_permission"
     case supervisedBrowserWait = "supervised_browser_wait"
+    case browserViewLease = "browser_view_lease"
     case localOperationProcessId = "local_operation_process_id"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
@@ -287,6 +289,7 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     teamResultRichOutput = try container.decodeIfPresent(String.self, forKey: .teamResultRichOutput)
     capturePermission = try container.decodeIfPresent(AgentCapturePermissionContinuation.self, forKey: .capturePermission)
     supervisedBrowserWait = try container.decodeIfPresent(AgentSupervisedBrowserWait.self, forKey: .supervisedBrowserWait)
+    browserViewLease = try container.decodeIfPresent(AgentBrowserViewLease.self, forKey: .browserViewLease)
     localOperationProcessId = try container.decodeIfPresent(String.self, forKey: .localOperationProcessId)
   }
 }
