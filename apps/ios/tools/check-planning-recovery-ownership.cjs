@@ -49,8 +49,9 @@ function retainedServices(s) {
   }
   return s;
 }
-module.exports = {retainedServices};
+module.exports = {retainedServices, retainedLoop};
 function retainedLoop(s) {
+  if (!s.includes('  private let validateOwner: (() async throws -> Void)?')) return s;
   assert.equal(s, show(approved, app + 'AgentModelToolLoop.swift'));
   s = once(s, '  private let validateOwner: (() async throws -> Void)?\n');
   s = once(s, '    browserHandoff: AgentManagedBrowserToolExecution? = nil,\n    validateOwner: (() async throws -> Void)? = nil',
