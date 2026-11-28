@@ -22,6 +22,20 @@ enum GalaxySSIHealthPDFText {
     let preview: CGImage?
   }
 
+  struct Preview: Sendable {
+    let pages: Int
+    let image: CGImage
+  }
+
+  static func previewPage(_ data: Data, page index: Int, password: String? = nil) throws -> Preview {
+    try Task.checkCancellation()
+    let document = try open(data, password: password)
+    guard index >= 0, index < document.pageCount, let page = document.page(at: index),
+          let reference = page.pageRef, let rendered = render(reference) else { throw Failure.unavailable }
+    try Task.checkCancellation()
+    return Preview(pages: document.pageCount, image: rendered.image)
+  }
+
   static func pageCount(_ data: Data, password: String? = nil) throws -> Int {
     let document = try open(data, password: password)
     return document.pageCount
@@ -379,6 +393,9 @@ struct GalaxySSIHealthPDFTextView: View {
     .onAppear(perform: reload)
     .onDisappear(perform: clearPassword)
     .onDisappear { if status == .working { cancel() } }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      clearPassword(); cancel(); selected = nil; files = []
+    }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if let reviewRecords, notification.object as? String == reviewRecords.owner { reloadReviewedSources() }
     }
