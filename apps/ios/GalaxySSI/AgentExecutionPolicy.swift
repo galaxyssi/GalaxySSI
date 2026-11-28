@@ -166,6 +166,7 @@ struct AgentExecutionProfile: Codable, Equatable {
     "return the file", "send the file", "export", "generate image", "create file",
     "downloadable", "zip project", "apk",
     "\u{53d1}\u{56de}\u{6587}\u{4ef6}", "\u{8fd4}\u{56de}\u{6587}\u{4ef6}", "\u{5bfc}\u{51fa}",
+    "\u{5c0e}\u{51fa}", "\u{532f}\u{51fa}",
     "\u{751f}\u{6210}\u{56fe}\u{7247}", "\u{6253}\u{5305}", "\u{538b}\u{7f29}\u{5305}"
   ]
   private static let researchTerms = [
@@ -198,9 +199,10 @@ enum AgentArtifactRequestPolicy {
       let before = text[..<range.lowerBound].last
       let after = text[range.upperBound...].first
       let embedded = (isWord(term.first) && isWord(before)) || (isWord(term.last) && isWord(after))
+      let inferenceSuffix = before == "\u{63a8}" && ["\u{5bfc}\u{51fa}", "\u{5c0e}\u{51fa}"].contains(term)
       let quotedField = (before == "\"" || before == "'") && after == before &&
         text[range.upperBound...].dropFirst().drop(while: { $0.isWhitespace }).first == ":"
-      if !embedded && !quotedField && !isNegated(String(text[..<range.lowerBound].suffix(80))) { return true }
+      if !inferenceSuffix && !embedded && !quotedField && !isNegated(String(text[..<range.lowerBound].suffix(80))) { return true }
       start = range.upperBound
     }
     return false
@@ -216,7 +218,7 @@ enum AgentArtifactRequestPolicy {
   }
 
   private static let pdfRequest = try? NSRegularExpression(pattern:
-    "(?:\\b(?:create|generate|export|produce|convert)\\b|\u{751f}\u{6210}|\u{5236}\u{4f5c}|\u{521b}\u{5efa}|\u{5bfc}\u{51fa}|\u{8f6c}\u{6362}|\u{8f6c}\u{6210})" +
+    "(?:\\b(?:create|generate|export|produce|convert)\\b|\u{751f}\u{6210}|\u{5236}\u{4f5c}|\u{521b}\u{5efa}|(?<!\u{63a8})[\u{5bfc}\u{5c0e}]\u{51fa}|\u{532f}\u{51fa}|\u{8f6c}\u{6362}|\u{8f6c}\u{6210})" +
     "[^\u{3002}\u{ff01}\u{ff1f}.!?;\u{ff1b}\\n]{0,60}?(?<![a-z0-9_])pdf(?![a-z0-9_])", options: .caseInsensitive)
   private static let negativePrefix =
     "(?:(?:\u{4e0d}\u{8981}|\u{4e0d}\u{80fd}|\u{4e0d}\u{5fc5}|\u{65e0}\u{9700}|\u{4e0d}\u{7528}|\u{52ff})(?:\u{53ea})?" +
