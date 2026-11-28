@@ -30,6 +30,7 @@ struct GalaxySSIHealthRecordCenterSnapshot {
 struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.locale) private var locale
   let records: GalaxySSIHealthRecords
   let devices: () -> Devices
   let addManual: (GalaxySSIHealthMetric?) -> Void
@@ -102,7 +103,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
               Button { edit(reading) } label: {
                 VStack(alignment: .leading, spacing: 4) {
                   Text(reading.metric.title(language: language))
-                  Text((reading.value?.formatted() ?? "") + " " + reading.unit).foregroundColor(.secondary)
+                  Text(summary(reading)).foregroundColor(.secondary)
                   Text(reading.measuredAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
                 }
               }.disabled(snapshot.draft != nil)
@@ -127,6 +128,12 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner { reload() }
     }
+  }
+
+  private func summary(_ reading: GalaxySSIHealthReading) -> String {
+    let value = reading.reported?.raw ?? reading.value?.formatted(.number.locale(locale)) ?? ""
+    let lower = reading.diastolic.map { "/" + $0.formatted(.number.locale(locale)) } ?? ""
+    return value + lower + (reading.unit.isEmpty ? "" : " " + reading.unit)
   }
 
   private func reload() {
