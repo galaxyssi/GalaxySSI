@@ -22,6 +22,7 @@ function helper(source) {
   assert(end > start); return source.slice(start, end);
 }
 function retainedBackup(source) {
+  source = require('./check-restore-receipts.cjs').retainedBackup(source);
   if (!source.includes(helperStart)) { assert(!source.includes('try restoreSelectedSources(')); return source; }
   const block = helper(show(approved, file)); assert.equal(helper(source), block, 'Exact selected-only source binding helper');
   assert(source.includes(append + call + '      let receipt = UUID()'), 'Bind after new revisions, before staging/commit');
@@ -37,6 +38,7 @@ function retainedBackup(source) {
   return source;
 }
 function validateSource(source) {
+  source = require('./check-restore-receipts.cjs').retainedBackup(source);
   assert(source.includes(helperStart), 'Actual selected-revision binding is installed');
   assert(!helper(source).includes('JSONDecoder'), 'Reuse the already validated decoded payload');
   source = retainedBackup(source);
@@ -49,10 +51,12 @@ function validateProject(source) {
   const lines = ownedProjectLines(); assert.equal(lines.length, 4);
   for (const line of lines) assert.equal(source.split(line).length, 2, 'Exact single test registration: ' + line);
 }
-module.exports = {retainedBackup};
+module.exports = {retainedBackup,
+  retainedRecords: source => require('./check-restore-receipts.cjs').retainedRecords(source),
+  retainedView: source => require('./check-restore-receipts.cjs').retainedView(source)};
 if (require.main === module) {
-  const source = read(file); validateSource(source); validateProject(read(projectFile));
-  assert.equal(read(fixture), show(approved, fixture), 'Exact four authored Swift test methods, not executed');
+  const source = require('./check-restore-receipts.cjs').retainedBackup(read(file)); validateSource(source); validateProject(read(projectFile));
+  assert.equal(require('./check-restore-receipts.cjs').retainedFixture(read(fixture)), show(approved, fixture), 'Original four authored Swift test methods retained, not executed');
   assert(!read(fixture).includes('HealthFixtureSecrets'), 'Standalone private fixture does not change the large existing test file');
   const android = show('f7028ad1a3b07625b3ac3bad02b4959174b5357e',
     'apps/android/app/src/main/java/com/galaxyssi/chat/HealthRestoreRepository.kt');

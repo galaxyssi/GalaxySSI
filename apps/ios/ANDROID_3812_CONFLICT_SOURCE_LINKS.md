@@ -21,14 +21,28 @@ were processed before the selected new revisions existed and therefore skipped.
   bypass skipped-source policy. This is not blanket rebinding of historical links.
 - Preserve existing date-only interpretation and Excel date-system fields when
   constructing/remapping table evidence; the older initializer dropped them.
-- No schema, encryption, source interpretation, confirmation, permission or
-  network/model changes. Preview remains the preselection baseline; this does not
-  introduce Android-style detailed per-restore count receipts or claim full parity.
+- Add optional encrypted restore history, committed in the same archive write as
+  the selected revisions and receipt authority. Legacy archives have no fabricated
+  history. Generic original staging does not create manual-backup history.
+- Count new/duplicate/unreplaced/replaced measurements, added/reused/repaired/
+  unavailable originals, new tables, added/reused/skipped source links and missing
+  references. Selected sources adjust the baseline counters without double counting
+  missing reference keys. Validate bounded nonnegative components before sums.
+- Keep the newest 100 detailed receipts without pruning the separate staging
+  authority set. The history page initially shows ten and supports older entries,
+  current language/date formatting, owner/foreground reload and inactive clearing.
+  Counts describe committed outcomes, not current original-file delivery. The
+  separate #4713 pending-original recovery remains authoritative for that state.
+- Use the unlocked payload SHA256 as an opaque backup fingerprint, not an invented
+  Android package ID. No backup format, encryption, source interpretation,
+  confirmation, permission, network or model changes; no claim of full parity.
 
-Four XCTest methods live in a new dedicated test file and are registered in the
+Seven XCTest methods live in a new dedicated test file and are registered in the
 test target. They cover selected-versus-unselected links and subsequent selection,
 new revision identity, report/table aliases, retained date provenance, occupied
-slots and stale preview rejection. They are authored only, NOT executed.
+slots, stale preview rejection, receipt counter conservation/bounds, history
+trimming, duplicate authority, invalid-detail rejection and generic staging history
+preservation. They are authored only, NOT executed.
 
 ## Source Validation
 
@@ -37,7 +51,11 @@ all other backup code with the immutable baseline. When #4713 is present its exa
 finalization normalizer composes separately; no recovery app code is duplicated.
 The existing source slot policy remains unchanged. The guard also checks the
 dedicated fixture source, four project registration entries and 19 negative source
-mutations. These checks do not typecheck Swift or execute restore behavior.
+mutations. A separate `check-restore-receipts.cjs` owns the precise receipt hooks,
+model/history view, eight app target registrations, 21 localized strings and 16
+additional negative source mutations. It composes inverses with the selected
+source, finalization and photo-retention checks without copying their app changes.
+These checks do not typecheck Swift or execute restore behavior.
 
 No Xcode/native build, XCTest, real database/file/crash/restart/collision/UI or
 performance acceptance, CI inspection, IPA, Android/Desktop edits or auto-merge.
