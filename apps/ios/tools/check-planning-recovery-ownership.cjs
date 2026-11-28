@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '99764b9ae699558b5dbadd90b2aacbbe9e490272';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'fee090e84d5c88dcc2f9756dc40cbf73b615cd14';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -54,6 +54,8 @@ if (require.main === module) {
   assert.equal((recovery.match(/recoveryProfile == store.profile.identityFingerprint/g) || []).length, 2);
   const initial = section(recovery, '  func recoverInterruptedInitialPlanning()', '  private func recoverInterruptedReplanning()');
   const replan = recovery.slice(recovery.indexOf('  private func recoverInterruptedReplanning()'));
+  assert(initial.includes('$0.phase == .planning && $0.activePlan == nil && $0.pendingPlanning != nil && !$0.blocked'));
+  assert(replan.includes('$0.phase == .planning && $0.activePlan != nil && $0.pendingPlanning?.isReplanning == true'));
   for (const block of [initial, replan]) {
     assert(block.indexOf('scope.acceptsInput(input)') < block.indexOf('self.modelPlannedLocalNativeActions('));
     const caught = block.slice(block.indexOf('      } catch {'));
@@ -66,7 +68,7 @@ if (require.main === module) {
     'reference.turnId == task.taskId', 'task.activePlan?.revision == reference.baseRevision',
     'input.conversation.privateMode == privateMode && input.conversation.trackingPaused == trackingPaused',
     '!cancelled, profile == self.profile, task == self.task', 'conversation.status == .active',
-    'guard task.phase == .planning, !task.blocked, !conversation.trackingPaused',
+    'guard task.phase == .planning, !task.blocked || task.pendingPlanning?.isReplanning == true',
     'conversation.trackingPaused == trackingPaused, conversation.mergedIntoConversationId.isBlank',
     'conversation.sessionRequirement == sessionRequirement', 'source.richOutputJson == self.source.richOutputJson',
     'source.voiceTranscript == self.source.voiceTranscript']) assert(helper.includes(token), token);
@@ -121,7 +123,7 @@ if (require.main === module) {
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
-  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 16);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 18);
   assert(!/\p{Script=Han}/u.test(helper + tests));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
