@@ -2,6 +2,65 @@ import XCTest
 @testable import GalaxySSI
 
 final class LocalModelRuntimePreflightTests: XCTestCase {
+  func testCancelledTokenRejectsQueuedLocalInferenceBeforeModelReadiness() async {
+    let runtime = LocalModelInferenceRuntime(backend: UnavailableLocalModelInferenceBackend())
+    let cancellation = AgentModelToolLoopCancellationSource()
+    cancellation.cancel()
+    do {
+      _ = try await runtime.generateAsync(profile: LocalModelRuntimeProfiles.GEMMA_3_4B_Q4,
+        systemPrompt: "Synthetic", userPrompt: "No model should load", cancellation: cancellation.token)
+      XCTFail("Cancelled inference must not succeed")
+    } catch { XCTAssertTrue(error is CancellationError) }
+  }
+
+  func testCancelledSwiftTaskRejectsQueuedLocalInferenceWithoutExplicitToken() async {
+    let runtime = LocalModelInferenceRuntime(backend: UnavailableLocalModelInferenceBackend())
+    let cancelled = await Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      do {
+        _ = try await runtime.generateAsync(profile: LocalModelRuntimeProfiles.GEMMA_3_4B_Q4,
+          systemPrompt: "Synthetic", userPrompt: "No model should load")
+        return false
+      } catch { return error is CancellationError }
+    }.value
+    XCTAssertTrue(cancelled)
+  }
+
+  func testCancelledTokenRejectsCooperativePlanningBeforeReadinessOrFallback() async {
+    let runtime = LocalModelCooperativeRuntime(runtime:
+      LocalModelInferenceRuntime(backend: UnavailableLocalModelInferenceBackend()))
+    let cancellation = AgentModelToolLoopCancellationSource()
+    cancellation.cancel()
+    do {
+      _ = try await runtime.generateAsync(fallbackProfile: LocalModelRuntimeProfiles.GEMMA_3_4B_Q4,
+        systemPrompt: "Synthetic", userPrompt: "No planner or answer model", cancellation: cancellation.token)
+      XCTFail("Cancelled cooperation must not select a model")
+    } catch { XCTAssertTrue(error is CancellationError) }
+  }
+
+  func testCancelledSwiftTaskRejectsCooperativePlanningWithoutExplicitToken() async {
+    let runtime = LocalModelCooperativeRuntime(runtime:
+      LocalModelInferenceRuntime(backend: UnavailableLocalModelInferenceBackend()))
+    let cancelled = await Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      do {
+        _ = try await runtime.generateAsync(fallbackProfile: LocalModelRuntimeProfiles.GEMMA_3_4B_Q4,
+          systemPrompt: "Synthetic", userPrompt: "No planner or answer model")
+        return false
+      } catch { return error is CancellationError }
+    }.value
+    XCTAssertTrue(cancelled)
+  }
+
+  func testUncancelledUnavailableLocalRuntimeRetainsOrdinaryFailure() async {
+    let runtime = LocalModelInferenceRuntime(backend: UnavailableLocalModelInferenceBackend())
+    do {
+      _ = try await runtime.generateAsync(profile: LocalModelRuntimeProfiles.GEMMA_3_4B_Q4,
+        systemPrompt: "Synthetic", userPrompt: "Unavailable backend")
+      XCTFail("An unavailable backend must not generate")
+    } catch { XCTAssertFalse(error is CancellationError) }
+  }
+
   func testLocalModelRuntimeEstimatorAcceptsNormalGemmaWorkload() {
     let estimate = estimate()
 

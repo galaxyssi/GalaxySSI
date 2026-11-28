@@ -206,32 +206,42 @@ final class LocalModelInferenceRuntime {
     taskId: String = "",
     cancellation: AgentModelToolLoopCancellationToken = .none
   ) async throws -> LocalModelInferenceResult {
+    let taskCancellation = AgentModelToolLoopCancellationSource()
+    let combined = AgentModelToolLoopCancellationToken {
+      cancellation.isCancellationRequested || taskCancellation.token.isCancellationRequested
+    }
     let timing = AgentModelTiming(taskId: taskId)
-    return try await timing.measureAsync(.request) {
-      let queueWait = timing.begin(.clientLockWait)
-      return try await withCheckedThrowingContinuation { continuation in
-        inferenceQueue.async { [self] in
-          queueWait.completed()
-          do {
-            guard !cancellation.isCancellationRequested else { throw CancellationError() }
-            let result = try generate(
-              profile: profile,
-              systemPrompt: systemPrompt,
-              userPrompt: userPrompt,
-              maximumTokens: maximumTokens,
-              temperature: temperature,
-              thinkingMode: thinkingMode,
-              workClass: workClass,
-              timing: timing
-            )
-            guard !cancellation.isCancellationRequested else { throw CancellationError() }
-            continuation.resume(returning: result)
-          } catch {
-            continuation.resume(throwing: error)
+    return try await withTaskCancellationHandler(operation: {
+      try await timing.measureAsync(.request) {
+        let queueWait = timing.begin(.clientLockWait)
+        return try await withCheckedThrowingContinuation { continuation in
+          inferenceQueue.async { [self] in
+            queueWait.completed()
+            do {
+              guard !combined.isCancellationRequested else { throw CancellationError() }
+              let result = try generate(
+                profile: profile,
+                systemPrompt: systemPrompt,
+                userPrompt: userPrompt,
+                maximumTokens: maximumTokens,
+                temperature: temperature,
+                thinkingMode: thinkingMode,
+                workClass: workClass,
+                timing: timing
+              )
+              guard !combined.isCancellationRequested else { throw CancellationError() }
+              continuation.resume(returning: result)
+            } catch {
+              if combined.isCancellationRequested {
+                continuation.resume(throwing: CancellationError())
+              } else {
+                continuation.resume(throwing: error)
+              }
+            }
           }
         }
       }
-    }
+    }, onCancel: { taskCancellation.cancel() })
   }
 
   func releaseForAsr() {
