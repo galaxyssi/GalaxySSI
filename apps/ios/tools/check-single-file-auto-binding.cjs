@@ -1,7 +1,7 @@
 // Source contracts only; does not execute Swift, providers, storage or transport.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '214feeeba';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '214feeeba06b166f0fa4ac9eacb5a793763fe138';
 const serviceFile = app + 'GalaxySSIServices.swift', first = '  func readAgentFile(', last = '  func resumeAgentFile(';
 const clean = s => s.replace(/\r\n/g, '\n'), read = f => clean(fs.readFileSync(path.join(root, f), 'utf8')), memo = new Map();
 function show(ref, file) {
