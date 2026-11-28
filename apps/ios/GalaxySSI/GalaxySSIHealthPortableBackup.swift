@@ -278,7 +278,7 @@ extension GalaxySSIHealthPortableBackup {
                       originals: GalaxySSIHealthOriginalStore, replacing selected: Set<UUID> = []) throws {
     try originals.withRestoreLease { lease in
       try originals.reconcileRestores(lease: lease)
-      let (fresh, proposed, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
+      let (fresh, proposed, files, payload) = try restoreWork(input, records: records, originals: originals, lease: lease)
       let accepted = fresh.conflicts.filter { selected.contains($0.id) && $0.restriction == nil }
       guard fresh == expected, fresh.hasChanges || !selected.isEmpty,
             accepted.count == selected.count else { throw Failure.stale }
@@ -294,7 +294,7 @@ extension GalaxySSIHealthPortableBackup {
         replacements.append(revision)
       }
       archive.revisions.append(contentsOf: replacements)
-      try restoreSelectedSources(input, selected: selected, archive: &archive, staged: files,
+      try restoreSelectedSources(payload, selected: selected, archive: &archive, staged: files,
                                  originals: originals, lease: lease)
       let receipt = UUID()
       do {
@@ -315,7 +315,7 @@ extension GalaxySSIHealthPortableBackup {
   private static func restoreWork(_ input: RestoreInput, records: GalaxySSIHealthRecords,
                                   originals: GalaxySSIHealthOriginalStore,
                                   lease: GalaxySSIHealthOriginalStore.RestoreLease) throws
-    -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)]) {
+    -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)], Payload) {
     let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     guard payload.owner == records.owner, originals.owner == records.owner,
           originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
@@ -436,16 +436,15 @@ extension GalaxySSIHealthPortableBackup {
       originals: files.count, tables: newTables.count, missing: missing + links.missing,
       newLinks: links.added, reusedLinks: links.reused, skippedLinks: links.skipped,
       repairedLinks: links.repaired, snapshot: snapshot.sorted())
-    return (preview, archive, files)
+    return (preview, archive, files, payload)
   }
 
   @MainActor
-  private static func restoreSelectedSources(_ input: RestoreInput, selected: Set<UUID>, archive: inout GalaxySSIHealthRecords.Archive,
+  private static func restoreSelectedSources(_ payload: Payload, selected: Set<UUID>, archive: inout GalaxySSIHealthRecords.Archive,
                                             staged: [(GalaxySSIHealthOriginalStore.Original, Data)],
                                             originals: GalaxySSIHealthOriginalStore,
                                             lease: GalaxySSIHealthOriginalStore.RestoreLease) throws {
     guard !selected.isEmpty else { return }
-    let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     let readings = payload.readings.filter { selected.contains($0.id) }
     let current = Dictionary(uniqueKeysWithValues: archive.current.map { ($0.id, $0) })
     guard Set(readings.map(\.id)) == selected, selected.allSatisfy({ current[$0] != nil }) else { throw Failure.stale }
