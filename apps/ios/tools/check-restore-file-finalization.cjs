@@ -28,17 +28,22 @@ function normalizeConflictSources(source) {
   const tool = path.join(__dirname, 'check-restore-conflict-sources.cjs');
   return fs.existsSync(tool) ? require(tool).retainedBackup(source) : source;
 }
+function normalizeReceiptView(source) {
+  const tool = path.join(__dirname, 'check-restore-receipts.cjs');
+  return fs.existsSync(tool) ? require(tool).retainedView(source) : source;
+}
 function retained(file, source) {
   if (file === fixture) return retainedFixtures(source);
   assert([backup, view].includes(file), file);
   if (file === backup) source = normalizeConflictSources(source);
+  if (file === view) source = normalizeReceiptView(source);
   if (source === show(base, file)) return source;
   assert.equal(source, show(approved, file), 'Exact restore completion/ownership source: ' + file);
   return show(base, file);
 }
 module.exports = {retained, retainedFixtures};
 if (require.main === module) {
-  const source = normalizeConflictSources(read(backup)), ui = read(view);
+  const source = normalizeConflictSources(read(backup)), ui = normalizeReceiptView(read(view));
   for (const file of [backup, view]) {
     const current = file === backup ? source : ui;
     assert.equal(current, show(approved, file)); retained(file, current);
