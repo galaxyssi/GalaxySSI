@@ -78,6 +78,8 @@ struct GalaxySSIHealthOriginalStore {
     let bytes: Int
     let sha256: String
     var outcome: Outcome
+    var latestSave: GalaxySSIHealthOriginalExportSave.Receipt?
+    var lastVerifiedAt: Date?
   }
 
   struct ScopedExport: Sendable {
@@ -740,6 +742,7 @@ struct GalaxySSIHealthOriginalStore {
       throw error
     }
     pruneArtifacts(history)
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
     return (zip, attempt)
   }
 
@@ -832,8 +835,74 @@ struct GalaxySSIHealthOriginalStore {
   func finishExport(id: UUID, verified: Bool) throws {
     var history = try exportHistory()
     guard let index = history.firstIndex(where: { $0.id == id }), history[index].outcome == .prepared else { return }
+    guard history[index].latestSave == nil else { throw Failure.stale }
     history[index].outcome = verified ? .verified : .unverified
     try persistExportHistory(history)
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+  }
+
+  private var exportSaveScope: GalaxySSIHealthOriginalExportSave.Scope {
+    .init(owner: owner, directory: fixtureDirectory, recordsFile: restoreRecordsFile)
+  }
+
+  func beginExportSave(_ attempt: ExportAttempt) throws -> (Data, GalaxySSIHealthOriginalExportSave.Request) {
+    let data = try readShareArtifact(attempt)
+    var history = try exportHistory()
+    guard let index = history.firstIndex(where: { GalaxySSIHealthOriginalExportSave.sameExport($0, attempt) }) else { throw Failure.stale }
+    if let pending = history[index].latestSave, pending.outcome == .pending,
+       GalaxySSIHealthOriginalExportSave.isActive(pending.id, scope: exportSaveScope) { throw Failure.stale }
+    let receipt = GalaxySSIHealthOriginalExportSave.Receipt(id: UUID(), at: Date(), outcome: .pending)
+    history[index].latestSave = receipt
+    try persistExportHistory(history)
+    let request = GalaxySSIHealthOriginalExportSave.Request(scope: exportSaveScope, export: history[index], token: receipt.id)
+    GalaxySSIHealthOriginalExportSave.register(request)
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    return (data, request)
+  }
+
+  func finishExportSave(_ request: GalaxySSIHealthOriginalExportSave.Request, verified: Bool) throws {
+    try completeExportSave(request, outcome: verified ? .verified : .unverified)
+  }
+
+  func interruptExportSave(_ request: GalaxySSIHealthOriginalExportSave.Request) throws {
+    try completeExportSave(request, outcome: .interrupted)
+  }
+
+  private func completeExportSave(_ request: GalaxySSIHealthOriginalExportSave.Request,
+                                  outcome: GalaxySSIHealthOriginalExportSave.Receipt.Outcome) throws {
+    guard request.scope == exportSaveScope, outcome != .pending else { throw Failure.stale }
+    defer { GalaxySSIHealthOriginalExportSave.release(request) }
+    var history = try exportHistory()
+    guard let index = history.firstIndex(where: { GalaxySSIHealthOriginalExportSave.sameExport($0, request.export) }),
+          var receipt = history[index].latestSave, receipt.id == request.token, receipt.outcome == .pending
+    else { throw Failure.stale }
+    receipt.outcome = outcome
+    history[index].latestSave = receipt
+    if outcome == .verified {
+      history[index].outcome = .verified
+      history[index].lastVerifiedAt = Date()
+    } else if outcome == .unverified && history[index].outcome != .verified {
+      history[index].outcome = .unverified
+    }
+    try persistExportHistory(history)
+    NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+  }
+
+  func recoverExportSaves() throws {
+    var history = try exportHistory()
+    var changed = false
+    for index in history.indices {
+      if var receipt = history[index].latestSave, receipt.outcome == .pending,
+         !GalaxySSIHealthOriginalExportSave.isActive(receipt.id, scope: exportSaveScope) {
+        receipt.outcome = .interrupted
+        history[index].latestSave = receipt
+        changed = true
+      }
+    }
+    if changed {
+      try persistExportHistory(history)
+      NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+    }
   }
 
   nonisolated static func verifyDestination(_ url: URL, for attempt: ExportAttempt) throws -> Bool {
