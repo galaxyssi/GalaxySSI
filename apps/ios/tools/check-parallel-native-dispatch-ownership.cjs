@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, native dispatch, storage fault or concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'aa1c2c3e7b95ad0b4407142c83875913e3d2ff5f';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'e72c60f2b8c1e9ca730aaabd8edb9f1483f23828';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -52,7 +52,7 @@ if (require.main === module) {
   assert.equal((parallel.match(/guard commitResults\(&task\) else \{ return \}/g) || []).length, 4);
   assert.equal((parallel.match(/dispatchScope.matches\(/g) || []).length, 3);
   assert(!parallel.includes('store.upsertAgentTask(task)'));
-  const commit = section(parallel, '    func commitResults(', '    var updatedPlan = journaledPlan');
+  const commit = section(parallel, '    @MainActor func commitResults(', '    var updatedPlan = journaledPlan');
   assert(commit.indexOf('commitNativeAgentTaskState(expected: dispatchScope.task, updated: projected)') < commit.indexOf('AgentIOSNativeToolHandoffPresenter.openIfNeeded'));
   assert.equal((parallel.match(/AgentIOSNativeToolHandoffPresenter.openIfNeeded/g) || []).length, 1);
   const storeFile = app + 'GalaxySSIStoreTaskMutations.swift', store = read(storeFile);
