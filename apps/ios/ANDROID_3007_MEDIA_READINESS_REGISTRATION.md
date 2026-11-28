@@ -36,3 +36,10 @@ Exact source guards, iOS project structure and whitespace checks are permitted;
 they do not establish Swift type checking or native/runtime acceptance. No
 Swift/native build, XCTest execution, live media/network/model, simulator/device,
 full repository check, CI inspection or IPA generation is included.
+
+Formal PR: #4689, main base, not draft. Local pending-PR integration through
+#4689 passed all 25 scoped source guards, `npm run check:ios` and
+`git diff --check`. One adjacent registration-list conflict with #4686 was
+resolved locally by retaining both exact deferred parameters; that integration
+branch is not pushed. #4685 adds only an optional exact media-normalizer import,
+without duplicating application code. No native acceptance is inferred.
