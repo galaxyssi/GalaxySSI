@@ -1,7 +1,7 @@
 // Source contracts only. No Swift, JSON/CSV/XML execution, persistence, picker or runtime evidence.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const prior = '33af3d3ff', approved = '6574be734', base = 'c6bad3465c673dfb2dcecb23b095185c129c7447';
+const prior = '33af3d3ff', approved = '88b2a7b49', base = 'c6bad3465c673dfb2dcecb23b095185c129c7447';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'), memo = new Map();
 function show(ref, f) {
   const key = ref + ':' + f;
@@ -57,13 +57,18 @@ function retained(file, source, required = false) {
     else assert(source.includes(old), 'Unknown hook variant: ' + file);
   }
   const ranges = {
-    GalaxySSIHealthTableImport: ['  private static func parseCSV(', '  private struct JSONRow:'],
-    GalaxySSIHealthTableSourceView: ['  private func loadPreview() async {', '  private func linkedReadings(']
+    GalaxySSIHealthTableImport: [['  private static func parseCSV(', '  private struct JSONRow:']],
+    GalaxySSIHealthTableSourceView: [
+      ['struct GalaxySSIHealthTableSourceSample: Sendable {', '@MainActor\nstruct GalaxySSIHealthTableSourceView: View {'],
+      ['  private func loadPreview() async {', '  private func linkedReadings(']
+    ]
   };
   if (ranges[name]) {
-    const [start, end] = ranges[name], old = between(show(prior, file), start, end), current = between(show(approved, file), start, end);
-    const found = between(source, start, end);
-    if (required || found !== old) { assert.equal(found, current); source = once(source, current, old); }
+    for (const [start, end] of ranges[name]) {
+      const old = between(show(prior, file), start, end), current = between(show(approved, file), start, end);
+      const found = between(source, start, end);
+      if (required || found !== old) { assert.equal(found, current); source = once(source, current, old); }
+    }
   }
   if (name === 'GalaxySSIHealthXLSX') {
     const current = between(show(approved, file), '  func previewRows(', '  enum Timestamp {');
@@ -116,6 +121,7 @@ if (require.main === module) {
     ['GalaxySSIHealthStructuredOriginalView', 'onCancel: { worker.cancel() }', 'onCancel: {}'],
     ['GalaxySSIHealthStructuredOriginalView', 'enabled = false', 'enabled = true'],
     ['GalaxySSIHealthStructuredOriginalView', '.onDisappear(perform: invalidate)', '.onDisappear {}'],
+    ['GalaxySSIHealthTableSourceView', 'guard text.utf16.count > limit', 'guard text.count > limit'],
     ['GalaxySSIHealthOriginalStore', 'format(of: data, fileExtension: item.fileExtension)', 'format(of: data)'],
     ['GalaxySSIHealthOriginalStore', 'item.kind.isReport && !removed.contains(item.id)', '!removed.contains(item.id)'],
     ['GalaxySSIHealthOriginalsView', ' + GalaxySSIHealthStructuredOriginal.contentTypes', ''],
@@ -131,5 +137,5 @@ if (require.main === module) {
     const file = app + name + '.swift', s = read(file); assert(s.includes(from), from);
     assert.throws(() => validate(file, s.replace(from, to)), undefined, from);
   }
-  console.log('Structured original source contracts passed; ' + mutations.length + ' negative mutations. Six authored native fixtures unexecuted.');
+  console.log('Structured original source contracts passed; ' + mutations.length + ' negative mutations. Seven authored native fixtures unexecuted.');
 }
