@@ -264,6 +264,19 @@ extension GalaxySSIHealthPortableBackup {
     var hasChanges: Bool { readings + originals + tables + newLinks + repairedLinks > 0 }
   }
 
+  struct RestoreResult: Equatable {
+    let owner: String
+    let receipt: UUID
+    let originals: [GalaxySSIHealthOriginalStore.Original]
+    fileprivate(set) var originalsReady = false
+
+    init(owner: String, receipt: UUID, originals: [GalaxySSIHealthOriginalStore.Original]) {
+      self.owner = owner
+      self.receipt = receipt
+      self.originals = originals
+    }
+  }
+
   @MainActor
   static func previewRestore(_ input: RestoreInput, records: GalaxySSIHealthRecords,
                              originals: GalaxySSIHealthOriginalStore) throws -> RestorePreview {
@@ -274,9 +287,10 @@ extension GalaxySSIHealthPortableBackup {
   }
 
   @MainActor
+  @discardableResult
   static func restore(_ input: RestoreInput, expected: RestorePreview, records: GalaxySSIHealthRecords,
-                      originals: GalaxySSIHealthOriginalStore, replacing selected: Set<UUID> = []) throws {
-    try originals.withRestoreLease { lease in
+                      originals: GalaxySSIHealthOriginalStore, replacing selected: Set<UUID> = []) throws -> RestoreResult {
+    let result = try originals.withRestoreLease { lease in
       try originals.reconcileRestores(lease: lease)
       let (fresh, proposed, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
       let accepted = fresh.conflicts.filter { selected.contains($0.id) && $0.restriction == nil }
@@ -302,11 +316,39 @@ extension GalaxySSIHealthPortableBackup {
         try? originals.reconcileRestores(lease: lease)
         throw error
       }
-      // The receipt is the publication point. Later access retries interrupted promotion.
-      try? originals.reconcileRestores(lease: lease)
+      var result = RestoreResult(owner: records.owner, receipt: receipt, originals: files.map { $0.0 })
+      do {
+        try finalizeRestore(result, records: records, originals: originals, lease: lease)
+        result.originalsReady = true
+      } catch { /* Records are committed; retain pending file recovery without replaying the restore. */ }
+      return result
     }
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: records.owner)
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.trendInputsChanged, object: records.owner)
+    return result
+  }
+
+  @MainActor
+  static func resumeRestore(_ result: RestoreResult, records: GalaxySSIHealthRecords,
+                            originals: GalaxySSIHealthOriginalStore) throws {
+    try originals.withRestoreLease { lease in
+      try finalizeRestore(result, records: records, originals: originals, lease: lease)
+    }
+    NotificationCenter.default.post(name: GalaxySSIHealthOriginalStore.indexChanged, object: records.owner)
+    NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: records.owner)
+  }
+
+  @MainActor
+  private static func finalizeRestore(_ result: RestoreResult, records: GalaxySSIHealthRecords,
+                                      originals: GalaxySSIHealthOriginalStore,
+                                      lease: GalaxySSIHealthOriginalStore.RestoreLease) throws {
+    guard result.owner == records.owner, originals.owner == records.owner,
+          originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
+    let archive = try records.load()
+    guard archive.restoreReceipts?.contains(result.receipt) == true,
+          result.originals.allSatisfy({ archive.originalIndex?.originals[$0.id] == $0 }) else { throw Failure.stale }
+    try originals.reconcileRestores(lease: lease)
+    for original in result.originals { _ = try originals.read(original, lease: lease) }
   }
 
   @MainActor

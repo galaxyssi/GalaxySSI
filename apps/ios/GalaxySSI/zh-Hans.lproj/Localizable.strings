@@ -1592,6 +1592,10 @@
 "galaxyssi.health.backup.restore_consent" = "我已核对这些变更";
 "galaxyssi.health.backup.restore" = "恢复到此设备";
 "galaxyssi.health.backup.restored" = "健康备份已恢复";
+"galaxyssi.health.backup.originals_pending" = "原件文件仍待恢复";
+"galaxyssi.health.backup.originals_pending_note" = "测量记录已提交，部分原件文件尚不可用。";
+"galaxyssi.health.backup.originals_retry" = "重试恢复原件文件";
+"galaxyssi.health.backup.originals_retry_failed" = "原件文件仍不可用，已提交的测量记录没有被重复导入。";
 "galaxyssi.health.backup.restore_owner_review" = "恢复到当前档案。除非选择替换，否则保留本机版本。";
 "galaxyssi.health.backup.restore_local" = "本机版本";
 "galaxyssi.health.backup.restore_backup_version" = "备份版本";
