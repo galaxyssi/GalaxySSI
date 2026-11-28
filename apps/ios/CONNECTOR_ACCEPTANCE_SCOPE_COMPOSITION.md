@@ -1,4 +1,4 @@
-# Connector Acceptance Scope Composition
+# Connector Observation Scope Composition
 
 This tools-only correction addresses a historical source-check failure, not an
 iOS application feature, Swift compiler fix or Android runtime acceptance.
@@ -34,7 +34,27 @@ clock/sequence regression, terminal reactivation, probe ownership/readiness and
 fixture removal. They do not execute Swift or simulate a real socket, encrypted
 database, task lifecycle or device. No private reports or test evidence are stored.
 
-This correction is scoped to the connector-acceptance checker. Other historical
-whole-file validators still require their own audits; a passing result here is
-not a full repository, native runtime or Android parity claim. No app code,
-platform version, CI policy, IPA, approval or remote merge changes.
+## Native Status Observation Follow-up
+
+The native-status checker had the same stale historical whole-file baseline.
+Its original status-generation, sequence, observation time, task/session/profile
+ownership and checked commit assertions remain. Complete projected coordinator,
+status recorder, fixture and dependency sources now compare against the same
+immutable reviewed snapshot. A shared helper removes duplication in the two
+checkers; each checker retains its own distinct legacy projection policy.
+
+Project and translation checks compare the exact four owned XCTest registration
+lines and the single localized observation message, including their counts and
+values. They no longer reject unrelated reviewed tool registrations or strings.
+The repository's project structure check remains responsible for global Xcode
+structure. This is not a relaxation of the owned registration or translation.
+
+Seventeen more Node source cases exercise the actual status validator, fifteen
+negative profile/journal/task/privacy/action/commit/generation/clock/effect/
+fixture/registration/translation mutations, and unrelated entry coexistence.
+They execute no Swift, persistence, Signal or device behavior.
+
+Other historical whole-file validators still require their own audits; passing
+these two checks is not a full repository, native runtime or Android parity
+claim. No app code, platform version, CI policy, IPA, approval or remote merge
+changes are included.
