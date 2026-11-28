@@ -16,6 +16,9 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retained(file, s) {
+  const runtime = path.join(__dirname, 'check-live-runtime-tool-readiness-scope.cjs');
+  if (file.endsWith('/AgentPhoneNativeToolCatalog.swift') && fs.existsSync(runtime))
+    s = require(runtime).retained(file, s);
   if (file.endsWith('/AgentMcpNativeTools.swift') && s.includes('  static let uncheckedAvailability =')) {
     s = once(s, '  static let uncheckedAvailability = AgentNativeToolAvailability(\n    status: .unavailable, reason: "MCP readiness has not been checked")\n');
     for (const [first, last] of [['  static func definitions(', '  static func operation('],
