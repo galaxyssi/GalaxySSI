@@ -24,6 +24,6 @@ internal fun desktopAgentRequestPayload(
         ?: PhoneAssistantTaskControl.requestKind(turnId)).takeIf(String::isNotBlank)?.let { put("request_kind", it) }
     AgentInvocationRequestJsonCodec.encode(model, effort)?.let { put("agent_invocation", it) }
     runId.trim().takeIf(String::isNotBlank)?.let { put("run_id", it) }
-    CollaborationResultContract.encode(this, resultContract, teamId, instanceId)
     if (teamMessage) put("agent_team_message", true)
+    CollaborationResultContract.encode(this, resultContract, teamId, instanceId)
 }

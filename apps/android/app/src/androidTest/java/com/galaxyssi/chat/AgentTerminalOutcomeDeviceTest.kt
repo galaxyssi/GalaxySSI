@@ -36,6 +36,18 @@ class AgentTerminalOutcomeDeviceTest {
         }
     }
 
+    @Test fun exactMemberScopeStartsAtOneAndOnlyAnObservedEventAdvancesIt() = database { _, inbox ->
+        val current = CollaborationMemberRecall.Generation.CURRENT
+        val unknown = CollaborationMemberRecall.Generation.UNAVAILABLE
+        assertEquals(current, inbox.memberGeneration(response(1)))
+        assertEquals(unknown, inbox.memberGeneration(response(2)))
+        assertTrue(inbox.observeExecution(response(2, 1, "running")))
+        assertEquals(unknown, inbox.memberGeneration(response(1)))
+        assertEquals(current, inbox.memberGeneration(response(2)))
+        assertEquals(CollaborationMemberRecall.Generation.NEXT, inbox.memberGeneration(response(3)))
+        assertEquals(unknown, inbox.memberGeneration(response(4)))
+    }
+
     @Test fun newerExecutionRetiresOldBodyAndRejectsLateFailure() = database { _, inbox ->
         val old = response()
         assertTrue(inbox.append(old))

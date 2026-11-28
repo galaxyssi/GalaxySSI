@@ -16,6 +16,19 @@ class CollaborationRecallDeliveryTest {
         .put("phase", "confirm").put("request_id", "confirmation").put("delivery", result.getJSONObject("delivery"))
     private fun commit(args: JSONObject, hash: String) = JSONObject().put("complete", true)
 
+    @Test fun memberChallengeCannotBeConfirmedByLegacyScopeOrViceVersa() {
+        for (marked in listOf(true, false)) {
+            val read = request().apply { if (marked) put(CollaborationMemberRecall.FLAG, true) }
+            val store = CollaborationRecallDelivery()
+            val ack = acknowledgement(read, store.prepare(read, access, result()))
+            val changed = JSONObject(ack.toString()).apply {
+                if (marked) remove(CollaborationMemberRecall.FLAG) else put(CollaborationMemberRecall.FLAG, true)
+            }
+            assertFalse(store.confirm(changed, access) { _, _ -> error("scope changed") }.getBoolean("success"))
+            assertTrue(store.confirm(ack, access, ::commit).getBoolean("success"))
+        }
+    }
+
     @Test fun wireDigestUsesRawUtf8NotJsonStringEncoding() {
         val store = CollaborationRecallDelivery()
         val text = "\u8bc1\u636e\n\"quoted\"\uD83D\uDE00"

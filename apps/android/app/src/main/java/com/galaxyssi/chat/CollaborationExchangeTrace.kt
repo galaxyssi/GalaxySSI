@@ -8,7 +8,7 @@ internal object CollaborationExchangeTrace {
         RESPONSE_EXPIRED_OR_UNPAIRED, PUBLISH_ACCEPTED, PUBLISH_REJECTED, FAILED }
     private val modes = setOf("goal_contract", "workspace", "evidence", "archive", "evolution", "capabilities",
         "method_history", "evolution_rules", "problems", "numeric_cases", "publish", "list", "status", "validate_assessment")
-    private val phases = setOf("read", "confirm", "publish", "list", "status", "validate_assessment")
+    private val phases = setOf("authorize", "read", "confirm", "publish", "list", "status", "validate_assessment")
 
     fun line(peer: String, request: JSONObject, stage: Stage, elapsedMillis: Long = 0,
              admission: CollaborationExchangeReplay.Outcome? = null): String {

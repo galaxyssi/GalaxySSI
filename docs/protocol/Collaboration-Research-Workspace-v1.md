@@ -1,12 +1,60 @@
 # Collaboration Research Workspace v1
 
-This contract extends Android's goal-driven collaboration execution. The app owns identities, dependencies and revision receipts. Member output is untrusted research material, not authorization or proof of correctness. It does not change the MQTT wire format.
+This contract extends Android's goal-driven collaboration execution. The app owns identities, dependencies and revision receipts. Member output is untrusted research material, not authorization or proof of correctness. The paired transport envelope is unchanged; optional member-recall fields and phases are described below.
 
 ## Pinned Desktop Codex members
 
 `pinned_team_codex_v1` indicates that the paired Desktop can honor an explicit Codex model for collaboration members. Team entry must check the selected Desktop's advertised capability, not its display name or version string. A member request uses the existing team ID, agent instance ID, explicit model ID and `galaxyssi.collaboration-workspace.v1` result contract. An unavailable pinned model or an attempted handoff must fail visibly, not silently select another agent. This capability is not an execution grant and does not change the phone scope or sandbox.
 
 The phone orchestrates distinct member tasks. A configured member name or the coordinator's proposed work list is not a dispatch receipt. To verify a real run, correlate a phone work item with its Desktop task ID, provider thread/turn and observed model. To verify an independent review, also check that its author is different from the draft's contributor and that the review identifies the relevant revision.
+
+## Paired Codex member recall
+
+Android may add the JSON boolean `scoped_member_recall_v1: true` to the original
+paired Codex collaboration workspace assignment only. Team-message follow-ups
+are ineligible, including boolean and case-insensitive string true forms. This is an eligibility
+hint, not a grant. Before advertising `collaboration_recall`, Desktop sends a
+transient `collaboration_recall_request` on the existing authenticated
+`galaxyssi.collaboration-recall/2` broker with `phase: "authorize"`,
+`arguments: {}`, the usual fresh request ID, expiry and exact task scope
+(route, conversation, task, turn, contact, source message, agent and execution
+generation). The native conversation suffix identifies the admitted
+`request_snapshot.options.agent_instance_id`, not a roster person UUID.
+Simultaneous assignments may share the phone root turn: the distinct task and
+source-message identifiers are both required. There is no delivery receipt,
+selector, document or role in this probe. Authorization is not a model-callable mode.
+
+Android must verify current paired ownership, active assignment, generation and
+member/workspace binding from its own records without reading originals or
+advancing cursors. Only a correlated, unexpired result on the authenticated
+route with exactly `{"success":true,"status":"authorized"}` as its result grants
+eligibility. No member identity or content is returned. No grant is restored
+or cached across tasks, executions or native threads. Desktop starts a fresh
+ephemeral phone-confined thread; denial, timeout or an older peer omits the
+tool and still runs the requested model. Unmarked peers require no preflight.
+Worker routing is unchanged; executors without this broker cannot grant recall.
+
+During a locally established recovery only, the phone may reply to `authorize`
+with exactly `{"success":false,"status":"generation_not_ready"}`. This is a
+denial, not a grant. It is reserved for an otherwise fully validated active
+assignment whose requested generation is exactly one ahead of the last generation
+the phone actually observed. Missing state, stale or skipped generations, changed
+ownership, revocation and ambiguity never qualify. Read and confirm remain exact-only.
+Desktop may issue at most two further **fresh** challenges for the unchanged
+execution before starting the native thread. All challenges share the first
+probe's two-second monotonic deadline and wire expiry. Generic denials, timeout,
+or a changed native owner, task scope or pairing cause no further challenge.
+
+Each member read and confirmation carries a host-stamped top-level
+`scoped_member_recall_v1: true` (never in `arguments`), requiring the same
+strict Android assignment and generation checks, including on replay and before
+release. The authorize probe itself is unmarked. Legacy data requests are
+unchanged. The model cannot supply identity, set the marker or change phase.
+Desktop pins requests to the paired transport keys and checks the native thread,
+turn, current owner and unchanged execution binding before releasing the result. Only
+recall is added to the normal phone research tool inventory, never collaboration
+publication, saved tool execution or host file access. Recovery starts fresh
+and reauthorizes; ordinary planners and private reports do not participate.
 
 ## Work dependencies
 

@@ -34,6 +34,17 @@ not tool arguments. It rejects foreign conversations, current/future turns and
 collaboration assignments (which have a separate scoped recall tool). Credential
 redaction remains enabled. No whole archive is loaded to build a dispatch.
 
+For a paired Desktop Codex collaboration member, only the original managed dispatch
+can offer scoped member recall. Before advertising the tool, Desktop asks Android
+to authorize the current assignment. That probe checks binding metadata only: it
+does not refresh evidence, read a page, record coverage, or dispatch UI. A retry
+must pass the same live checks. A marked read and its confirmation are separate
+operations and repeat those checks; the probe is not a grant for a later read.
+Only a still-bound member exactly one generation ahead of an observed execution
+may receive a content-free retry hint. It does not authorize a read; a fresh
+challenge must see the current generation. Private and ordinary phone requests
+do not offer this capability.
+
 Cloud chat compaction must not truncate a prepared supervised envelope as a
 single 16K-character message. A prepared envelope over the actual input budget
 fails explicitly instead of silently removing history or corrupting JSON.

@@ -29,6 +29,13 @@ internal object AndroidCollaborationRemoteRecall {
             CollaborationExchangeTrace.line(desktop, request, stage, android.os.SystemClock.elapsedRealtime() - started))
         scope.launch {
             try {
+                if (request.getString("phase") == CollaborationRemoteRecallProtocol.AUTHORIZE) {
+                    val result = CollaborationMemberRecall.authorize(replies, lease) { access(app, request, desktop, probe = true) }
+                    if (paired(app, request, desktop) && CollaborationRemoteRecallProtocol.valid(request, System.currentTimeMillis())) {
+                        trace(if (reply(request, result)) CollaborationExchangeTrace.Stage.PUBLISH_ACCEPTED else CollaborationExchangeTrace.Stage.PUBLISH_REJECTED)
+                    } else trace(CollaborationExchangeTrace.Stage.RESPONSE_EXPIRED_OR_UNPAIRED)
+                    return@launch
+                }
                 val binding = access(app, request, desktop)
                 trace(CollaborationExchangeTrace.Stage.RESOLVED)
                 val result = if (binding == null) CollaborationRemoteRecallProtocol.unavailable()
@@ -73,9 +80,25 @@ internal object AndroidCollaborationRemoteRecall {
         GalaxySSIMqttClient.publishJsonForTransport(CollaborationRemoteRecallProtocol.response(request, result),
             GalaxySSIMqttClient.outgoingTopicFor(request.getString("contact_id")), request.getString("contact_id"))
 
-    internal fun access(context: Context, request: JSONObject, desktop: String): CollaborationWorkspaceAccess? {
+    internal fun access(context: Context, request: JSONObject, desktop: String): CollaborationWorkspaceAccess? =
+        access(context, request, desktop, probe = false)?.binding
+
+    private fun access(context: Context, request: JSONObject, desktop: String, probe: Boolean): CollaborationMemberRecall.Probe? {
         if (!paired(context, request, desktop) || !AgentTaskIdentityStore.matchesRegistered(context, request)) return null
         val observation = AgentRemoteOutcomeCodec.observation(request) ?: return null
+        if (request.optString("phase") == CollaborationRemoteRecallProtocol.AUTHORIZE || request.opt(CollaborationMemberRecall.FLAG) == true) {
+            if (request.opt("agent_id") != "codex" || request.opt("source_message_id") != observation.sourceMessageId.toString() ||
+                !CollaborationMemberRecall.codexContact(AppStore.contactById(context, observation.contactId), desktop)) return null
+            val binding = CollaborationMemberRecall.assignment(context, AgentPendingDelivery(observation.sourceMessageId,
+                observation.conversationId, observation.turnId, observation.taskId, observation.contactId)) ?: return null
+            val generation = AgentConnectorResponseStore.memberGeneration(context, observation)
+            return when (generation) {
+                CollaborationMemberRecall.Generation.CURRENT -> CollaborationMemberRecall.Probe(binding)
+                CollaborationMemberRecall.Generation.NEXT -> if (probe && request.optString("phase") == CollaborationRemoteRecallProtocol.AUTHORIZE)
+                    CollaborationMemberRecall.Probe(binding, generation) else null
+                CollaborationMemberRecall.Generation.UNAVAILABLE -> null
+            }
+        }
         if (!AgentConnectorResponseStore.isCurrentExecution(context, observation)) return null
         val access = CollaborationEvidenceLedger(context).binding(observation.sourceMessageId,
             observation.conversationId, observation.turnId) ?: return null
@@ -83,7 +106,7 @@ internal object AndroidCollaborationRemoteRecall {
             CollaborationGroupStore(context).load(access.groupId)?.members?.none { it.id == access.personId } != false) return null
         if (EncryptedAgentManagedResponseLedger(context).pendingRecoveryDelivery(observation.sourceMessageId,
                 observation.contactId, observation.conversationId, observation.turnId, observation.taskId) == null) return null
-        return access
+        return CollaborationMemberRecall.Probe(access)
     }
 
     internal fun paired(context: Context, request: JSONObject, desktop: String): Boolean {

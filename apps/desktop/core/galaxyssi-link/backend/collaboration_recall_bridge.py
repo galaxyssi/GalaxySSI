@@ -22,6 +22,8 @@ CONTRACT = "galaxyssi.collaboration-recall/2"
 ACTIVE = frozenset({"starting", "running", "recovering"})
 RETRY_INITIAL_SECONDS = 2.0
 RETRY_MAX_SECONDS = 8.0
+GENERATION_NOT_READY = "generation_not_ready"
+RECOVERY_PROBE_DELAYS = (0.0, 0.3, 0.7)
 log = logging.getLogger(__name__)
 RULE_TOPICS = ("catalog", "all", "foundation", "learning", "procedures", "transfer", "innovation",
                "team_invention", "prediction", "tools", "workflows", "retention", "self_research", "coordination")
@@ -229,6 +231,27 @@ class RecallBroker:
         self._request_type, self._response_type, self._contract = request_type, response_type, contract
         self._retry_timing = ResponseRetryTiming(RETRY_INITIAL_SECONDS, RETRY_MAX_SECONDS)
 
+    def authorize(self, snapshot, publish, *, active, recovery=False, timeout=2.0):
+        """Host-only probe. A peer which cannot attest membership grants nothing."""
+        if self._contract != CONTRACT or self._request_type != REQUEST:
+            return False
+        window = self._window(time.monotonic(), timeout)
+        scope = task_scope(snapshot())
+        delays = RECOVERY_PROBE_DELAYS if recovery is True and scope["execution_generation"] > 1 else (0.0,)
+        for delay in delays:
+            if not active() or task_scope(snapshot()) != scope or time.monotonic() + delay >= window[0]:
+                return False
+            if delay:
+                time.sleep(delay)
+            if time.monotonic() >= window[0] or not active() or task_scope(snapshot()) != scope:
+                return False
+            result = self._exchange(scope, snapshot, {}, publish, active, timeout, "authorize", window=window)
+            if result == {"success": True, "status": "authorized"}:
+                return active() and task_scope(snapshot()) == scope and time.monotonic() < window[0]
+            if result != {"success": False, "status": GENERATION_NOT_READY}:
+                break
+        return False
+
     def query(self, snapshot, arguments, publish, *, active=lambda: True, timeout=20.0):
         arguments = validate_arguments(arguments)
         scope = task_scope(snapshot())
@@ -251,14 +274,28 @@ class RecallBroker:
         result["delivery_status"] = "desktop_received_phone_confirmed_not_comprehension"
         return result
 
-    def _exchange(self, scope, snapshot, arguments, publish, active, timeout, phase, delivery=None):
+    def member_query(self, snapshot, arguments, publish, *, active, timeout=20.0):
+        """Only the admitted native member path stamps read and confirm, not tool arguments."""
+        if self._request_type != REQUEST or self._contract != CONTRACT:
+            raise ValueError("Member reads require the recall broker")
+        def member_publish(request):
+            if request["phase"] not in {"read", "confirm"} or not active():
+                raise ValueError("Recall assignment changed")
+            return publish({**request, "scoped_member_recall_v1": True})
+        return self.query(snapshot, arguments, member_publish, active=active, timeout=timeout)
+
+    @staticmethod
+    def _window(started, timeout):
         if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 60:
             raise ValueError("Recall timeout must be within the phone request lifetime")
+        return started + timeout, int(time.time() * 1000 + timeout * 1000)
+
+    def _exchange(self, scope, snapshot, arguments, publish, active, timeout, phase, delivery=None, *, window=None):
         started = time.monotonic()
-        deadline = started + timeout
+        deadline, expires_at = window or self._window(started, timeout)
         nonce = str(uuid.uuid4())
         request = {**scope, "type": self._request_type, "contract": self._contract, "request_id": nonce,
-                   "expires_at": int(time.time() * 1000 + timeout * 1000), "arguments": arguments, "phase": phase}
+                   "expires_at": expires_at, "arguments": arguments, "phase": phase}
         if delivery is not None:
             request["delivery"] = delivery
         pending = Pending(request, deadline)
@@ -298,7 +335,8 @@ class RecallBroker:
                     if attempts == 1 and not published:
                         # No copy was admitted: do not wait for a learned slow reply.
                         retry_delay = RETRY_INITIAL_SECONDS
-                    next_publish = time.monotonic() + retry_delay
+                    # Only an authenticated not-ready reply can trigger a fresh authorization challenge.
+                    next_publish = deadline if phase == "authorize" else time.monotonic() + retry_delay
                     retry_delay = min(RETRY_MAX_SECONDS, retry_delay * 2)
                     continue
                 pending.event.wait(min(.25, deadline - now, next_publish - now))
@@ -312,7 +350,7 @@ class RecallBroker:
                 self._retry_timing.timed_out(scope["client_route_id"], finished)
             try:
                 log.info("Collaboration recall task_id=%s request_id=%s mode=%s phase=%s attempts=%d accepted=%d elapsed_ms=%d outcome=%s publish_reasons=%s",
-                         scope["task_id"], nonce, arguments["mode"], phase, attempts, accepted,
+                         scope["task_id"], nonce, arguments.get("mode", ""), phase, attempts, accepted,
                          int((time.monotonic() - started) * 1000), outcome,
                          json.dumps(dict(sorted(observations.reasons.items())), separators=(",", ":")))
             except Exception:
@@ -352,12 +390,20 @@ class RecallBroker:
         for key, expected in (("type", self._response_type), ("contract", self._contract),
                               ("phase", request["phase"]),
                               *((key, request[key]) for key in (*IDENTITY_FIELDS, "execution_generation"))):
-            if payload.get(key) != expected:
+            if type(payload.get(key)) is not type(expected) or payload[key] != expected:
                 return f"mismatch_{key}"
         if not isinstance(payload.get("result"), dict):
             return "result_not_object"
         if type(payload["result"].get("success")) is not bool:
             return "success_not_boolean"
+        if request["phase"] == "authorize":
+            # Never retain remote content or treat a read receipt as a grant.
+            authorized = payload["result"] == {"success": True, "status": "authorized"}
+            not_ready = payload["result"] == {"success": False, "status": GENERATION_NOT_READY}
+            status = "authorized" if authorized else GENERATION_NOT_READY if not_ready else "unavailable"
+            pending.response = {"result": {"success": authorized, "status": status}}
+            pending.event.set()
+            return "accepted"
         try:
             encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
             byte_count = len(encoded.encode())

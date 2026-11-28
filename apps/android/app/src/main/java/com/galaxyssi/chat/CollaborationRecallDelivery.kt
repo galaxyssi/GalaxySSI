@@ -48,7 +48,9 @@ internal class CollaborationRecallDelivery(
     }
 
     private fun prune() { val now = clock(); pending.entries.removeAll { it.value.expires <= now } }
-    private fun identity(request: JSONObject) = CollaborationRemoteEvidenceProtocol.scope(request).toString()
+    private fun identity(request: JSONObject) = CollaborationRemoteEvidenceProtocol.scope(request).apply {
+        if (request.opt(CollaborationMemberRecall.FLAG) == true) put(CollaborationMemberRecall.FLAG, true)
+    }.toString()
     private fun selectors(request: JSONObject): String {
         val args = request.getJSONObject("arguments")
         return JSONObject().apply { args.keys().asSequence().sorted().forEach { put(it, args.get(it)) } }.toString()

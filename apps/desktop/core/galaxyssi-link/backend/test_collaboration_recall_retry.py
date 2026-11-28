@@ -41,6 +41,50 @@ def simulated_time():
 
 
 class CollaborationRecallRetryTest(unittest.TestCase):
+    def test_only_exact_pending_recovery_ack_retries_within_original_window(self):
+        pending = {"success": False, "status": "generation_not_ready"}
+        for recovery, gen, response, count in (
+                (True, 2, pending, 3), (False, 2, pending, 1), (True, 1, pending, 1),
+                (True, 2, {"success": False}, 1), (True, 2, {"success": False, "status": "unavailable"}, 1),
+                (True, 2, {**pending, "reason": "extra"}, 1), (True, 2, {**pending, "success": True}, 1),
+                (True, 2, None, 1)):
+            with self.subTest(recovery=recovery, gen=gen, response=response), simulated_time() as clock:
+                broker, calls = RecallBroker(), []
+                def publish(request):
+                    calls.append(request)
+                    if response is not None:
+                        self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": response}, "phone"))
+                    return True
+                def probe():
+                    return broker.authorize(lambda: {**task(), "execution_generation": gen}, publish,
+                                            active=lambda: True, recovery=recovery)
+                with patch("collaboration_recall_bridge.time.sleep", side_effect=lambda delay: setattr(clock, "now", clock.now + delay)):
+                    if response is None:
+                        with self.assertRaises(TimeoutError):
+                            probe()
+                    else:
+                        self.assertFalse(probe())
+                self.assertEqual(count, len(calls))
+                self.assertEqual(count, len({r["request_id"] for r in calls}))
+                self.assertEqual({1002000}, {r["expires_at"] for r in calls})
+                self.assertLessEqual(clock.now, 2.0)
+                self.assertFalse(broker._pending)
+
+    def test_recovery_cannot_extend_deadline_after_late_not_ready(self):
+        with simulated_time() as clock:
+            broker, calls = RecallBroker(), []
+            def publish(request):
+                calls.append(request)
+                clock.now = 1.95
+                self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": {
+                    "success": False, "status": "generation_not_ready"}}, "phone"))
+                return True
+            with patch("collaboration_recall_bridge.time.sleep") as sleep:
+                self.assertFalse(broker.authorize(lambda: {**task(), "execution_generation": 2}, publish,
+                                                  active=lambda: True, recovery=True))
+            sleep.assert_not_called()
+            self.assertEqual(1, len(calls))
+
     def test_rejected_or_lost_publish_recovers_without_changing_request(self):
         for first_accepted in (False, True):
             with self.subTest(first_accepted=first_accepted), simulated_time() as clock:

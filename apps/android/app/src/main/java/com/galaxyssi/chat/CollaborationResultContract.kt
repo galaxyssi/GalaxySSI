@@ -27,6 +27,9 @@ internal object CollaborationResultContract {
         teamId.trim().takeIf(team::matches)
             ?.let { payload.put("team_id", it) }
         if (value == WORKSPACE && payload.optString("team_id").isNotBlank() &&
-            payload.optString("agent_instance_id").isNotBlank()) payload.put(PARAMETER, WORKSPACE)
+            payload.optString("agent_instance_id").isNotBlank()) {
+            payload.put(PARAMETER, WORKSPACE)
+            CollaborationMemberRecallDispatch.encode(payload)
+        }
     }
 }
