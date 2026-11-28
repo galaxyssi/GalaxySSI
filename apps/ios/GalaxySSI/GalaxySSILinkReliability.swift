@@ -47,6 +47,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var clientSourceMessageId: String
   var contactId: String
   var backgroundLearning: Bool?
+  var learningScope: AgentLearningOutboxScope?
   var retryClassified: Bool?
   var attachmentDeclaration: String?
   var capabilitySnapshot: LinkCapabilitySnapshot? = nil
@@ -86,7 +87,8 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     contactId: String = "",
     backgroundLearning: Bool = false,
     attachmentDeclaration: String? = nil,
-    fileReadScope: String? = nil
+    fileReadScope: String? = nil,
+    learningScope: AgentLearningOutboxScope? = nil
   ) {
     self.messageId = messageId
     self.topic = topic
@@ -103,6 +105,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     self.clientSourceMessageId = clientSourceMessageId
     self.contactId = contactId
     self.backgroundLearning = backgroundLearning
+    self.learningScope = learningScope
     self.retryClassified = true
     self.attachmentDeclaration = attachmentDeclaration
     self.fileReadScope = fileReadScope
@@ -125,6 +128,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     case clientSourceMessageId = "client_source_message_id"
     case contactId = "contact_id"
     case backgroundLearning = "background_learning"
+    case learningScope = "learning_scope"
     case retryClassified = "retry_classified"
     case attachmentDeclaration = "attachment_declaration"
     case capabilitySnapshot = "capability_snapshot"
@@ -158,6 +162,7 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
     clientSourceMessageId = try container.decodeIfPresent(String.self, forKey: .clientSourceMessageId) ?? ""
     contactId = try container.decodeIfPresent(String.self, forKey: .contactId) ?? ""
     backgroundLearning = try container.decodeIfPresent(Bool.self, forKey: .backgroundLearning)
+    learningScope = try container.decodeIfPresent(AgentLearningOutboxScope.self, forKey: .learningScope)
     retryClassified = try container.decodeIfPresent(Bool.self, forKey: .retryClassified)
     attachmentDeclaration = try container.decodeIfPresent(String.self, forKey: .attachmentDeclaration)
   }
@@ -188,6 +193,7 @@ struct LinkDeliveryEnqueueRequest: Equatable {
   var recoverableEnvelope: String = ""
   var attachmentTransferId: String = ""
   var backgroundLearning = false
+  var learningScope: AgentLearningOutboxScope? = nil
   var attachmentDeclaration: String? = nil
   var fileReadScope: String? = nil
 }
@@ -559,6 +565,7 @@ final class GalaxySSILinkDeliveryStore {
     contactId: String = "",
     recoverableEnvelope: String = "",
     backgroundLearning: Bool = false,
+    learningScope: AgentLearningOutboxScope? = nil,
     now: Date = Date()
   ) {
     enqueueBatch(
@@ -573,7 +580,8 @@ final class GalaxySSILinkDeliveryStore {
           contactId: contactId,
           recoverableEnvelope: recoverableEnvelope,
           attachmentTransferId: attachmentTransferId,
-          backgroundLearning: backgroundLearning
+          backgroundLearning: backgroundLearning,
+          learningScope: learningScope
         )
       ],
       now: now
@@ -632,7 +640,8 @@ final class GalaxySSILinkDeliveryStore {
           clientSourceMessageId: request.clientSourceMessageId,
           contactId: request.contactId,
           backgroundLearning: request.backgroundLearning,
-          attachmentDeclaration: request.attachmentDeclaration
+          attachmentDeclaration: request.attachmentDeclaration,
+          learningScope: request.learningScope
         )
       )
       if Data(request.recoverableEnvelope.utf8).count <= Self.maximumRecoverableEnvelopeBytes {

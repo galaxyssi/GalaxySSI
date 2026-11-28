@@ -4,6 +4,194 @@ import XCTest
 
 @MainActor
 final class GalaxySSILinkReliabilityTests: XCTestCase {
+  func testLearningScopeBindsTheOpaqueQueueIdentityWithoutSavingPromptText() throws {
+    var request = learningCognitionRequest(); request.prompt = "Synthetic private prompt must not enter scope metadata"
+    let scope = AgentLearningOutboxScope.cognition(request, profile: "profile")
+    let bound = try learningBound(scope)
+    XCTAssertTrue(bound.matches(learningItem(bound), profile: "profile"))
+    let bytes = try JSONEncoder().encode(bound)
+    XCTAssertEqual(try JSONDecoder().decode(AgentLearningOutboxScope.self, from: bytes), bound)
+    XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains(request.prompt))
+    XCTAssertNil(scope.bound(messageID: "global-cognition-123", topic: "synthetic/up", payload: learningPayload(scope),
+      profile: "profile", source: "123", contact: "paired"))
+  }
+
+  func testLearningScopeRejectsCrossOwnerPayloadAndInvalidSourceBindings() throws {
+    let scope = AgentLearningOutboxScope.cognition(learningCognitionRequest(), profile: "profile")
+    for key in ["contact_id", "task_id", "conversation_id", "turn_id", "type"] {
+      var payload = learningPayload(scope); payload[key] = "foreign"
+      XCTAssertNil(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: payload,
+        profile: "profile", source: "123", contact: "paired"), key)
+    }
+    var payload = learningPayload(scope); payload["source_message_id"] = 124
+    XCTAssertNil(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: payload,
+      profile: "profile", source: "123", contact: "paired"))
+    XCTAssertNil(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: learningPayload(scope),
+      profile: "other-profile", source: "123", contact: "paired"))
+    XCTAssertNil(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: learningPayload(scope),
+      profile: "profile", source: "0123", contact: "paired"))
+    var cloud = learningCognitionRequest(); cloud.transport = .cloudModel
+    XCTAssertThrowsError(try learningBound(.cognition(cloud, profile: "profile")))
+  }
+
+  func testLearningScopeCannotMoveToAnotherQueueItemRouteOrProfile() throws {
+    let scope = try learningBound(.cognition(learningCognitionRequest(), profile: "profile"))
+    let original = learningItem(scope)
+    XCTAssertFalse(scope.matches(original, profile: "other-profile"))
+    for mutation in 0..<5 {
+      var item = original
+      switch mutation {
+      case 0: item.messageId = UUID().uuidString
+      case 1: item.topic = "foreign/up"
+      case 2: item.contactId = "foreign"
+      case 3: item.clientSourceMessageId = "124"
+      default: item.backgroundLearning = false
+      }
+      XCTAssertFalse(scope.matches(item, profile: "profile"))
+    }
+    XCTAssertNil(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: learningPayload(scope),
+      profile: "profile", source: "123", contact: "paired"))
+  }
+
+  func testLearningScopeOptionalQueueCodecDoesNotRepairLegacyProof() throws {
+    let scope = try learningBound(.cognition(learningCognitionRequest(), profile: "profile"))
+    let item = learningItem(scope), bytes = try JSONEncoder().encode(item)
+    XCTAssertEqual(try JSONDecoder().decode(PendingLinkMessage.self, from: bytes), item)
+    var object = try XCTUnwrap(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+    object.removeValue(forKey: "learning_scope")
+    let legacy = try JSONDecoder().decode(PendingLinkMessage.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertNil(legacy.learningScope); XCTAssertEqual(legacy.backgroundLearning, true)
+  }
+
+  func testLearningScopeSurvivesActualOutboxEnqueueAndReopen() throws {
+    let suite = "learning-outbox-\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let secrets = InMemorySecretStore(), now = Date(timeIntervalSince1970: 1)
+    let scope = try learningBound(.cognition(learningCognitionRequest(), profile: "profile"))
+    let store = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    store.enqueue(messageId: scope.messageID, topic: scope.topic, wirePayload: "synthetic-sealed-body",
+      clientSourceMessageId: "123", contactId: "paired", backgroundLearning: true, learningScope: scope, now: now)
+    let reopened = GalaxySSILinkDeliveryStore(defaults: defaults, secrets: secrets)
+    XCTAssertEqual(reopened.pending(now: now).first?.learningScope, scope)
+    XCTAssertTrue(scope.matches(try XCTUnwrap(reopened.pending(now: now).first), profile: "profile"))
+  }
+
+  func testLearningCognitionRechecksPrivatePausedContextAndExactAttemptLease() throws {
+    let request = learningCognitionRequest(), scope = AgentLearningOutboxScope.cognition(request, profile: "profile")
+    var task = GlobalCognitionTask(id: request.taskId,
+      sourceEvent: .init(id: "event", type: .messageCreated, conversationId: "source", actor: .user,
+        timestampMillis: 1, content: "Synthetic"), baselineUnderstanding: .init(eventId: "event"),
+      status: .running, resourceId: "paired", sourceMessageId: 123, leaseExpiresAtMillis: 1_000,
+      contextConversationIds: ["source"], resourceTransport: .pairedAgent)
+    func accepted(_ tasks: [GlobalCognitionTask], privateSource: Bool = false, paused: Bool = false, now: Int64 = 1) -> Bool {
+      let current = GlobalBackgroundCognitionScope(enabled: true,
+        conversations: learningConversations(privateSource: privateSource, paused: paused))
+      return scope.cognitionRequest(tasks, scope: current, now: now) != nil
+    }
+    XCTAssertTrue(accepted([task])); XCTAssertFalse(accepted([task], privateSource: true))
+    XCTAssertFalse(accepted([task], paused: true)); XCTAssertFalse(accepted([task], now: 1_000))
+    XCTAssertFalse(accepted([task, task])); task.contextConversationIds = ["removed"]
+    XCTAssertFalse(accepted([task])); task.contextConversationIds = ["source"]; task.sourceMessageId = 124
+    XCTAssertFalse(accepted([task]))
+  }
+
+  func testLearningAutonomousActionAndReviewRetainOwnerRevisionAndSourceGates() {
+    var step = GlobalAutonomousAction(id: "action", kind: .analyze, goal: "Synthetic", status: .running,
+      resourceId: "paired", sourceMessageId: 123, leaseExpiresAtMillis: 1_000)
+    var run = GlobalAutonomousRun(id: "run", sourceCognitionTaskId: "cognition", sourceEventId: "event",
+      sourceConversationId: "source", topic: "Synthetic", goal: "Synthetic", actions: [step], status: .running,
+      sourceConversationIds: ["source"])
+    let request = GalaxySSIGlobalAutonomousDispatchRequest(runId: "run", actionId: "action", resourceId: "paired",
+      transport: .pairedAgent, contactId: "paired", sourceMessageId: 123, conversationId: "global-autonomous:run",
+      turnId: "action", systemPrompt: "", prompt: "")
+    let scope = AgentLearningOutboxScope.autonomous(request, profile: "profile")
+    let allowed = GlobalRealtimePlanningScope(enabled: true, conversations: learningConversations())
+    XCTAssertNotNil(scope.autonomousRequest([run], scope: allowed, now: 1))
+    XCTAssertNil(scope.autonomousRequest([run, run], scope: allowed, now: 1))
+    XCTAssertNil(scope.autonomousRequest([run], scope: allowed, now: 1_000))
+    let denied = GlobalRealtimePlanningScope(enabled: true, conversations: learningConversations(privateSource: true))
+    XCTAssertNil(scope.autonomousRequest([run], scope: denied, now: 1))
+    step.sourceMessageId = 124; run.actions = [step]
+    XCTAssertNil(scope.autonomousRequest([run], scope: allowed, now: 1))
+    run.status = .replanning
+    run.review = .init(status: .running, resourceId: "paired", sourceMessageId: 123, leaseExpiresAtMillis: 1_000)
+    var review = request; review.actionId = ""; review.conversationId = "global-autonomous-review:run"; review.turnId = "revision:2"
+    let reviewScope = AgentLearningOutboxScope.autonomous(review, profile: "profile")
+    XCTAssertNotNil(reviewScope.autonomousRequest([run], scope: allowed, now: 1))
+    run.revision += 1
+    XCTAssertNil(reviewScope.autonomousRequest([run], scope: allowed, now: 1))
+  }
+
+  func testLearningResearchEvidenceRequiresOriginalRequestUnitAndCurrentSources() {
+    let fixture = learningResearchFixture(), request = fixture.dispatchRequests[0]
+    let scope = AgentLearningOutboxScope.research(request, profile: "profile")
+    let allowed = GlobalRealtimePlanningScope(enabled: true, conversations: learningConversations())
+    XCTAssertEqual(scope.researchRequest(fixture, scope: allowed, now: 1), request)
+    var changed = fixture; changed.dispatchRequests[0].id = "replacement"
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    changed = fixture; changed.tasks[0].researchPlan.units[0].sourceMessageId = 124
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    changed = fixture; changed.dispatchRequests[0].contextConversationIds = ["removed"]
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    changed = fixture; changed.dispatchRequests[0].leaseId = "replacement"
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    changed = fixture; changed.dispatchRequests[0].stage = .synthesis
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    let privateScope = GlobalRealtimePlanningScope(enabled: true, conversations: learningConversations(privateSource: true))
+    XCTAssertNil(scope.researchRequest(fixture, scope: privateScope, now: 1))
+  }
+
+  func testLearningResearchSynthesisRejectsExpiredDuplicateAndTerminalOwners() {
+    var state = learningResearchFixture()
+    state.dispatchRequests[0].stage = .synthesis; state.dispatchRequests[0].unitId = ""
+    state.tasks[0].researchPlan.phase = .synthesizing
+    state.tasks[0].researchPlan.synthesisResourceId = "paired"
+    state.tasks[0].researchPlan.synthesisSourceMessageId = 123
+    state.tasks[0].researchPlan.synthesisLeaseExpiresAtMillis = 1_000
+    let scope = AgentLearningOutboxScope.research(state.dispatchRequests[0], profile: "profile")
+    let allowed = GlobalRealtimePlanningScope(enabled: true, conversations: learningConversations())
+    XCTAssertNotNil(scope.researchRequest(state, scope: allowed, now: 1))
+    XCTAssertNil(scope.researchRequest(state, scope: allowed, now: 1_000))
+    var changed = state; changed.dispatchRequests.append(state.dispatchRequests[0])
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+    changed = state; changed.tasks[0].status = .completed
+    XCTAssertNil(scope.researchRequest(changed, scope: allowed, now: 1))
+  }
+
+  private var learningMessageID: String { "00000000-0000-4000-8000-000000000123" }
+  private func learningCognitionRequest() -> GalaxySSIGlobalCognitionDispatchRequest {
+    .init(taskId: "cognition", resourceId: "paired", transport: .pairedAgent, contactId: "paired",
+      sourceMessageId: 123, conversationId: "global-cognition:cognition", turnId: "cognition", systemPrompt: "", prompt: "")
+  }
+  private func learningPayload(_ scope: AgentLearningOutboxScope) -> [String: Any] {
+    ["type": "text", "source_message_id": scope.source, "contact_id": scope.resource,
+     "task_id": scope.task, "conversation_id": scope.conversation, "turn_id": scope.turn]
+  }
+  private func learningBound(_ scope: AgentLearningOutboxScope) throws -> AgentLearningOutboxScope {
+    try XCTUnwrap(scope.bound(messageID: learningMessageID, topic: "synthetic/up", payload: learningPayload(scope),
+      profile: "profile", source: "123", contact: "paired"))
+  }
+  private func learningItem(_ scope: AgentLearningOutboxScope) -> PendingLinkMessage {
+    let now = Date(timeIntervalSince1970: 1)
+    return .init(messageId: scope.messageID, topic: scope.topic, wirePayload: "synthetic-sealed-body", status: "queued",
+      attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now,
+      clientSourceMessageId: "123", contactId: "paired", backgroundLearning: true, learningScope: scope)
+  }
+  private func learningConversations(privateSource: Bool = false, paused: Bool = false) -> [AgentConversation] {
+    [.init(id: "source", title: "Synthetic", createdAt: 1, updatedAt: 1, privateMode: privateSource, trackingPaused: paused)]
+  }
+  private func learningResearchFixture() -> GlobalResearchExecutorState {
+    let request = GlobalResearchDispatchRequest(id: "request", taskId: "research", unitId: "unit", stage: .evidence,
+      transport: .pairedAgent, resourceId: "paired", contactId: "paired", sourceMessageId: 123,
+      conversationId: "global-research:research", turnId: "unit", ownerKey: "owner", leaseId: "lease",
+      systemPrompt: "", prompt: "", estimatedInputTokens: 0, createdAtMillis: 1, contextConversationIds: ["source"])
+    let unit = GlobalResearchUnit(id: "unit", status: .running, resourceId: "paired", sourceMessageId: 123, leaseExpiresAtMillis: 1_000)
+    let task = GlobalResearchTask(id: "research", sourceEventId: "event", sourceConversationId: "source",
+      topic: "Synthetic", question: "Synthetic", depth: .quickFact, preferredSources: [], status: .running,
+      researchPlan: .init(phase: .collecting, units: [unit]), sourceConversationIds: ["source"])
+    return .init(tasks: [task], dispatchRequests: [request])
+  }
+
   func testCutoverRequiresReadableAndEmptyLegacyReceiptJournal() throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
