@@ -7,7 +7,10 @@ import UniformTypeIdentifiers
 
 @MainActor
 struct GalaxySSIHealthOriginalStore {
-  enum Kind: String, Codable, CaseIterable, Sendable { case image, pdf }
+  enum Kind: String, Codable, CaseIterable, Sendable {
+    case image, pdf, structured
+    var isReport: Bool { self == .image || self == .pdf }
+  }
   enum Acquisition: String, Codable, Sendable { case camera, uploaded }
   struct Original: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
@@ -267,7 +270,7 @@ struct GalaxySSIHealthOriginalStore {
                      reportUpdate: Bool = false,
                      updateDraft: ((inout GalaxySSIHealthRecords.Archive, Original) throws -> Void)? = nil) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
-    let (kind, fileExtension) = try Self.format(of: data)
+    let (kind, fileExtension) = try Self.format(of: data, fileExtension: URL(fileURLWithPath: name).pathExtension.lowercased())
     let listing = try list(lease: lease)
     let digest = Self.digest(data)
     let indexed = listing.originals + listing.unavailableOriginals
@@ -307,7 +310,7 @@ struct GalaxySSIHealthOriginalStore {
     try? reconcileRestores(lease: lease)
   }
 
-  private static func format(of data: Data) throws -> (Kind, String) {
+  private static func format(of data: Data, fileExtension: String = "") throws -> (Kind, String) {
     if data.starts(with: Data("%PDF-".utf8)),
        let provider = CGDataProvider(data: data as CFData),
        let pdf = CGPDFDocument(provider), pdf.numberOfPages > 0 || (pdf.isEncrypted && !pdf.isUnlocked) {
@@ -317,11 +320,14 @@ struct GalaxySSIHealthOriginalStore {
               !ext.isEmpty, ext.utf8.count <= 8,
               ext.utf8.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }) {
       return (.image, ext)
+    } else if GalaxySSIHealthStructuredOriginal.extensions.contains(fileExtension) {
+      _ = try GalaxySSIHealthStructuredOriginal.read(data, fileExtension: fileExtension)
+      return (.structured, fileExtension)
     } else { throw Failure.invalid }
   }
 
   static func validateRestoreOriginal(_ item: Original, data: Data) throws {
-    let (kind, ext) = try format(of: data)
+    let (kind, ext) = try format(of: data, fileExtension: item.fileExtension)
     guard item.kind == kind, item.fileExtension == ext, item.bytes == data.count,
           item.sha256 == digest(data) else { throw Failure.invalid }
   }
@@ -542,7 +548,7 @@ struct GalaxySSIHealthOriginalStore {
     let index = try ensureIndex(lease: lease)
     let removed = index.removals.pending.union(index.removals.metadata.map(\.id))
     let candidates = index.originals.values.filter { item in
-      !removed.contains(item.id) && (cursor.map {
+      item.kind.isReport && !removed.contains(item.id) && (cursor.map {
         (item.importedAt, item.id.uuidString) < ($0.importedAt, $0.id.uuidString)
       } ?? true)
     }.sorted { ($0.importedAt, $0.id.uuidString) > ($1.importedAt, $1.id.uuidString) }

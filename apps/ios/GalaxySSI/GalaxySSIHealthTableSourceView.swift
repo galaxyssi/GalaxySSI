@@ -1,26 +1,28 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct GalaxySSIHealthTableSourceSample {
+struct GalaxySSIHealthTableSourceSample: Sendable {
   let headers: [String]
   let rows: [[String]]
   let rowNumbers: [Int]
   let limited: Bool
 
-  init(_ table: GalaxySSIHealthTableImport.Table) {
-    let columns = table.headers.prefix(12).map { String($0.prefix(256)) }
+  init(_ table: GalaxySSIHealthTableImport.Table, rowLimit: Int = 30, cellLimit: Int = 256) {
+    let rowLimit = min(30, max(1, rowLimit)), cellLimit = min(512, max(1, cellLimit))
+    let columns = table.headers.prefix(12).map { Self.clip($0, limit: cellLimit) }
     headers = columns
-    rows = table.rows.prefix(30).map { row in
-      columns.indices.map { row.indices.contains($0) ? String(row[$0].prefix(256)) : "" }
+    rows = table.rows.prefix(rowLimit).map { row in
+      columns.indices.map { row.indices.contains($0) ? Self.clip(row[$0], limit: cellLimit) : "" }
     }
-    rowNumbers = (0..<min(table.rows.count, 30)).map { $0 + 1 }
-    limited = table.headers.count > 12 || table.rows.count > 30 ||
-      table.headers.prefix(12).contains(where: { $0.count > 256 }) ||
-      table.rows.prefix(30).contains(where: { $0.prefix(12).contains { $0.count > 256 } })
+    rowNumbers = (0..<min(table.rows.count, rowLimit)).map { $0 + 1 }
+    limited = table.headers.count > 12 || table.rows.count > rowLimit ||
+      table.headers.prefix(12).contains(where: { Self.length($0, limit: cellLimit) > cellLimit }) ||
+      table.rows.prefix(rowLimit).contains(where: { $0.prefix(12).contains { Self.length($0, limit: cellLimit) > cellLimit } })
   }
 
-  init(sheetRows: [GalaxySSIHealthXLSX.SheetRow]) {
-    let firstRows = sheetRows.prefix(30)
+  init(sheetRows: [GalaxySSIHealthXLSX.SheetRow], rowLimit: Int = 30, cellLimit: Int = 256) {
+    let rowLimit = min(30, max(1, rowLimit)), cellLimit = min(512, max(1, cellLimit))
+    let firstRows = sheetRows.prefix(rowLimit)
     let lastColumn = firstRows.flatMap { Array($0.cells.keys) + Array($0.formulas) }.max() ?? 0
     let columns = 0...min(lastColumn, 11)
     headers = columns.map { _ in "" }
@@ -29,17 +31,29 @@ struct GalaxySSIHealthTableSourceSample {
       columns.map { column in
         let cached = row.cells[column] ?? ""
         if let formula = row.formulaText[column], !formula.isEmpty {
-          return String(("=" + formula + (cached.isEmpty ? "" : "\n" + cached)).prefix(256))
+          return Self.clip("=" + formula + (cached.isEmpty ? "" : "\n" + cached), limit: cellLimit)
         }
-        return String(cached.prefix(256))
+        return Self.clip(cached, limit: cellLimit)
       }
     }
-    limited = sheetRows.count > 30 || lastColumn > 11 || firstRows.contains { row in
+    limited = sheetRows.count > rowLimit || lastColumn > 11 || firstRows.contains { row in
       columns.contains { column in
         let formula = row.formulaText[column] ?? ""
-        return (row.cells[column]?.count ?? 0) + (formula.isEmpty ? 0 : formula.count + 2) > 256
+        return Self.length(row.cells[column] ?? "", limit: cellLimit) +
+          (formula.isEmpty ? 0 : Self.length(formula, limit: cellLimit) + 2) > cellLimit
       }
     }
+  }
+
+  private static func clip(_ text: String, limit: Int) -> String {
+    // Legacy callers retain their existing 256-character contract.
+    guard limit == 512 else { return String(text.prefix(limit)) }
+    guard text.utf16.count > limit else { return text }
+    return String(decoding: text.utf16.prefix(limit - 1), as: UTF16.self) + "\u{2026}"
+  }
+
+  private static func length(_ text: String, limit: Int) -> Int {
+    limit == 512 ? text.utf16.count : text.count
   }
 }
 
@@ -55,11 +69,25 @@ struct GalaxySSIHealthTableSourceView: View {
   @State private var confirming = false
   @State private var exporting = false
   @State private var document: TableOriginalDocument?
-  @State private var workbook: GalaxySSIHealthXLSX?
+  @State private var sheets: [Worksheet] = []
   @State private var sheetID = ""
+  @State private var requestID = UUID()
+  @State private var loading = false
+  @State private var previewEnabled = true
   @State private var linked: [GalaxySSIHealthTableImport.LinkedReading] = []
   @State private var linkedLimit = 30
   @State private var confirmingLinked = false
+
+  private struct Worksheet: Identifiable, Sendable {
+    let id: String
+    let name: String
+  }
+
+  private struct LoadedPreview: Sendable {
+    let sheets: [Worksheet]
+    let sheetID: String
+    let sample: GalaxySSIHealthTableSourceSample
+  }
 
   var body: some View {
     List {
@@ -72,31 +100,24 @@ struct GalaxySSIHealthTableSourceView: View {
             }
           }
         }
-        if let workbook {
+        if !sheets.isEmpty {
           Picker(t("sheet", "Worksheet"), selection: Binding(get: { sheetID }, set: selectSheet)) {
-            ForEach(workbook.sheets) { sheet in Text(sheet.name).tag(sheet.id) }
+            ForEach(sheets) { sheet in Text(sheet.name).tag(sheet.id) }
           }
         }
         if let sample {
           if sample.limited {
-            Text(t("limited", "Preview limited to 30 rows, 12 columns and 256 characters per cell."))
+            Text(t("grid_limited", "Preview limited to 20 rows, 12 columns and 512 characters per cell."))
               .font(.footnote).foregroundColor(.secondary)
           }
-          ForEach(sample.rows.indices, id: \.self) { row in
-            DisclosureGroup(String(format: t("row", "Source row %lld"), Int64(sample.rowNumbers[row]))) {
-              ForEach(sample.headers.indices, id: \.self) { column in
-                VStack(alignment: .leading, spacing: 3) {
-                  Text(sample.headers[column].isEmpty
-                    ? String(format: t("column", "Column %lld"), Int64(column + 1))
-                    : sample.headers[column]).font(.caption).foregroundColor(.secondary)
-                  let text = sample.rows[row][column]
-                  Text(text.isEmpty ? t("empty_cell", "Empty") : text).textSelection(.disabled)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 3)
-              }
-            }
-          }
+          GalaxySSIHealthTablePreviewGrid(sample: sample).id(requestID)
+        }
+        if loading {
+          ProgressView(t("loading", "Loading preview"))
+          Button(t("cancel_preview", "Cancel preview"), action: invalidate)
+        }
+        if !previewEnabled {
+          Button(t("reload", "Reload original"), action: reload)
         }
         if !linked.isEmpty {
           Section(t("linked_records", "Linked measurements")) {
@@ -130,19 +151,17 @@ struct GalaxySSIHealthTableSourceView: View {
     }
     .navigationTitle(t("title", "Table Original"))
     .galaxySSIHealthTheme()
-    .onAppear(perform: reload)
+    .task(id: requestID) { await loadPreview() }
+    .onAppear { if !previewEnabled { reload() } }
+    .onDisappear(perform: invalidate)
+    .onChange(of: records.owner) { _ in reload() }
+    .onChange(of: records.isolatedFile) { _ in reload() }
+    .onReceive(NotificationCenter.default.publisher(for: .galaxySSIRuntimePlaintextWillClear)) { _ in
+      invalidate()
+    }
     .onChange(of: scene) { phase in
       if phase == .active { reload() }
-      else {
-        name = nil
-        sample = nil
-        workbook = nil
-        sheetID = ""
-        confirming = false
-        confirmingLinked = false
-        linked = []
-        if !exporting { document = nil }
-      }
+      else { invalidate() }
     }
     .confirmationDialog(t("unencrypted", "Save the unencrypted original?"), isPresented: $confirming,
                         titleVisibility: .visible) {
@@ -176,26 +195,61 @@ struct GalaxySSIHealthTableSourceView: View {
   }
 
   private func reload() {
-    guard scene == .active, !exporting else { return }
+    invalidate()
+    previewEnabled = true
+  }
+
+  private func invalidate() {
+    requestID = UUID()
+    previewEnabled = false
     name = nil
     sample = nil
-    workbook = nil
-    sheetID = ""
     linked = []
+    sheets = []
+    sheetID = ""
+    loading = false
+    confirming = false
+    confirmingLinked = false
+    error = false
+    if !exporting { document = nil }
+  }
+
+  private func loadPreview() async {
+    guard previewEnabled, scene == .active, !exporting, !Task.isCancelled else { return }
+    let token = requestID, owner = records.owner, dataset = records.isolatedFile, selected = sheetID
+    loading = true
     error = false
     do {
       let batch = try batch()
-      linked = try linkedReadings(batch)
-      name = batch.name
+      let digest = GalaxySSIHealthTableImport.digest(batch.data)
       let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
-      if ext == "xlsx" {
-        let contents = try GalaxySSIHealthXLSX(batch.data)
-        workbook = contents
-        if let first = contents.sheets.first { selectSheet(first.id) }
-      } else {
-        sample = GalaxySSIHealthTableSourceSample(try GalaxySSIHealthTableImport.parse(batch.data, json: ext == "json"))
+      let headers = [t("json_key", "Key"), t("json_value", "Value")]
+      let worker = Task.detached(priority: .userInitiated) { [data = batch.data] in
+        try Task.checkCancellation()
+        let loaded = try GalaxySSIHealthStructuredOriginal.read(data, fileExtension: ext, sheetID: selected, jsonHeaders: headers)
+        let result = LoadedPreview(sheets: loaded.sheets.map { Worksheet(id: $0.id, name: $0.name) },
+          sheetID: loaded.sheetID, sample: loaded.sample)
+        try Task.checkCancellation()
+        return result
       }
-    } catch { error = true }
+      let result = try await withTaskCancellationHandler(operation: { try await worker.value },
+                                                       onCancel: { worker.cancel() })
+      guard requestID == token, !Task.isCancelled, scene == .active,
+            records.owner == owner, records.isolatedFile == dataset else { return }
+      let fresh = try self.batch()
+      guard fresh.id == batch.id, fresh.name == batch.name,
+            GalaxySSIHealthTableImport.digest(fresh.data) == digest else {
+        throw GalaxySSIHealthTableImport.Failure.stale
+      }
+      linked = try linkedReadings(fresh)
+      name = fresh.name
+      sheets = result.sheets
+      sheetID = result.sheetID
+      sample = result.sample
+    } catch {
+      if requestID == token, !Task.isCancelled, scene == .active { error = true }
+    }
+    if requestID == token { loading = false }
   }
 
   private func linkedReadings(_ batch: GalaxySSIHealthTableImport.Batch) throws -> [GalaxySSIHealthTableImport.LinkedReading] {
@@ -217,13 +271,10 @@ struct GalaxySSIHealthTableSourceView: View {
   }
 
   private func selectSheet(_ id: String) {
-    guard scene == .active, let workbook else { return }
+    guard scene == .active, sheets.contains(where: { $0.id == id }), id != sheetID else { return }
+    invalidate()
     sheetID = id
-    sample = nil
-    do {
-      sample = GalaxySSIHealthTableSourceSample(sheetRows: try workbook.rows(id))
-      error = false
-    } catch { error = true }
+    previewEnabled = true
   }
 
   private func save() {

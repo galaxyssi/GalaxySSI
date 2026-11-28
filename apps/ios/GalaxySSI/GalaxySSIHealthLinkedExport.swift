@@ -126,7 +126,7 @@ enum GalaxySSIHealthLinkedExport {
       let path = original.entryPath
       let status: Status
       if !selected { status = .unselected }
-      else if original.sha256 != report.sha256 ||
+      else if !original.kind.isReport || original.sha256 != report.sha256 ||
         (original.kind == .image && (!report.fromOCR || report.page != 0)) { status = .mismatched }
       else { status = try verified(path, expected: report.sha256) { try store.read(original, lease: lease) } }
       try append(reading, original: original.id, source: original.acquisition?.rawValue ?? "unknown",

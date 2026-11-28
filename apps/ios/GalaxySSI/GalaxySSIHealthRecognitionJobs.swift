@@ -67,6 +67,7 @@ enum GalaxySSIHealthRecognitionJobs {
   }
 
   static func process(_ data: Data, kind: GalaxySSIHealthOriginalStore.Kind, page: Int, password: String? = nil) throws -> Page {
+    guard kind.isReport else { throw GalaxySSIHealthRecords.Failure.invalid }
     let result: GalaxySSIHealthPDFText.Result
     if kind == .pdf { result = try GalaxySSIHealthPDFText.read(data, page: page, password: password) }
     else { result = try GalaxySSIHealthPDFText.readImage(data) }
@@ -437,7 +438,7 @@ struct GalaxySSIHealthRecognitionJobsView: View {
         try? GalaxySSIHealthSelectedFiles.restore(batch: $0, archive: archive)
       }
       let listing = try store.list()
-      originals = listing.originals
+      originals = listing.originals.filter { $0.kind.isReport }
       removedSources = Set(listing.removed.map(\.id)).union(listing.pendingRemovals)
       if !quickReportOpened, task == nil {
         let candidates = jobs.filter {
