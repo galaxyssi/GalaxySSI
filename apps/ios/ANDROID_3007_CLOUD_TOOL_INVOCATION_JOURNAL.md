@@ -64,8 +64,9 @@ mode marker for a later independent stream reusing that private request ID.
 Boundary validation is not an atomic lock across an already-running batch or
 actor hop. It does not replace full source/task authorization or reconcile
 historical cross-profile inputs. In-flight work can finish and retain its owned
-result. Existing journal storage growth and multi-process coordination limits
-remain. Restoring source evidence/receipts and complete session UI state remain
+result. This change does not bound journal/lease-file growth. OS leases protect
+normal same-scope access across handles/processes; coordinated cross-process
+reset remains unverified. Restoring source evidence/receipts and complete session UI state remain
 separate from retaining an invocation's output. SQLite commits and OS leases
 are not a guarantee against hardware failure or a coordinated multi-process data reset.
 
