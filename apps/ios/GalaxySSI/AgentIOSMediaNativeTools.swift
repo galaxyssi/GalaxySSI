@@ -91,14 +91,19 @@ enum AgentIOSMediaNativeToolCatalog {
   static let maxMediaBytes: Int64 = 256 * 1_024 * 1_024
 
   static let toolIds: Set<String> = [mediaMetadata, mediaPlaybackHandoff, mediaFFmpegTranscode]
+  static let uncheckedAvailability = AgentNativeToolAvailability(
+    status: .unavailable, reason: "Media readiness has not been checked"
+  )
 
   static func definitions(
-    provider: AgentIOSMediaNativeToolProviding = AgentIOSUnavailableMediaNativeToolProvider()
+    provider: AgentIOSMediaNativeToolProviding = AgentIOSUnavailableMediaNativeToolProvider(),
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     [
       definition(
         provider: provider,
         kind: .metadata,
+        initialAvailability: initialAvailability,
         id: mediaMetadata,
         title: "Inspect selected media",
         description: "Reads bounded metadata from a user-authorized iOS media content URI or security-scoped file URL.",
@@ -113,6 +118,7 @@ enum AgentIOSMediaNativeToolCatalog {
       definition(
         provider: provider,
         kind: .playback,
+        initialAvailability: initialAvailability,
         id: mediaPlaybackHandoff,
         title: "Hand media to iOS playback",
         description: "Opens selected media in a user-visible iOS playback handler without claiming playback completion.",
@@ -134,6 +140,7 @@ enum AgentIOSMediaNativeToolCatalog {
       definition(
         provider: provider,
         kind: .transcode,
+        initialAvailability: initialAvailability,
         id: mediaFFmpegTranscode,
         title: "Transcode media with FFmpeg",
         description: "Converts one user-authorized or conversation-workspace media file in a bounded, offline iOS media runtime.",
@@ -194,6 +201,7 @@ enum AgentIOSMediaNativeToolCatalog {
   private static func definition(
     provider: AgentIOSMediaNativeToolProviding,
     kind: AgentIOSMediaNativeToolKind,
+    initialAvailability: AgentNativeToolAvailability?,
     id: String,
     title: String,
     description: String,
@@ -220,7 +228,7 @@ enum AgentIOSMediaNativeToolCatalog {
       requiredConsents: consents,
       timeoutMillis: timeoutMillis,
       idempotency: idempotency,
-      availability: provider.availability(kind: kind)
+      availability: initialAvailability ?? provider.availability(kind: kind)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -232,7 +240,10 @@ enum AgentIOSMediaNativeToolCatalog {
         "completion_semantics": kind == .playback ? "handoff_only" : "bounded_result",
         "network": kind == .transcode ? "disabled" : "not_required",
         "argument_policy": kind == .transcode ? "typed_presets_only" : "bounded_inputs"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(kind: kind)
+      }
     )
   }
 

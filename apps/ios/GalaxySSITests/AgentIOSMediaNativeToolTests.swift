@@ -1,6 +1,172 @@
 import XCTest
 @testable import GalaxySSI
 
+// Readiness fixtures do not inspect media, play files or run FFmpeg.
+final class AgentMediaReadinessTests: XCTestCase {
+  func testExplicitMediaDefinitionsRetainEagerCompatibility() {
+    let provider = Provider()
+    let definitions = AgentIOSMediaNativeToolCatalog.definitions(provider: provider)
+    XCTAssertEqual(provider.probes, [.metadata, .playback, .transcode])
+    XCTAssertEqual(definitions.count, 3)
+    XCTAssertEqual(definitions.last?.descriptor.availability.status, .requiresSetup)
+  }
+
+  func testDeferredMediaDefinitionsDoNotProbeAtRegistration() throws {
+    let provider = Provider()
+    let definitions = AgentIOSMediaNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: AgentIOSMediaNativeToolCatalog.uncheckedAvailability)
+    XCTAssertTrue(definitions.allSatisfy { $0.descriptor.availability == AgentIOSMediaNativeToolCatalog.uncheckedAvailability })
+    let registry = try AgentNativeToolRegistry().registerAll(definitions)
+    _ = registry.registeredContractFingerprint()
+    XCTAssertTrue(provider.probes.isEmpty)
+    XCTAssertEqual(registry.descriptors().count, 3)
+    XCTAssertEqual(provider.probes.count, 3)
+    XCTAssertEqual(provider.executions, 0)
+  }
+
+  func testMediaExecutableHelperForwardsDeferredReadiness() throws {
+    let provider = Provider()
+    let executables = AgentPhoneNativeToolCatalog.mediaExecutableDefinitions(provider: provider,
+      initialAvailability: AgentIOSMediaNativeToolCatalog.uncheckedAvailability)
+    let registry = try AgentNativeToolRegistry().registerExecutables(executables)
+    _ = registry.registeredContractFingerprint()
+    XCTAssertTrue(provider.probes.isEmpty)
+    _ = registry.descriptors()
+    XCTAssertEqual(provider.probes.count, 3)
+    XCTAssertEqual(provider.executions, 0)
+  }
+
+  func testMediaRefreshSeesSetupRecoveryAndFailureWithoutChangingContract() throws {
+    let provider = Provider()
+    let registry = try AgentNativeToolRegistry().registerAll(AgentIOSMediaNativeToolCatalog.definitions(provider: provider))
+    let fingerprint = registry.registeredContractFingerprint()
+    func transcode() throws -> AgentNativeToolDescriptor {
+      try XCTUnwrap(registry.descriptors().first { $0.id == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode })
+    }
+    XCTAssertEqual(try transcode().availability.status, .requiresSetup)
+    provider.transcodeReadiness = .available
+    registry.refreshAvailability()
+    XCTAssertEqual(try transcode().availability.status, .available)
+    provider.transcodeReadiness = .init(status: .unavailable, reason: "Fixture broker stopped")
+    registry.refreshAvailability()
+    XCTAssertEqual(try transcode().availability.reason, "Fixture broker stopped")
+    XCTAssertTrue(registry.descriptors().filter { $0.id != AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode }
+      .allSatisfy { $0.availability.status == .available })
+    XCTAssertEqual(registry.registeredContractFingerprint(), fingerprint)
+    XCTAssertEqual(provider.executions, 0)
+  }
+
+  func testDeferredMediaInvocationUsesLiveProvider() throws {
+    try checkInvocation(initial: AgentIOSMediaNativeToolCatalog.uncheckedAvailability)
+  }
+
+  func testCallerSuppliedAvailableSnapshotCannotBypassLiveMediaGate() throws {
+    try checkInvocation(initial: .available)
+  }
+
+  func testMediaInvocationRetainsPermissionAndConsentGates() throws {
+    let provider = Provider()
+    let definition = try XCTUnwrap(AgentIOSMediaNativeToolCatalog.definitions(provider: provider).first)
+    var calls = 0
+    let registry = try AgentNativeToolRegistry().registerExecutable(.init(definition: definition, executor: { _ in
+      calls += 1
+      return .failure(code: "fixture_reached", message: "Synthetic executor; no media access")
+    }))
+    for grants in [(false, true), (true, false), (false, false)] {
+      _ = registry.invoke(definition.id, input: ["content_uri": .string("file:///fixture.mp4")],
+        context: context(definition, permissions: grants.0, consents: grants.1))
+    }
+    XCTAssertEqual(calls, 0)
+    _ = registry.invoke(definition.id, input: ["content_uri": .string("file:///fixture.mp4")], context: context(definition))
+    XCTAssertEqual(calls, 1)
+    XCTAssertEqual(provider.executions, 0)
+  }
+
+  func testSignedFfmpegAdapterPropagatesRuntimeReadinessChanges() throws {
+    let runtime = Runtime(), passthrough = Provider()
+    let provider = AgentIOSSignedFfmpegMediaProvider(runtime: AgentIOSOnDeviceFfmpegRuntimeAdapter(provider: runtime),
+      passthroughProvider: passthrough, projectRoot: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+    let registry = try AgentNativeToolRegistry().registerAll(AgentIOSMediaNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: AgentIOSMediaNativeToolCatalog.uncheckedAvailability))
+    XCTAssertTrue(runtime.probes.isEmpty)
+    XCTAssertTrue(passthrough.probes.isEmpty)
+    for readiness in [AgentNativeToolAvailability(status: .requiresSetup, reason: "Fixture setup"), .available,
+      AgentNativeToolAvailability(status: .unavailable, reason: "Fixture runtime stopped")] {
+      runtime.readiness = readiness
+      registry.refreshAvailability()
+      XCTAssertEqual(registry.descriptors().first { $0.id == AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode }?.availability, readiness)
+    }
+    XCTAssertEqual(runtime.probes, [.execute, .execute, .execute])
+    XCTAssertEqual(passthrough.executions, 0)
+  }
+
+  private func checkInvocation(initial: AgentNativeToolAvailability) throws {
+    let provider = Provider()
+    provider.metadataReadiness = .init(status: .unavailable, reason: "Fixture unavailable")
+    let definition = try XCTUnwrap(AgentIOSMediaNativeToolCatalog.definitions(provider: provider, initialAvailability: initial).first)
+    var calls = 0
+    let registry = try AgentNativeToolRegistry().registerExecutable(.init(definition: definition, executor: { _ in
+      calls += 1
+      return .failure(code: "fixture_reached", message: "Synthetic executor; no media access")
+    }))
+    func invoke() {
+      _ = registry.invoke(definition.id, input: ["content_uri": .string("file:///fixture.mp4")], context: context(definition))
+    }
+    invoke()
+    XCTAssertEqual(calls, 0)
+    provider.metadataReadiness = .available
+    invoke()
+    XCTAssertEqual(calls, 1)
+    provider.metadataReadiness = .init(status: .unavailable, reason: "Fixture revoked")
+    invoke()
+    XCTAssertEqual(calls, 1)
+    XCTAssertEqual(provider.executions, 0)
+  }
+
+  private func context(_ definition: AgentPhoneNativeToolDefinition, permissions: Bool = true,
+                       consents: Bool = true) -> AgentNativeToolInvocationContext {
+    .init(invocationId: UUID().uuidString, sessionId: "fixture-session", conversationId: "fixture-conversation",
+      turnId: UUID().uuidString, callerId: "fixture", idempotencyKey: UUID().uuidString,
+      grantedPermissions: permissions ? Set(definition.descriptor.requiredPermissions.filter(\.required).map(\.id)) : [],
+      grantedConsents: consents ? Set(definition.descriptor.requiredConsents.filter(\.required).map(\.id)) : [])
+  }
+
+  private final class Provider: AgentIOSMediaNativeToolProviding {
+    let implementationId = "fixture.media.readiness"
+    var metadataReadiness = AgentNativeToolAvailability.available
+    var transcodeReadiness = AgentNativeToolAvailability(status: .requiresSetup, reason: "Fixture setup")
+    var probes: [AgentIOSMediaNativeToolKind] = []
+    var executions = 0
+    func availability(kind: AgentIOSMediaNativeToolKind) -> AgentNativeToolAvailability {
+      probes.append(kind)
+      return kind == .metadata ? metadataReadiness : (kind == .transcode ? transcodeReadiness : .available)
+    }
+    private func unexpected() -> AgentNativeToolExecutionResult {
+      executions += 1
+      XCTFail("Readiness fixtures cannot execute a media provider")
+      return .failure(code: "fixture_unexpected", message: "Unexpected media provider execution")
+    }
+    func inspectMetadata(contentUri: String, invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult { unexpected() }
+    func handoffPlayback(contentUri: String, contentType: String, invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult { unexpected() }
+    func transcode(request: AgentIOSMediaTranscodeRequest, invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult { unexpected() }
+  }
+
+  private final class Runtime: AgentIOSOnDeviceRuntimeToolProviding {
+    let implementationId = "fixture.media.runtime"
+    var readiness = AgentNativeToolAvailability(status: .requiresSetup, reason: "Fixture setup")
+    var probes: [AgentIOSOnDeviceRuntimeToolOperation] = []
+    func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability {
+      probes.append(operation)
+      return readiness
+    }
+    func invoke(operation: AgentIOSOnDeviceRuntimeToolOperation, input: AgentMcpJSONObject,
+                invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+      XCTFail("Readiness fixtures cannot run Linux or FFmpeg")
+      return .failure(code: "fixture_unexpected", message: "Unexpected runtime execution")
+    }
+  }
+}
+
 extension GalaxySSIStoreTests {
   func testAgentIOSMediaNativeToolCatalogAndExecutorBoundsMetadataPlaybackAndTranscode() throws {
     final class FakeMediaProvider: AgentIOSMediaNativeToolProviding {
