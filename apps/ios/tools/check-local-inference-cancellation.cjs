@@ -1,16 +1,22 @@
 // Source contracts only; no Swift, model, threading, queue or native execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '303ea378c82dc48e9a10157cdba3f9c887808758';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '87b005960e7f2ad75f85e76a180bb2cf0e8cc9f7';
 const files = {
   runtime: app + 'LocalModelInferenceRuntime.swift', cooperative: app + 'LocalModelCooperativeRuntime.swift',
-  adapter: app + 'AgentIOSLocalModelWebToolAdapter.swift', tests: 'apps/ios/GalaxySSITests/LocalModelRuntimePreflightTests.swift'
+  adapter: app + 'AgentIOSLocalModelWebToolAdapter.swift', tests: 'apps/ios/GalaxySSITests/LocalModelRuntimePreflightTests.swift',
+  models: app + 'LocalModelInferenceModels.swift', backend: app + 'GalaxySSILlamaNativeBackend.swift',
+  planner: app + 'LocalModelAgentPlanningProvider.swift',
+  header: 'apps/ios/GalaxySSILlamaRuntime/GalaxySSILlamaRuntime.h', native: 'apps/ios/GalaxySSILlamaRuntime/galaxyssi_llama.mm'
 };
 const markers = {
   runtime: '    let taskCancellation = AgentModelToolLoopCancellationSource()',
   cooperative: '  private static func checkCancellation(',
   adapter: '      taskId: taskID,\n      cancellation: AgentModelToolLoopCancellationToken',
-  tests: '  func testCancelledTokenRejectsQueuedLocalInferenceBeforeModelReadiness()'
+  tests: '  func testCancelledTokenRejectsQueuedLocalInferenceBeforeModelReadiness()',
+  models: 'extension LocalModelInferenceBackend {', backend: 'private final class GalaxySSILlamaCancellationContext',
+  planner: '    } catch is CancellationError {',
+  header: 'char *galaxyssi_llama_generate_cancellable(', native: 'extern "C" char *galaxyssi_llama_generate_cancellable('
 };
 const clean = s => s.replace(/\r\n/g, '\n'), read = f => clean(fs.readFileSync(path.join(root, f), 'utf8')), memo = new Map();
 function git(args) { return clean(cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024})); }
@@ -88,8 +94,24 @@ if (require.main === module) {
   assert.equal(adapter.split('cancellation.isCancellationRequested || self.inferenceCancellation.isCancellationRequested').length - 1, 2);
   const tests = read(files.tests);
   assert.equal((tests.match(/  func test(?:Cancelled|Uncancelled)/g) || []).length, 5);
-  for (const file of ['AgentModelToolLoopModels.swift', 'LocalModelInferenceModels.swift', 'GalaxySSILlamaNativeBackend.swift'])
-    assert.equal(read(app + file), show(base, app + file), file + ': original backend/token API retained');
+  assert.equal((tests.match(/  func testBackend/g) || []).length, 6);
+  assert.equal(read(app + 'AgentModelToolLoopModels.swift'), show(base, app + 'AgentModelToolLoopModels.swift'));
+  for (const file of ['apps/ios/build-galaxyssi-llama.sh', 'apps/ios/GalaxySSILlamaRuntime/CMakeLists.txt'])
+    assert.equal(read(file), show(base, file), file + ': existing pinned static native build retained');
+  const native = read(files.native), backend = read(files.backend), header = read(files.header);
+  for (const token of ['withExtendedLifetime(cancellationContext)', 'Unmanaged.passUnretained(cancellationContext).toOpaque()',
+    'guard let context else { return 1 }', 'takeUnretainedValue()', 'observed = observed || requested',
+    '@convention(c) (UnsafeMutableRawPointer?) -> Int32', '@_silgen_name("galaxyssi_llama_generate_cancellable")']) assert(backend.includes(token), token);
+  assert(header.includes('typedef int32_t (*galaxyssi_llama_cancel_callback)(void *context);'));
+  assert.equal(native.split('check_generation_cancelled(callback, context);').length - 1, 2);
+  assert.equal(native.split('check_generation_cancelled(cancellation_requested, cancellation_context);').length - 1, 4);
+  const oldEntry = native.slice(native.indexOf('extern "C" char *galaxyssi_llama_generate('),
+    native.indexOf('extern "C" char *galaxyssi_llama_generate_cancellable('));
+  assert(oldEntry.includes('maximum_tokens, temperature, nullptr, nullptr)'));
+  assert(!oldEntry.includes('runtime_mutex'), 'Only the delegated native entry acquires the runtime mutex');
+  const cancelled = native.slice(native.indexOf('    } catch (const GenerationCancelled &error)'),
+    native.indexOf('    } catch (const std::exception &error)', native.indexOf('    } catch (const GenerationCancelled &error)')));
+  for (const token of ['llama_sampler_free(sampler)', 'if (memory != nullptr) llama_memory_clear(memory, true)', 'return nullptr;']) assert(cancelled.includes(token), token);
   const mutations = [
     [files.runtime, 'onCancel: { taskCancellation.cancel() }', 'onCancel: {}'],
     [files.runtime, 'cancellation.isCancellationRequested || taskCancellation.token.isCancellationRequested', 'cancellation.isCancellationRequested'],
@@ -103,7 +125,29 @@ if (require.main === module) {
     [files.cooperative, 'try Task.checkCancellation()', ''],
     [files.adapter, '      taskId: taskID,\n      cancellation: AgentModelToolLoopCancellationToken {\n        cancellation.isCancellationRequested || self.inferenceCancellation.isCancellationRequested\n      }', '      taskId: taskID'],
     [files.tests, 'withUnsafeCurrentTask { $0?.cancel() }', ''],
-    [files.tests, 'cancellation.cancel()', '']
+    [files.tests, 'cancellation.cancel()', ''],
+    [files.runtime, 'cancellation: combined', 'cancellation: .none'],
+    [files.runtime, 'temperature: max(0, temperature),\n          cancellation: cancellation', 'temperature: max(0, temperature)'],
+    [files.runtime, '} catch is CancellationError {', '} catch is SyntheticInferenceFailure {'],
+    [files.models, 'cancellation: AgentModelToolLoopCancellationToken\n  ) throws -> String\n  func unload()', 'cancellation: AgentModelToolLoopCancellationToken\n  ) throws -> String { "" }\n  func unload()'],
+    [files.backend, '@_silgen_name("galaxyssi_llama_generate_cancellable")', '@_silgen_name("galaxyssi_llama_generate")'],
+    [files.backend, 'withExtendedLifetime(cancellationContext)', 'withExtendedLifetime(0)'],
+    [files.backend, 'Unmanaged.passUnretained(cancellationContext)', 'Unmanaged.passRetained(cancellationContext)'],
+    [files.backend, 'guard let context else { return 1 }', 'guard let context else { return 0 }'],
+    [files.backend, 'observed = observed || requested', 'observed = requested'],
+    [files.header, 'typedef int32_t (*galaxyssi_llama_cancel_callback)', 'typedef int64_t (*galaxyssi_llama_cancel_callback)'],
+    [files.native, 'callback(context) != 0', 'callback(context) == 0'],
+    [files.native, '        check_generation_cancelled(callback, context);', ''],
+    [files.native, 'for (int32_t generated = 0; generated < generation_limit; ++generated) {\n            check_generation_cancelled(cancellation_requested, cancellation_context);',
+      'for (int32_t generated = 0; generated < generation_limit; ++generated) {'],
+    [files.native, 'const int32_t decode_result = llama_decode(loaded_context, batch);\n            check_generation_cancelled(cancellation_requested, cancellation_context);',
+      'const int32_t decode_result = llama_decode(loaded_context, batch);'],
+    [files.native, '        check_generation_cancelled(cancellation_requested, cancellation_context);\n        llama_sampler_free(sampler);', '        llama_sampler_free(sampler);'],
+    [files.native, 'if (memory != nullptr) llama_memory_clear(memory, true)', 'if (memory != nullptr) llama_memory_clear(memory, false)'],
+    [files.native, 'return nullptr;\n    } catch (const std::exception &error)', 'return copy_string("");\n    } catch (const std::exception &error)'],
+    [files.tests, 'XCTAssertEqual(fixture.awareExecutions, 1)', 'XCTAssertEqual(fixture.awareExecutions, 0)'],
+    [files.cooperative, '} catch is CancellationError {', '} catch is SyntheticInferenceFailure {'],
+    [files.planner, '} catch is CancellationError {', '} catch is SyntheticInferenceFailure {']
   ];
   for (const [file, from, to] of mutations) {
     const source = read(file); assert(source.includes(from), from);
@@ -114,5 +158,6 @@ if (require.main === module) {
   assert.notEqual(moved, cooperative);
   assert.equal(moved.split('try Self.checkCancellation(cancellation)').length - 1, 5);
   assert.throws(() => retained(files.cooperative, moved), undefined, 'Correct count at wrong stage must fail');
-  console.log('Local inference cancellation source contracts and 14 negative source mutations passed; five Swift fixtures authored, not executed.');
+  assert.equal(mutations.length + 1, 34);
+  console.log('Local/native inference cancellation source contracts and 34 negative source mutations passed; eleven Swift fixtures authored, not executed.');
 }
