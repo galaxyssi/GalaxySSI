@@ -1,11 +1,20 @@
 // Source contracts only; not executed Swift, receipt delivery or persistence/fault acceptance.
-const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'b580f85d6bd0a0a7323cf075dd9b6cd86bd75aa1';
-const read = file => require('./check-active-native-observation-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
-const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
-  {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const {snapshot, normalizePending} = require('./observation-scope-baseline.cjs');
+const project = (file, source) => require('./check-active-native-observation-scope.cjs').retained(file, normalizePending(file, source));
+const read = file => project(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const expected = file => project(file, snapshot(file));
+const parentGuard = 'apps/ios/tools/check-connector-acceptance-evidence-scope.cjs';
+function assertReviewedSource(file, source) {
+  const actual = project(file, source), reference = expected(file);
+  if (file === parentGuard) {
+    assert.equal(section(actual, '\nfunction retained(file, source) {', '\nfunction validate() {'),
+      section(reference, '\nfunction retained(file, source) {', '\nfunction validate() {'), 'Parent compatibility export remains exact');
+    return;
+  }
+  assert.equal(actual, reference, file + ' outside reviewed delivery scope');
+}
 function section(source, start, end) {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
   assert(a >= 0 && b > a, start); return source.slice(a, b);
@@ -43,7 +52,10 @@ function retained(file, source) {
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'MqttDesktopConnectorProjection.swift',
     app + 'AgentConnectorTransportReceiptRecorder.swift', 'apps/ios/GalaxySSITests/AgentConnectorTransportReceiptRecorderTests.swift',
-    'apps/ios/tools/check-connector-acceptance-evidence-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    parentGuard]) {
+    assertReviewedSource(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+    if (file !== parentGuard) assert.equal(retained(file, read(file)), retained(file, expected(file)), file);
+  }
   const source = read(app + 'GalaxySSIServices.swift');
   assert.equal(source.split(callback).length, 2);
   assert(read(app + 'MqttDesktopConnectorProjection.swift').includes(gate));
@@ -72,7 +84,7 @@ function validate() {
   for (const name of ['MqttBusinessTransportRuntime', 'MqttDeliveryCompletions', 'MqttBusinessOutbox',
     'MqttBusinessReceipts', 'MqttSignalStateJournal', 'AgentIOSConnectorDispatch', 'AgentAutomationModels',
     'AgentConnectorTaskStatusRecorder', 'AgentConnectorResponseResolver', 'AgentManagedResponseModels'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(read(app + name + '.swift'), expected(app + name + '.swift'), name);
   const drain = read(app + 'MqttBusinessReceipts.swift');
   assert(drain.indexOf('try await apply(current)') >= 0 &&
     drain.indexOf('try await apply(current)') < drain.indexOf('journal.outbox.completions.consume('));
@@ -85,5 +97,5 @@ function validate() {
     'testNativeNumericCompletionInvokesTheRegisteredWriterAndPropagatesFailure', '("consumedAt", 3_000)', 'JSONDecoder()']) assert(tests.includes(token), token);
   console.log('Native numeric delivery-completion wiring, exact ownership, durable receipt commit, preserved replay clocks and seven authored fixtures source contracts passed; no native acceptance.');
 }
-module.exports = {retained, validate};
+module.exports = {retained, validate, assertReviewedSource};
 if (require.main === module) validate();

@@ -90,7 +90,27 @@ and reject seventeen synthetic anchor/window/clock/status/output/hook/fixture
 changes. The hook mutation targets the actual current helper when installed and
 the original coordinator otherwise. No clock, Swift or task execution occurs.
 
-Other historical whole-file validators still require their own audits; passing
-these four checks is not a full repository, native runtime or Android parity
+## Native Delivery Follow-up
+
+The native-delivery validator preserves original event/peer/topic/route/message,
+managed task/source/generation, privacy and cancellation gates. It still checks
+that the owned task write succeeds before completion consumption and that replay
+does not refresh acceptance or overwrite newer remote progress. Complete owned
+coordinator, projection, policy, fixture and transport dependency sources compare
+against the immutable reviewed projection before feature inversion.
+
+Compatibility exports in parent checker tools remain exact, while their separate
+standalone validator implementations can evolve. This replaces inappropriate
+whole-tool-file freezes, not the owned application or compatibility-kernel check.
+Anchors include actual declaration line boundaries so source literals cannot be
+mistaken for the exported function being compared.
+
+Twenty Node source cases validate current delivery wiring and reject nineteen
+synthetic event/identity/route/task/clock/write/consume/fixture/export changes.
+These are not native delivery, encrypted storage or replay acceptance tests.
+
+All five historical validators discussed here now have explicit reviewed-source
+checks. Other repository validators still require their own audits; passing
+these five checks is not a full repository, native runtime or Android parity
 claim. No app code, platform version, CI policy, IPA, approval or remote merge
 changes are included.
