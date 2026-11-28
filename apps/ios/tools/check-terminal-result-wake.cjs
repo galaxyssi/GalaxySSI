@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, native timers, transport or storage is executed.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'a0f0b80ccbcf6c57c69d48a89c90867a0cf926bf';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '9217e49893181ac6b387c7628e299a29864ac21a';
 const serviceFile = app + 'GalaxySSIServices.swift', marker = '  private func nativeConnectorRecoveryWake(';
 const clean = source => source.replace(/\r\n/g, '\n'), read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
 const memo = new Map();
@@ -80,7 +80,7 @@ if (require.main === module) {
     assert.throws(() => assert.equal(canonical(serviceFile, retainedServices(mutated)), show(base, serviceFile)), assert.AssertionError);
     negatives++;
   }
-  for (const token of ['managed.state == .pending', 'observation.acceptedReply == nil',
+  for (const token of ['managed.state == .pending', '!managed.agentId.isBlank', 'observation.acceptedReply == nil',
     'observation.terminalObservedAt <= nowMillis', 'owner.executionGeneration == managed.executionGeneration',
     'AgentRemoteOutcomePolicy.isTerminal(observation.status)', 'remaining == 0 ? throttle : min(remaining, throttle)']) {
     assert(policy.includes(token));
