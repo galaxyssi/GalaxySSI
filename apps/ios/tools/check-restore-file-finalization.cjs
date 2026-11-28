@@ -24,17 +24,25 @@ function retainedFixtures(source) {
   assert.equal(between(source, fixtureStart, fixtureEnd), block, 'Exact four authored finalization fixture methods');
   return once(source, block, '');
 }
+function normalizeConflictSources(source) {
+  const tool = path.join(__dirname, 'check-restore-conflict-sources.cjs');
+  return fs.existsSync(tool) ? require(tool).retainedBackup(source) : source;
+}
 function retained(file, source) {
   if (file === fixture) return retainedFixtures(source);
   assert([backup, view].includes(file), file);
+  if (file === backup) source = normalizeConflictSources(source);
   if (source === show(base, file)) return source;
   assert.equal(source, show(approved, file), 'Exact restore completion/ownership source: ' + file);
   return show(base, file);
 }
 module.exports = {retained, retainedFixtures};
 if (require.main === module) {
-  const source = read(backup), ui = read(view);
-  for (const file of [backup, view]) { assert.equal(read(file), show(approved, file)); retained(file, read(file)); }
+  const source = normalizeConflictSources(read(backup)), ui = read(view);
+  for (const file of [backup, view]) {
+    const current = file === backup ? source : ui;
+    assert.equal(current, show(approved, file)); retained(file, current);
+  }
   let old = once(source, between(source, '  struct RestoreResult: Equatable {\n', '  @MainActor\n  static func previewRestore('), '');
   const end = '  @MainActor\n  private static func restoreWork(';
   old = once(old, between(source, '  @MainActor\n  @discardableResult\n  static func restore(', end),
