@@ -3,8 +3,9 @@
 iOS follow-up found during the Android #3007 execution/recovery comparison,
 based on main c6bad3465c673dfb2dcecb23b095185c129c7447. This covers the existing
 startup initial-planning/replanning recovery callbacks, explicit user replanning,
-rolling-plan continuation and journaled selected-provider/local initial planning, not every planning entry
-point or the full Android parity backlog.
+rolling-plan continuation, journaled selected-provider/local initial planning
+and the main local fallback tool loop, not every entry point or the full Android
+parity backlog.
 
 Both recovery paths formerly checked only phase and pending reference after
 awaiting the planner. A same-reference task edit, original message change or
@@ -37,8 +38,8 @@ commit source/session/task state. Already-sent model calls are not retracted.
 
 The full task equality is conservative, including task-log changes. Rejected or
 locked/cancelled callbacks do not gain an immediate automatic retry. Existing
-explicit recovery/replanning remains responsible. Later fallback inference
-entry points and persisted cross-profile history still need separate
+explicit recovery/replanning remains responsible. Other runner callers, generic
+cloud-loop ownership and persisted cross-profile history still need separate
 review; no full recovery, privacy, storage or concurrency acceptance is claimed.
 
 The initial eight Swift fixtures are authored, not executed: valid initial/replanning scope,
