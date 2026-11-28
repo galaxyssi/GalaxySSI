@@ -8105,3 +8105,9 @@
 "galaxyssi.conversation_team.pattern_final_audit" = "(?:^|请|并|再|然后|需要)(?:安排|进行|做一次)?独立(?:审核|复核|审查|评审)(?:一下)?(?:最后|最终)(?:的)?(?:答复|答案|回复|结论|报告|草稿)";
 "galaxyssi.conversation_team.final_audit_missing" = "计划没有独立的最终审核者，团队已在派发 worker 前停止，没有发布草稿。";
 "galaxyssi.conversation_team.schema_endpoint" = "严格团队计划解码需要规范的本机 loopback OpenAI 端点。";
+"galaxyssi.health.recognition.preparing_source" = "正在准备原文件";
+"galaxyssi.health.originals.preview_working" = "正在打开 PDF";
+"galaxyssi.health.originals.preview_cancel" = "取消";
+"galaxyssi.health.originals.preview_failed" = "无法打开此 PDF 页面。";
+"galaxyssi.health.originals.preview_cancelled" = "PDF 预览已取消";
+"galaxyssi.health.originals.preview_retry" = "重试";

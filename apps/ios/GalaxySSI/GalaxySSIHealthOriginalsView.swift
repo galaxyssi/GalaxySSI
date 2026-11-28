@@ -118,7 +118,7 @@ struct GalaxySSIHealthOriginalsView: View {
     var id: UUID { original.id }
     var name: String { original.name }
     var image: UIImage?
-    var pdf: PDFDocument?
+    var pdf: Data?
   }
 
   var body: some View {
@@ -400,7 +400,7 @@ struct GalaxySSIHealthOriginalsView: View {
             Label(GalaxySSIHealthReportReview.text("evidence", "Linked report evidence", language: language),
                   systemImage: "link")
           }
-          GalaxySSIHealthOriginalPDFPreview(document: pdf, name: item.name)
+          GalaxySSIHealthOriginalPDFPreview(data: pdf, name: item.name)
         } else if let image = item.image {
           Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
         }
@@ -600,8 +600,7 @@ struct GalaxySSIHealthOriginalsView: View {
     do {
       let data = try store.read(item)
       if item.kind == .pdf {
-        guard let pdf = PDFDocument(data: data), pdf.isLocked || pdf.pageCount > 0 else { error = true; return }
-        preview = Preview(original: item, pdf: pdf)
+        preview = Preview(original: item, pdf: data)
       } else {
         guard let image = Self.thumbnail(data, maximum: 1_200) else { error = true; return }
         preview = Preview(original: item, image: image)
@@ -768,57 +767,6 @@ struct GalaxySSIHealthOriginalsView: View {
     }
   }
 
-@MainActor
-private struct GalaxySSIHealthOriginalPDFPreview: View {
-  let document: PDFDocument
-  let name: String
-  @State private var unlocked = false
-  @State private var failed = false
-
-  var body: some View {
-    if unlocked || !document.isLocked {
-      PDFPages(document: document, name: name)
-    } else {
-      GalaxySSIHealthPDFPasswordForm(failed: failed) { password in
-        unlocked = document.unlock(withPassword: password) && !document.isLocked && document.pageCount > 0
-        failed = !unlocked
-      }
-    }
-  }
-}
-
-private struct PDFPages: View {
-    @Environment(\.galaxySSIInterfaceLanguage) private var language
-    let document: PDFDocument
-    let name: String
-    @State private var index = 0
-    @State private var image: UIImage?
-
-    var body: some View {
-      VStack {
-        if let image {
-          Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(name))
-        }
-        HStack {
-          Button { index -= 1 } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
-            .disabled(index == 0)
-            .accessibilityLabel(Text(t("previous_page", "Previous page")))
-          Text(String(format: t("page", "Page %lld of %lld"), Int64(index + 1), Int64(document.pageCount)))
-          Button { index += 1 } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
-            .disabled(index >= document.pageCount - 1)
-            .accessibilityLabel(Text(t("next_page", "Next page")))
-        }
-      }
-      .task(id: index) { @MainActor in
-        guard !Task.isCancelled else { return }
-        image = document.page(at: index)?.thumbnail(of: CGSize(width: 1_200, height: 1_200), for: .cropBox)
-      }
-    }
-
-    private func t(_ key: String, _ fallback: String) -> String {
-      GalaxySSILocalization.string("galaxyssi.health.originals." + key, fallback: fallback, language: language)
-    }
-  }
 }
 
 @MainActor
