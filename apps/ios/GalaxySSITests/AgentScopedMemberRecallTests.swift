@@ -192,4 +192,52 @@ final class AgentScopedMemberRecallTests: XCTestCase {
     body["result"] = ["success": 1, "status": "authorized"]
     XCTAssertFalse(AgentScopedMemberRecall.acceptsResponse(body))
   }
+  private func peerFixture() -> (AgentScopedMemberRecall.Offer, GalaxySSIContact, ServerLink) {
+    let original = offer()
+    let link = ServerLink(desktopId: original.desktop, desktopName: "Fixture Desktop",
+      desktopFingerprint: original.fingerprint, signalName: "fixture-signal",
+      routes: .init(clientRouteId: original.route, linkSecret: "fixture-secret", localFingerprint: "fixture-phone",
+        remoteFingerprint: original.fingerprint), paired: true, accessProfile: "fixture", accessScopes: [], updatedAt: Date())
+    let bound = AgentScopedMemberRecall.Offer(profile: original.profile, desktop: original.desktop,
+      fingerprint: original.fingerprint, route: original.route, contact: original.contact,
+      transportBinding: GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
+      scope: original.scope, teamID: original.teamID, personID: original.personID,
+      primaryMemberID: original.primaryMemberID, model: original.model, effort: original.effort, deliveryMode: original.deliveryMode)
+    let contact = GalaxySSIContact(id: bound.contact, galaxySSIId: "fixture-peer", name: "Fixture", displayName: "Fixture",
+      type: "agent", agentKind: "agent", deliveryMode: .pcConnector, trustState: .verified,
+      desktopId: bound.desktop, desktopName: "Fixture Desktop", identityFingerprint: bound.fingerprint,
+      setupStatus: "ready", setupDetail: "", cloudProvider: "", cloudModels: [], selectedCloudModelId: "",
+      agentId: "codex", deleted: false, createdAt: Date(), updatedAt: Date())
+    return (bound, contact, link)
+  }
+  func testCurrentPeerMustRetainArchivedContactFingerprintAndRouteSecret() {
+    let (bound, contact, originalLink) = peerFixture()
+    var link = originalLink
+    XCTAssertTrue(bound.matchesPeer(contact, link: link))
+    var changed = contact; changed.identityFingerprint = bound.fingerprint.uppercased()
+    XCTAssertTrue(bound.matchesPeer(changed, link: link))
+    changed.identityFingerprint = "replacement"
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    changed = contact; changed.deleted = true
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    changed = contact; changed.desktop_disconnected = true
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    link.routes.linkSecret = "replacement-secret"
+    XCTAssertFalse(bound.matchesPeer(contact, link: link))
+  }
+  func testPeerRevocationAndRouteReplacementCannotReuseArchivedOffer() {
+    let (bound, contact, originalLink) = peerFixture()
+    var link = originalLink
+    XCTAssertTrue(bound.matchesPeer(contact, link: link))
+    var changed = contact; changed.id = "other:codex"
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    changed = contact; changed.agentId = "other-agent"
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    changed = contact; changed.trustState = .unverified
+    XCTAssertFalse(bound.matchesPeer(changed, link: link))
+    link.paired = false
+    XCTAssertFalse(bound.matchesPeer(contact, link: link))
+    link.paired = true; link.routes.clientRouteId = "replacement-route"
+    XCTAssertFalse(bound.matchesPeer(contact, link: link))
+  }
 }

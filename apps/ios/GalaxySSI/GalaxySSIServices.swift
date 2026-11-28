@@ -3578,6 +3578,7 @@ final class MessageCoordinator: ObservableObject {
       let person = AgentTeamPlanCompiler.rosterMember(for: member, in: roster),
       let contact = store.contact(id: member.agentId), contact.isCommunicable, contact.deliveryMode == .pcConnector,
       contact.connectorAgentId == "codex", !contact.identityFingerprint.isBlank,
+      store.serverLinks.filter({ $0.paired && $0.desktopId == contact.desktopId }).count == 1,
       let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
       contact.identityFingerprint.caseInsensitiveCompare(link.desktopFingerprint) == .orderedSame,
       !link.routes.clientRouteId.isBlank,
@@ -3599,6 +3600,7 @@ final class MessageCoordinator: ObservableObject {
       request.identity.clientRouteId == link.routes.clientRouteId,
       taskIdentityStore.identity(contactId: request.contact, sourceMessageId: request.source) == request.identity,
       taskIdentityStore.matchesRegistered(payload: request.payload),
+      store.serverLinks.filter({ $0.paired && $0.desktopId == link.desktopId }).count == 1,
       store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
         $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes }),
       let contact = store.contact(id: request.contact), contact.isCommunicable, contact.deliveryMode == .pcConnector,
@@ -3610,6 +3612,7 @@ final class MessageCoordinator: ObservableObject {
         conversation: request.identity.conversationId, turn: request.identity.turnId, contact: request.contact,
         requireResearchAccess: true),
       let offer = context.member.originalRecallOffer, offer.profile == store.profile.identityFingerprint,
+      offer.matchesPeer(contact, link: link),
       offer.desktop == link.desktopId, offer.fingerprint == link.desktopFingerprint,
       offer.route == link.routes.clientRouteId, offer.contact == request.contact,
       offer.transportBinding == GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),

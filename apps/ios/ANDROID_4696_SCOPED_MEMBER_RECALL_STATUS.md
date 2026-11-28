@@ -48,6 +48,10 @@ and response publication. Receipt/replay hashes include the original offer.
 Existing original-revision grants, selector constraints, evidence read coverage
 and native HMAC confirmation remain authoritative. There is no filesystem,
 publication, saved-tool execution, private report or unrelated-member grant.
+Every metadata probe also checks the current contact's verified/communicable
+state and fingerprint against the archived Desktop identity. Require one paired
+link for that Desktop both when creating the offer and at recall, rather than
+selecting an arbitrary relationship after replacement or duplication.
 
 Legacy authenticated Link and the journal-backed Signal projection both route
 these requests. Journal responses use a bounded transient Signal transaction,
@@ -56,9 +60,10 @@ restart an effect. Ordinary/unmarked recall behavior is otherwise retained.
 
 ## Verification Limits
 
-Sixteen deliberately synthetic Swift fixture methods describe strict requests,
+Eighteen deliberately synthetic Swift fixture methods describe strict requests,
 generations, content-free preflight, nonce scope/recovery, original payloads,
-optional ordinary dispatch, archived decoding and response types. They are
+optional ordinary dispatch, archived decoding, current contact/route/secret
+revocation and response types. They are
 authored, not compiled or executed. Source contracts and project structure are
 not proof of Swift compilation, Desktop confinement, native read coverage,
 socket timing, live pairing or end-to-end generation recovery.

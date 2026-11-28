@@ -65,6 +65,14 @@ enum AgentScopedMemberRecall {
     let deliveryMode: AgentDeliveryMode
 
     var digest: String { AgentModelLoopRecoveryIdentity.sha256(self) }
+    func matchesPeer(_ current: GalaxySSIContact, link: ServerLink) -> Bool {
+      current.id == contact && current.isCommunicable && current.deliveryMode == .pcConnector &&
+        current.connectorAgentId == "codex" && current.desktopId == desktop && link.paired &&
+        link.desktopId == desktop && !fingerprint.isBlank && link.desktopFingerprint == fingerprint &&
+        current.identityFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame &&
+        link.routes.clientRouteId == route &&
+        GalaxySSITransportReceiptJournal.binding(peerId: desktop, routes: link.routes) == transportBinding
+    }
     func matches(_ payload: [String: Any]) -> Bool {
       guard !model.isBlank, !contact.isBlank,
         let invocation = AgentInvocationRequestJsonCodec.encode(modelId: model, reasoningEffort: effort) else { return false }
