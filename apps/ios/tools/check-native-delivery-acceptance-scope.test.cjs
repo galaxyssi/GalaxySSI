@@ -40,3 +40,7 @@ for (const [name, file, anchor, from, to] of mutations) test('reject changed ' +
   const changed = source.slice(0, at) + to + source.slice(at + from.length);
   assert.throws(() => assertReviewedSource(file, changed), assert.AssertionError);
 });
+test('a second parent compatibility export cannot shadow the owned declaration', () => {
+  const file = 'apps/ios/tools/check-connector-acceptance-evidence-scope.cjs';
+  assert.throws(() => assertReviewedSource(file, read(file) + '\nfunction retained(file, source) { return source; }\n'), assert.AssertionError);
+});

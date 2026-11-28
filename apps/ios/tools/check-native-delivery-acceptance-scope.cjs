@@ -9,6 +9,8 @@ const parentGuard = 'apps/ios/tools/check-connector-acceptance-evidence-scope.cj
 function assertReviewedSource(file, source) {
   const actual = project(file, source), reference = expected(file);
   if (file === parentGuard) {
+    for (const value of [actual, reference]) assert.equal(value.split('\nfunction retained(file, source) {').length, 2,
+      'Exactly one parent compatibility declaration');
     assert.equal(section(actual, '\nfunction retained(file, source) {', '\nfunction validate() {'),
       section(reference, '\nfunction retained(file, source) {', '\nfunction validate() {'), 'Parent compatibility export remains exact');
     return;

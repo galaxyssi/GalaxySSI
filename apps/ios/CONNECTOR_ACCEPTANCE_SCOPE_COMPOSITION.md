@@ -64,8 +64,9 @@ source checks run before the original feature inversion. Exact pending catalog
 readiness/workspace and pinned-projection normalizers apply only to their owned
 files; they do not grant tools or fabricate provider readiness.
 
-Eighteen additional Node source cases execute the active validator and reject
-seventeen synthetic changes to those boundaries. They never start a timer,
+Nineteen additional Node source cases execute the active validator and reject
+eighteen synthetic changes to those boundaries, including a duplicate compatibility
+declaration. They never start a timer,
 execute Swift or query a provider. Existing eight authored Swift wake fixtures
 remain source-only, not runtime acceptance. Status-reader compatibility belongs
 to this repair PR, rather than being duplicated by the deadline feature PR.
@@ -105,7 +106,7 @@ whole-tool-file freezes, not the owned application or compatibility-kernel check
 Anchors include actual declaration line boundaries so source literals cannot be
 mistaken for the exported function being compared.
 
-Twenty Node source cases validate current delivery wiring and reject nineteen
+Twenty-one Node source cases validate current delivery wiring and reject twenty
 synthetic event/identity/route/task/clock/write/consume/fixture/export changes.
 These are not native delivery, encrypted storage or replay acceptance tests.
 

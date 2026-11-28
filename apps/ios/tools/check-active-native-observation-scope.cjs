@@ -9,6 +9,8 @@ const deliveryGuard = 'apps/ios/tools/check-native-delivery-acceptance-scope.cjs
 function assertReviewedSource(file, source) {
   const actual = project(file, source), reference = expected(file);
   if (file === deliveryGuard) {
+    for (const value of [actual, reference]) assert.equal(value.split('\nfunction retained(file, source) {').length, 2,
+      'Exactly one delivery compatibility declaration');
     assert.equal(section(actual, '\nfunction retained(file, source) {', '\nfunction validate() {'),
       section(reference, '\nfunction retained(file, source) {', '\nfunction validate() {'), 'Delivery compatibility export remains exact');
     return;
