@@ -23,7 +23,13 @@ enum AgentScopedMemberRecall {
   static func acceptsResponse(_ payload: [String: Any]) -> Bool {
     let fields: Set<String> = ["type", "contract", "request_id", "phase", "execution_generation", "client_route_id",
       "conversation_id", "task_id", "turn_id", "source_message_id", "contact_id", "agent_id", "result", "message_id"]
-    guard Set(payload.keys).isSubset(of: fields), payload.string("type") == AgentDesktopCollaborationArchiveRecall.responseType,
+    let identityFields = ["client_route_id", "conversation_id", "task_id", "turn_id", "source_message_id", "contact_id", "agent_id"]
+    guard Set(payload.keys).isSubset(of: fields), identityFields.allSatisfy({ key in
+      guard let value = payload[key] as? String else { return false }
+      return !value.isBlank && value.utf8.count <= 200
+    }), let nonce = payload["request_id"] as? String, (1...128).contains(nonce.utf8.count),
+      let generation = strictInteger(payload["execution_generation"]), AgentRemoteOutcomePolicy.validGeneration(generation),
+      payload.string("type") == AgentDesktopCollaborationArchiveRecall.responseType,
       payload.string("contract") == AgentDesktopCollaborationArchiveRecall.contract, payload.string("agent_id") == "codex",
       ["authorize", "read", "confirm"].contains(payload.string("phase")),
       let result = payload["result"] as? [String: Any], let success = result["success"] as? NSNumber,
@@ -35,6 +41,12 @@ enum AgentScopedMemberRecall {
           (result["success"] as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() } == true)
     }
     return true
+  }
+  private static func strictInteger(_ raw: Any?) -> Int64? {
+    guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+      number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
+      Double(number.int64Value) == number.doubleValue else { return nil }
+    return number.int64Value
   }
 
   struct Offer: Codable, Equatable {
@@ -99,15 +111,18 @@ enum AgentScopedMemberRecall {
     init?(_ payload: [String: Any], now: Int64) {
       let phase = payload.string("phase"), nonce = payload.string("request_id")
       let source = payload.string("source_message_id"), contact = payload.string("contact_id")
-      guard now >= 0, payload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType,
+      let textFields = ["type", "contract", "request_id", "phase", "client_route_id", "conversation_id", "task_id",
+        "turn_id", "contact_id", "source_message_id", "agent_id"]
+      guard textFields.allSatisfy({ payload[$0] is String }), now >= 0,
+        payload.string("type") == AgentDesktopCollaborationArchiveRecall.requestType,
         payload.string("contract") == AgentDesktopCollaborationArchiveRecall.contract,
         payload.string("agent_id") == "codex", ["authorize", "read", "confirm"].contains(phase),
         (1...128).contains(nonce.utf8.count), UUID(uuidString: source) != nil,
         payload.string("task_id") == source,
         payload[AgentScopedMemberRecall.flag] == nil || AgentScopedMemberRecall.trueFlag(payload[AgentScopedMemberRecall.flag]),
         phase == "authorize" || AgentScopedMemberRecall.trueFlag(payload[AgentScopedMemberRecall.flag]),
-        let expiry = Self.integer(payload["expires_at"]), expiry > now, expiry - now <= 60_000,
-        let generation = Self.integer(payload["execution_generation"]), AgentRemoteOutcomePolicy.validGeneration(generation),
+        let expiry = AgentScopedMemberRecall.strictInteger(payload["expires_at"]), expiry > now, expiry - now <= 60_000,
+        let generation = AgentScopedMemberRecall.strictInteger(payload["execution_generation"]), AgentRemoteOutcomePolicy.validGeneration(generation),
         let raw = payload["arguments"] as? [String: Any],
         let data = try? JSONSerialization.data(withJSONObject: raw, options: [.sortedKeys]), data.count <= 4_096,
         let arguments = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else { return nil }
@@ -135,12 +150,6 @@ enum AgentScopedMemberRecall {
       semantic["arguments"] = raw
       guard let bytes = try? JSONSerialization.data(withJSONObject: semantic, options: [.sortedKeys]) else { return nil }
       fingerprint = AgentBlobProtocol.sha256(bytes)
-    }
-    private static func integer(_ raw: Any?) -> Int64? {
-      guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
-        number.doubleValue.isFinite, number.doubleValue >= 0, number.doubleValue <= 9_007_199_254_740_991,
-        Double(number.int64Value) == number.doubleValue else { return nil }
-      return number.int64Value
     }
   }
 

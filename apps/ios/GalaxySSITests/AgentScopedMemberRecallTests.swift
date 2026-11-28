@@ -60,6 +60,8 @@ final class AgentScopedMemberRecallTests: XCTestCase {
         XCTAssertNil(AgentScopedMemberRecall.Request(changed, now: 1_000))
       }
     }
+    var changed = original; changed["request_id"] = 123
+    XCTAssertNil(AgentScopedMemberRecall.Request(changed, now: 1_000))
   }
   func testReadRequiresStampedFlagAndBoundedExpiry() {
     var read = payload(offer(), phase: "read")
@@ -180,9 +182,10 @@ final class AgentScopedMemberRecallTests: XCTestCase {
       from: JSONEncoder().encode(member)).originalRecallOffer, member.originalRecallOffer)
   }
   func testAuthorizationResponseRejectsContentAndNumericBoolean() {
-    var body: [String: Any] = ["type": AgentDesktopCollaborationArchiveRecall.responseType,
-      "contract": AgentDesktopCollaborationArchiveRecall.contract, "agent_id": "codex", "phase": "authorize",
-      "result": ["success": true, "status": "authorized"]]
+    var body = payload(offer())
+    body.removeValue(forKey: "arguments"); body.removeValue(forKey: "expires_at")
+    body["type"] = AgentDesktopCollaborationArchiveRecall.responseType
+    body["result"] = ["success": true, "status": "authorized"]
     XCTAssertTrue(AgentScopedMemberRecall.acceptsResponse(body))
     body["result"] = ["success": true, "status": "authorized", "content": "not permitted"]
     XCTAssertFalse(AgentScopedMemberRecall.acceptsResponse(body))
