@@ -313,4 +313,46 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
         source: f.source, conversation: f.conversation, use: .initialProviderAdmission))
     }
   }
+
+  func testLocalPlanningAdmissionRequiresTheExistingExecutingTask() throws {
+    var f = fixture()
+    f.task.pendingPlanning = nil
+    f.task.phase = .executing
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .localPlanningAdmission))
+    XCTAssertEqual(scope.expectedPersistedTask, f.task)
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    XCTAssertFalse(scope.matches(profile: "profile-a", task: nil, source: f.source,
+      conversation: f.conversation, cancelled: false))
+    f.task.executionLog.append("Concurrent task update")
+    XCTAssertFalse(f.matches(scope))
+  }
+
+  func testLocalPlanningAdmissionCannotReplaceBlockedOrPendingWork() {
+    for variation in 0..<4 {
+      var f = fixture(replanning: variation == 0)
+      f.task.phase = .executing
+      if variation != 1 { f.task.pendingPlanning = nil }
+      if variation == 2 { f.task.blocked = true }
+      if variation == 3 { f.task.phase = .completed }
+      XCTAssertNil(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+        source: f.source, conversation: f.conversation, use: .localPlanningAdmission))
+    }
+  }
+
+  func testLocalPlanningAdmissionRebindsToPendingSnapshotAfterJournalCommit() throws {
+    var f = fixture()
+    let pending = f.task
+    f.task.phase = .executing
+    f.task.pendingPlanning = nil
+    let admission = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .localPlanningAdmission))
+    f.task = pending
+    XCTAssertFalse(f.matches(admission))
+    let callback = try XCTUnwrap(f.scope())
+    XCTAssertTrue(f.matches(callback))
+    f.task.goal = "Changed while planning"
+    XCTAssertFalse(f.matches(callback))
+  }
 }

@@ -3,7 +3,7 @@
 iOS follow-up found during the Android #3007 execution/recovery comparison,
 based on main c6bad3465c673dfb2dcecb23b095185c129c7447. This covers the existing
 startup initial-planning/replanning recovery callbacks, explicit user replanning,
-rolling-plan continuation and selected-provider initial planning, not every planning entry
+rolling-plan continuation and journaled selected-provider/local initial planning, not every planning entry
 point or the full Android parity backlog.
 
 Both recovery paths formerly checked only phase and pending reference after
@@ -37,8 +37,8 @@ commit source/session/task state. Already-sent model calls are not retracted.
 
 The full task equality is conservative, including task-log changes. Rejected or
 locked/cancelled callbacks do not gain an immediate automatic retry. Existing
-explicit recovery/replanning remains responsible. Local-model initial planning
-planning entry points and persisted cross-profile history still need separate
+explicit recovery/replanning remains responsible. Later fallback inference
+entry points and persisted cross-profile history still need separate
 review; no full recovery, privacy, storage or concurrency acceptance is claimed.
 
 The initial eight Swift fixtures are authored, not executed: valid initial/replanning scope,
@@ -79,7 +79,7 @@ Like the existing live flow, blocked/readback and unchanged tracking-paused
 context can remain in the rolling identity snapshot. Four new fixture methods cover waiting
 identity, invalid external/live states, pending reference/tracking compatibility
 and stale same-phase callbacks, for sixteen authored methods total, not run.
-Local-model initial callbacks remain separate follow-up work. Already-sent
+Later fallback inference callbacks remain separate follow-up work. Already-sent
 model calls, general upserts and immediate retry limitations remain unchanged.
 
 ## Recovery Compatibility
@@ -106,9 +106,23 @@ absence/source/session owner remains current.
 
 Three more synthetic fixture methods cover absent-task admission, profile/source/
 session/cancellation drift and invalid live/blocked/reference/plan states, for
-twenty-one methods total, not executed. The local-model initial-planning and
-later fallback inference paths remain separate follow-up work. Existing unchecked
+twenty-one methods total at that revision, not executed. Existing unchecked
 upsert durability, sent-call and retry limitations still apply.
+
+## Local Model Initial Planning
+
+The journaled planning portion of receiveLocalModelReply binds its existing
+executing task immediately before journal entry, checks the original owner before
+the callback writes pending planning, then binds the pending snapshot and checks
+input before model invocation. Success and planning-error callbacks require that
+exact snapshot. The error scope is released after an accepted result transitions
+back to execution; it is not reused as authorization for later fallback inference.
+
+Three more synthetic fixture methods cover existing-task admission, rejected
+blocked/pending/terminal states and rebinding after the journal callback, for
+twenty-four authored methods total, not executed. Earlier synchronous task setup,
+direct shortcuts, fallback inference/tool-loop callbacks and general upsert
+durability remain outside this change. No generic cloud-loop acceptance is claimed.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,

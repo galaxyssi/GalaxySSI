@@ -1,7 +1,7 @@
 import Foundation
 
 struct AgentPlanningRecoveryScope {
-  enum Use { case startupRecovery, userReplan, rollingContinuation, initialProviderAdmission }
+  enum Use { case startupRecovery, userReplan, rollingContinuation, initialProviderAdmission, localPlanningAdmission }
   let profile: String
   let task: AgentTaskRecord
   let expectedPersistedTask: AgentTaskRecord?
@@ -27,6 +27,9 @@ struct AgentPlanningRecoveryScope {
             let result = task.lastNativeActionResult, result.metadata["awaiting_response"] != "true" else { return nil }
     case .initialProviderAdmission:
       guard task.phase == .planning, !task.blocked, task.activePlan == nil,
+            task.pendingPlanning == nil else { return nil }
+    case .localPlanningAdmission:
+      guard task.phase == .executing, !task.blocked, task.activePlan == nil,
             task.pendingPlanning == nil else { return nil }
     }
     if task.phase == .planning, use != .initialProviderAdmission {
