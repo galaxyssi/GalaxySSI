@@ -14876,6 +14876,7 @@ final class MessageCoordinator: ObservableObject {
     }
     if wake.delayMillis > 0 { scheduleNativeConnectorObservation(action: action, pending: pending); return }
     nativeConnectorObservationLastWake[key] = AgentControlPlaneClock.nowMillis()
+    recordNativeConnectorDeadlineObservation(action: action, pending: context.pending)
     let dispatch = context.dispatch
     if let identity = taskIdentityStore.identity(contactId: dispatch.contactId, sourceMessageId: String(dispatch.sourceMessageId)),
        identity.conversationId == dispatch.conversationId, identity.turnId == dispatch.turnId, identity.taskId == dispatch.taskId,
@@ -14890,6 +14891,30 @@ final class MessageCoordinator: ObservableObject {
       await sweepDesktopReplyRecovery()
     }
     if !Task.isCancelled { scheduleNativeConnectorObservation(action: action, pending: pending) }
+  }
+
+  private func recordNativeConnectorDeadlineObservation(action: AgentAction, pending: AgentActionResult) {
+    guard !Task.isCancelled,
+      let context = nativeConnectorObservationContext(action: action, pending: pending),
+      let current = queuedNativeConnectorContext(context.dispatch, requireExecution: false),
+      current.task.phase == .waitingResponse, current.pending == context.pending,
+      current.task.lastNativeActionResult == current.pending,
+      var plan = current.task.activePlan else { return }
+    let matches = plan.actions.indices.filter { plan.actions[$0].id == action.id }
+    guard matches.count == 1, let index = matches.first,
+      let observed = AgentNativeConnectorDeadlineObservation.apply(pending: current.pending,
+        nowMillis: AgentControlPlaneClock.nowMillis()),
+      let retained = AgentNativeConnectorContinuation.waitingAction(plan.actions[index], result: observed,
+        task: current.task, outgoing: current.outgoing) else { return }
+    var updated = current.task
+    plan.actions[index] = retained
+    updated.activePlan = plan
+    updated.planContext = AgentTaskPlanContext(plan: plan)
+    updated.lastNativeActionResult = observed
+    if updated.pendingAction?.id == retained.id { updated.pendingAction = retained }
+    updated.pendingActions = updated.pendingActions.map { $0.id == retained.id ? retained : $0 }
+    updated.updatedAtMillis = max(current.task.updatedAtMillis, AgentControlPlaneClock.nowMillis())
+    _ = store.commitOwnedAgentTaskState(expected: current.task, updated: updated)
   }
 
   private func recordNativeConnectorObservation(_ observation: AgentDesktopReplyRecoveryRecord) {

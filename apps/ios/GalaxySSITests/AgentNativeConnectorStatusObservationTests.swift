@@ -168,7 +168,8 @@ final class AgentNativeConnectorStatusObservationTests: XCTestCase {
     let f = try fixture()
     var pending = f.pending
     let warnings = ["native_connector_observation_overdue", "native_connector_observation_timeout_stage",
-      "native_connector_observation_started_at", "native_connector_observation_elapsed_ms", "native_connector_observation_deadline_ms"]
+      "native_connector_observation_started_at", "native_connector_observation_elapsed_ms", "native_connector_observation_deadline_ms",
+      "native_connector_observation_deadline_clock", "native_connector_observation_deadline_observed_at"]
     for key in warnings { pending.metadata[key] = "original" }
     pending.metadata["manual_target_locked"] = "true"
     let result = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: pending, managed: f.managed, observation: f.observation))
@@ -199,6 +200,100 @@ final class AgentNativeConnectorStatusObservationTests: XCTestCase {
     XCTAssertEqual(AgentNativeConnectorContinuation.pendingResult(reopened), observed)
     XCTAssertEqual(reopened.status, .waitingResponse)
     XCTAssertEqual(reopened.parameters[AgentNativeConnectorContinuation.sourceKey], outgoing.id.uuidString)
+  }
+
+  private func deadlinePending(_ values: [String: String] = [:]) -> AgentActionResult {
+    AgentActionResult(actionId: "deadline-action", success: true, message: "Waiting for original reply",
+      metadata: ["awaiting_response": "true", "resource_started_at": "1000", "completion_verified": "false",
+        "manual_target_locked": "true", "auto_reroute_on_failure": "false"].merging(values) { _, latest in latest })
+  }
+
+  func testDeadlineObservationStartsAtActualUnacceptedBoundary() throws {
+    let pending = deadlinePending()
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 15_999))
+    let result = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 16_000))
+    XCTAssertEqual(result.metadata["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.notAccepted.rawValue)
+    XCTAssertEqual(result.metadata["native_connector_observation_elapsed_ms"], "15000")
+    XCTAssertEqual(result.metadata["native_connector_observation_deadline_observed_at"], "16000")
+    XCTAssertEqual(result.message, pending.message)
+    XCTAssertEqual(result.success, pending.success)
+  }
+
+  func testDeadlineObservationRetainsAcceptanceAndAttachmentWindows() throws {
+    for (attachments, window) in [(false, Int64(45_000)), (true, 90_000)] {
+      let pending = deadlinePending(["transport_accepted_at": "2000", "remote_task_status": "queued",
+        "has_attachments": String(attachments)])
+      XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 2_000 + window - 1))
+      let result = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 2_000 + window))
+      XCTAssertEqual(result.metadata["transport_accepted_at"], "2000")
+      XCTAssertEqual(result.metadata["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.notRunning.rawValue)
+      XCTAssertEqual(result.metadata["native_connector_observation_deadline_ms"], String(window))
+    }
+  }
+
+  func testDeadlineObservationForLiveRunningUsesLastRemoteProgress() throws {
+    let pending = deadlinePending(["transport_accepted_at": "2000", "remote_task_status": "running",
+      "remote_task_status_seq": "2", "remote_task_status_updated_at": "10000", "routing_requires_live_data": "true"])
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 69_999))
+    let result = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 70_000))
+    XCTAssertEqual(result.metadata["native_connector_observation_started_at"], "10000")
+    XCTAssertEqual(result.metadata["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.readOnlyStale.rawValue)
+    var ordinary = pending; ordinary.metadata["routing_requires_live_data"] = "false"
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: ordinary, nowMillis: 70_000))
+  }
+
+  func testDeadlineObservationDoesNotReclassifyRemoteWaitOrTerminalStates() {
+    for status in ["completed", "failed", "timed_out", "cancelled", "waiting_input", "waiting_approval", "paused", "recovering"] {
+      let pending = deadlinePending(["transport_accepted_at": "2000", "remote_task_status": status])
+      XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 1_000_000), status)
+    }
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: deadlinePending(["awaiting_response": "false"]), nowMillis: 16_000))
+  }
+
+  func testDeadlineObservationIsOneCheckpointNotRepeatedFreshEvidence() throws {
+    let observed = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: deadlinePending(), nowMillis: 16_000))
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: observed, nowMillis: 46_000))
+    var accepted = observed
+    accepted.metadata["transport_accepted_at"] = "20000"; accepted.metadata["remote_task_status"] = "queued"
+    XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: accepted, nowMillis: 64_999))
+    XCTAssertEqual(AgentNativeConnectorDeadlineObservation.apply(pending: accepted, nowMillis: 65_000)?
+      .metadata["native_connector_observation_deadline_observed_at"], "65000")
+  }
+
+  func testDeadlineObservationLegacyClocksMatchWakePolicyWithoutInventedAcceptance() throws {
+    let pending = deadlinePending(["remote_task_status": "queued"])
+    let observed = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 16_000))
+    XCTAssertEqual(observed.metadata["native_connector_observation_timeout_stage"], AgentConnectorTimeoutStage.notAccepted.rawValue)
+    XCTAssertEqual(observed.metadata["remote_task_status"], "queued")
+    XCTAssertNil(observed.metadata["transport_accepted_at"])
+    for value in ["invalid", "0", "-1", "9223372036854775807"] {
+      XCTAssertNil(AgentNativeConnectorDeadlineObservation.apply(pending: deadlinePending(["resource_started_at": value]), nowMillis: 16_000))
+    }
+  }
+
+  func testAdvancingAuthenticatedStatusClearsDeadlineCheckpoint() throws {
+    let f = try fixture()
+    var pending = f.pending
+    pending.metadata["transport_accepted_at"] = "1500"
+    let observed = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 46_500))
+    var progress = f.observation; progress.lastResponseAt = 47_000
+    let refreshed = try XCTUnwrap(AgentNativeConnectorStatusObservation.apply(pending: observed, managed: f.managed, observation: progress))
+    XCTAssertNil(refreshed.metadata["native_connector_observation_deadline_clock"])
+    XCTAssertNil(refreshed.metadata["native_connector_observation_deadline_observed_at"])
+    XCTAssertNil(refreshed.metadata["native_connector_observation_timeout_stage"])
+    XCTAssertEqual(refreshed.metadata["awaiting_response"], "true")
+    XCTAssertEqual(refreshed.metadata["transport_accepted_at"], "1500")
+  }
+
+  func testDeadlineObservationRoundTripsWithoutFailureReplayOrRouteMetadataChanges() throws {
+    let pending = deadlinePending(["source_message_id": "123", "control_plane_run_id": "owner",
+      "execution_generation": "2", "remaining_fallback_ids": "other", "evidence": "original"])
+    let observed = try XCTUnwrap(AgentNativeConnectorDeadlineObservation.apply(pending: pending, nowMillis: 16_000))
+    XCTAssertEqual(try JSONDecoder().decode(AgentActionResult.self, from: JSONEncoder().encode(observed)), observed)
+    XCTAssertEqual(observed.actionId, pending.actionId)
+    for (key, value) in pending.metadata { XCTAssertEqual(observed.metadata[key], value, key) }
+    for key in ["timeout_stage", "error_code", "native_connector_dispatch_uncertain", "native_connector_observation_overdue",
+      "effect_outcome_unknown", "non_retriable", "execution_started"] { XCTAssertNil(observed.metadata[key], key) }
   }
 
   func testMalformedSequenceAndBackwardClockAreRejectedWithoutDefaulting() throws {

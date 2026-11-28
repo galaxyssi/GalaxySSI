@@ -78,7 +78,27 @@ enum AgentNativeConnectorStatusObservation {
     // A known remote status is not a delivered result and never authorizes another execution.
     for key in ["native_connector_observation_overdue", "native_connector_observation_timeout_stage",
       "native_connector_observation_started_at", "native_connector_observation_elapsed_ms",
-      "native_connector_observation_deadline_ms"] { result.metadata.removeValue(forKey: key) }
+      "native_connector_observation_deadline_ms", "native_connector_observation_deadline_clock",
+      "native_connector_observation_deadline_observed_at"] { result.metadata.removeValue(forKey: key) }
+    return result
+  }
+}
+
+enum AgentNativeConnectorDeadlineObservation {
+  static func apply(pending: AgentActionResult, nowMillis: Int64) -> AgentActionResult? {
+    guard !pending.actionId.isBlank,
+      let wake = AgentNativeConnectorObservationWakePolicy.next(metadata: pending.metadata, nowMillis: nowMillis),
+      wake.delayMillis == 0,
+      pending.metadata["native_connector_observation_deadline_clock"] != wake.clock else { return nil }
+    let elapsed = nowMillis.subtractingReportingOverflow(wake.startedAt)
+    guard !elapsed.overflow, elapsed.partialValue >= wake.deadlineMillis else { return nil }
+    var result = pending
+    result.metadata["native_connector_observation_timeout_stage"] = wake.stage.rawValue
+    result.metadata["native_connector_observation_started_at"] = String(wake.startedAt)
+    result.metadata["native_connector_observation_elapsed_ms"] = String(elapsed.partialValue)
+    result.metadata["native_connector_observation_deadline_ms"] = String(wake.deadlineMillis)
+    result.metadata["native_connector_observation_deadline_clock"] = wake.clock
+    result.metadata["native_connector_observation_deadline_observed_at"] = String(nowMillis)
     return result
   }
 }
