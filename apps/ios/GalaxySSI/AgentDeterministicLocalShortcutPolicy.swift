@@ -236,8 +236,8 @@ enum AgentPhoneShortcutRouting {
 enum AgentDeviceStatusShortcutCoverage {
   private static let subjects = #"(?<![a-z0-9])(?:battery|power status|power saving|low power|memory|ram|storage|network|bluetooth status|nfc|wi-?fi|audio status|sound status|volume status|vpn|(?:phone|device) (?:status|health))(?![a-z0-9])"# +
     "|\u{7535}\u{91cf}|\u{96fb}\u{91cf}|\u{7535}\u{6c60}|\u{96fb}\u{6c60}|\u{5185}\u{5b58}|\u{5167}\u{5b58}|\u{5b58}\u{50a8}|\u{5132}\u{5b58}|\u{7f51}\u{7edc}|\u{7db2}[\u{7d61}\u{8def}]|\u{84dd}\u{7259}|\u{85cd}\u{7259}|\u{97f3}\u{91cf}|\u{7701}[\u{7535}\u{96fb}]|[\u{7535}\u{96fb}]\u{6e90}|\u{7a7a}[\u{95f4}\u{9593}]"
-  private static let readSignal = #"\b(?:read|check|show|get|current|available|remaining|free|status|how much|if|when|unless)\b"# +
-    "|[\u{8bfb}\u{8b80}\u{67e5}]|\u{5f53}\u{524d}|\u{7576}\u{524d}|\u{5269}\u{4f59}|\u{5269}\u{9918}|\u{53ef}\u{7528}|\u{591a}\u{5c11}|\u{72b6}\u{6001}|\u{72c0}\u{614b}|\u{5982}\u{679c}"
+  private static let readSignal = #"\b(?:read|check|show|get|current|available|remaining|free|status|how much)\b"# +
+    "|[\u{8bfb}\u{8b80}\u{67e5}]|\u{5f53}\u{524d}|\u{7576}\u{524d}|\u{5269}\u{4f59}|\u{5269}\u{9918}|\u{53ef}\u{7528}|\u{591a}\u{5c11}|\u{72b6}\u{6001}|\u{72c0}\u{614b}"
   private static let listSeparator = #"\s+and\s+|[,;]"# + "|[\u{ff0c}\u{ff1b}\u{3001}\u{548c}\u{8207}\u{4e0e}]|\u{4ee5}\u{53ca}"
   private static let desktop = #"\b(?:computer|desktop|windows|macos)\b"# + "|\u{7535}\u{8111}|\u{96fb}\u{8166}"
   private static let discussion = #"^(?:explain|describe|define|compare|what (?:is|are)|how (?:does|do))\b"# +

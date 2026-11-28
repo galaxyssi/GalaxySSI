@@ -112,6 +112,50 @@ extension GalaxySSIStoreTests {
     }
   }
 
+  func testConditionalWordsAloneDoNotForceStatusReasoning() {
+    for goal in ["If battery is low, remind me later", "When memory is low, continue later",
+      "Unless battery is low, continue the task"] {
+      XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+      XCTAssertFalse(AgentDirectNativeToolPlanner.isCompleteDeviceStatusRead(goal), goal)
+    }
+  }
+
+  func testChineseConditionalAloneDoesNotForceStatusReasoning() {
+    for goal in [
+      "\u{5982}\u{679c}\u{7535}\u{91cf}\u{504f}\u{4f4e}\u{ff0c}\u{7a0d}\u{540e}\u{63d0}\u{9192}\u{6211}",
+      "\u{5982}\u{679c}\u{96fb}\u{91cf}\u{504f}\u{4f4e}\u{ff0c}\u{7a0d}\u{5f8c}\u{63d0}\u{9192}\u{6211}"
+    ] {
+      XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+      XCTAssertFalse(AgentDirectNativeToolPlanner.isCompleteDeviceStatusRead(goal), goal)
+    }
+  }
+
+  func testExplicitStatusReadsInsideConditionalsStillRequireReasoning() {
+    for goal in ["If necessary, check battery and memory", "When charging, read battery level",
+      "Unless busy, show remaining storage"] {
+      XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal), goal)
+    }
+  }
+
+  func testCompleteStatusReadRemainsACompleteQuery() {
+    let goal = "Read the current battery level on this phone."
+    XCTAssertTrue(AgentDirectNativeToolPlanner.isCompleteDeviceStatusRead(goal))
+    XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning(goal))
+  }
+
+  func testCompositeStatusReadsRetainPhonePlanning() {
+    for goal in ["Check battery status and remaining storage", "Read battery level if charging"] {
+      XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(goal), goal)
+    }
+  }
+
+  func testStatusDiscussionAndExplicitDesktopExclusionRemain() {
+    XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresReasoning("Explain battery chemistry"))
+    let desktop = "Read battery status and available storage on my computer"
+    XCTAssertTrue(AgentDeviceStatusShortcutCoverage.requiresReasoning(desktop))
+    XCTAssertFalse(AgentDeviceStatusShortcutCoverage.requiresPhoneReasoning(desktop))
+  }
+
   func testCompositeDeviceGoalsRequireWholeGoalPhonePlanning() {
     let tools = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
     func request(_ goal: String) -> AgentPlanRequest {
