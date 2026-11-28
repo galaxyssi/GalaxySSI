@@ -1935,6 +1935,7 @@
     ED3518000000000000000003 /* AgentSupervisedBrowserWait.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3518000000000000000004 /* AgentSupervisedBrowserWait.swift */; };
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
+    C47030000000000000000011 /* AgentNativeConnectorRecoveryWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47030000000000000000012 /* AgentNativeConnectorRecoveryWake.swift */; };
     A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002008 /* AgentWorkflowTriggers.swift */; };
     A10000000000000000002009 /* GalaxySSIWorkflowTriggerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002009 /* GalaxySSIWorkflowTriggerView.swift */; };
     A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */; };
@@ -2222,6 +2223,7 @@
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000003E16 /* AgentPreShadowRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */; };
     A10000000000000000003E17 /* AgentNativeConnectorStatusObservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E17 /* AgentNativeConnectorStatusObservationTests.swift */; };
+    C47030000000000000000013 /* AgentNativeConnectorRecoveryWakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C47030000000000000000014 /* AgentNativeConnectorRecoveryWakeTests.swift */; };
     A10000000000000000003E18 /* AgentConnectorDocumentInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E18 /* AgentConnectorDocumentInputTests.swift */; };
     A10000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */; };
     A10000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */; };
@@ -4273,6 +4275,7 @@
     ED3518000000000000000004 /* AgentSupervisedBrowserWait.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSupervisedBrowserWait.swift; sourceTree = "<group>"; };
     A20000000000000000000671 /* AgentTaskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenter.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
+    C47030000000000000000012 /* AgentNativeConnectorRecoveryWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorRecoveryWake.swift; sourceTree = "<group>"; };
     A20000000000000000002008 /* AgentWorkflowTriggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkflowTriggers.swift; sourceTree = "<group>"; };
     A20000000000000000002009 /* GalaxySSIWorkflowTriggerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIWorkflowTriggerView.swift; sourceTree = "<group>"; };
     A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProactiveBackgroundScheduler.swift; sourceTree = "<group>"; };
@@ -4687,6 +4690,7 @@
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreShadowRoutingTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E17 /* AgentNativeConnectorStatusObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorStatusObservationTests.swift; sourceTree = "<group>"; };
+    C47030000000000000000014 /* AgentNativeConnectorRecoveryWakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorRecoveryWakeTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E18 /* AgentConnectorDocumentInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorDocumentInputTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E19 /* MqttManagedConnectorAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MqttManagedConnectorAttachmentTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E20 /* AgentNativeConnectorRichReplyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeConnectorRichReplyTests.swift; sourceTree = "<group>"; };
@@ -6002,6 +6006,7 @@
         A20000000000000000000671 /* AgentTaskCenter.swift */,
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
+        C47030000000000000000012 /* AgentNativeConnectorRecoveryWake.swift */,
         A20000000000000000002008 /* AgentWorkflowTriggers.swift */,
         A20000000000000000002009 /* GalaxySSIWorkflowTriggerView.swift */,
         A20000000000000000002007 /* AgentProactiveBackgroundScheduler.swift */,
@@ -7004,6 +7009,7 @@
         A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */,
         A20000000000000000003E16 /* AgentPreShadowRoutingTests.swift */,
         A20000000000000000003E17 /* AgentNativeConnectorStatusObservationTests.swift */,
+        C47030000000000000000014 /* AgentNativeConnectorRecoveryWakeTests.swift */,
         A20000000000000000003E18 /* AgentConnectorDocumentInputTests.swift */,
         A20000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift */,
         A20000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift */,
@@ -8444,6 +8450,7 @@
         A10000000000000000000671 /* AgentTaskCenter.swift in Sources */,
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
+        C47030000000000000000011 /* AgentNativeConnectorRecoveryWake.swift in Sources */,
         A10000000000000000002008 /* AgentWorkflowTriggers.swift in Sources */,
         A10000000000000000002009 /* GalaxySSIWorkflowTriggerView.swift in Sources */,
         A10000000000000000002007 /* AgentProactiveBackgroundScheduler.swift in Sources */,
@@ -9596,6 +9603,7 @@
         A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */,
         A10000000000000000003E16 /* AgentPreShadowRoutingTests.swift in Sources */,
         A10000000000000000003E17 /* AgentNativeConnectorStatusObservationTests.swift in Sources */,
+        C47030000000000000000013 /* AgentNativeConnectorRecoveryWakeTests.swift in Sources */,
         A10000000000000000003E18 /* AgentConnectorDocumentInputTests.swift in Sources */,
         A10000000000000000003E24 /* AgentProgressiveToolCatalogTests.swift in Sources */,
         A10000000000000000003E26 /* AgentSupervisedAnswerPreviewTests.swift in Sources */,

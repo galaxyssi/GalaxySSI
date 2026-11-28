@@ -14837,6 +14837,25 @@ final class MessageCoordinator: ObservableObject {
     return (dispatch, current.pending, record, contact)
   }
 
+  private func nativeConnectorRecoveryWake(dispatch: AgentIOSConnectorDispatch, pending: AgentActionResult,
+    record: AgentManagedResponseRecord, contact: GalaxySSIContact, lastWakeMillis: Int64?) -> AgentNativeConnectorRecoveryWake? {
+    let now = AgentControlPlaneClock.nowMillis()
+    if let stage = AgentNativeConnectorRecoveryWake.stage(metadata: pending.metadata, nowMillis: now, lastWakeMillis: lastWakeMillis) {
+      return stage
+    }
+    guard desktopReplyRecoveryOwner == store.profile.identityFingerprint,
+      let identity = taskIdentityStore.identity(contactId: dispatch.contactId, sourceMessageId: String(dispatch.sourceMessageId)),
+      identity.conversationId == dispatch.conversationId, identity.turnId == dispatch.turnId, identity.taskId == dispatch.taskId,
+      store.serverLinks.filter({ $0.paired && $0.desktopId == contact.desktopId &&
+        $0.routes.clientRouteId == identity.clientRouteId }).count == 1,
+      let binding = AgentDesktopReplyBinding.managed(record: record, desktopId: contact.desktopId,
+        agentId: contact.connectorAgentId, identity: identity),
+      currentManagedDesktopReply(binding) == record,
+      let observation = desktopReplyRecovery.record(for: binding) else { return nil }
+    return AgentNativeConnectorRecoveryWake.terminalResult(pending: pending, managed: record,
+      observation: observation, nowMillis: now, lastWakeMillis: lastWakeMillis)
+  }
+
   private func scheduleNativeConnectorObservation(action: AgentAction, pending: AgentActionResult) {
     var prepared = action
     prepared.parameters.removeValue(forKey: AgentNativeConnectorContinuation.receiptKey)
@@ -14845,8 +14864,8 @@ final class MessageCoordinator: ObservableObject {
     guard let dispatch = AgentIOSConnectorDispatch(action: scoped, receipt: pending) else { return }
     let key = [dispatch.owner, String(dispatch.sourceMessageId), action.parameters[AgentIOSConnectorDispatch.profileKey] ?? ""].joined(separator: "|")
     guard let context = nativeConnectorObservationContext(action: scoped, pending: pending),
-          let wake = AgentNativeConnectorObservationWakePolicy.next(metadata: context.pending.metadata,
-            nowMillis: AgentControlPlaneClock.nowMillis(), lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
+          let wake = nativeConnectorRecoveryWake(dispatch: context.dispatch, pending: context.pending,
+            record: context.record, contact: context.contact, lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
       nativeConnectorObservationJobs.removeValue(forKey: key)?.task.cancel()
       nativeConnectorObservationLastWake.removeValue(forKey: key)
       return
@@ -14869,8 +14888,8 @@ final class MessageCoordinator: ObservableObject {
 
   private func observeWaitingNativeConnector(action: AgentAction, pending: AgentActionResult, key: String) async {
     guard !Task.isCancelled, let context = nativeConnectorObservationContext(action: action, pending: pending),
-          let wake = AgentNativeConnectorObservationWakePolicy.next(metadata: context.pending.metadata,
-            nowMillis: AgentControlPlaneClock.nowMillis(), lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
+          let wake = nativeConnectorRecoveryWake(dispatch: context.dispatch, pending: context.pending,
+            record: context.record, contact: context.contact, lastWakeMillis: nativeConnectorObservationLastWake[key]) else {
       nativeConnectorObservationLastWake.removeValue(forKey: key)
       return
     }
