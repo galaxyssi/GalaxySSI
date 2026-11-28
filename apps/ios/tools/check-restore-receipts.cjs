@@ -55,6 +55,8 @@ function viewBlocks() {
   ];
 }
 function retainedView(source) {
+  const operation = path.join(__dirname, 'check-backup-operation.cjs');
+  if (fs.existsSync(operation)) source = require(operation).retainedView(source);
   if (!source.includes('latestRestoreReceipt')) { assert(!source.includes('GalaxySSIHealthRestoreHistoryView')); return source; }
   for (const block of viewBlocks()) source = once(source, block, '');
   return source;
