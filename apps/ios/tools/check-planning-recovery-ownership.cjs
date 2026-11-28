@@ -51,6 +51,8 @@ function retainedServices(s) {
 }
 module.exports = {retainedServices, retainedLoop};
 function retainedLoop(s) {
+  const cancellation = path.join(__dirname, 'check-model-loop-task-cancellation.cjs');
+  if (fs.existsSync(cancellation)) s = require(cancellation).retainedLoop(s);
   if (!s.includes('  private let validateOwner: (() async throws -> Void)?')) return s;
   assert.equal(s, show(approved, app + 'AgentModelToolLoop.swift'));
   s = once(s, '  private let validateOwner: (() async throws -> Void)?\n');
@@ -216,7 +218,9 @@ if (require.main === module) {
     const mutation = adapter.replace(token, ''); assert.notEqual(mutation, adapter);
     assert.throws(() => retainedAdapter(mutation), assert.AssertionError);
   }
-  const loopTests = read('apps/ios/GalaxySSITests/AgentModelToolLoopTests.swift');
+  let loopTests = read('apps/ios/GalaxySSITests/AgentModelToolLoopTests.swift');
+  const cancellation = path.join(__dirname, 'check-model-loop-task-cancellation.cjs');
+  if (fs.existsSync(cancellation)) loopTests = require(cancellation).retainedTests(loopTests);
   assert.equal(loopTests, show(approved, 'apps/ios/GalaxySSITests/AgentModelToolLoopTests.swift'));
   assert.equal((loopTests.match(/  func testOwnedLoop/g) || []).length, 6);
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
