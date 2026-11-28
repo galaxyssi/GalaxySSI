@@ -2276,6 +2276,7 @@
     A10000000000000000000688 /* AgentWorkspacePersistentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000688 /* AgentWorkspacePersistentStoreTests.swift */; };
     A10000000000000000000690 /* AgentTaskRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000690 /* AgentTaskRuntimeTests.swift */; };
     A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000207 /* AgentConversationRuntimeTests.swift */; };
+    C46970000000000000000001 /* AgentChineseExportIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46970000000000000000002 /* AgentChineseExportIntentTests.swift */; };
     A10000000000000000000208 /* AgentMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000208 /* AgentMemoryTests.swift */; };
     A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000209 /* GlobalMemoryTests.swift */; };
     A10000000000000000000538 /* GlobalPersistentContextObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000538 /* GlobalPersistentContextObservationsTests.swift */; };
@@ -4758,6 +4759,7 @@
     A20000000000000000000688 /* AgentWorkspacePersistentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePersistentStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000690 /* AgentTaskRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000207 /* AgentConversationRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationRuntimeTests.swift; sourceTree = "<group>"; };
+    C46970000000000000000002 /* AgentChineseExportIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentChineseExportIntentTests.swift; sourceTree = "<group>"; };
     A20000000000000000000208 /* AgentMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000209 /* GlobalMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000538 /* GlobalPersistentContextObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservationsTests.swift; sourceTree = "<group>"; };
@@ -7063,6 +7065,7 @@
         B20000000000000000000483 /* AgentNoReplyReasonTests.swift */,
         A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
+        C46970000000000000000002 /* AgentChineseExportIntentTests.swift */,
         A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */,
         A20000000000000000000418 /* AgentSessionMemoryBudgetTests.swift */,
         A20000000000000000000420 /* AgentMemoryPssTelemetryTests.swift */,
@@ -9646,6 +9649,7 @@
         B10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */,
         A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
+        C46970000000000000000001 /* AgentChineseExportIntentTests.swift in Sources */,
         A10000000000000000000416 /* AgentLargeOutputPolicyTests.swift in Sources */,
         A10000000000000000000418 /* AgentSessionMemoryBudgetTests.swift in Sources */,
         A10000000000000000000420 /* AgentMemoryPssTelemetryTests.swift in Sources */,
