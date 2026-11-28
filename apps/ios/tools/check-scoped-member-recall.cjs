@@ -1,7 +1,7 @@
 // Source contracts only. No Swift/ICU, Signal, database, thread confinement or device execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '1f369c69a76d879e4b31ef3babc98a37c1ff4075';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '164a45877084c3691e632f0df9f6ab4427bc374a';
 const clean = s => s.replace(/\r\n/g, '\n'), read = f => clean(fs.readFileSync(path.join(root, f), 'utf8')), memo = new Map();
 function git(args) { return clean(cp.execFileSync('git', args, {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})); }
 function show(ref, file) {
@@ -88,7 +88,7 @@ if (require.main === module) {
   const policyFile = app + 'AgentScopedMemberRecall.swift', policy = read(policyFile);
   const testsFile = 'apps/ios/GalaxySSITests/AgentScopedMemberRecallTests.swift', tests = read(testsFile);
   assert.equal(policy, show(approved, policyFile)); assert.equal(tests, show(approved, testsFile));
-  assert.equal((tests.match(/  func test/g) || []).length, 16);
+  assert.equal((tests.match(/  func test/g) || []).length, 18);
   const services = read(app + 'GalaxySSIServices.swift');
   const probe = services.slice(services.indexOf('  private func scopedMemberRecallProbe('), services.indexOf('  private func scopedMemberRecallIsCurrent('));
   assert(probe.includes('if let parent = store.agentTask(id: context.team.taskId) {'));
@@ -97,6 +97,13 @@ if (require.main === module) {
   assert(services.includes('} else if memberAdmission == nil { return }'));
   assert(services.includes('} else if memberAdmission == nil { return nil }'));
   assert(services.includes('input["mode"] == .string("workspace"), parent?.blocked == false,'));
+  for (const gate of ['current.id == contact && current.isCommunicable && current.deliveryMode == .pcConnector',
+    'current.identityFingerprint.caseInsensitiveCompare(fingerprint) == .orderedSame',
+    'link.desktopId == desktop && !fingerprint.isBlank && link.desktopFingerprint == fingerprint',
+    'GalaxySSITransportReceiptJournal.binding(peerId: desktop, routes: link.routes) == transportBinding']) {
+    assert(policy.includes(gate), gate);
+    assert.throws(() => assert.equal(policy.replace(gate, 'REMOVED_CURRENT_PEER_GATE'), show(approved, policyFile)), assert.AssertionError);
+  }
   const authorization = services.slice(services.indexOf('    if request.phase == "authorize" {'), services.indexOf('    guard let initial = scopedMemberRecallProbe(request, link: link)'));
   assert(authorization.includes('AgentScopedMemberRecall.authorize(request, replay: &replay'));
   assert(!/recallCollaborationOriginal|handleDesktopNativeEvidenceRecall|handleDesktopCollaborationExchange|\.execute\(|\.generate\(/.test(authorization), 'No data/effect callback in preflight');
@@ -108,6 +115,8 @@ if (require.main === module) {
   assert(!/URLSession|FileManager|\.execute\(|\.generate\(|grantedPermissions|grantedConsents|normalizedModelId/.test(policy));
   const gates = new Map([
     ['GalaxySSIServices', ['followupContext == nil, executionMode == .autoComplete',
+      'offer.matchesPeer(contact, link: link)',
+      'store.serverLinks.filter({ $0.paired && $0.desktopId == link.desktopId }).count == 1,',
       'scopedMemberAuthorizationReplay = replay', 'offer.scope.sourceId == request.source',
       'offer.transportBinding == GalaxySSITransportReceiptJournal.binding',
       'person.id == offer.personID, person.resourceId == offer.contact, person.modelId == offer.model',
@@ -138,5 +147,5 @@ if (require.main === module) {
   assert.equal(entries(read(projectFile)).length, 8);
   assert.deepEqual(entries(read(projectFile)), entries(show(approved, projectFile)));
   assert(!/\p{Script=Han}/u.test(policy + tests));
-  console.log(`Original-member offer, content-free preflight, generation/nonce pinning, read/confirm revalidation, both Signal routes and ${negatives} negative source mutations checked. Sixteen Swift fixtures authored, not executed; no native/private-data/model/device acceptance claimed.`);
+  console.log(`Original-member offer, content-free preflight, generation/nonce pinning, current peer binding, read/confirm revalidation, both Signal routes and ${negatives + 4} negative source mutations checked. Eighteen Swift fixtures authored, not executed; no native/private-data/model/device acceptance claimed.`);
 }
