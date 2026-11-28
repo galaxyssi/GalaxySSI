@@ -49,7 +49,7 @@ function retainedServices(s) {
   }
   return s;
 }
-module.exports = {retainedServices, retainedLoop};
+module.exports = {retainedServices, retainedLoop, retainedAdapter};
 function retainedLoop(s) {
   const cancellation = path.join(__dirname, 'check-model-loop-task-cancellation.cjs');
   if (fs.existsSync(cancellation)) s = require(cancellation).retainedLoop(s);
@@ -68,6 +68,8 @@ function retainedLoop(s) {
   return s.replaceAll('await flushParallelCalls()', 'flushParallelCalls()');
 }
 function retainedAdapter(s) {
+  const cancellation = path.join(__dirname, 'check-local-inference-cancellation.cjs');
+  if (fs.existsSync(cancellation)) s = require(cancellation).retained(app + 'AgentIOSLocalModelWebToolAdapter.swift', s);
   assert.equal(s, show(approved, app + 'AgentIOSLocalModelWebToolAdapter.swift'));
   s = once(s, '  private let validateOwner: (() async throws -> Void)?\n');
   s = once(s, '    self.validateOwner = validateOwner\n');
