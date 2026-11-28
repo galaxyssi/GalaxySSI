@@ -49,7 +49,21 @@ function retainedView(source) {
   if (source === show(base, file)) return source;
   validate(source); return show(base, file);
 }
-module.exports = {retainedView};
+const fixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthRecordsTests.swift';
+const fixtureStart = '  func testRecordCenterMergesTableAndReportReviewsByJobCreationBeforePagination() {\n';
+const fixtureEnd = '  func testIndividualTargetRequiresCurrentRecordAndRevokesWithoutErasingHistory() throws {\n';
+function retainedTests(source) {
+  if (!source.includes(fixtureStart)) return source;
+  const block = between(show(approved, fixture), fixtureStart, fixtureEnd);
+  assert.equal(between(source, fixtureStart, fixtureEnd), block, 'Exact owned mixed-review fixtures');
+  return once(source, block, '');
+}
+function retentionNormalize(file, source) {
+  const tool = path.join(__dirname, 'check-photo-original-retention.cjs');
+  if (!fs.existsSync(tool)) return source;
+  return require(tool).retained(file, source);
+}
+module.exports = {retainedView, retainedTests};
 if (require.main === module) {
   const source = read(file); validate(source);
   const helper = '  private func summary(_ reading: GalaxySSIHealthReading) -> String {\n' +
@@ -74,11 +88,9 @@ if (require.main === module) {
     'apps/android/app/src/main/java/com/galaxyssi/chat/HealthOverviewRepository.kt');
   for (const token of ['HealthOverviewReviewKind.TABLE', 'HealthOverviewReviewKind.OCR', 'job.createdAt'])
     assert(androidReviews.includes(token), token);
-  const fixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthRecordsTests.swift';
-  assert.equal(read(fixture), show(approved, fixture), 'Exact authored mixed review fixture source, not executed');
-  const fixtureStart = '  func testRecordCenterMergesTableAndReportReviewsByJobCreationBeforePagination() {\n';
-  const fixtureEnd = '  func testIndividualTargetRequiresCurrentRecordAndRevokesWithoutErasingHistory() throws {\n';
-  assert.equal(once(read(fixture), between(show(approved, fixture), fixtureStart, fixtureEnd), ''),
+  const normalizedTests = retentionNormalize(fixture, read(fixture));
+  assert.equal(normalizedTests, show(approved, fixture), 'Exact authored mixed review fixture source, not executed');
+  assert.equal(retainedTests(normalizedTests),
     show(base, fixture), 'All preexisting fixtures retained');
   const translations = app + 'zh-Hans.lproj/Localizable.strings';
   const keys = ['scan', 'manual', 'devices', 'photo_note', 'manual_note', 'import_note', 'sources_note'];
@@ -89,8 +101,11 @@ if (require.main === module) {
     assert.deepEqual(lines(read(translations)), lines(show(approved, translations)), key + ': approved translation');
     assert(source.includes('t("record_center.' + key + '"'), key + ': actual tile uses resource');
   }
-  for (const name of ['GalaxySSIHealthRecords', 'GalaxySSIHealthMetricCatalog', 'GalaxySSIHealthReportReview'])
-    assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ': unchanged data boundary');
+  for (const name of ['GalaxySSIHealthRecords', 'GalaxySSIHealthMetricCatalog', 'GalaxySSIHealthReportReview']) {
+    const file = app + name + '.swift';
+    const source = name === 'GalaxySSIHealthRecords' ? retentionNormalize(file, read(file)) : read(file);
+    assert.equal(source, show(base, file), name + ': unchanged data boundary outside exact photo retention');
+  }
   const mutations = [
     ['reading.reported?.raw ?? ', ''],
     ['reading.value?.formatted(.number.locale(locale))', 'reading.value?.formatted()'],
