@@ -34,6 +34,29 @@ class CollaborationRemoteRecallProtocolTest {
             .put("delivery", delivery.put("content_sha256", "wrong")), 10_000))
     }
 
+    @Test fun authorizeAllowsOnlyEmptyArgumentsScopeAndTransportMetadata() {
+        fun probe() = request().put("phase", "authorize").put("arguments", JSONObject())
+        assertTrue(CollaborationRemoteRecallProtocol.valid(probe(), 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(probe().put(CollaborationMemberRecall.FLAG, true), 10_000))
+        assertTrue(CollaborationRemoteRecallProtocol.valid(request().put(CollaborationMemberRecall.FLAG, true), 10_000))
+        for (invalid in listOf(false, "true", 1, JSONObject.NULL))
+            assertFalse(CollaborationRemoteRecallProtocol.valid(request().put(CollaborationMemberRecall.FLAG, invalid), 10_000))
+        assertTrue(CollaborationRemoteRecallProtocol.valid(probe().put("message_id", "envelope")
+            .put("reply_to", "").put(MqttImmutableContent.RECORD_KEY, "inbox"), 10_000))
+        for (key in listOf("delivery", "group_id", "member_id", "model", "agent_invocation", "mode", "content")) {
+            assertFalse(key, CollaborationRemoteRecallProtocol.valid(probe().put(key, JSONObject()), 10_000))
+            assertFalse(key, CollaborationRemoteRecallProtocol.valid(probe().put("arguments", JSONObject().put(key, "")), 10_000))
+        }
+        assertFalse(CollaborationRemoteRecallProtocol.valid(probe().apply { remove("arguments") }, 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(probe().put("arguments", "{}"), 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(probe().put("agent_id", "other"), 10_000))
+        assertFalse(CollaborationRemoteRecallProtocol.valid(probe(), 30_000))
+        val envelope = CollaborationRemoteRecallProtocol.response(probe(), CollaborationRemoteRecallProtocol.unavailable())
+        assertEquals("authorize", envelope.getString("phase"))
+        assertFalse(envelope.has("delivery"))
+        assertFalse(envelope.has("arguments"))
+    }
+
     @Test fun responseCopiesOnlyHostIdentityAndNonce() {
         val request = request().put("group_id", "untrusted").put("member_id", "untrusted")
         val response = CollaborationRemoteRecallProtocol.response(request, JSONObject().put("success", true))

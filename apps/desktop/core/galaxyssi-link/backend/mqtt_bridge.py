@@ -2020,9 +2020,9 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
             codex_task_callbacks.pop(task_id, None)
 
 
-def _codex_collaboration_recall(task_id, arguments, active):
+def _codex_collaboration_recall(task_id, arguments, active, *, member_binding=None):
     from collaboration_recall_bridge import broker
-    return _codex_collaboration_exchange(broker, task_id, arguments, active)
+    return _codex_collaboration_exchange(broker, task_id, arguments, active, member_binding=member_binding)
 
 
 def _codex_collaboration_publish(task_id, arguments, active):
@@ -2058,20 +2058,39 @@ def _codex_collaboration_file(task_id, working_directory, arguments, active):
         recall=lambda values: _codex_collaboration_recall(task_id, values, still_active))
 
 
-def _codex_collaboration_exchange(broker, task_id, arguments, active):
+def _codex_member_binding(task_id, conversation):
+    from phone_member_recall import current_binding
+    return current_binding(agent_task_manager.get(task_id), conversation, get_client)
+
+
+def _codex_authorize_member(task_id, binding, *, active, recovery):
+    from collaboration_recall_bridge import broker
+    return _codex_collaboration_exchange(broker, task_id, {}, active, authorize=True, member_binding=binding,
+                                         recovery=recovery)
+
+
+def _codex_collaboration_exchange(broker, task_id, arguments, active, *, authorize=False, member_binding=None, recovery=False):
     from collaboration_transport_feedback import PublishObservation
 
     def snapshot():
         task = agent_task_manager.get(task_id)
+        if member_binding is not None:
+            from phone_member_recall import scope_snapshot
+            return scope_snapshot(task)
         return task.public() if task is not None else None
 
     def publish(request):
         route = request["client_route_id"]
         observed = []
         accepted = _publish_phone_payload(client, {"scheme": "signal", "_client_route_id": route},
-                                          request, durable=False, observe=observed.append)
+                                          request, durable=False, observe=observed.append,
+                                          **({"recall_recipient": member_binding.transport} if member_binding is not None else {}))
         return observed[-1] if observed else PublishObservation(accepted)
 
+    if authorize:
+        return broker.authorize(snapshot, publish, active=active, recovery=recovery)
+    if member_binding is not None:
+        return broker.member_query(snapshot, arguments, publish, active=active)
     return broker.query(snapshot, arguments, publish, active=active)
 
 
@@ -2084,6 +2103,7 @@ def _codex_server(executable: str, env: dict, experiment=None) -> CodexAppServer
         if codex_app_server is None or codex_app_server.executable != executable:
             previous = codex_app_server
             codex_app_server = CodexAppServer(executable, env, _dispatch_codex_event,
+                member_binding=_codex_member_binding, member_authorize=_codex_authorize_member,
                 collaboration_recall=_codex_collaboration_recall, collaboration_publish=_codex_collaboration_publish,
                 collaboration_file=_codex_collaboration_file, collaboration_test=_codex_collaboration_test)
         server = codex_app_server
@@ -3171,6 +3191,7 @@ def _publish_phone_payload(
     durable: bool | None = None,
     observe=None,
     expected_receipt_binding: str = "",
+    recall_recipient: str = "",
 ) -> bool:
     def observed(accepted, reason="unknown"):
         if observe is not None:
@@ -3214,6 +3235,13 @@ def _publish_phone_payload(
     from mqtt_query_delivery import needs_durable_outbox
     reliable = needs_durable_outbox(reply_payload.get("type")) if durable is None else bool(durable)
     with phone_publish_lock:
+        if recall_recipient:
+            from collaboration_recall_bridge import REQUEST
+            if reply_payload.get("type") != REQUEST or reliable:
+                raise ValueError("Member binding is only valid for a transient recall request")
+            # Pin the peer object actually used for encryption, not only its route.
+            if paired_client.get("revoked") or _receipt_binding_for_client(paired_client) != recall_recipient:
+                return observed(False, "recall_pair_changed")
         if expected_receipt_binding:
             if reply_payload.get("type") != "delivery_ack":
                 raise ValueError("Receipt binding is only valid for stored acknowledgements")
@@ -4679,6 +4707,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             raise
         admission_error = admission_error or f"Pinned Codex model {pinned_model}: {exc}"
         agent_invocation = AgentInvocationSelection(model_id=pinned_model)
+    from phone_member_recall import MARKER as recall_marker, candidate as recall_candidate
+    member_request = (getattr(existing_task, "request_snapshot", {}).get(recall_marker)
+                      if existing_task else recall_candidate(payload, agent_id=agent_id, wire=wire_payload))
     from agent_request_snapshot import build_request_snapshot, never_dispatched
     restart_queued_request = (
         payload.get("_recovered_task") is True and never_dispatched(existing_task)
@@ -4739,13 +4770,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     structured_connector_response = is_structured_connector_task_mode(connector_task_mode)
     active_conversation_task = None
     read_only_screen_analysis = payload.get("request_kind") == "screen_analysis"
-    if not pinned_model and payload.get("_recovered_task") is not True and not read_only_screen_analysis:
+    if not pinned_model and not member_request and payload.get("_recovered_task") is not True and not read_only_screen_analysis:
         active_conversation_task = agent_task_manager.active_for_conversation(
             backend_conversation_id,
             agent_id=agent_id,
             client_route_id=client_route_id,
             exclude_task_id=requested_task_id,
         )
+        # Isolated assignments are not targets for another message's steer/interrupt policy.
+        if getattr(active_conversation_task, "request_snapshot", {}).get(recall_marker):
+            active_conversation_task = None
     active_turn_decision = classify_active_turn(
         current_user_request,
         active_conversation_task.prompt if active_conversation_task is not None else "",
@@ -4824,6 +4858,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         policy=execution_policy.public(),
     )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    if member_request and not private_report and not structured_connector_response and not plan_only:
+        recovery_snapshot[recall_marker] = member_request
+    else:
+        member_request = None
     from codex_experiment_boundary import ExperimentBoundaryError, reject as reject_experiment
     try:
         codex_experiment = codex_experiments.admit(
@@ -5839,7 +5877,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             else planner_session if planner_session
             else "" if plan_only or read_only_screen_analysis else codex_conversation_id
         )
-        parallel_codex_task = codex_experiment is None and (plan_only or read_only_screen_analysis)
+        parallel_codex_task = codex_experiment is None and (plan_only or read_only_screen_analysis or bool(member_request))
+        member_thread_options = {"isolate_member": True} if member_request else {}
         if payload.get("_recovered_task") is True:
             active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
@@ -5951,6 +5990,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         str(workspace),
                         model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
+                        **member_thread_options,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
@@ -6012,6 +6052,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         str(workspace),
                         model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
+                        **member_thread_options,
                         image_paths=[str(path.resolve()) for path in image_paths],
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
@@ -6077,6 +6118,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         str(workspace),
                         model=selected_agent_model or "gpt-5.6-sol",
                         conversation_id=codex_run_conversation_id,
+                        **member_thread_options,
                         image_paths=[str(path.resolve()) for path in image_paths],
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
@@ -6325,6 +6367,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                                 str(workspace),
                                 model=selected_agent_model or "gpt-5.6-sol",
                                 conversation_id=codex_run_conversation_id,
+                                **member_thread_options,
                                 image_paths=image_paths,
                                 approval_policy=codex_approval_policy,
                                 sandbox=codex_sandbox,
@@ -6628,6 +6671,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         original_prompt=content,
                         conversation_id=codex_run_conversation_id,
                         elapsed_seconds=elapsed_seconds,
+                        **member_thread_options,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
@@ -6647,7 +6691,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 sessions = agent_conversation_sessions()
                 session_binding = (
                     None
-                    if pinned_model or plan_only or read_only_screen_analysis or codex_experiment is not None
+                    if pinned_model or member_request or plan_only or read_only_screen_analysis or codex_experiment is not None
                     else sessions.get("codex", codex_conversation_id)
                 )
                 restored_context_paths: list[Path] = []
@@ -6665,7 +6709,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         and str(candidate.get("agent_id") or "") == "codex"
                         and str(candidate.get("conversation_id") or "") == codex_conversation_id
                     ]
-                    if not private_report and codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
+                    if not member_request and not private_report and codex_experiment is None and (not fast_chat_delivery or mobile_context.attachments)
                     else []
                 )
                 prior_sources: list[Path] = []
@@ -6872,6 +6916,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         image_paths=current_image_paths,
                         fresh_thread_image_paths=fresh_thread_image_paths,
                         fresh_thread_prompt=fresh_task_prompt,
+                        **member_thread_options,
+                        **({"member_recovery": True} if member_request and restart_queued_request else {}),
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
                         execution_policy=execution_policy,
@@ -6879,7 +6925,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if not pinned_model and not parallel_codex_task and codex_experiment is None:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
-                    if pinned_model or codex_experiment is not None or planner_session:
+                    if pinned_model or member_request or codex_experiment is not None or planner_session:
                         raise  # Never fork or steer a different goal when its scoped thread is busy.
                     busy_task = agent_task_manager.get(busy.active_task_id)
                     busy_decision = (
@@ -8000,6 +8046,9 @@ def _dispatch_application_payload(mqttc, paired_client, wire_payload, applicatio
         return
 
     if contact_id not in {"system", "me"} and content.strip():
+        # Recovery-only routing fields are reconstructed locally, never accepted on the wire.
+        payload.pop("_recovered_task", None)
+        payload.pop("_backend_conversation_id", None)
         log.info(f"MQTT accepted Agent task contact_id={contact_id} agent_id={agent_id}")
         _start_remote_agent_task(mqttc, wire_payload, payload, trace, content, msg_type)
 

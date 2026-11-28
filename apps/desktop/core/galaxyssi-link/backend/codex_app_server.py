@@ -161,6 +161,9 @@ class CodexRun:
     conversation_id: str = ""
     thread_id: str = ""
     turn_id: str = ""
+    member_binding: object | None = field(default=None, init=False, repr=False)
+    member_isolated: bool = field(default=False, init=False)
+    member_recall_authorized: bool = field(default=False, init=False)
     final_text: str = ""
     last_agent_text: str = ""
     agent_message_deltas: dict[str, str] = field(default_factory=dict)
@@ -212,13 +215,17 @@ class CodexRun:
 
 
 class CodexAppServer:
-    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, collaboration_test=None, experiment_boundary=None) -> None:
+    def __init__(self, executable: str, env: dict[str, str], on_event: TaskEvent, *, collaboration_recall=None, collaboration_publish=None, collaboration_file=None, collaboration_test=None, experiment_boundary=None, member_binding=None, member_authorize=None) -> None:
         self.executable = executable
         self.env = dict(env)
         self._desired_proxy_env: dict[str, str] | None = None
         self.on_event = on_event
         self._experiment_boundary = experiment_boundary
         self._collaboration_recall = collaboration_recall
+        self._member_binding = member_binding
+        self._member_authorize = member_authorize
+        # Ephemeral provider threads must never enter the shared conversation index.
+        self._member_threads: dict[str, tuple[str, str]] = {}
         self._collaboration_publish = collaboration_publish
         self._collaboration_file = collaboration_file
         self._collaboration_test = collaboration_test
@@ -348,6 +355,23 @@ class CodexAppServer:
             self._initialized_process_pid == self.process.pid
         )
 
+    def _member_scope(self, task_id, conversation_id, policy):
+        if (self._experiment_boundary is not None or self._collaboration_recall is None
+                or self._member_binding is None or self._member_authorize is None
+                or not conversation_id.startswith("client:identity:") or ":agent-instance:" not in conversation_id
+                or policy.execution_mode.value == "plan_only" or "screen_analysis" in policy.task_intent_signals):
+            return None
+        try:
+            return self._member_binding(task_id, conversation_id)
+        except Exception:
+            return None
+
+    def _member_active(self, run):
+        if run.member_binding is None or self._member_scope(run.task_id, run.conversation_id, run.execution_policy) != run.member_binding:
+            return False
+        with self._lock:
+            return self._runs.get(run.task_id) is run and not run.finished
+
     def start_task(
         self,
         task_id: str,
@@ -361,6 +385,8 @@ class CodexAppServer:
         approval_policy: str = "never",
         sandbox: str = "workspace-write",
         execution_policy: AgentExecutionPolicy | None = None,
+        isolate_member: bool = False,
+        member_recovery: bool = False,
     ) -> CodexRun:
         if self._experiment_boundary is not None:
             policy = execution_policy or execution_policy_for(prompt)
@@ -411,18 +437,24 @@ class CodexAppServer:
             run.execution_policy.execution_mode.value == "plan_only"
         )
         run.host_config_guard = None if fast_chat or phone_planner or private_report else self._begin_host_config_guard(run)
+        run.member_isolated = isolate_member is True and clean_conversation_id.startswith("client:")
+        if run.member_isolated:
+            run.member_binding = self._member_scope(task_id, clean_conversation_id, resolved_policy)
         reused_thread = False
         try:
             with self._process_start_lock:
                 self._ensure_started()
                 with self._lock:
-                    active_run = self._active_run_locked(clean_conversation_id, exclude_task_id=task_id)
+                    active_run = None if run.member_isolated else self._active_run_locked(clean_conversation_id, exclude_task_id=task_id)
                     if active_run is not None:
                         raise CodexConversationBusyError(active_run.task_id)
                     self._runs[task_id] = run
                     conversation_key = self._conversation_key(clean_conversation_id)
-                    # A cached thread may have been created with provider fallback enabled.
-                    run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key and not pinned else ""
+                    # A cached thread establishes neither an exact provider pin nor member affinity.
+                    if conversation_key and not pinned and not run.member_isolated:
+                        run.thread_id = self._conversation_threads.get(conversation_key, "")
+                    if run.thread_id in self._member_threads:
+                        raise RuntimeError("Cannot reuse an isolated member thread")
                     # This active reservation prevents eviction of a loaded thread.
                     # Warm turns need not wait for unrelated lifecycle RPCs.
                     thread_loaded = run.thread_id in self._loaded_thread_ids
@@ -446,10 +478,16 @@ class CodexAppServer:
             if reused_thread:
                 self._touch_loaded_thread(run.thread_id)
             if not run.thread_id:
+                if run.member_binding is not None:
+                    try:
+                        run.member_recall_authorized = (self._member_authorize(task_id, run.member_binding,
+                            active=lambda: self._member_active(run), recovery=member_recovery) is True and self._member_active(run))
+                    except Exception:
+                        run.member_recall_authorized = False
                 # Bind before the next lifecycle operation can evict an idle
                 # thread. This lock never guards notification/RPC delivery.
                 with self._thread_lifecycle_lock:
-                    start_thread = self._start_thread if pinned else self._start_thread_with_retry
+                    start_thread = self._start_thread if pinned or run.member_isolated else self._start_thread_with_retry
                     run.thread_id = start_thread(
                         cwd,
                         model,
@@ -457,6 +495,7 @@ class CodexAppServer:
                         approval_policy=approval_policy,
                         sandbox=sandbox,
                         **({"exact_model": True} if pinned else {}),
+                        **({"member_run": run} if run.member_isolated else {}),
                     )
         except Exception:
             self._discard_run(run)
@@ -466,7 +505,7 @@ class CodexAppServer:
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
         base_turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
-        if not reused_thread and self._experiment_boundary is None and not private_report:
+        if not reused_thread and self._experiment_boundary is None and not private_report and not run.member_isolated:
             store = self._research_store()
             store.bind_task(run.task_id, self._research_scope(run))
             base_turn_prompt = with_handoff(base_turn_prompt, store.handoff(self._research_scope(run)))
@@ -505,7 +544,8 @@ class CodexAppServer:
                     include_task_policy=False,
                 )
             except RuntimeError as exc:
-                if pinned or private_report or self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
+                if (pinned or run.member_isolated or private_report or self._experiment_boundary is not None
+                        or not run.thread_id or not self._is_thread_not_found_error(exc)):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -600,6 +640,7 @@ class CodexAppServer:
         cwd: str = "",
         model: str = "gpt-5.6-sol",
         image_paths: list[str] | None = None,
+        isolate_member: bool = False,
     ) -> CodexRun:
         """Reconnect to a turn or continue its goal from the durable checkpoint."""
         pinned = execution_policy.pinned_codex_model if execution_policy else ""
@@ -610,6 +651,17 @@ class CodexAppServer:
             self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value, image_paths or [])
         clean_thread_id = str(thread_id or "").strip()
         clean_turn_id = str(turn_id or "").strip()
+        conversation = str(conversation_id or "").strip()
+        with self._lock:
+            previous_member = self._member_threads.get(clean_thread_id)
+        if previous_member is not None and (isolate_member is not True or previous_member != (task_id, conversation)):
+            raise RuntimeError("Cannot recover another isolated member thread")
+        if isolate_member is True and conversation.startswith("client:"):
+            if not cwd:
+                raise RuntimeError("Isolated member recovery requires the original working directory")
+            return self.start_task(task_id, original_prompt, cwd, model=model, conversation_id=conversation,
+                                   image_paths=image_paths, approval_policy=approval_policy, sandbox=sandbox,
+                                   execution_policy=execution_policy, isolate_member=True, member_recovery=True)
         if not clean_thread_id or not clean_turn_id:
             if cwd:
                 return self._restart_recovered_task(
@@ -1353,6 +1405,7 @@ class CodexAppServer:
         approval_policy: str = "never",
         sandbox: str = "workspace-write",
         exact_model: bool = False,
+        member_run: CodexRun | None = None,
     ) -> str:
         with self._thread_lifecycle_lock:
             self._make_loaded_thread_room()
@@ -1360,6 +1413,12 @@ class CodexAppServer:
             config = thread_config(conversation_id, CODEX_THREAD_CONFIG)
             if exact_model:
                 config = {**config, **PINNED_MEMBER_CONFIG}
+            inventory = thread_tools(conversation_id, self._dynamic_tools)
+            if member_run is not None:
+                config = {**config, "features.multi_agent": False, "features.multi_agent_v2": False}
+                member_run.member_recall_authorized = member_run.member_recall_authorized and self._member_active(member_run)
+                if member_run.member_recall_authorized:
+                    inventory = [*inventory, *(spec for spec in self._dynamic_tools if spec.get("name") == "collaboration_recall")]
             if private_report:
                 current = self._request("config/read", {"cwd": self._resolved_path(cwd), "includeLayers": False}, timeout=30)
                 servers = (current.get("config") or {}).get("mcp_servers") or {}
@@ -1367,11 +1426,11 @@ class CodexAppServer:
                     raise RuntimeError("Cannot isolate private report MCP configuration")
                 config = {**config, "mcp_servers": {name: {"enabled": False} for name in servers}}
             response = self._request("thread/start", {
-                "cwd": self._resolved_path(cwd), "model": model, "ephemeral": private_report,
+                "cwd": self._resolved_path(cwd), "model": model, "ephemeral": private_report or member_run is not None,
                 "approvalPolicy": approval_policy, "sandbox": thread_sandbox(conversation_id, sandbox),
                 "config": config,
                 "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
-                "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
+                "dynamicTools": inventory,
                 **({"allowProviderModelFallback": False} if exact_model else {}),
                 **({"environments": [], "runtimeWorkspaceRoots": []} if private_report else {}),
             }, timeout=30)
@@ -1389,9 +1448,14 @@ class CodexAppServer:
                     raise RuntimeError("Private report thread has external MCP capabilities")
             if thread_id:
                 with self._lock:
+                    if thread_id in self._member_threads or (member_run is not None and
+                            (thread_id in self._conversation_threads.values() or thread_id in self._loaded_thread_ids)):
+                        raise RuntimeError("Provider returned a reused isolated thread")
                     self._mark_thread_loaded_locked(thread_id)
                     conversation_key = self._conversation_key(conversation_id)
-                    if conversation_key and not exact_model:
+                    if member_run is not None:
+                        self._member_threads[thread_id] = (member_run.task_id, conversation_id)
+                    elif conversation_key and not exact_model:
                         self._conversation_threads.pop(conversation_key, None)
                         self._conversation_threads[conversation_key] = thread_id
                         self._save_conversation_threads()
@@ -1441,6 +1505,8 @@ class CodexAppServer:
             return
         with self._thread_lifecycle_lock:
             with self._lock:
+                if clean_thread_id in self._member_threads:
+                    raise RuntimeError("Cannot resume an isolated member thread")
                 if clean_thread_id in self._loaded_thread_ids:
                     self._mark_thread_loaded_locked(clean_thread_id)
                     return
@@ -1546,7 +1612,7 @@ class CodexAppServer:
         )
         candidates = [
             run for run in self._runs.values()
-            if run.task_id != exclude_task_id and not run.finished and (
+            if run.task_id != exclude_task_id and not run.finished and not run.member_isolated and (
                 run.conversation_id == clean_conversation_id
                 or (mapped_thread_id and run.thread_id == mapped_thread_id)
             )
@@ -1585,7 +1651,7 @@ class CodexAppServer:
         while True:
             with self._lock:
                 run = self._runs.get(str(task_id or "").strip())
-                if run is not None and run.finished:
+                if run is not None and (run.finished or run.member_isolated):
                     return None
                 if run is not None and run.turn_id:
                     break
@@ -1939,6 +2005,7 @@ class CodexAppServer:
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
                 self._initialized_process_pid = 0
+                self._member_threads.clear()
                 self._loaded_thread_ids.clear()
                 self._loaded_thread_recency.clear()
                 threading.Thread(target=self._read_stdout, daemon=True).start()
@@ -2539,7 +2606,15 @@ class CodexAppServer:
         try:
             with self._lock:
                 owner = self._runs.get(task_id)
-                if owner is not None and not permits_host_tool(owner.conversation_id, tool_name):
+                provider_thread = params.get("threadId")
+                member_thread = self._member_threads.get(provider_thread) if isinstance(provider_thread, str) else None
+                if member_thread is not None and (owner is None or not owner.member_isolated
+                        or member_thread != (task_id, owner.conversation_id) or provider_thread != owner.thread_id):
+                    raise ValueError("Isolated member tool owner mismatch")
+                member_read = (tool_name == "collaboration_recall" and owner is not None and owner.member_isolated
+                               and owner.member_recall_authorized and member_thread == (task_id, owner.conversation_id)
+                               and owner.thread_id and owner.turn_id and params.get("turnId") == owner.turn_id)
+                if owner is not None and not member_read and not permits_host_tool(owner.conversation_id, tool_name):
                     raise ValueError("Phone-owned task: return an Android tool action; Desktop execution is unavailable")
             if tool_name in {"collaboration_recall", "collaboration_publish", "collaboration_text_artifact", "collaboration_file_artifact", "collaboration_test_tool", "collaboration_run_tool"}:
                 callback = (self._collaboration_test if tool_name in {"collaboration_test_tool", "collaboration_run_tool"} else
@@ -2547,15 +2622,20 @@ class CodexAppServer:
                             self._collaboration_recall if tool_name == "collaboration_recall" else self._collaboration_publish)
                 with self._lock:
                     run = self._runs.get(task_id)
-                    if (run is None or run.finished or callback is None
+                    if (run is None or run is not owner or run.finished or callback is None
                             or common.get("thread_id", run.thread_id) != run.thread_id
                             or common.get("turn_id", run.turn_id) != run.turn_id):
                         raise ValueError("Collaboration tool is not available for this task")
                 def active():
+                    if member_read and not self._member_active(run):
+                        return False
                     with self._lock:
                         return (self._runs.get(task_id) is run and not run.finished
+                                and (not member_read or (params.get("threadId") == run.thread_id and params.get("turnId") == run.turn_id))
                                 and common.get("thread_id", run.thread_id) == run.thread_id
                                 and common.get("turn_id", run.turn_id) == run.turn_id)
+                if member_read and not active():
+                    raise ValueError("Member recall is no longer authorized")
                 if tool_name in {"collaboration_test_tool", "collaboration_run_tool"}:
                     from collaboration_tool_test_bridge import validate_arguments
                     arguments = validate_arguments(arguments, tool=tool_name)
@@ -2577,8 +2657,12 @@ class CodexAppServer:
                         recalled = execute(task_id, run.working_directory, arguments, active=active,
                             publish=lambda values: self._collaboration_publish(task_id, values, active),
                             recall=lambda values: self._collaboration_recall(task_id, values, active))
+                elif member_read:
+                    recalled = callback(task_id, arguments, active, member_binding=owner.member_binding)
                 else:
                     recalled = callback(task_id, arguments, active)
+                if member_read and not active():
+                    raise ValueError("Member recall is no longer authorized")
                 result = {"success": recalled.get("success") is True,
                     "contentItems": [{"type": "inputText", "text": json.dumps(recalled, ensure_ascii=False)}]}
             elif tool_name == RESEARCH_CHECKPOINT_TOOL:

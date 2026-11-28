@@ -20,6 +20,14 @@ class CollaborationExchangeReplayTest {
     private fun begin(store: CollaborationExchangeReplay, request: JSONObject = request()) =
         requireNotNull(store.acquire("desktop", request, 0).lease)
 
+    @Test fun scopedMemberReadCannotReplayAsLegacyRead() {
+        val store = CollaborationExchangeReplay(clock = { 0 })
+        val lease = begin(store, request().put(CollaborationMemberRecall.FLAG, true))
+        assertTrue(store.remember(lease, access, result()))
+        store.release(lease)
+        assertEquals(CollaborationExchangeReplay.Outcome.CONFLICT, store.acquire("desktop", request(), 0).outcome)
+    }
+
     @Test fun lostReplyReplaysTheSameOriginalChallengeWithoutRepeatingRead() {
         val store = CollaborationExchangeReplay(clock = { 0 })
         val lease = begin(store)

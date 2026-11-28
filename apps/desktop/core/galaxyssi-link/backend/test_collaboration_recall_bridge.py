@@ -374,6 +374,7 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
         args = {"mode": "evidence", "evidence_id": "a" * 64, "sha256": "b" * 64}
         def publish(request):
             phases.append(request["phase"])
+            self.assertEqual(member, request.get("scoped_member_recall_v1"))
             if request["phase"] == "read":
                 result = {"success": True, "content": content, "delivery": delivery,
                           "host_read_coverage": {"complete": False}}
@@ -383,8 +384,10 @@ class CollaborationRecallBridgeTest(unittest.TestCase):
                           "host_read_coverage": {"complete": True}}
             self.assertTrue(broker.receive({**request, "type": RESPONSE, "result": result}, "phone"))
             return True
-        result = broker.query(task, args, publish)
-        self.assertEqual(["read", "confirm"], phases)
+        for member in (None, True):
+            call = broker.member_query if member else broker.query
+            result = call(task, args, publish, active=lambda: True)
+        self.assertEqual(["read", "confirm"] * 2, phases)
         self.assertEqual(content, result["content"])
         self.assertTrue(result["host_read_coverage"]["complete"])
         self.assertNotIn("delivery", result)

@@ -61,6 +61,13 @@ internal class AgentConnectorResponseInbox(
     }
 
     @Synchronized
+    internal fun memberGeneration(response: AgentConnectorResponse): CollaborationMemberRecall.Generation {
+        migrate()
+        return CollaborationMemberRecall.generation(currentVersion(helper.readableDatabase, response)?.generation,
+            response.executionGeneration)
+    }
+
+    @Synchronized
     fun page(afterSequence: Long = 0, throughSequence: Long = Long.MAX_VALUE, limit: Int = PAGE_SIZE): AgentConnectorInboxPage {
         migrate()
         require(afterSequence >= 0 && throughSequence >= 0)

@@ -1254,31 +1254,36 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             delivery = pendingDelivery,
             register = { AgentPendingDeliveryStore.put(context, it) },
             retire = { AgentPendingDeliveryStore.remove(context, it) }
-        ) { dispatch = GalaxySSIMqttClient.publishUserMessageResult(
-            content = outboundPrompt,
-            contactId = contactId,
-            topicOverride = topic,
-            clientMessageId = messageId.takeIf { it > 0L },
-            deliveryTrace = trace,
-            conversationId = clientConversationId,
-            turnId = clientTurnId,
-            taskId = remoteTaskId,
-            runId = voiceAgentRun?.snapshot?.runId.orEmpty(),
-            executionMode = AgentTaskExecutionMode.fromWireValue(
-                action.parameters[INTERNAL_TASK_EXECUTION_MODE]
-            ),
-            connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
-            executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
-            resultContract = CollaborationResultContract.forAction(action),
-            requestKind = action.parameters["request_kind"].orEmpty(),
-            agentModelId = action.parameters["agent_model_id"].orEmpty(),
-            agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
-                action.parameters["agent_reasoning_effort"]
-            ),
-            agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
-            teamId = action.parameters["team_id"].orEmpty(),
-            agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
-        )
+        ) {
+            val offer = if (!managedTeamAction) null else CollaborationMemberRecallDispatch.original(context, action,
+                AgentPendingDelivery(messageId, clientConversationId, clientTurnId, remoteTaskId, contactId))
+            dispatch = CollaborationMemberRecallDispatch.during(offer) {
+                GalaxySSIMqttClient.publishUserMessageResult(
+                    content = outboundPrompt,
+                    contactId = contactId,
+                    topicOverride = topic,
+                    clientMessageId = messageId.takeIf { it > 0L },
+                    deliveryTrace = trace,
+                    conversationId = clientConversationId,
+                    turnId = clientTurnId,
+                    taskId = remoteTaskId,
+                    runId = voiceAgentRun?.snapshot?.runId.orEmpty(),
+                    executionMode = AgentTaskExecutionMode.fromWireValue(
+                        action.parameters[INTERNAL_TASK_EXECUTION_MODE]
+                    ),
+                    connectorTaskMode = action.parameters["connector_task_mode"].orEmpty(),
+                    executionPolicyPrompt = action.parameters[EXECUTION_POLICY_PROMPT_ACTION_PARAMETER].orEmpty(),
+                    resultContract = CollaborationResultContract.forAction(action),
+                    requestKind = action.parameters["request_kind"].orEmpty(),
+                    agentModelId = action.parameters["agent_model_id"].orEmpty(),
+                    agentReasoningEffort = AgentModelReasoningEffort.fromWireValue(
+                        action.parameters["agent_reasoning_effort"]
+                    ),
+                    agentInstanceId = action.parameters["agent_instance_id"].orEmpty(),
+                    teamId = action.parameters["team_id"].orEmpty(),
+                    agentTeamMessage = action.parameters["agent_team_message"].toBoolean()
+                )
+            }
             dispatch.accepted
         }
         if (!published) {

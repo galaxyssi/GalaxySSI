@@ -39,6 +39,10 @@ object AgentConnectorResponseStore {
     internal fun isCurrentExecution(context: Context, response: AgentConnectorResponse): Boolean =
         store(context).isCurrentExecution(response)
 
+    internal fun memberGeneration(context: Context, response: AgentConnectorResponse): CollaborationMemberRecall.Generation =
+        if (superseded(context, response)) CollaborationMemberRecall.Generation.UNAVAILABLE
+        else store(context).memberGeneration(response)
+
     /** One bounded page, not the entire recoverable inbox. */
     fun pending(context: Context): List<AgentConnectorResponse> = pendingPage(context).responses
 
