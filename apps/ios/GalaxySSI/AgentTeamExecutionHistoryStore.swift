@@ -187,6 +187,7 @@ final class AgentTeamExecutionHistoryStore {
                   replacement.dispatchCheckpoint == member.dispatchCheckpoint,
                   replacement.dispatchDependencyMemberIds == member.dispatchDependencyMemberIds,
                   replacement.dispatchAllowsSavedToolTest == member.dispatchAllowsSavedToolTest,
+                  replacement.originalRecallOffer == member.originalRecallOffer,
                   replacement.dispatchPreparationFailure == member.dispatchPreparationFailure,
                   replacement.dispatchResourceObservation == member.dispatchResourceObservation else {
               throw AgentTeamHistoryDatabase.Failure.stale

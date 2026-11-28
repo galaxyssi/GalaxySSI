@@ -1564,6 +1564,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
   var dispatchPreparationFailure: AgentCollaborationPromptBudget.Failure? = nil
   var recruitmentTemplateID: UUID? = nil
   var dispatchAllowsSavedToolTest: Bool? = nil
+  var originalRecallOffer: AgentScopedMemberRecall.Offer? = nil
   var displayName: String?
   var researchStage: String?
   var executionStartedAtMillis: Int64?
@@ -1622,6 +1623,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
     case dispatchPreparationFailure = "dispatch_preparation_failure"
     case recruitmentTemplateID = "recruitment_template_id"
     case dispatchAllowsSavedToolTest = "dispatch_allows_saved_tool_test"
+    case originalRecallOffer = "original_recall_offer"
     case displayName = "display_name"
     case researchStage = "research_stage"
     case executionStartedAtMillis = "execution_started_at_millis"
@@ -1648,6 +1650,7 @@ struct AgentTeamMemberSnapshot: Codable, Equatable {
       executionStartedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .executionStartedAtMillis)
     )
     dispatchDependencyMemberIds = try container.decodeIfPresent([String].self, forKey: .dispatchDependencyMemberIds)
+    originalRecallOffer = try container.decodeIfPresent(AgentScopedMemberRecall.Offer.self, forKey: .originalRecallOffer)
     dispatchResourceObservation = try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .dispatchResourceObservation)
     dispatchPreparationFailure = try container.decodeIfPresent(AgentCollaborationPromptBudget.Failure.self, forKey: .dispatchPreparationFailure)
     recruitmentTemplateID = try container.decodeIfPresent(UUID.self, forKey: .recruitmentTemplateID)

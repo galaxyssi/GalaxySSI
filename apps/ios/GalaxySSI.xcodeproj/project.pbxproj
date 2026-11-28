@@ -10,6 +10,8 @@
     F30050000000000000000001 /* GalaxySSIMemory in Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; };
     F30050000000000000000002 /* GalaxySSIMemory in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F30050000000000000000003 /* GalaxySSIMemory.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy,); }; };
     C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */; };
+    C46960000000000000000011 /* AgentScopedMemberRecall.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46960000000000000000012 /* AgentScopedMemberRecall.swift */; };
+    C46960000000000000000013 /* AgentScopedMemberRecallTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46960000000000000000014 /* AgentScopedMemberRecallTests.swift */; };
     A10000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift */; };
     A10000000000000000003E3B /* AgentConnectorModelFailureEvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000003E3B /* AgentConnectorModelFailureEvidenceTests.swift */; };
     C42790000000000000000001 /* AgentConversationScheduleProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */; };
@@ -2457,6 +2459,8 @@
 /* Begin PBXFileReference section */
     F30050000000000000000003 /* GalaxySSIMemory.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = GalaxySSIMemory.framework; sourceTree = BUILT_PRODUCTS_DIR; };
     C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSConnectorDispatch.swift; sourceTree = "<group>"; };
+    C46960000000000000000012 /* AgentScopedMemberRecall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentScopedMemberRecall.swift; sourceTree = "<group>"; };
+    C46960000000000000000014 /* AgentScopedMemberRecallTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentScopedMemberRecallTests.swift; sourceTree = "<group>"; };
     A20000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModelFailureEvidence.swift; sourceTree = "<group>"; };
     A20000000000000000003E3B /* AgentConnectorModelFailureEvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModelFailureEvidenceTests.swift; sourceTree = "<group>"; };
     C42790000000000000000002 /* AgentConversationScheduleProvenance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationScheduleProvenance.swift; sourceTree = "<group>"; };
@@ -5971,6 +5975,7 @@
         A20000000000000000000462 /* AgentIOSUserNotificationPublisher.swift */,
         A20000000000000000000463 /* AgentIOSNativeActionExecutor.swift */,
         C31190000000000000000002 /* AgentIOSConnectorDispatch.swift */,
+        C46960000000000000000012 /* AgentScopedMemberRecall.swift */,
         A20000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift */,
         A2000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift */,
         A2000000000000000000B002 /* AgentIOSComposerInputBridge.swift */,
@@ -7063,6 +7068,7 @@
         B20000000000000000000483 /* AgentNoReplyReasonTests.swift */,
         A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
+        C46960000000000000000014 /* AgentScopedMemberRecallTests.swift */,
         A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */,
         A20000000000000000000418 /* AgentSessionMemoryBudgetTests.swift */,
         A20000000000000000000420 /* AgentMemoryPssTelemetryTests.swift */,
@@ -8413,6 +8419,7 @@
         A10000000000000000000462 /* AgentIOSUserNotificationPublisher.swift in Sources */,
         A10000000000000000000463 /* AgentIOSNativeActionExecutor.swift in Sources */,
         C31190000000000000000001 /* AgentIOSConnectorDispatch.swift in Sources */,
+        C46960000000000000000011 /* AgentScopedMemberRecall.swift in Sources */,
         A10000000000000000003E3A /* AgentConnectorModelFailureEvidence.swift in Sources */,
         A1000000000000000000B001 /* AgentIOSWebKnowledgeImporter.swift in Sources */,
         A1000000000000000000B002 /* AgentIOSComposerInputBridge.swift in Sources */,
@@ -9646,6 +9653,7 @@
         B10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */,
         A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
+        C46960000000000000000013 /* AgentScopedMemberRecallTests.swift in Sources */,
         A10000000000000000000416 /* AgentLargeOutputPolicyTests.swift in Sources */,
         A10000000000000000000418 /* AgentSessionMemoryBudgetTests.swift in Sources */,
         A10000000000000000000420 /* AgentMemoryPssTelemetryTests.swift in Sources */,

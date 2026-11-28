@@ -465,6 +465,18 @@ final class GalaxySSISignalEngine {
     }
   }
 
+  func makeScopedMemberRecallResultWire(_ request: MqttSignalSendRequest) throws -> Data {
+    guard journal != nil, request.traffic == .control, request.attachmentDependencies.isEmpty,
+      request.attachmentTransferID.isEmpty, request.sourceMessageID.isEmpty,
+      request.identity.local == Self.sha256(store.identityKeyPair.publicKey.serialize()),
+      request.payload.count <= 131_072,
+      AgentScopedMemberRecall.acceptsResponse(try request.applicationPayload()) else { throw MqttRouteError.invalidPayload }
+    return try store.transaction { token in
+      guard token != nil else { throw MqttChunkStorageError.databaseFailure }
+      return Data(try outgoingWire(request, now: Date()).utf8)
+    }
+  }
+
   // A peer replay can regenerate this receipt without putting it in the business outbox.
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
                              remoteName: String, peerChat: Bool = false) throws -> [String: Any]? {
@@ -685,6 +697,7 @@ final class GalaxySSISignalEngine {
   func makeRecoveryQueryWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makePrivateHealthReportWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makePairingRevocationWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
+  func makeScopedMemberRecallResultWire(_ request: MqttSignalSendRequest) throws -> Data { throw MqttRouteError.invalidPayload }
   func makeStoredReceiptWire(identity: MqttBusinessIdentity, messageID: String, wireHash: String,
                              remoteName: String, peerChat: Bool = false) throws -> [String: Any]? { throw MqttRouteError.invalidPayload }
   func encryptAndEnqueue(_ request: MqttSignalSendRequest, now: Date = Date()) throws -> MqttBusinessOutbox.Entry { throw MqttRouteError.invalidPayload }

@@ -28,6 +28,7 @@ struct AgentOutboundTeamContext: Equatable {
   var sourceMessageId: String
   var executionPolicyPrompt: String
   var isManagedCollaboration: Bool
+  var originalRecallOffer: AgentScopedMemberRecall.Offer?
 
   init(
     teamId: String,
@@ -36,7 +37,8 @@ struct AgentOutboundTeamContext: Equatable {
     member: AgentTeamMember,
     sourceMessageId: String,
     executionPolicyPrompt: String = "",
-    isManagedCollaboration: Bool = false
+    isManagedCollaboration: Bool = false,
+    originalRecallOffer: AgentScopedMemberRecall.Offer? = nil
   ) {
     self.teamId = teamId
     self.supervisorRunId = supervisorRunId
@@ -45,6 +47,7 @@ struct AgentOutboundTeamContext: Equatable {
     self.sourceMessageId = sourceMessageId
     self.executionPolicyPrompt = AgentExecutionPolicyPrompt.bounded(executionPolicyPrompt)
     self.isManagedCollaboration = isManagedCollaboration
+    self.originalRecallOffer = originalRecallOffer
   }
 
   var runId: String {

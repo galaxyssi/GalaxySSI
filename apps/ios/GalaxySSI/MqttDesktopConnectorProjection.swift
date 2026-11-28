@@ -9,17 +9,23 @@ struct MqttDesktopConnectorProjection {
     var maySend = true
     var managedOwnerRunID: String? = nil
     var codexReplay: AgentDesktopReplyRecoveryRecord? = nil
+    var originalRecallOffer: AgentScopedMemberRecall.Offer? = nil
 
     var projectsAttachmentToTranscript: Bool { team?.deliveryMode != .observe }
 
     func matches(_ payload: [String: Any]) -> Bool {
       if let codexReplay { return AgentJournalCodexReplayPolicy.matchesRequest(payload, record: codexReplay, source: message) }
+      if payload[AgentScopedMemberRecall.flag] != nil {
+        guard let originalRecallOffer, originalRecallOffer.matches(payload) else { return false }
+      }
+      if originalRecallOffer != nil && team == nil { return false }
       guard let team else { return payload["agent_team_message"] as? Bool != true }
       guard let teamID else { return false }
       let run = team.deliveryMode == .respond ? team.supervisorRunId :
         AgentControlPlaneActionExecutor.stableRunId(conversationId: teamID, turnId: team.supervisorRunId,
           actionId: "agent-team-member", agentId: team.memberId)
-      return payload["agent_team_message"] as? Bool == true && payload.string("agent_instance_id") == team.memberId &&
+      return ((originalRecallOffer != nil && AgentScopedMemberRecall.trueFlag(payload[AgentScopedMemberRecall.flag])) ||
+        payload["agent_team_message"] as? Bool == true) && payload.string("agent_instance_id") == team.memberId &&
         payload.string("team_id") == teamID && payload.string("delivery_mode") == team.deliveryMode.rawValue &&
         payload.string("run_id") == run
     }
@@ -43,6 +49,7 @@ struct MqttDesktopConnectorProjection {
   var resolveCodexReplayOwner: ((String, GalaxySSIContact, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> TaskOwner?)? = nil
   var receiveAnswerPreview: (([String: Any], String, String) -> Void)? = nil
   var recordManagedTransportAccepted: ((MqttDeliveryCompletions.Event, AgentTaskIdentity, MqttPeerChatProjection.Destination) throws -> Void)? = nil
+  var receiveScopedMemberRecall: (([String: Any], MqttPeerChatProjection.Destination) async throws -> Void)? = nil
 
   static func handles(_ payload: [String: Any]) -> Bool {
     payload["peer_chat"] as? Bool != true &&

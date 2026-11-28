@@ -129,6 +129,7 @@ final class MessageCoordinator: ObservableObject {
   private var desktopEvidenceWrapRequested = false
   private var yieldedDesktopEvidenceJobs: [(job: AgentDesktopToolEvidenceWire.ImportJob, since: Int64)] = []
   private var desktopCollaborationResponseReplay = AgentDesktopCollaborationResponseReplay()
+  private var scopedMemberAuthorizationReplay = AgentScopedMemberRecall.AuthorizationReplay()
   private var desktopCollaborationCiphertextReplay = AgentDesktopCollaborationCiphertextReplay()
   private lazy var desktopReplyRecoveryOwner = store.profile.identityFingerprint
   private var journalBackedRecoveryCursor = ""
@@ -3164,7 +3165,8 @@ final class MessageCoordinator: ObservableObject {
     guard let binding, try checkedTeamObserverRecovery(binding) != nil else { return nil }
     return .init(message: message, team: context.owner, teamID: context.team.teamId,
       maySend: (!context.team.state.isTerminal || context.team.state == .interrupted) &&
-        (!context.member.status.isTerminal || context.member.status == .interrupted))
+        (!context.member.status.isTerminal || context.member.status == .interrupted),
+      originalRecallOffer: context.member.originalRecallOffer)
   }
 
   func recordJournalTeamAttachmentFailure(_ owner: AgentTeamReplyOwner) throws {
@@ -3288,8 +3290,13 @@ final class MessageCoordinator: ObservableObject {
     return currentTeamObserverRecovery(binding)?.owner.accepts(AgentTeamReplyObservation(payload: item)) == true
   }
 
-  private func handleDesktopCollaborationExchange(_ payload: [String: Any], link: ServerLink) async {
-    if await handleDesktopPeerWorkRecall(payload, link: link) { return }
+  private func handleDesktopCollaborationExchange(_ payload: [String: Any], link: ServerLink,
+      memberAdmission: AgentScopedMemberRecall.Offer? = nil) async {
+    if memberAdmission == nil, AgentScopedMemberRecall.handles(payload) {
+      await handleScopedMemberRecall(payload, link: link)
+      return
+    }
+    if memberAdmission == nil, await handleDesktopPeerWorkRecall(payload, link: link) { return }
     let route = AgentDesktopCollaborationArchiveRecall.self
     let publication = AgentDesktopCollaborationPublicationWire.self
     let toolTest = AgentCollaborationSavedToolExecution.self
@@ -3350,7 +3357,7 @@ final class MessageCoordinator: ObservableObject {
     }
     guard let context = try? history.recoveryContext(source: source,
             conversation: identity.conversationId, turn: identity.turnId, contact: contact, requireResearchAccess: true),
-          context.owner.permitsRecall(generation: generation),
+          memberAdmission != nil || context.owner.permitsRecall(generation: generation),
           context.owner.deliveryMode == .observe || context.owner.deliveryMode == .respond,
           !publishing || publication.permits(phase: phase, observer: context.owner.deliveryMode == .observe),
           context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
@@ -3364,6 +3371,10 @@ final class MessageCoordinator: ObservableObject {
           !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
           parent.phase == .executing || parent.phase == .waitingResponse
     else { return }
+    if let memberAdmission {
+      guard let request = AgentScopedMemberRecall.Request(payload, now: now),
+        scopedMemberRecallProbe(request, link: link)?.offer == memberAdmission else { return }
+    }
     let coordinatorUpdates = !publishing && input["mode"] == .string(AgentCollaborationCoordinatorUpdates.mode)
     let canReadCoordinatorOffers = roster.coordinatorId == person.id && !parent.blocked &&
       !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId)
@@ -3397,7 +3408,10 @@ final class MessageCoordinator: ObservableObject {
       "source": .string(scope.sourceId), "generation": .int(generation),
       "contract": .string(contract), "arguments": .object(input)
     ]
-    let fingerprint = AgentMcpJSONCodec.sha256(assignment.merging([
+    let memberBoundAssignment = assignment.merging(memberAdmission == nil ? [:] : [
+      AgentScopedMemberRecall.flag: .bool(true), "original_assignment": .string(memberAdmission?.digest ?? "")
+    ]) { current, _ in current }
+    let fingerprint = AgentMcpJSONCodec.sha256(memberBoundAssignment.merging([
       "expires_at": .int(expiry), "phase": .string(phase), "delivery": delivery.map(AgentMcpJSONValue.object) ?? .null
     ]) { current, _ in current })
     let textArtifactRead = !publishing && !testing && phase == "read"
@@ -3481,9 +3495,12 @@ final class MessageCoordinator: ObservableObject {
     }
     if cached == nil, !publishing, input["mode"] == .string("evidence"),
        let page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
-         binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: now,
+         binding: AgentMcpJSONCodec.sha256(memberBoundAssignment), expiresAt: expiry, now: now,
          replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
-           try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage,
+           if let memberAdmission, !scopedMemberRecallIsCurrent(memberAdmission, payload: payload, link: link) {
+             throw AgentTeamHistoryDatabase.Failure.stale
+           }
+           return try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage,
              allowCoordinatorOffers: canReadCoordinatorOffers)
          }) {
       result = page
@@ -3501,13 +3518,16 @@ final class MessageCoordinator: ObservableObject {
            $0.routes.clientRouteId == identity.clientRouteId }),
          let current = try? history.recoveryContext(source: source, conversation: scope.conversationId,
            turn: scope.turnId, contact: contact, requireResearchAccess: true),
-         current.owner.permitsRecall(generation: generation),
+         memberAdmission.map({ scopedMemberRecallIsCurrent($0, payload: payload, link: link) }) ?? current.owner.permitsRecall(generation: generation),
          liveEvidenceReader(scope, profile: profile) != nil {
         if input["mode"] == .string("desktop_evidence"),
            var page = try? AgentDesktopCollaborationEvidenceDelivery.exchange(input: input, confirmation: delivery,
-             binding: AgentMcpJSONCodec.sha256(assignment), expiresAt: expiry, now: AgentControlPlaneClock.nowMillis(),
+             binding: AgentMcpJSONCodec.sha256(memberBoundAssignment), expiresAt: expiry, now: AgentControlPlaneClock.nowMillis(),
              replay: &desktopCollaborationResponseReplay, read: { recordCoverage in
-               try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
+               if let memberAdmission, !scopedMemberRecallIsCurrent(memberAdmission, payload: payload, link: link) {
+                 throw AgentTeamHistoryDatabase.Failure.stale
+               }
+               return try history.recallCollaborationOriginal(input, scope: scope, recordEvidenceCoverage: recordCoverage)
              }) {
           if let sync { page["live_sync"] = .string(sync) }
           result = page
@@ -3536,11 +3556,155 @@ final class MessageCoordinator: ObservableObject {
     response["phase"] = .string(phase)
     response["execution_generation"] = .int(generation)
     response["result"] = .object(result)
+    if let memberAdmission {
+      guard let request = AgentScopedMemberRecall.Request(payload, now: AgentControlPlaneClock.nowMillis()),
+        scopedMemberRecallProbe(request, link: link)?.offer == memberAdmission else { return }
+      await publishScopedMemberRecallResponse(response, request: request, link: link, expected: memberAdmission)
+      return
+    }
     guard AgentControlPlaneClock.nowMillis() < expiry,
           executionScope.map({ savedToolTestIsAuthorized($0, contact: contact, link: link) }) ?? true,
           let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
           let wire = try? linkWirePayload(object, link: link) else { return }
     _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
+  }
+
+  private func makeScopedMemberRecallOffer(_ member: AgentTeamMember, team: AgentTeamExecutionSnapshot,
+      source: String, roster: AgentCollaborationRoster) -> AgentScopedMemberRecall.Offer? {
+    guard roster.workflow == .research, UUID(uuidString: source) != nil,
+      ["EXPLORE", "CHALLENGE", "REVISE", "RECHECK", "DELIVER"].contains(member.context["_galaxyssi_research_stage"] ?? ""),
+      let person = AgentTeamPlanCompiler.rosterMember(for: member, in: roster),
+      let contact = store.contact(id: member.agentId), contact.isCommunicable, contact.deliveryMode == .pcConnector,
+      contact.connectorAgentId == "codex", !contact.identityFingerprint.isBlank,
+      let link = store.serverLinks.first(where: { $0.paired && $0.desktopId == contact.desktopId }),
+      contact.identityFingerprint.caseInsensitiveCompare(link.desktopFingerprint) == .orderedSame,
+      !link.routes.clientRouteId.isBlank,
+      let effort = AgentModelReasoningEffort(rawValue: person.reasoningEffort ?? "auto"),
+      AgentCollaborationReasoningSelection.rosterInvocation(model: person.modelId, effort: person.reasoningEffort,
+        adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) != nil else { return nil }
+    return .init(profile: store.profile.identityFingerprint, desktop: link.desktopId, fingerprint: link.desktopFingerprint,
+      route: link.routes.clientRouteId, contact: contact.id,
+      transportBinding: GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
+      scope: .init(runId: team.supervisorRunId, conversationId: team.conversationId, turnId: team.taskId,
+        memberId: member.memberId, sourceId: source), teamID: team.teamId, personID: person.id,
+      primaryMemberID: team.primaryMemberId, model: person.modelId, effort: effort, deliveryMode: member.deliveryMode)
+  }
+
+  private func scopedMemberRecallProbe(_ request: AgentScopedMemberRecall.Request, link: ServerLink,
+      allowNext: Bool = false) -> AgentScopedMemberRecall.Probe? {
+    guard UIApplication.shared.isProtectedDataAvailable, store.canReadAgentTranscript,
+      AgentControlPlaneClock.nowMillis() < request.expiry, link.paired,
+      request.identity.clientRouteId == link.routes.clientRouteId,
+      taskIdentityStore.identity(contactId: request.contact, sourceMessageId: request.source) == request.identity,
+      taskIdentityStore.matchesRegistered(payload: request.payload),
+      store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+        $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes }),
+      let contact = store.contact(id: request.contact), contact.isCommunicable, contact.deliveryMode == .pcConnector,
+      contact.connectorAgentId == "codex", contact.desktopId == link.desktopId,
+      !healthDisclosureStore.blockedDestinationIds().contains(contact.id),
+      !store.agentSafetySettings.executionPaused, store.agentSafetySettings.connectorCallsAllowed,
+      store.agentTaskBudget.profile != .privateMode,
+      let context = try? AgentTeamExecutionHistoryStore.shared.recoveryContext(source: request.source,
+        conversation: request.identity.conversationId, turn: request.identity.turnId, contact: request.contact,
+        requireResearchAccess: true),
+      let offer = context.member.originalRecallOffer, offer.profile == store.profile.identityFingerprint,
+      offer.desktop == link.desktopId, offer.fingerprint == link.desktopFingerprint,
+      offer.route == link.routes.clientRouteId, offer.contact == request.contact,
+      offer.transportBinding == GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes),
+      offer.scope.runId == context.owner.supervisorRunId, offer.scope.memberId == context.member.memberId,
+      offer.scope.sourceId == request.source, offer.scope.conversationId == request.identity.conversationId,
+      offer.scope.turnId == request.identity.turnId, offer.teamID == context.team.teamId,
+      offer.primaryMemberID == context.team.primaryMemberId, offer.deliveryMode == context.owner.deliveryMode,
+      context.team.state == .running, !context.member.status.isTerminal,
+      context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
+      context.owner.closedRecallGeneration != request.generation,
+      let session = store.agentSession(id: offer.scope.conversationId), session.status == .active,
+      !session.privateMode, !session.trackingPaused, session.globalTopicKey.isBlank,
+      session.mergedIntoConversationId.isBlank, let roster = session.collaborationRoster, roster.workflow == .research,
+      let person = AgentCollaborationMemberIdentity(nodeID: offer.scope.memberId)?.member(in: roster),
+      person.id == offer.personID, person.resourceId == offer.contact, person.modelId == offer.model,
+      (person.reasoningEffort ?? "auto") == offer.effort.rawValue,
+      AgentCollaborationReasoningSelection.rosterInvocation(model: person.modelId, effort: person.reasoningEffort,
+        adapter: contact.connectorAdapterName, profile: contact.connectorInvocationProfile) != nil,
+      let parent = store.agentTask(id: context.team.taskId), parent.sessionId == session.id,
+      !parent.blocked, !PhoneExecutionAuthority.isCancelled(taskId: parent.taskId),
+      parent.phase == .executing || parent.phase == .waitingResponse else { return nil }
+    let run = AgentManagedBrowserContinuationStore.RunScope(profileID: offer.profile, team: context.team,
+      hostContextDigest: managedBrowserContextDigest(context.team))
+    guard (try? managedBrowserContinuations.control(scope: run)) == .run else { return nil }
+    let observed = max(context.owner.observedGeneration ?? 0, context.owner.recallEventGeneration ?? 0)
+    let generation = AgentScopedMemberRecall.generation(observed: observed == 0 ? nil : observed, requested: request.generation)
+    guard generation == .current || (allowNext && request.phase == "authorize" && generation == .next) else { return nil }
+    return .init(offer: offer, generation: generation)
+  }
+
+  private func scopedMemberRecallIsCurrent(_ offer: AgentScopedMemberRecall.Offer,
+      payload: [String: Any], link: ServerLink) -> Bool {
+    guard let request = AgentScopedMemberRecall.Request(payload, now: AgentControlPlaneClock.nowMillis()) else { return false }
+    return scopedMemberRecallProbe(request, link: link)?.offer == offer
+  }
+
+  private func handleScopedMemberRecall(_ payload: [String: Any], link: ServerLink) async {
+    guard let request = AgentScopedMemberRecall.Request(payload, now: AgentControlPlaneClock.nowMillis()),
+      !GalaxySSITransportPrivacyPolicy.isLocalOnly(payload) else { return }
+    if request.phase == "authorize" {
+      // Authorization never invokes any of the data-phase readers or model/effect tools.
+      var replay = scopedMemberAuthorizationReplay
+      let result = AgentScopedMemberRecall.authorize(request, replay: &replay, now: AgentControlPlaneClock.nowMillis()) {
+        scopedMemberRecallProbe(request, link: link, allowNext: true)
+      }
+      scopedMemberAuthorizationReplay = replay
+      let expected = result["status"] == .string("unavailable") ? nil :
+        scopedMemberRecallProbe(request, link: link, allowNext: true)?.offer
+      await publishScopedMemberRecallResponse(scopedMemberRecallResponse(request, result: result),
+        request: request, link: link, expected: expected)
+      return
+    }
+    guard let initial = scopedMemberRecallProbe(request, link: link),
+      scopedMemberRecallProbe(request, link: link) == initial else { return }
+    if request.arguments["mode"] == .string("evidence") {
+      await handleDesktopNativeEvidenceRecall(payload, link: link, memberAdmission: initial.offer)
+    } else {
+      await handleDesktopCollaborationExchange(payload, link: link, memberAdmission: initial.offer)
+    }
+  }
+
+  private func scopedMemberRecallResponse(_ request: AgentScopedMemberRecall.Request,
+      result: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    ["type": .string(AgentDesktopCollaborationArchiveRecall.responseType),
+      "contract": .string(AgentDesktopCollaborationArchiveRecall.contract), "request_id": .string(request.nonce),
+      "phase": .string(request.phase), "execution_generation": .int(request.generation),
+      "client_route_id": .string(request.identity.clientRouteId), "conversation_id": .string(request.identity.conversationId),
+      "task_id": .string(request.identity.taskId), "turn_id": .string(request.identity.turnId),
+      "source_message_id": .string(request.source), "contact_id": .string(request.contact),
+      "agent_id": .string("codex"), "result": .object(result)]
+  }
+
+  private func publishScopedMemberRecallResponse(_ response: AgentMcpJSONObject,
+      request: AgentScopedMemberRecall.Request, link: ServerLink, expected: AgentScopedMemberRecall.Offer?) async {
+    let profile = store.profile.identityFingerprint
+    func valid() -> Bool {
+      guard !Task.isCancelled, store.profile.identityFingerprint == profile,
+        request.identity.clientRouteId == link.routes.clientRouteId,
+        AgentScopedMemberRecall.Request(request.payload, now: AgentControlPlaneClock.nowMillis()) != nil,
+        taskIdentityStore.matchesRegistered(payload: request.payload),
+        store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
+          $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes }) else { return false }
+      if let expected {
+        guard let current = scopedMemberRecallProbe(request, link: link, allowNext: request.phase == "authorize"),
+          current.offer == expected else { return false }
+        if response["result"]?.objectValue?["status"] == .string("authorized"), current.generation != .current { return false }
+        if response["result"]?.objectValue?["status"] == .string("generation_not_ready"), current.generation != .next { return false }
+      } else if response["result"] != .object(AgentScopedMemberRecall.unavailable) { return false }
+      return true
+    }
+    guard valid(), let data = try? JSONEncoder().encode(response), data.count <= 131_072,
+      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    if let runtime = journalMqttRuntime {
+      _ = try? await runtime.publishScopedMemberRecallResult(payload, link: link, valid: valid)
+    } else if usesLegacyMqtt, let wire = try? linkWirePayload(payload, link: link), valid() {
+      _ = await mqttClient.publishTransientControl(topic: link.routes.upTopic, payload: wire.wireData, link: link)
+    }
   }
 
   private func handleDesktopPeerWorkRecall(_ payload: [String: Any], link: ServerLink) async -> Bool {
@@ -3781,7 +3945,12 @@ final class MessageCoordinator: ObservableObject {
     teamObserverDiscoveryCursor = page.next ?? ""
   }
 
-  private func handleDesktopNativeEvidenceRecall(_ payload: [String: Any], link: ServerLink) async {
+  private func handleDesktopNativeEvidenceRecall(_ payload: [String: Any], link: ServerLink,
+      memberAdmission: AgentScopedMemberRecall.Offer? = nil) async {
+    if memberAdmission == nil, AgentScopedMemberRecall.handles(payload) {
+      await handleScopedMemberRecall(payload, link: link)
+      return
+    }
     let wireContract = AgentDesktopCollaborationArchiveRecall.self
     let now = AgentControlPlaneClock.nowMillis()
     let phase = payload.string("phase")
@@ -3807,6 +3976,10 @@ final class MessageCoordinator: ObservableObject {
     let history = AgentTeamExecutionHistoryStore.shared
     let profile = store.profile.identityFingerprint
     func authorizedScope() -> AgentCollaborationToolEvidenceScope? {
+      if let memberAdmission {
+        guard let request = AgentScopedMemberRecall.Request(payload, now: AgentControlPlaneClock.nowMillis()),
+          scopedMemberRecallProbe(request, link: link)?.offer == memberAdmission else { return nil }
+      }
       guard store.profile.identityFingerprint == profile,
             store.serverLinks.contains(where: { $0.paired && $0.desktopId == link.desktopId &&
               $0.desktopFingerprint == link.desktopFingerprint && $0.routes == link.routes }),
@@ -3816,7 +3989,7 @@ final class MessageCoordinator: ObservableObject {
             taskIdentityStore.matchesRegistered(payload: payload),
             let context = try? history.recoveryContext(source: source, conversation: identity.conversationId,
               turn: identity.turnId, contact: contact, requireResearchAccess: true),
-            context.owner.permitsRecall(generation: generation), context.owner.deliveryMode != .ignore,
+            memberAdmission != nil || context.owner.permitsRecall(generation: generation), context.owner.deliveryMode != .ignore,
             context.team.state == .running, !context.member.status.isTerminal,
             context.member.dispatchCheckpoint == .dispatching || context.member.dispatchCheckpoint == .accepted,
             let session = store.agentSession(id: identity.conversationId), session.id == identity.conversationId,
@@ -3833,6 +4006,7 @@ final class MessageCoordinator: ObservableObject {
     guard let scope = authorizedScope(), desktopCollaborationResponseReplay.begin(desktopId: link.desktopId) else { return }
     defer { desktopCollaborationResponseReplay.end(desktopId: link.desktopId) }
     let binding = AgentMcpJSONCodec.sha256(["assignment": .string(scope.ownershipDigest), "profile": .string(profile),
+      "scoped_member_assignment": memberAdmission.map { .string($0.digest) } ?? .null,
       "desktop": .string(link.desktopId), "pair": .string(link.desktopFingerprint),
       "route": .string(identity.clientRouteId), "route_key": .string(AgentDesktopNativeEvidenceDelivery.digest(link.routes.linkSecret)),
       "contact": .string(contact), "generation": .int(generation)])
@@ -3845,6 +4019,7 @@ final class MessageCoordinator: ObservableObject {
     case .response(let saved): result = saved
     case .missing:
       if phase == "read",
+         authorizedScope() == scope,
          var page = try? history.recallCollaborationOriginal(input, scope: scope, evidenceRead: .desktopPreview),
          let content = page["content"]?.strictStringValue,
          let delivery = desktopNativeEvidenceDelivery.issue(content: content, binding: binding, input: input, now: now) {
@@ -3853,6 +4028,7 @@ final class MessageCoordinator: ObservableObject {
         page["status"] = .string("returned")
         result = page
       } else if let confirmation,
+                authorizedScope() == scope,
                 let hash = desktopNativeEvidenceDelivery.confirm(confirmation, binding: binding, input: input, now: now),
                 let page = try? history.recallCollaborationOriginal(input, scope: scope, evidenceRead: .desktopConfirm(contentHash: hash)),
                 let coverage = page["host_read_coverage"] {
@@ -3869,6 +4045,12 @@ final class MessageCoordinator: ObservableObject {
       "task_id": .string(identity.taskId), "turn_id": .string(identity.turnId), "source_message_id": .string(source),
       "contact_id": .string(contact), "agent_id": .string("codex"), "result": .object(result)
     ]
+    if let memberAdmission {
+      guard let request = AgentScopedMemberRecall.Request(payload, now: AgentControlPlaneClock.nowMillis()),
+        authorizedScope() == scope else { return }
+      await publishScopedMemberRecallResponse(response, request: request, link: link, expected: memberAdmission)
+      return
+    }
     guard AgentControlPlaneClock.nowMillis() < expiry, authorizedScope() == scope,
           let object = try? JSONSerialization.jsonObject(with: Data(AgentMcpJSONCodec.stringify(response).utf8)) as? [String: Any],
           let sealed = try? linkWirePayload(object, link: link) else { return }
@@ -9890,6 +10072,10 @@ final class MessageCoordinator: ObservableObject {
           savedTeam.members[index].recruitmentTemplateID = roster?.members.first(where: { $0.id == id })?.recruitmentTemplateID
         }
         savedTeam.members[index].dispatchAllowsSavedToolTest = executionMode == .autoComplete && !outgoing.readOnlyAnalysis
+        if followupContext == nil, executionMode == .autoComplete, let roster {
+          savedTeam.members[index].originalRecallOffer = makeScopedMemberRecallOffer(member, team: savedTeam,
+            source: savedTeam.members[index].sourceMessageId, roster: roster)
+        }
       }
     }
     let saveTeamHistory = store.agentSession(id: outgoing.conversationId).map {
@@ -9904,6 +10090,13 @@ final class MessageCoordinator: ObservableObject {
     } else if (isCollaboration && !saveTeamHistory) ||
         (saveTeamHistory && !AgentTeamExecutionHistoryStore.shared.upsert(savedTeam)) {
       throw GalaxySSIError.invalidPayload("The original Agent team identity could not be saved")
+    }
+    if recovery == nil, savedTeam.members.contains(where: { $0.originalRecallOffer != nil }) {
+      let scope = AgentManagedBrowserContinuationStore.RunScope(profileID: store.profile.identityFingerprint, team: savedTeam,
+        hostContextDigest: managedBrowserContextDigest(savedTeam))
+      if (try? managedBrowserContinuations.control(scope: scope)) == nil {
+        _ = try? managedBrowserContinuations.writeControl(.run, scope: scope)
+      }
     }
     agentHomeDisplayContactIdsByTurnId[homeTurnId] = outgoing.contactId
     var primaryPublished = false
@@ -10013,7 +10206,8 @@ final class MessageCoordinator: ObservableObject {
         member: member,
         sourceMessageId: sourceMessageId,
         executionPolicyPrompt: requestText,
-        isManagedCollaboration: isCollaboration
+        isManagedCollaboration: isCollaboration,
+        originalRecallOffer: savedTeam.members.first(where: { $0.memberId == member.memberId })?.originalRecallOffer
       )
       let availableObservations = isCollaboration
         ? observations.filter { member.dependsOnAgentIds.contains($0.0) }
@@ -18122,6 +18316,11 @@ final class MessageCoordinator: ObservableObject {
         }
       }
     }
+    if let offer = teamContext?.originalRecallOffer, teamContext?.isManagedCollaboration == true,
+      offer.profile == store.profile.identityFingerprint, offer.desktop == link.desktopId,
+      offer.transportBinding == GalaxySSITransportReceiptJournal.binding(peerId: link.desktopId, routes: link.routes) {
+      _ = offer.encode(&payload)
+    }
     if !peerChat, let key = store.turnReceiptKey(conversation: conversationId, turn: turnId) {
       let invocation = payload["agent_invocation"] as? [String: Any] ?? [:]
       store.turnReceiptStore.outbound(key, task: taskIdentity.taskId, model: invocation.string("model_id"),
@@ -18907,6 +19106,13 @@ final class MessageCoordinator: ObservableObject {
       }, recordManagedTransportAccepted: { [weak self] event, identity, target in
         guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
         try self.recordNativeConnectorTransportAccepted(event, identity: identity, target: target)
+      }, receiveScopedMemberRecall: { [weak self] payload, target in
+        guard let self else { throw MqttDeliveryDispatch.Failure.unavailable }
+        let links = self.store.serverLinks.filter {
+          $0.paired && $0.desktopId == target.peer.remoteSignalName && $0.routes == target.routes
+        }
+        guard target.desktop, links.count == 1, let link = links.first else { throw MqttRouteError.identityChanged }
+        await self.handleScopedMemberRecall(payload, link: link)
       })
     return try MqttBusinessTransportRuntime(peerChatStore: store, localFingerprint: signalEngine.identity.fingerprint,
       journal: journal, routeState: routeState, pool: pool, incomingAttachments: incomingAttachmentTransferStore,
