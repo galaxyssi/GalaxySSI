@@ -349,9 +349,10 @@ struct GalaxySSIHealthBackupView: View {
   private func restore() {
     guard scene == .active, acknowledged, let restoreInput, let restorePreview else { return }
     do {
+      let previousReceipts = try records.load().restoreReceipts ?? []
       try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
                                                 originals: originals, replacing: replacements)
-      let receipt = (try? records.load())?.restoreHistory?.first
+      let receipt = (try? records.load())?.restoreHistory?.first { !previousReceipts.contains($0.id) }
       reset()
       latestRestoreReceipt = receipt
       restored = true
