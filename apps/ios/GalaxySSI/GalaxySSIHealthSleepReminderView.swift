@@ -99,7 +99,7 @@ struct GalaxySSIHealthSleepReminderView: View {
   @State private var ledger = GalaxySSIHealthSleepReminder.Ledger()
   @State private var allowed = false
   @State private var failed = false
-  @SceneStorage("galaxyssi.health.sleep.latest-evidence-episode") private var latestEvidenceEpisode = ""
+  @SceneStorage("galaxyssi.health.sleep.initial-evidence-episode") private var initialEvidenceEpisode = ""
   @State private var evidenceRoute: EvidenceRoute?
 
   private struct EvidenceRoute: Identifiable {
@@ -158,10 +158,10 @@ struct GalaxySSIHealthSleepReminderView: View {
     List {
       if scene == .active && allowed, let episode = ledger.episodes.first(where: { $0.id == id }) {
         let hasLatest = episode.first != episode.latest
-        let showLatest = hasLatest && latestEvidenceEpisode == id.uuidString
+        let showLatest = hasLatest && initialEvidenceEpisode != id.uuidString
         if hasLatest {
           Picker(t("snapshot", "Evidence version"), selection: Binding(get: { showLatest }, set: {
-            latestEvidenceEpisode = $0 ? id.uuidString : ""
+            initialEvidenceEpisode = $0 ? "" : id.uuidString
           })) {
             Text(t("first", "Initial evidence")).tag(false)
             Text(t("latest", "Latest evidence")).tag(true)
