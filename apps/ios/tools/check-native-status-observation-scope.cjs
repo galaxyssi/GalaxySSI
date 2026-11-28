@@ -2,8 +2,12 @@
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), base = '4c7529b9c';
 const app = 'apps/ios/GalaxySSI/';
-const read = file => require('./check-connector-document-input-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const read = file => {
+  let source = fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
+  const deadline = path.join(__dirname, 'check-connector-deadline-checkpoint.cjs');
+  if (fs.existsSync(deadline)) source = require(deadline).retained(file, source);
+  return require('./check-connector-document-input-scope.cjs').retained(file, source);
+};
 const show = (ref, file) => cp.execFileSync('git', ['show', `${ref}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
