@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '6319374fad67af385cde7846e3454fc91157e381';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '0eced2061d62eeef896e6d5080609364d3782a85';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -16,11 +16,20 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retainedServices(s) {
-  if (!s.includes('  private func planningRecoveryIsCurrent(')) return s;
-  const first = '  private func planningRecoveryIsCurrent(', last = '  func resumePendingAgentDelivery() {';
-  const block = section(s, first, last);
-  assert.equal(block, section(show(approved, file), first, last), 'Exact recovery-attempt input/callback ownership only');
-  return once(s, block, section(show(base, file), '  @discardableResult\n  func recoverInterruptedInitialPlanning()', last));
+  if (s.includes('  private func planningRecoveryIsCurrent(')) {
+    const first = '  private func planningRecoveryIsCurrent(', last = '  func resumePendingAgentDelivery() {';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, file), first, last), 'Exact recovery-attempt input/callback ownership only');
+    s = once(s, block, section(show(base, file), '  @discardableResult\n  func recoverInterruptedInitialPlanning()', last));
+  }
+  if (s.includes('    guard let attemptScope = AgentPlanningRecoveryScope(')) {
+    const first = '  @discardableResult\n  @MainActor\n  func replanLocalNativeAction(',
+      last = '  @discardableResult\n  func retryFailedLocalNativeAction(';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, file), first, last), 'Exact explicit replanning attempt/callback ownership only');
+    s = once(s, block, section(show(base, file), first, last));
+  }
+  return s;
 }
 module.exports = {retainedServices};
 if (require.main === module) {
@@ -49,9 +58,10 @@ if (require.main === module) {
   assert.equal(helper, show(approved, helperFile));
   for (const token of ['task.phase == .planning, !task.blocked', 'reference.sessionId == task.sessionId',
     'reference.turnId == task.taskId', 'task.activePlan?.revision == reference.baseRevision',
-    'input.conversation.privateMode == privateMode && !input.conversation.trackingPaused',
+    'input.conversation.privateMode == privateMode && input.conversation.trackingPaused == trackingPaused',
     '!cancelled, profile == self.profile, task == self.task', 'conversation.status == .active',
-    '!conversation.trackingPaused, conversation.mergedIntoConversationId.isBlank',
+    'guard task.phase == .planning, !task.blocked, !conversation.trackingPaused',
+    'conversation.trackingPaused == trackingPaused, conversation.mergedIntoConversationId.isBlank',
     'conversation.sessionRequirement == sessionRequirement', 'source.richOutputJson == self.source.richOutputJson',
     'source.voiceTranscript == self.source.voiceTranscript']) assert(helper.includes(token), token);
   assert(!/FileManager|UserDefaults|URLSession|\.execute\(|\.publish\(|\.claim\(|\.remove\(|grantedPermissions/.test(helper));
@@ -66,14 +76,32 @@ if (require.main === module) {
   for (const mutation of mutations) {
     assert.notEqual(mutation, recovery); assert.throws(() => retainedServices(services.replace(recovery, mutation)), assert.AssertionError);
   }
+  const manual = section(services, '  @discardableResult\n  @MainActor\n  func replanLocalNativeAction(',
+    '  @discardableResult\n  func retryFailedLocalNativeAction(');
+  assert.equal((manual.match(/planningRecoveryIsCurrent\(/g) || []).length, 6);
+  assert.equal((manual.match(/use: \.userReplan/g) || []).length, 2);
+  assert(!recovery.includes('use: .userReplan'), 'Automatic recovery never gains explicit-replan scope');
+  assert(manual.indexOf('self.planningRecoveryIsCurrent(attemptScope)') < manual.indexOf('committedReference = reference'));
+  const noPlan = manual.slice(manual.indexOf('    } else {\n      modelOutcome = await modelPlannedLocalNativeActions('));
+  assert(noPlan.indexOf('await modelPlannedLocalNativeActions(') < noPlan.indexOf('planningRecoveryIsCurrent(attemptScope)'));
+  assert(noPlan.indexOf('planningRecoveryIsCurrent(attemptScope)') < noPlan.indexOf('if case let .recoveryRequired'));
+  const manualMutations = [manual.replace('planningRecoveryIsCurrent(attemptScope) else { return false }', 'true else { return false }'),
+    manual.replace('self.planningRecoveryIsCurrent(attemptScope)', 'true'),
+    manual.replace('self.planningRecoveryIsCurrent(owned), owned.acceptsInput(input)', 'self.planningRecoveryIsCurrent(owned)'),
+    manual.replace('        guard planningRecoveryIsCurrent(callbackScope ?? attemptScope) else { return false }\n', ''),
+    manual.replace('let owned = callbackScope, planningRecoveryIsCurrent(owned), let reference', 'let owned = callbackScope, let reference'),
+    manual.replace('      )\n      guard planningRecoveryIsCurrent(attemptScope) else { return false }\n    }\n    if case', '      )\n    }\n    if case')];
+  for (const mutation of manualMutations) {
+    assert.notEqual(mutation, manual); assert.throws(() => retainedServices(services.replace(manual, mutation)), assert.AssertionError);
+  }
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
-  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 8);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 12);
   assert(!/\p{Script=Han}/u.test(helper + tests));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Two real recovery paths, eight live ownership fences, input privacy, stale error rejection, eight negative mutations and eight authored fixtures checked; no native execution.');
+  console.log('Startup/manual planning ownership, fourteen source mutations, retained automatic versus explicit policy and twelve authored fixtures checked; no native execution.');
 }
