@@ -115,3 +115,11 @@ checks. Other repository validators still require their own audits; passing
 these five checks is not a full repository, native runtime or Android parity
 claim. No app code, platform version, CI policy, IPA, approval or remote merge
 changes are included.
+
+## Isolated File-Read Composition
+
+When #4704's source guard is installed, the shared projection also applies its
+exact inverse for the complete reviewed single-file read entry point. Missing
+guard files leave the source unchanged; unknown edits to that entry point are
+rejected rather than hidden. This adds no file-reading or routing app code to
+this tooling PR and makes no provider-execution claim.

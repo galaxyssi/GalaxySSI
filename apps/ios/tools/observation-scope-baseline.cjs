@@ -14,7 +14,7 @@ function optional(name, method, file, source) {
   return method === 'retained' ? guard[method](file, source) : guard[method](source);
 }
 function normalizePending(file, source) {
-  for (const name of ['check-terminal-result-wake', 'check-connector-deadline-checkpoint', 'check-scoped-member-recall',
+  for (const name of ['check-single-file-auto-binding', 'check-terminal-result-wake', 'check-connector-deadline-checkpoint', 'check-scoped-member-recall',
     'check-native-recovery-query-ownership']) source = optional(name, 'retained', file, source);
   if (file.endsWith('/MqttDesktopConnectorProjection.swift') && source.includes('pinnedDesktop'))
     source = optional('check-pinned-desktop-outbox', 'retained', file, source);
