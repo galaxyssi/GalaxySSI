@@ -222,7 +222,7 @@ enum AgentPhoneNativeToolCatalog {
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
       selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
-      mcpExecutableDefinitions(provider: resolvedMcpProvider) +
+      mcpExecutableDefinitions(provider: resolvedMcpProvider, initialAvailability: AgentMcpNativeTools.uncheckedAvailability) +
       onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
       projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
@@ -439,10 +439,11 @@ enum AgentPhoneNativeToolCatalog {
   }
 
   static func mcpExecutableDefinitions(
-    provider: AgentIOSMcpNativeToolProviding
+    provider: AgentIOSMcpNativeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSMcpNativeToolExecutor(provider: provider)
-    return AgentMcpNativeTools.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentMcpNativeTools.definitions(provider: provider, initialAvailability: initialAvailability).map(executor.executableDefinition)
   }
 
   static func onDeviceRuntimeExecutableDefinitions(
