@@ -2,8 +2,8 @@
 
 iOS follow-up found during the Android #3007 execution/recovery comparison,
 based on main c6bad3465c673dfb2dcecb23b095185c129c7447. This covers the existing
-startup initial-planning/replanning recovery callbacks, explicit user replanning
-and rolling-plan continuation, not every planning entry
+startup initial-planning/replanning recovery callbacks, explicit user replanning,
+rolling-plan continuation and selected-provider initial planning, not every planning entry
 point or the full Android parity backlog.
 
 Both recovery paths formerly checked only phase and pending reference after
@@ -37,7 +37,7 @@ commit source/session/task state. Already-sent model calls are not retracted.
 
 The full task equality is conservative, including task-log changes. Rejected or
 locked/cancelled callbacks do not gain an immediate automatic retry. Existing
-explicit recovery/replanning remains responsible. Other live initial-provider
+explicit recovery/replanning remains responsible. Local-model initial planning
 planning entry points and persisted cross-profile history still need separate
 review; no full recovery, privacy, storage or concurrency acceptance is claimed.
 
@@ -79,7 +79,7 @@ Like the existing live flow, blocked/readback and unchanged tracking-paused
 context can remain in the rolling identity snapshot. Four new fixture methods cover waiting
 identity, invalid external/live states, pending reference/tracking compatibility
 and stale same-phase callbacks, for sixteen authored methods total, not run.
-Live initial-provider callbacks remain separate follow-up work. Already-sent
+Local-model initial callbacks remain separate follow-up work. Already-sent
 model calls, general upserts and immediate retry limitations remain unchanged.
 
 ## Recovery Compatibility
@@ -91,7 +91,24 @@ candidate filter. Replanning retains its original readback/blocked admission;
 the pending reference and saved base plan must still match exactly. No blocked
 flag is cleared and no effect permission is granted by this identity check.
 Two additional synthetic fixture methods cover these cases, for eighteen
-authored methods total, not executed.
+authored methods total at that revision, not executed.
+
+## Selected Provider Initial Planning
+
+receivePhoneOwnedProviderReplyInScope now binds the original source, profile and
+session before waiting for its journal. This admission scope requires the task
+ID to remain absent: it cannot overwrite a concurrently inserted or existing
+task. Revalidate admission before writing the first pending task, then bind the
+persisted pending snapshot and validate input before sending the model request.
+Recheck that snapshot before success or error writes. A journal failure before
+the callback can retain the existing failure behavior only while the original
+absence/source/session owner remains current.
+
+Three more synthetic fixture methods cover absent-task admission, profile/source/
+session/cancellation drift and invalid live/blocked/reference/plan states, for
+twenty-one methods total, not executed. The local-model initial-planning and
+later fallback inference paths remain separate follow-up work. Existing unchecked
+upsert durability, sent-call and retry limitations still apply.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,

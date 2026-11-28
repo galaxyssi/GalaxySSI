@@ -270,4 +270,47 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
     f.input.conversation.trackingPaused = false
     XCTAssertFalse(scope.acceptsInput(f.input))
   }
+
+  func testInitialProviderAdmissionRequiresAnAbsentPersistedTask() throws {
+    var f = fixture()
+    f.task.pendingPlanning = nil
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .initialProviderAdmission))
+    XCTAssertNil(scope.expectedPersistedTask)
+    XCTAssertTrue(scope.matches(profile: "profile-a", task: nil, source: f.source,
+      conversation: f.conversation, cancelled: false))
+    XCTAssertFalse(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    XCTAssertNil(f.scope())
+  }
+
+  func testInitialProviderAdmissionRejectsProfileSourceSessionAndCancellationDrift() throws {
+    var f = fixture()
+    f.task.pendingPlanning = nil
+    let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+      source: f.source, conversation: f.conversation, use: .initialProviderAdmission))
+    XCTAssertFalse(scope.matches(profile: "other", task: nil, source: f.source,
+      conversation: f.conversation, cancelled: false))
+    XCTAssertFalse(scope.matches(profile: "profile-a", task: nil, source: f.source,
+      conversation: f.conversation, cancelled: true))
+    var changed = f.source
+    changed.content = "Edited request"
+    XCTAssertFalse(scope.matches(profile: "profile-a", task: nil, source: changed,
+      conversation: f.conversation, cancelled: false))
+    var conversation = f.conversation
+    conversation.privateMode = true
+    XCTAssertFalse(scope.matches(profile: "profile-a", task: nil, source: f.source,
+      conversation: conversation, cancelled: false))
+  }
+
+  func testInitialProviderAdmissionDoesNotAcceptExistingPlansOrReferences() {
+    for variation in 0..<4 {
+      var f = fixture(replanning: variation == 0)
+      if variation != 1 { f.task.pendingPlanning = nil }
+      if variation == 2 { f.task.blocked = true }
+      if variation == 3 { f.task.phase = .executing }
+      XCTAssertNil(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
+        source: f.source, conversation: f.conversation, use: .initialProviderAdmission))
+    }
+  }
 }
