@@ -3,7 +3,12 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '6aac1bb8b0d3ffb4e0e84578885a2dc548fd01d9';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
-const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
+const read = f => {
+  const source = clean(fs.readFileSync(path.join(root, f), 'utf8'));
+  const ownership = path.join(__dirname, 'check-planning-recovery-ownership.cjs');
+  return f === app + 'GalaxySSIServices.swift' && fs.existsSync(ownership)
+    ? require(ownership).retainedServices(source) : source;
+};
 function show(ref, f) {
   const key = ref + ':' + f;
   if (!memo.has(key)) memo.set(key, clean(cp.execFileSync('git', ['show', key], {cwd: root, encoding: 'utf8', maxBuffer: 16_000_000})));
