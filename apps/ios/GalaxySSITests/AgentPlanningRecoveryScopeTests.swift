@@ -122,8 +122,8 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
       if variation == 1 { f.task.pendingPlanning?.conversationId = "other-conversation" }
       if variation == 2 { f.task.pendingPlanning?.turnId = "other-turn" }
       if variation == 3 { f.task.pendingPlanning?.baseRevision = 999 }
-      if variation == 4 { f.task.blocked = true }
-      if variation == 5 { f.conversation.trackingPaused = true }
+      if variation == 4 { f.task.blocked = true; f.task.pendingPlanning?.basePlanId = nil }
+      if variation == 5 { f.conversation.status = .archived }
       XCTAssertNil(f.scope())
     }
   }
@@ -142,13 +142,13 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
     XCTAssertNil(scope.task.pendingPlanning)
   }
 
-  func testExplicitUserReplanKeepsUnchangedTrackingPauseWhileStartupStillSkipsIt() throws {
+  func testExplicitUserReplanKeepsUnchangedTrackingPauseAndRestorableReplanState() throws {
     var f = fixture(replanning: true)
     f.task.blocked = true
     f.conversation.trackingPaused = true
     f.input.conversation.trackingPaused = true
     f.task.pendingPlanning?.inputSha256 = AgentModelLoopRecoveryIdentity.sha256(f.input)
-    XCTAssertNil(f.scope())
+    XCTAssertNotNil(f.scope())
     let scope = try XCTUnwrap(AgentPlanningRecoveryScope(profile: "profile-a", task: f.task,
       source: f.source, conversation: f.conversation, use: .userReplan))
     XCTAssertTrue(f.matches(scope))
@@ -229,7 +229,7 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
     XCTAssertTrue(f.matches(scope))
     XCTAssertTrue(scope.acceptsInput(f.input))
     XCTAssertTrue(scope.task.blocked)
-    XCTAssertNil(f.scope())
+    XCTAssertNotNil(f.scope())
     f.task.pendingPlanning?.inputSha256 = "changed-reference"
     XCTAssertFalse(f.matches(scope))
   }
@@ -246,5 +246,28 @@ final class AgentPlanningRecoveryScopeTests: XCTestCase {
       if variation == 3 { f.conversation.privateMode = true }
       XCTAssertFalse(f.matches(scope))
     }
+  }
+
+  func testStartupRetainsBlockedReplanningReadbackButNotBlockedInitialPlanning() throws {
+    var replan = fixture(replanning: true)
+    replan.task.blocked = true
+    let restored = try XCTUnwrap(replan.scope())
+    XCTAssertTrue(replan.matches(restored))
+    XCTAssertTrue(restored.task.blocked)
+    var initial = fixture()
+    initial.task.blocked = true
+    XCTAssertNil(initial.scope())
+  }
+
+  func testStartupRetainsMatchingMemoryPauseAndRejectsChangedSavedInputFlag() throws {
+    var f = fixture()
+    f.conversation.trackingPaused = true
+    f.input.conversation.trackingPaused = true
+    f.task.pendingPlanning?.inputSha256 = AgentModelLoopRecoveryIdentity.sha256(f.input)
+    let scope = try XCTUnwrap(f.scope())
+    XCTAssertTrue(f.matches(scope))
+    XCTAssertTrue(scope.acceptsInput(f.input))
+    f.input.conversation.trackingPaused = false
+    XCTAssertFalse(scope.acceptsInput(f.input))
   }
 }

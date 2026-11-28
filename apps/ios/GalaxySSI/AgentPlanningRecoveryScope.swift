@@ -18,7 +18,7 @@ struct AgentPlanningRecoveryScope {
           conversation.mergedIntoConversationId.isBlank else { return nil }
     switch use {
     case .startupRecovery:
-      guard task.phase == .planning, !task.blocked, !conversation.trackingPaused else { return nil }
+      guard task.phase == .planning, !task.blocked || task.pendingPlanning?.isReplanning == true else { return nil }
     case .userReplan:
       guard [.failed, .blocked, .planning].contains(task.phase) else { return nil }
     case .rollingContinuation:

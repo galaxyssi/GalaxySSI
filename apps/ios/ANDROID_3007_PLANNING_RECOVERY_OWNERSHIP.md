@@ -59,7 +59,8 @@ rechecks the original owner before fallback or result use.
 The explicit userReplan scope is identity-only and accepts the already blocked
 task and unchanged tracking-paused context used by this existing manual flow.
 It does not clear blocked state or grant model/effect permissions. Automatic
-startup recovery keeps its original unblocked/planning/unpaused requirements.
+startup recovery keeps planning-state admission and rejects blocked initial
+planning, while preserving existing blocked replanning/readback recovery.
 Four further fixture methods cover those distinctions and no-plan callback drift,
 for twelve authored methods at that revision. They are not executed. Existing
 upsert fault handling remains unchanged.
@@ -75,12 +76,22 @@ the next batch, erase uncertainty, or bypass the existing native connector wait,
 browser/readback, budget, permission, outcome or continuation gates.
 
 Like the existing live flow, blocked/readback and unchanged tracking-paused
-context can remain in the rolling identity snapshot; automatic startup recovery
-retains its stricter default admission. Four new fixture methods cover waiting
+context can remain in the rolling identity snapshot. Four new fixture methods cover waiting
 identity, invalid external/live states, pending reference/tracking compatibility
 and stale same-phase callbacks, for sixteen authored methods total, not run.
 Live initial-provider callbacks remain separate follow-up work. Already-sent
 model calls, general upserts and immediate retry limitations remain unchanged.
+
+## Recovery Compatibility
+
+Memory tracking pause is not an execution pause. Startup recovery retains a
+matching tracking-paused context, but rejects changed session or saved-input
+tracking flags. Blocked initial planning remains excluded by its existing
+candidate filter. Replanning retains its original readback/blocked admission;
+the pending reference and saved base plan must still match exactly. No blocked
+flag is cleared and no effect permission is granted by this identity check.
+Two additional synthetic fixture methods cover these cases, for eighteen
+authored methods total, not executed.
 
 Only JS/source, iOS project structure and whitespace checks are included. No
 Swift/native build, XCTest, simulator/device/live provider, full repository check,
