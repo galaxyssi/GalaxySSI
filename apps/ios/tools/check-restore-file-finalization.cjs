@@ -25,6 +25,8 @@ function retainedFixtures(source) {
   return once(source, block, '');
 }
 function normalizeConflictSources(source) {
+  const structured = path.join(__dirname, 'check-structured-originals.cjs');
+  if (fs.existsSync(structured)) source = require(structured).retained(backup, source);
   const tool = path.join(__dirname, 'check-restore-conflict-sources.cjs');
   return fs.existsSync(tool) ? require(tool).retainedBackup(source) : source;
 }
