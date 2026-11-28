@@ -29,6 +29,8 @@ The missing iOS ownership and picker callback binding are corrected here.
 - Observe owner-filtered history changes and recover on foreground entry, show
   pending save status, and disable duplicate live saves. Release generation ownership
   on failure/reset before recovery; generation/verification reject duplicate starts.
+  A current background result is reset rather than leaving a finished worker
+  holding live generation authority. Older tokens still cannot clear newer work.
 
 ## Limits And Validation
 
@@ -45,7 +47,7 @@ changed metadata/corrupt private copy refusal. Fixtures use synthetic package by
 not complete portable archive integration. Existing large fixture file unchanged.
 
 Source guard checks exact new hooks, eight Xcode entries, one localization key and
-22 negative mutations. Existing crypto/copy/verifier/prune tail and generation
+23 negative mutations. Existing crypto/copy/verifier/prune tail and generation
 write sequence are compared directly to main. Independent restore view inverses
 compose separately; no restore application code is duplicated.
 

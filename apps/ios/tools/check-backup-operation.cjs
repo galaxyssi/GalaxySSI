@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, document picker, native storage, races or restart execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'a7af51597';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '85ee31c9c';
 const history = app + 'GalaxySSIHealthBackupHistory.swift', view = app + 'GalaxySSIHealthBackupView.swift';
 const model = app + 'GalaxySSIHealthBackupOperation.swift', fixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthBackupOperationTests.swift';
 const clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
@@ -39,7 +39,9 @@ function retainedView(source) {
     ['.disabled(task != nil || saveAttempt != nil || history.isSaving(entry))', '.disabled(task != nil || saveAttempt != nil)'],
     ['guard let generationRequest else { throw GalaxySSIHealthPortableBackup.Failure.stale }', 'guard let generationID else { throw GalaxySSIHealthPortableBackup.Failure.stale }'],
     ['try history.publish(data, request: generationRequest)', 'try history.publish(data, id: generationID)'],
-    ['        if generationID != nil {\n          if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }\n', '        if generationID != nil {\n']
+    ['        if generationID != nil {\n          if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }\n', '        if generationID != nil {\n'],
+    ['        guard token == request else { return }\n        guard scene != .background else { reset(); return }\n        switch result {', '        guard token == request, scene != .background else { return }\n        switch result {'],
+    ['      } catch {\n        guard token == request else { return }\n        guard scene != .background else { reset(); return }', '      } catch {\n        guard token == request, scene != .background else { return }']
   ];
   for (const [from, to] of pairs) source = once(source, from, to);
   const presenter = between(expected, '@MainActor\nprivate struct BackupSavePresenter:', 'private struct BackupFile:');
@@ -101,6 +103,7 @@ if (require.main === module) {
     [view, 'private func reset() {\n    if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }', 'private func reset() {'],
     [view, 'guard scene == .active, task == nil, let plan', 'guard scene == .active, let plan'],
     [view, 'clearSavePresentation(); reset(); entries = []; historyLoaded = false', 'reset(); entries = []; historyLoaded = false'],
+    [view, 'guard scene != .background else { reset(); return }', 'guard scene != .background else { return }'],
     [fixture, 'XCTAssertEqual(recovered.latestSave, .interrupted)', 'XCTAssertEqual(recovered.latestSave, .verified)']
   ];
   for (const [file, from, to] of mutations) {
