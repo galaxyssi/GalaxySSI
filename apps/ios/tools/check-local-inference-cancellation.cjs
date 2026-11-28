@@ -22,6 +22,22 @@ function show(ref, file) {
 function retained(file, source) {
   const kind = Object.keys(files).find(key => files[key] === file);
   if (!kind || !source.includes(markers[kind])) return source;
+  if (kind === 'adapter') {
+    const call = text => {
+      const start = '    let result = try await LocalModelCooperativeRuntime.shared.generateAsync(', end = '\n    )\n';
+      assert.equal(text.split(start).length, 2);
+      const a = text.indexOf(start), b = text.indexOf(end, a);
+      assert(b > a); return text.slice(a, b + end.length);
+    };
+    const oldCall = call(show(base, file)), newCall = call(show(approved, file));
+    let expected = source.includes('  private let validateOwner: (() async throws -> Void)?')
+      ? show('85908f850e5d0cc2954080a8247bb20b69995188', file) : show(base, file);
+    assert.equal(expected.split(oldCall).length, 2);
+    expected = expected.replace(oldCall, newCall);
+    assert.equal(source, expected, 'Complete adapter with only reviewed ownership and cancellation increments');
+  } else {
+    assert.equal(source, show(approved, file), 'Complete reviewed local cancellation source: ' + file);
+  }
   const diff = git(['diff', '--no-ext-diff', '--no-color', '--unified=0', base, approved, '--', file]);
   let previous = [], current = [], active = false;
   const hunks = new Map();
@@ -93,5 +109,10 @@ if (require.main === module) {
     const source = read(file); assert(source.includes(from), from);
     assert.throws(() => validate(file, source.replace(from, to)), undefined, from);
   }
-  console.log('Local inference cancellation source contracts and 13 negative source mutations passed; five Swift fixtures authored, not executed.');
+  const moved = cooperative.replace('    try Self.checkCancellation(cancellation)\n\n    let answerPrompt:', '\n    let answerPrompt:')
+    .replace('    let startedAt = Date()', '    try Self.checkCancellation(cancellation)\n    let startedAt = Date()');
+  assert.notEqual(moved, cooperative);
+  assert.equal(moved.split('try Self.checkCancellation(cancellation)').length - 1, 5);
+  assert.throws(() => retained(files.cooperative, moved), undefined, 'Correct count at wrong stage must fail');
+  console.log('Local inference cancellation source contracts and 14 negative source mutations passed; five Swift fixtures authored, not executed.');
 }

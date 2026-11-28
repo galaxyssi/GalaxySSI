@@ -42,6 +42,8 @@ NOT compiled or executed. Mid-generation, between-candidate, real queue ordering
 device resource use and native cancellation acceptance remain unverified.
 
 The source guard retains exact production/fixture deltas and existing ownership
-hooks, freezes backend/token interfaces and rejects thirteen synthetic source
-mutations. No Swift build, XCTest, live model/network/device, CI monitoring or IPA
+hooks, freezes backend/token interfaces and rejects fourteen synthetic source
+mutations, including a relocated check with the correct overall count. Full
+reviewed source comparisons pin the actual stage locations before inversion.
+No Swift build, XCTest, live model/network/device, CI monitoring or IPA
 is included. Backend interruption and broader parity remain unfinished.
