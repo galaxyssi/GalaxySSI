@@ -246,15 +246,29 @@ struct GalaxySSIHealthOriginalStore {
 
   func storePhotoCapturePage(_ data: Data, name: String, acquisition: Acquisition,
                              mode: GalaxySSIHealthPhotoDraft.Mode, expected: UUID?, replacing page: UUID?,
-                             hints: [GalaxySSIHealthPhotoDraft.Hint]) throws {
+                             hints: [GalaxySSIHealthPhotoDraft.Hint], retainOriginal: Bool? = nil) throws {
     try withRestoreLease { lease in
       try reconcileRestores(lease: lease)
       try store(data, name: name, acquisition: acquisition, lease: lease, draftVersion: expected,
+        preserveReviewOnly: true,
         updateDraft: { archive, original in
           guard archive.photoCaptureDraft?.version == expected else { throw GalaxySSIHealthRecords.Failure.stale }
-          var batch = archive.photoCaptureDraft ?? .init(mode: mode)
-          guard batch.mode == mode else { throw GalaxySSIHealthRecords.Failure.stale }
+          var batch = archive.photoCaptureDraft ?? .init(mode: mode,
+            retainOriginal: retainOriginal ?? archive.keepsNewImportOriginals)
+          guard batch.mode == mode, retainOriginal.map({ $0 == batch.keepsOriginals }) != false
+          else { throw GalaxySSIHealthRecords.Failure.stale }
           try batch.install(original, hints: hints, replacing: page)
+          var temporary = archive.reviewOnlyReportOriginals ?? []
+          if batch.keepsOriginals {
+            temporary.remove(original.id)
+            archive.photoReviewOriginals?.removeValue(forKey: original.id)
+          } else if temporary.contains(original.id) || archive.originalIndex?.originals[original.id] == nil {
+            temporary.insert(original.id)
+            var photos = archive.photoReviewOriginals ?? [:]
+            photos[original.id] = original
+            archive.photoReviewOriginals = photos
+          }
+          archive.reviewOnlyReportOriginals = temporary
           archive.photoCaptureDraft = batch
         })
     }
@@ -262,9 +276,50 @@ struct GalaxySSIHealthOriginalStore {
     NotificationCenter.default.post(name: GalaxySSIHealthRecords.recordsChanged, object: owner)
   }
 
+  func releaseUnusedPhotoOriginals() {
+    let records = indexRecords
+    let candidates = (try? records.load())?.photoReviewOriginals ?? [:]
+    var changed = false
+    for (id, original) in candidates {
+      do {
+        try withRestoreLease { lease in
+          try reconcileRestores(lease: lease)
+          var archive = try records.load()
+          guard id == original.id, original.kind == .image,
+                archive.photoReviewOriginals?[id] == original else { return }
+          if archive.reviewOnlyReportOriginals?.contains(id) != true {
+            archive.photoReviewOriginals?.removeValue(forKey: id)
+            try records.persistPhotoCaptureDraft(archive, expected: archive.photoCaptureDraft?.version)
+            changed = true
+            return
+          }
+          let ledger = try reconcileRemovals()
+          if ledger.metadata.contains(original), !ledger.pending.contains(id) {
+            try records.forgetReleasedQuickReportOriginal(id)
+            changed = true
+            return
+          }
+          guard try records.canReleaseReviewOriginal(id, in: archive) else { return }
+          let preview = try previewRemoval(original, lease: lease)
+          _ = try remove(preview, lease: lease)
+          changed = true
+          let final = try loadRemovals()
+          if !final.pending.contains(id) {
+            try records.forgetReleasedQuickReportOriginal(id)
+          }
+        }
+      } catch { /* Keep exact temporary sources for a later cleanup attempt. */ }
+    }
+    if changed {
+      NotificationCenter.default.post(name: Self.indexChanged, object: owner)
+      NotificationCenter.default.post(name: GalaxySSIHealthRecords.reviewInputsChanged, object: owner)
+    }
+  }
+
   private func store(_ data: Data, name: String, acquisition: Acquisition, lease: RestoreLease,
                      draftVersion: UUID? = nil,
                      reportUpdate: Bool = false,
+                     preserveReviewOnly: Bool = false,
                      updateDraft: ((inout GalaxySSIHealthRecords.Archive, Original) throws -> Void)? = nil) throws {
     guard !data.isEmpty, data.count <= Self.maximumFileBytes else { throw Failure.limit }
     let (kind, fileExtension) = try Self.format(of: data)
@@ -277,7 +332,7 @@ struct GalaxySSIHealthOriginalStore {
         if updateDraft != nil || !reportUpdate {
           let records = indexRecords
           var archive = try records.load()
-          let promoted = !reportUpdate && archive.reviewOnlyReportOriginals?.remove(existing.id) != nil
+          let promoted = !reportUpdate && !preserveReviewOnly && archive.reviewOnlyReportOriginals?.remove(existing.id) != nil
           try updateDraft?(&archive, existing)
           if reportUpdate || (updateDraft == nil && promoted) { try records.persistQuickReport(archive) }
           else if updateDraft != nil { try records.persistPhotoCaptureDraft(archive, expected: draftVersion) }
@@ -294,7 +349,7 @@ struct GalaxySSIHealthOriginalStore {
     }
     let records = indexRecords
     var archive = try records.load()
-    if !reportUpdate { archive.reviewOnlyReportOriginals?.remove(item.id) }
+    if !reportUpdate && !preserveReviewOnly { archive.reviewOnlyReportOriginals?.remove(item.id) }
     try updateDraft?(&archive, item)
     let receipt = UUID()
     do {

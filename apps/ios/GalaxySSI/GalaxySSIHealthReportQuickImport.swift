@@ -281,17 +281,25 @@ extension GalaxySSIHealthRecords {
     return outcome
   }
 
-  func markQuickReportRelease(job id: UUID, original: UUID) throws -> Bool {
-    var archive = try load()
-    guard archive.reviewOnlyReportOriginals?.contains(original) == true,
-          let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.original.id == original }),
-          let job = archive.recognitionJobs?[index] else { return false }
-    if job.phase != .cancelled {
+  func canReleaseReviewOriginal(_ original: UUID, in archive: Archive) throws -> Bool {
+    guard archive.photoCaptureDraft?.pages.contains(where: { $0.original.id == original }) != true,
+          archive.reportReview?.contains(where: { $0.source.original == original }) != true else { return false }
+    for job in archive.recognitionJobs ?? [] where job.original.id == original {
+      if job.phase == .cancelled { continue }
       guard job.reportVision?.partial == false,
             job.reportImportOutcome?.pendingConfirmation != true,
             (job.reportImportOutcome?.skipped ?? 0) == 0,
             try GalaxySSIHealthReportQuickImport.plan(job: job, archive: archive, now: Date()).items.isEmpty else { return false }
     }
+    return true
+  }
+
+  func markQuickReportRelease(job id: UUID, original: UUID) throws -> Bool {
+    var archive = try load()
+    guard archive.reviewOnlyReportOriginals?.contains(original) == true,
+          let index = archive.recognitionJobs?.firstIndex(where: { $0.id == id && $0.original.id == original }),
+          let job = archive.recognitionJobs?[index] else { return false }
+    guard try canReleaseReviewOriginal(original, in: archive) else { return false }
     if job.reportImportOutcome?.releaseOriginal != true {
       var outcome = job.reportImportOutcome ?? .init()
       outcome.releaseOriginal = true
@@ -305,6 +313,7 @@ extension GalaxySSIHealthRecords {
   func forgetReleasedQuickReportOriginal(_ original: UUID) throws {
     var archive = try load()
     guard archive.reviewOnlyReportOriginals?.remove(original) != nil else { return }
+    archive.photoReviewOriginals?.removeValue(forKey: original)
     try persistQuickReport(archive)
   }
 }

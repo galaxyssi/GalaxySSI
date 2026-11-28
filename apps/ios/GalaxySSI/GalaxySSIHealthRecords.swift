@@ -191,6 +191,7 @@ struct GalaxySSIHealthRecords {
     var reviewReminderState: GalaxySSIHealthReviewReminders.State?
     var recognitionJobs: [GalaxySSIHealthRecognitionJobs.Job]?
     var photoCaptureDraft: GalaxySSIHealthPhotoDraft.Batch?
+    var photoReviewOriginals: [UUID: GalaxySSIHealthOriginalStore.Original]?
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
