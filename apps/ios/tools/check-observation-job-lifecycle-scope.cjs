@@ -20,6 +20,8 @@ function section(s, first, last) {
 }
 function once(s, from, to = '') { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function retainedServices(s) {
+  const terminal = path.join(__dirname, 'check-terminal-result-wake.cjs');
+  if (fs.existsSync(terminal)) s = require(terminal).retainedServices(s);
   const deadline = path.join(__dirname, 'check-connector-deadline-checkpoint.cjs');
   if (fs.existsSync(deadline)) s = require(deadline).retainedServices(s);
   const expiry = path.join(__dirname, 'check-native-observation-expiry-scope.cjs');
