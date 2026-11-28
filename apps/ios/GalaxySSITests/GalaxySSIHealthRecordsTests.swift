@@ -2768,6 +2768,82 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
     archive.revisions.append(removed)
     XCTAssertTrue(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [original]).confirmed.isEmpty)
   }
+  func testRecordCenterMergesTableAndReportReviewsByJobCreationBeforePagination() {
+    let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+    let hash = String(repeating: "a", count: 64)
+    let newer = GalaxySSIHealthOriginalStore.Original(id: firstID, name: "new.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(timeIntervalSince1970: 1), bytes: 10, sha256: hash)
+    let older = GalaxySSIHealthOriginalStore.Original(id: secondID, name: "old.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(timeIntervalSince1970: 100), bytes: 10, sha256: hash)
+    func item(_ original: GalaxySSIHealthOriginalStore.Original, staged: TimeInterval) -> GalaxySSIHealthReportReview.Item {
+      .init(version: UUID(), source: .init(original: original.id, sha256: hash, page: 1, region: 1, fromOCR: true),
+        excerpt: "Synthetic report", reading: .init(metric: .weight, measuredAt: Date(timeIntervalSince1970: 500 - staged), value: 60),
+        stagedAt: Date(timeIntervalSince1970: staged))
+    }
+    let table = GalaxySSIHealthReviewReminders.TableDraft(id: UUID(), name: "table.csv",
+      at: Date(timeIntervalSince1970: 20), data: Data("value,time\n".utf8), mapping: .init(), worksheet: nil, retainOriginal: true)
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.reportReview = [item(older, staged: 100), item(newer, staged: 1)]
+    archive.recognitionJobs = [.init(original: older, addedAt: Date(timeIntervalSince1970: 5), pageCount: 1),
+      .init(original: newer, addedAt: Date(timeIntervalSince1970: 30), pageCount: 1)]
+    archive.tableReviews = [table]
+    let snapshot = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [older, newer])
+    XCTAssertEqual(snapshot.pending.map(\.sourceID), [newer.id, older.id])
+    XCTAssertEqual(snapshot.reviews.map(\.at), [30, 20, 5].map { Date(timeIntervalSince1970: TimeInterval($0)) })
+    XCTAssertEqual(Array(snapshot.reviews.prefix(2)).map(\.id), ["report:" + snapshot.pending[0].id,
+      "table:" + table.id.uuidString + ":" + table.version.uuidString])
+    XCTAssertTrue(snapshot.confirmed.isEmpty)
+  }
+
+  func testRecordCenterLegacyReviewDatesDoNotUseMeasurementTimeOrForeignDigestJobs() {
+    let id = UUID(), other = UUID(), missing = UUID(), hash = String(repeating: "a", count: 64)
+    let original = GalaxySSIHealthOriginalStore.Original(id: id, name: "original.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(timeIntervalSince1970: 20), bytes: 10, sha256: hash)
+    let foreign = GalaxySSIHealthOriginalStore.Original(id: missing, name: "foreign.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(timeIntervalSince1970: 1000), bytes: 10, sha256: String(repeating: "b", count: 64))
+    func item(_ id: UUID, staged: Date?) -> GalaxySSIHealthReportReview.Item {
+      .init(version: UUID(), source: .init(original: id, sha256: hash, page: 1, region: 1, fromOCR: true),
+        excerpt: "Synthetic legacy report", reading: .init(metric: .weight, measuredAt: Date(timeIntervalSince1970: 9999), value: 60),
+        stagedAt: staged)
+    }
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.reportReview = [item(id, staged: Date(timeIntervalSince1970: 100)),
+      item(other, staged: Date(timeIntervalSince1970: 30)), item(missing, staged: nil)]
+    archive.recognitionJobs = [.init(original: foreign, addedAt: Date(timeIntervalSince1970: 1000), pageCount: 1),
+      .init(original: original, addedAt: Date(timeIntervalSinceReferenceDate: .infinity), pageCount: 1)]
+    let snapshot = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [foreign, original])
+    XCTAssertEqual(snapshot.pending.map(\.sourceID), [other, id, missing])
+    XCTAssertEqual(snapshot.pending.map(\.addedAt), [Date(timeIntervalSince1970: 30), Date(timeIntervalSince1970: 20), .distantPast])
+    XCTAssertNil(snapshot.pending.last?.original)
+  }
+
+  func testRecordCenterTableOnlyAndEqualDateReviewsKeepExactIdentityAndStableOrder() {
+    let id = UUID(), date = Date(timeIntervalSince1970: 20)
+    let table = GalaxySSIHealthReviewReminders.TableDraft(id: id, name: "table.csv", at: date,
+      data: Data("value,time\n".utf8), mapping: .init(), worksheet: nil, retainOriginal: true)
+    var archive = GalaxySSIHealthRecords.Archive()
+    archive.tableReviews = [table]
+    let tableOnly = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [])
+    XCTAssertTrue(tableOnly.pending.isEmpty)
+    XCTAssertEqual(tableOnly.reviews.count, 1)
+    guard case .table(let resumable) = tableOnly.reviews[0] else { return XCTFail("Expected exact table route") }
+    XCTAssertEqual(resumable.id, table.id)
+    XCTAssertEqual(resumable.version, table.version)
+    for hash in [String(repeating: "a", count: 64), String(repeating: "b", count: 64)] {
+      archive.reportReview = (archive.reportReview ?? []) + [.init(version: UUID(),
+        source: .init(original: id, sha256: hash, page: 1, region: 1, fromOCR: true),
+        excerpt: "Synthetic report", reading: .init(metric: .weight, value: 60), stagedAt: date)]
+    }
+    let snapshot = GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: [])
+    XCTAssertEqual(snapshot.pending.map(\.sha256), [String(repeating: "b", count: 64), String(repeating: "a", count: 64)])
+    XCTAssertEqual(snapshot.reviews.map(\.id), snapshot.reviews.map(\.id).sorted(by: >))
+    XCTAssertEqual(Set(snapshot.reviews.map(\.id)).count, 3)
+    XCTAssertTrue(snapshot.pending.allSatisfy { $0.original == nil })
+    archive.reportReview?.reverse()
+    XCTAssertEqual(GalaxySSIHealthRecordCenterSnapshot(archive: archive, originals: []).reviews.map(\.id), snapshot.reviews.map(\.id))
+  }
+
   func testIndividualTargetRequiresCurrentRecordAndRevokesWithoutErasingHistory() throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: file) }

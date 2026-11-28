@@ -6,10 +6,29 @@ struct GalaxySSIHealthRecordCenterSnapshot {
     let sourceID: UUID
     let sha256: String
     let items: [GalaxySSIHealthReportReview.Item]
+    let addedAt: Date
     var id: String { sourceID.uuidString + ":" + sha256 }
+  }
+  enum Review: Identifiable {
+    case report(Pending)
+    case table(GalaxySSIHealthReviewReminders.TableDraft)
+
+    var id: String {
+      switch self {
+      case .report(let report): return "report:" + report.id
+      case .table(let table): return "table:" + table.id.uuidString + ":" + table.version.uuidString
+      }
+    }
+    var at: Date {
+      switch self {
+      case .report(let report): return report.addedAt
+      case .table(let table): return table.at.timeIntervalSinceReferenceDate.isFinite ? table.at : .distantPast
+      }
+    }
   }
   let confirmed: [GalaxySSIHealthReading]
   let pending: [Pending]
+  let reviews: [Review]
   let draft: GalaxySSIHealthDraft?
 
   init(archive: GalaxySSIHealthRecords.Archive, originals: [GalaxySSIHealthOriginalStore.Original]) {
@@ -18,11 +37,20 @@ struct GalaxySSIHealthRecordCenterSnapshot {
     let grouped = Dictionary(grouping: archive.reportReview ?? []) {
       $0.source.original.uuidString + ":" + $0.source.sha256
     }
-    pending = grouped.keys.sorted().compactMap { key in
+    pending = grouped.keys.sorted().compactMap { key -> Pending? in
       guard let items = grouped[key], let source = items.first?.source else { return nil }
       let original = originals.first { $0.id == source.original && $0.sha256 == source.sha256 }
-      return Pending(original: original, sourceID: source.original, sha256: source.sha256, items: items)
-    }
+      let jobDate = (archive.recognitionJobs ?? []).filter {
+        $0.original.id == source.original && $0.original.sha256 == source.sha256
+      }.map(\.addedAt).filter { $0.timeIntervalSinceReferenceDate.isFinite }.max()
+      let originalDate = original?.importedAt
+      let stagedDate = items.compactMap(\.stagedAt).filter { $0.timeIntervalSinceReferenceDate.isFinite }.max()
+      let addedAt = jobDate ?? originalDate.flatMap { $0.timeIntervalSinceReferenceDate.isFinite ? $0 : nil }
+        ?? stagedDate ?? .distantPast
+      return Pending(original: original, sourceID: source.original, sha256: source.sha256, items: items, addedAt: addedAt)
+    }.sorted { ($0.addedAt, $0.id) > ($1.addedAt, $1.id) }
+    reviews = (pending.map(Review.report) + (archive.tableReviews ?? []).map(Review.table))
+      .sorted { ($0.at, $0.id) > ($1.at, $1.id) }
   }
 }
 
@@ -61,26 +89,13 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
             if snapshot.draft != nil {
               Button { addManual(nil) } label: { Label(t("resume_draft", "Resume draft"), systemImage: "doc.text") }
             }
-            if snapshot.pending.isEmpty, snapshot.draft == nil {
+            if snapshot.reviews.isEmpty, snapshot.draft == nil {
               Text(t("record_center.no_pending", "No pending reviews")).foregroundColor(.secondary)
             }
-            ForEach(snapshot.pending.prefix(pendingLimit)) { group in
-              if let original = group.original {
-                NavigationLink {
-                  GalaxySSIHealthReportBatchView(records: records, store: originals, original: original)
-                } label: {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(original.name)
-                    Text(String(format: t("record_center.review_count", "%lld reviewed drafts"), Int64(group.items.count)))
-                      .font(.caption).foregroundColor(.secondary)
-                  }
-                }
-              } else {
-                Label(t("record_center.source_missing", "Review source unavailable or changed"), systemImage: "exclamationmark.triangle")
-                  .foregroundColor(.secondary)
-              }
+            ForEach(snapshot.reviews.prefix(pendingLimit)) { review in
+              reviewRow(review)
             }
-            if snapshot.pending.count > pendingLimit {
+            if snapshot.reviews.count > pendingLimit {
               Button(t("record_center.all_pending", "Show all pending reviews")) { pendingLimit += 30 }
             }
             NavigationLink {
@@ -119,6 +134,41 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     .onChange(of: scene) { if $0 == .active { reload() } else { snapshot = nil; failed = false } }
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner { reload() }
+    }
+  }
+
+  @ViewBuilder
+  private func reviewRow(_ review: GalaxySSIHealthRecordCenterSnapshot.Review) -> some View {
+    switch review {
+    case .report(let group):
+      if let original = group.original {
+        NavigationLink {
+          GalaxySSIHealthReportBatchView(records: records, store: originals, original: original)
+        } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Label(original.name, systemImage: "doc.text")
+            Text(String(format: t("record_center.review_count", "%lld reviewed drafts"), Int64(group.items.count)))
+              .font(.caption).foregroundColor(.secondary)
+            if group.addedAt != .distantPast {
+              Text(group.addedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+            }
+          }
+        }
+      } else {
+        Label(t("record_center.source_missing", "Review source unavailable or changed"), systemImage: "exclamationmark.triangle")
+          .foregroundColor(.secondary)
+      }
+    case .table(let draft):
+      NavigationLink {
+        GalaxySSIHealthTableImportView(records: records, resumeReviewID: draft.id, resumeReviewVersion: draft.version)
+      } label: {
+        VStack(alignment: .leading, spacing: 4) {
+          Label(draft.name, systemImage: "tablecells")
+          if review.at != .distantPast {
+            Text(review.at, format: .dateTime).font(.caption).foregroundColor(.secondary)
+          }
+        }
+      }
     }
   }
 
