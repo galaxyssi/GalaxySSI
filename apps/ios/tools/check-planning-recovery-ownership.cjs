@@ -129,5 +129,5 @@ if (require.main === module) {
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Startup/manual/rolling planning ownership, twenty negative source mutations, retained existing admission and sixteen authored fixtures checked; no native execution.');
+  console.log('Startup/manual/rolling planning ownership, twenty negative source mutations, retained existing admission and eighteen authored fixtures checked; no native execution.');
 }
