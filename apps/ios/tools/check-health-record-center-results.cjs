@@ -60,8 +60,10 @@ function retainedTests(source) {
 }
 function retentionNormalize(file, source) {
   const tool = path.join(__dirname, 'check-photo-original-retention.cjs');
-  if (!fs.existsSync(tool)) return source;
-  return require(tool).retained(file, source);
+  if (fs.existsSync(tool)) source = require(tool).retained(file, source);
+  const restore = path.join(__dirname, 'check-restore-file-finalization.cjs');
+  if (file === fixture && fs.existsSync(restore)) source = require(restore).retainedFixtures(source);
+  return source;
 }
 module.exports = {retainedView, retainedTests};
 if (require.main === module) {
