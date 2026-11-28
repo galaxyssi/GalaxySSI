@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '1b7492677dd0544c2eda51433cc44659d9c4554e';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '17f1cc6757c9dda3e38588ac21b80dd865f81826';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -16,6 +16,12 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retainedServices(s) {
+  if (s.includes('use: .localPlanningAdmission')) {
+    const first = '  private func receiveLocalModelReply(', last = '  private func deterministicLocalNativePlan(';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, file), first, last), 'Exact journaled local initial planning ownership only');
+    s = once(s, block, section(show(base, file), first, last));
+  }
   if (s.includes('use: .initialProviderAdmission')) {
     const first = '  private func receivePhoneOwnedProviderReplyInScope(', last = '  private func receiveLocalModelReply(';
     const block = section(s, first, last);
@@ -143,14 +149,32 @@ if (require.main === module) {
   for (const mutation of providerMutations) {
     assert.notEqual(mutation, provider); assert.throws(() => retainedServices(services.replace(provider, mutation)), assert.AssertionError);
   }
+  const local = section(services, '  private func receiveLocalModelReply(', '  private func deterministicLocalNativePlan(');
+  assert.equal((local.match(/planningRecoveryIsCurrent\(/g) || []).length, 5);
+  assert(local.indexOf('use: .localPlanningAdmission') < local.indexOf('localInitialPlanningJournal.begin('));
+  assert(local.indexOf('self.planningRecoveryIsCurrent(attemptScope)') < local.indexOf('task.pendingPlanning = reference'));
+  assert(local.indexOf('owned.acceptsInput(planningInput)') < local.indexOf('await modelPlannedLocalNativeActions('));
+  assert(local.indexOf('planningErrorScope = owned') < local.indexOf('await modelPlannedLocalNativeActions('));
+  const accepted = local.slice(local.indexOf('let owned = callbackScope, planningRecoveryIsCurrent(owned)'));
+  assert(accepted.indexOf('planningErrorScope = nil') > accepted.indexOf('store.upsertAgentTask(task)'));
+  assert(accepted.indexOf('planningErrorScope = nil') < accepted.indexOf('AgentIOSLocalModelWebToolRunner.run('));
+  const localMutations = [local.replace('planningRecoveryIsCurrent(attemptScope),', 'true,'),
+    local.replace('self.planningRecoveryIsCurrent(attemptScope)', 'true'),
+    local.replace('self.planningRecoveryIsCurrent(owned), owned.acceptsInput(planningInput)', 'self.planningRecoveryIsCurrent(owned)'),
+    local.replace('let owned = callbackScope, planningRecoveryIsCurrent(owned),', 'let owned = callbackScope,'),
+    local.replace('      if let planningErrorScope, !planningRecoveryIsCurrent(planningErrorScope) { return }\n', ''),
+    local.replace('        planningErrorScope = owned\n', '')];
+  for (const mutation of localMutations) {
+    assert.notEqual(mutation, local); assert.throws(() => retainedServices(services.replace(local, mutation)), assert.AssertionError);
+  }
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
-  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 21);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 24);
   assert(!/\p{Script=Han}/u.test(helper + tests));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Startup/manual/rolling/selected-provider ownership, twenty-five negative source mutations and twenty-one authored fixtures checked; no native execution.');
+  console.log('Startup/manual/rolling/initial planning ownership, thirty-one negative source mutations and twenty-four authored fixtures checked; no native execution.');
 }
