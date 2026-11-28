@@ -1,7 +1,7 @@
 // Source contracts only. No Swift, JSON/CSV/XML execution, persistence, picker or runtime evidence.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const prior = '33af3d3ff', approved = '88b2a7b49', base = 'c6bad3465c673dfb2dcecb23b095185c129c7447';
+const prior = '33af3d3ff', approved = '45aacb52f', base = 'c6bad3465c673dfb2dcecb23b095185c129c7447';
 const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n'), memo = new Map();
 function show(ref, f) {
   const key = ref + ':' + f;
@@ -28,7 +28,7 @@ const pairs = {
     ['allowedContentTypes: [.image, .pdf]) { result in', 'allowedContentTypes: [.image, .pdf] + GalaxySSIHealthStructuredOriginal.contentTypes) { result in'],
     ['          Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))\n        }', '          Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))\n        } else if item.original.kind == .structured {\n          GalaxySSIHealthStructuredOriginalView(store: store, original: item.original)\n        }'],
     ['dateFiltered(originals).filter { filter == "all" || $0.kind.rawValue == filter }', 'dateFiltered(originals).filter { filter == "all" || (filter == "file" ? $0.kind != .image : $0.kind.rawValue == filter) }'],
-    ['      if item.kind == .pdf {\n', '      if item.kind == .structured {\n        preview = Preview(original: item)\n      } else if item.kind == .pdf {\n'],
+    ['    guard scene == .active else { return }\n    do {\n      let data = try store.read(item)\n      if item.kind == .pdf {\n', '    guard scene == .active else { return }\n    if item.kind == .structured {\n      preview = Preview(original: item)\n      return\n    }\n    do {\n      let data = try store.read(item)\n      if item.kind == .pdf {\n'],
     ['            (item.kind == .pdf ? type.conforms(to: .pdf) : type.conforms(to: .image))', '            (item.kind == .structured ? GalaxySSIHealthStructuredOriginal.extensions.contains(item.fileExtension) :\n              (item.kind == .pdf ? type.conforms(to: .pdf) : type.conforms(to: .image)))'],
     ['Image(systemName: item.kind == .pdf ? "doc.richtext" : "photo")', 'Image(systemName: item.kind == .image ? "photo" : "doc.richtext")'],
     ['guard scene == .active, !Task.isCancelled, let data = try? store.read(item)', 'guard scene == .active, !Task.isCancelled, item.kind.isReport, let data = try? store.read(item)'],
