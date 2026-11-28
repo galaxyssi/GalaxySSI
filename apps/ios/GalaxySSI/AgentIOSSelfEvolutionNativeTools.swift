@@ -74,10 +74,11 @@ enum AgentIOSSelfEvolutionNativeToolCatalog {
   static let toolIds: Set<String> = Set(orderedToolIds)
 
   static func definitions(
-    provider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider()
+    provider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSSelfEvolutionOperation.allCases.map { operation in
-      definition(provider: provider, operation: operation)
+      definition(provider: provider, operation: operation, initialAvailability: initialAvailability)
     }
   }
 
@@ -145,7 +146,8 @@ enum AgentIOSSelfEvolutionNativeToolCatalog {
 
   private static func definition(
     provider: AgentIOSSelfEvolutionToolProviding,
-    operation: AgentIOSSelfEvolutionOperation
+    operation: AgentIOSSelfEvolutionOperation,
+    initialAvailability: AgentNativeToolAvailability?
   ) -> AgentPhoneNativeToolDefinition {
     let descriptor = try! AgentNativeToolDescriptor(
       id: toolId(operation),
@@ -161,7 +163,7 @@ enum AgentIOSSelfEvolutionNativeToolCatalog {
       requiredConsents: consentRequirements(operation),
       timeoutMillis: timeoutMillis(operation),
       idempotency: operation == .candidatePatch ? .idempotencyKeyRequired : .nonIdempotent,
-      availability: provider.availability(operation: operation)
+      availability: initialAvailability ?? provider.availability(operation: operation)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -174,7 +176,10 @@ enum AgentIOSSelfEvolutionNativeToolCatalog {
         "isolation": "ios_disposable_candidate_workspace",
         "production_mutation": "disabled",
         "patch_content_retained": "false"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(operation: operation)
+      }
     )
   }
 

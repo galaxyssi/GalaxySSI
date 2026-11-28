@@ -2448,6 +2448,7 @@
     A10000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */; };
     A10000000000000000000297 /* AgentIOSMcpNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */; };
     A10000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */; };
+    C46860000000000000000001 /* AgentRuntimeToolReadinessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46860000000000000000002 /* AgentRuntimeToolReadinessTests.swift */; };
     BD68373A70EC821C60758ECF /* GalaxySSIHealthAtlasPhysiology.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */; };
     2ECF4259194968FFE9A65DA6 /* GalaxySSIHealthAtlasPhysiologyText.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */; };
     BF37730E4012C7208E81DC84 /* GalaxySSIHealthAtlasPhysiologyPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BEF2B56A05F06056BCC4CF5 /* GalaxySSIHealthAtlasPhysiologyPanel.swift */; };
@@ -4930,6 +4931,7 @@
     A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDesktopRemoteNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMcpNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSOnDeviceRuntimeNativeToolTests.swift; sourceTree = "<group>"; };
+    C46860000000000000000002 /* AgentRuntimeToolReadinessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeToolReadinessTests.swift; sourceTree = "<group>"; };
     A20000000000000000000350 /* AgentProviderHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderHealth.swift; sourceTree = "<group>"; };
     05EA412281059396FCCFC26D /* GalaxySSIHealthAtlasPhysiology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiology.swift; sourceTree = "<group>"; };
     FE041305DEF774444B2536EE /* GalaxySSIHealthAtlasPhysiologyText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalaxySSIHealthAtlasPhysiologyText.swift; sourceTree = "<group>"; };
@@ -7410,6 +7412,7 @@
         A20000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift */,
         A20000000000000000000297 /* AgentIOSMcpNativeToolTests.swift */,
         A20000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift */,
+        C46860000000000000000002 /* AgentRuntimeToolReadinessTests.swift */,
         A20000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift */,
         A20000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift */,
         A20000000000000000000797 /* AgentRuntimePackInstallerTests.swift */,
@@ -10002,6 +10005,7 @@
         A10000000000000000000296 /* AgentIOSDesktopRemoteNativeToolTests.swift in Sources */,
         A10000000000000000000297 /* AgentIOSMcpNativeToolTests.swift in Sources */,
         A10000000000000000000298 /* AgentIOSOnDeviceRuntimeNativeToolTests.swift in Sources */,
+        C46860000000000000000001 /* AgentRuntimeToolReadinessTests.swift in Sources */,
         A10000000000000000000795 /* AgentIOSNativeToolDefaultStoreTests.swift in Sources */,
         A10000000000000000000796 /* AgentIOSNativeActionExecutorTests.swift in Sources */,
         A10000000000000000000797 /* AgentRuntimePackInstallerTests.swift in Sources */,
