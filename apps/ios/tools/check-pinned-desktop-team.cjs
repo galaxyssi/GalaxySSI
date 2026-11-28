@@ -34,6 +34,8 @@ function retained(file, source) {
   return source;
 }
 function retainedServices(source) {
+  const outbox = path.join(__dirname, 'check-pinned-desktop-outbox.cjs');
+  if (fs.existsSync(outbox)) source = require(outbox).retainedServices(source);
   if (!source.includes('    pinnedDesktopTeamTurn: String? = nil,')) return source;
   return retained(app + 'GalaxySSIServices.swift', source);
 }
