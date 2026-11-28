@@ -20,6 +20,8 @@ function section(s, first, last) {
 }
 function once(s, from, to = '') { assert.equal(s.split(from).length, 2, from); return s.replace(from, to); }
 function retainedServices(s) {
+  const deadline = path.join(__dirname, 'check-connector-deadline-checkpoint.cjs');
+  if (fs.existsSync(deadline)) s = require(deadline).retainedServices(s);
   const expiry = path.join(__dirname, 'check-native-observation-expiry-scope.cjs');
   if (fs.existsSync(expiry)) s = require(expiry).retainedServices(s);
   if (!s.includes('  private func cancelNativeConnectorObservation(key: String)')) return s;
