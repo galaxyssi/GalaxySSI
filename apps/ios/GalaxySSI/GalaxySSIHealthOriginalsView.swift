@@ -599,11 +599,13 @@ struct GalaxySSIHealthOriginalsView: View {
 
   private func open(_ item: GalaxySSIHealthOriginalStore.Original) {
     guard scene == .active else { return }
+    if item.kind == .structured {
+      preview = Preview(original: item)
+      return
+    }
     do {
       let data = try store.read(item)
-      if item.kind == .structured {
-        preview = Preview(original: item)
-      } else if item.kind == .pdf {
+      if item.kind == .pdf {
         guard let pdf = PDFDocument(data: data), pdf.isLocked || pdf.pageCount > 0 else { error = true; return }
         preview = Preview(original: item, pdf: pdf)
       } else {
