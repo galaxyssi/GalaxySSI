@@ -18599,6 +18599,7 @@ final class MessageCoordinator: ObservableObject {
     guard fileRecoveriesInFlight.insert(operation).inserted else { return false }
     defer { fileRecoveriesInFlight.remove(operation) }
     let sourceHash = AgentTurnReceiptEvidence.hash(original.richOutputJson)
+    let readSelection = AgentModelSelectionSettings.selection(for: original.conversationId)
     func valid() -> Bool {
       guard !Task.isCancelled, UIApplication.shared.applicationState == .active, store.canReadAgentTranscript,
         store.profile.identityFingerprint == owner, store.activeAgentConversationId == original.conversationId,
@@ -18606,6 +18607,7 @@ final class MessageCoordinator: ObservableObject {
         !session.privateMode, !session.trackingPaused, session.mergedIntoConversationId.isBlank, session.globalTopicKey.isBlank,
         let current = store.persistedMessage(id: messageID, contactId: "hermes"), current.conversationId == original.conversationId,
         current.turnId == original.turnId, AgentTurnReceiptEvidence.hash(current.richOutputJson) == sourceHash else { return false }
+      guard AgentModelSelectionSettings.selection(for: original.conversationId) == readSelection else { return false }
       return true
     }
     var attachment = await Task.detached(priority: .userInitiated) {
@@ -18632,17 +18634,32 @@ final class MessageCoordinator: ObservableObject {
       let staged = await stageAgentAttachments(conversationId: original.conversationId, turnId: childTurn, attachments: [file])
       guard valid(), staged.count == 1 else { throw AgentSingleFileRead.Failure.sourceChanged }
       let goal = AgentSingleFileRead.instructions(language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage))
+      if readSelection.mode == .automatic {
+        guard store.beginAgentAutoRouteTurn(for: outgoing, targets: AgentCallableTargetCatalog.build(
+          contacts: store.visibleContacts, apiKey: { store.apiKey(for: $0) })) else {
+          throw AgentModelLoopRecoveryError(code: "auto_route_turn_not_committed")
+        }
+      }
+      // Freeze one choice, including no eligible route, for this isolated child turn.
+      let automaticTargetId = automaticRouteSelection(for: contact,
+        conversationId: original.conversationId, goal: goal)?.target.id ?? ""
       let raw: String
-      if let profile = selectedLocalModel(for: contact, conversationId: original.conversationId, goal: goal) {
+      if let profile = selectedLocalModel(for: contact, conversationId: original.conversationId, goal: goal,
+        automaticTargetId: automaticTargetId) {
+        try recordAutomaticDispatch(targetId: "local-llm", outgoing: outgoing)
         raw = try await AgentSingleFileRead.local(profile: profile, attachment: file, source: outgoing,
           language: LanguagePolicySettings.resolve(store.languagePolicy.responseLanguage),
           valid: { valid() && LocalModelRuntimeSettings.isProfileEnabled(profile) })
-      } else if let cloud = selectedCloudModelContact(for: contact, conversationId: original.conversationId, goal: goal) {
+      } else if let cloud = selectedCloudModelContact(for: contact, conversationId: original.conversationId, goal: goal,
+        automaticTargetId: automaticTargetId) {
         let resolved = CloudModelRequestRoutingPolicy.resolve(contact: cloud, requestedModelId: cloud.selectedCloudModelId, hasImageInput: file.isImage)
+        try recordAutomaticDispatch(targetId: cloud.id, outgoing: outgoing)
         raw = try await AgentSingleFileRead.cloud(contact: resolved, store: store, disclosure: disclosureStore,
           source: outgoing, attachment: file,
           valid: { valid() && !self.disclosureStore.blockedDestinationIds().contains(resolved.id) })
-      } else if let agent = selectedAgentContact(for: contact, conversationId: original.conversationId, goal: goal) {
+      } else if let agent = selectedAgentContact(for: contact, conversationId: original.conversationId, goal: goal,
+        automaticTargetId: automaticTargetId) {
+        try recordAutomaticDispatch(targetId: agent.id, outgoing: outgoing)
         raw = try await readSingleFileOnDesktop(file, source: outgoing, original: original, target: agent, valid: valid)
       } else { throw AgentSingleFileRead.Failure.unavailable }
       guard valid() else { throw AgentSingleFileRead.Failure.sourceChanged }
