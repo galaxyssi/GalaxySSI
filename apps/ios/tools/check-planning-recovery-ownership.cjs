@@ -1,7 +1,7 @@
 // Source contracts only; no Swift, model, native effects or callback/concurrency execution.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = 'fee090e84d5c88dcc2f9756dc40cbf73b615cd14';
+const base = 'c6bad3465c673dfb2dcecb23b095185c129c7447', approved = '1b7492677dd0544c2eda51433cc44659d9c4554e';
 const file = app + 'GalaxySSIServices.swift', clean = s => s.replace(/\r\n/g, '\n'), memo = new Map();
 const read = f => clean(fs.readFileSync(path.join(root, f), 'utf8'));
 function show(ref, f) {
@@ -16,6 +16,12 @@ function section(s, first, last) {
   assert(b > a, last); return s.slice(a, b);
 }
 function retainedServices(s) {
+  if (s.includes('use: .initialProviderAdmission')) {
+    const first = '  private func receivePhoneOwnedProviderReplyInScope(', last = '  private func receiveLocalModelReply(';
+    const block = section(s, first, last);
+    assert.equal(block, section(show(approved, file), first, last), 'Exact initial selected-provider ownership only');
+    s = once(s, block, section(show(base, file), first, last));
+  }
   if (s.includes('  private func planningRecoveryIsCurrent(')) {
     const first = '  private func planningRecoveryIsCurrent(', last = '  func resumePendingAgentDelivery() {';
     const block = section(s, first, last);
@@ -67,7 +73,9 @@ if (require.main === module) {
   for (const token of ['task.phase == .planning, !task.blocked', 'reference.sessionId == task.sessionId',
     'reference.turnId == task.taskId', 'task.activePlan?.revision == reference.baseRevision',
     'input.conversation.privateMode == privateMode && input.conversation.trackingPaused == trackingPaused',
-    '!cancelled, profile == self.profile, task == self.task', 'conversation.status == .active',
+    '!cancelled, profile == self.profile, task == expectedPersistedTask', 'conversation.status == .active',
+    'expectedPersistedTask = use == .initialProviderAdmission ? nil : task',
+    'if task.phase == .planning, use != .initialProviderAdmission',
     'guard task.phase == .planning, !task.blocked || task.pendingPlanning?.isReplanning == true',
     'conversation.trackingPaused == trackingPaused, conversation.mergedIntoConversationId.isBlank',
     'conversation.sessionRequirement == sessionRequirement', 'source.richOutputJson == self.source.richOutputJson',
@@ -120,14 +128,29 @@ if (require.main === module) {
   for (const mutation of rollingMutations) {
     assert.notEqual(mutation, rolling); assert.throws(() => retainedServices(services.replace(rolling, mutation)), assert.AssertionError);
   }
+  const provider = section(services, '  private func receivePhoneOwnedProviderReplyInScope(', '  private func receiveLocalModelReply(');
+  assert.equal((provider.match(/planningRecoveryIsCurrent\(/g) || []).length, 5);
+  assert(provider.indexOf('use: .initialProviderAdmission') < provider.indexOf('localInitialPlanningJournal.begin('));
+  assert(provider.indexOf('self.planningRecoveryIsCurrent(attemptScope)') < provider.indexOf('task.pendingPlanning = reference'));
+  assert(provider.indexOf('owned.acceptsInput(input)') < provider.indexOf('await modelPlannedLocalNativeActions('));
+  assert(provider.indexOf('let owned = callbackScope, planningRecoveryIsCurrent(owned)') < provider.indexOf('task.phase = .executing'));
+  assert(provider.indexOf('guard planningRecoveryIsCurrent(callbackScope ?? attemptScope)') < provider.indexOf('task.phase = .failed'));
+  const providerMutations = [provider.replace('planningRecoveryIsCurrent(attemptScope), attemptScope.acceptsInput(input)', 'attemptScope.acceptsInput(input)'),
+    provider.replace('self.planningRecoveryIsCurrent(attemptScope)', 'true'),
+    provider.replace('self.planningRecoveryIsCurrent(owned), owned.acceptsInput(input)', 'self.planningRecoveryIsCurrent(owned)'),
+    provider.replace('let owned = callbackScope, planningRecoveryIsCurrent(owned),', 'let owned = callbackScope,'),
+    provider.replace('      guard planningRecoveryIsCurrent(callbackScope ?? attemptScope) else { return }\n', '')];
+  for (const mutation of providerMutations) {
+    assert.notEqual(mutation, provider); assert.throws(() => retainedServices(services.replace(provider, mutation)), assert.AssertionError);
+  }
   for (const name of ['AgentInitialPlanningJournal', 'GuardedModelAgentPlanner', 'AgentModelToolLoop', 'AgentPlannerModelSnapshot', 'AgentSessionRequirement'])
     assert.equal(read(app + name + '.swift'), show(base, app + name + '.swift'), name + ' retained');
   const testsFile = 'apps/ios/GalaxySSITests/AgentPlanningRecoveryScopeTests.swift', tests = read(testsFile);
-  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 18);
+  assert.equal(tests, show(approved, testsFile)); assert.equal((tests.match(/  func test/g) || []).length, 21);
   assert(!/\p{Script=Han}/u.test(helper + tests));
   const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
   const registrations = s => s.split('\n').filter(line => /AgentPlanningRecoveryScope(?:Tests)?\.swift/.test(line));
   assert.equal(registrations(read(projectFile)).length, 8);
   assert.deepEqual(registrations(read(projectFile)), registrations(show(approved, projectFile)));
-  console.log('Startup/manual/rolling planning ownership, twenty negative source mutations, retained existing admission and eighteen authored fixtures checked; no native execution.');
+  console.log('Startup/manual/rolling/selected-provider ownership, twenty-five negative source mutations and twenty-one authored fixtures checked; no native execution.');
 }
