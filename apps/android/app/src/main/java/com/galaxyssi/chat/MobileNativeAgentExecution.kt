@@ -107,6 +107,10 @@ internal fun MobileNativeAgent.submitGoal(
 
 internal fun MobileNativeAgent.executeSubmittedGoal(): AgentUiState {
     val planningStartedAt = SystemClock.elapsedRealtime()
+    if ((planner as? AgentSelectedNativeActionPlanner)?.pinnedDesktopGroup == true) {
+        currentScreen = ScreenContext(foregroundApp = "", pageTitle = "")
+        return beginInitialPlanning(planningStartedAt)
+    }
     if (activeConversationContext.privateMode &&
         HealthCareDiscussion.bound(appContext, activeConversationContext.conversationId)
     ) {

@@ -1252,14 +1252,18 @@ class ActionExecutorAgentTeamMemberWorker internal constructor(
                 mapOf("manual_target_locked" to "true",
                     EXECUTION_POLICY_PROMPT_ACTION_PARAMETER to context.member.objective.ifBlank { context.request.goal },
                     "manual_model_id" to context.member.context["collaboration_model_id"].orEmpty())
-            } else emptyMap()) + (if (trialGuarded) mapOf(CollaborationTrialPolicy.REQUIRED_PARAMETER to "true") else emptyMap()),
+            } else emptyMap()) + (if (PinnedDesktopTeam.PIN in forwardedContext) mapOf(
+                PinnedDesktopTeam.PERSON to context.member.context.getValue(CollaborationResearchWorkflow.PERSON),
+                "agent_reasoning_effort" to context.request.context.getValue("agent_reasoning_effort").toString()
+            ) else emptyMap()) + (if (trialGuarded) mapOf(CollaborationTrialPolicy.REQUIRED_PARAMETER to "true") else emptyMap()),
             requiresConfirmation = false
         )
         progressContext?.let { CollaborationProgressStore.register(it, context) }
         if (groupId.isNotBlank()) progressContext?.let {
             CollaborationResearchArchive(it, groupId).record(context, context.request.goal, input = true)
         }
-        provider.prepare(registration.agentId, managedRequest, action.enforceSupervisedPlanningBoundary(), screenProvider())
+        provider.prepare(registration.agentId, managedRequest, action.enforceSupervisedPlanningBoundary(),
+            if (PinnedDesktopTeam.PIN in forwardedContext) ScreenContext(foregroundApp = "", pageTitle = "") else screenProvider())
         return try {
             val result = adapterWorker.execute(context.copy(request = managedRequest))
             if (groupId.isNotBlank() && progressContext != null)

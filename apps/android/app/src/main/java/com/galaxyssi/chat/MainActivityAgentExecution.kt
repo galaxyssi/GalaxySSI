@@ -430,13 +430,18 @@ internal fun MainActivity.executeConcurrentAgentGoal(
     executionMode: AgentTaskExecutionMode? = null,
     isSubmissionCancelled: () -> Boolean = { false },
     approvedHealthDiscussion: Boolean = false,
-    isolatedFileRead: Boolean = false
+    isolatedFileRead: Boolean = false,
+    confirmedGroupMembers: List<AgentRequestedMember> = emptyList()
 ) {
     if (isSubmissionCancelled()) return
     require(!approvedHealthDiscussion || deterministicAction?.isSupervisedProjectConnector() == true)
     val submissionStartedAt = SystemClock.elapsedRealtime()
     val phoneControl = PhoneAssistantTaskControl.isAutomation(turnId)
-    val groupSeed = if (approvedHealthDiscussion || isolatedFileRead) null
+    val groupSeed = if (confirmedGroupMembers.isNotEmpty()) {
+        require(!phoneControl && confirmedGroupMembers.size >= 2 &&
+            confirmedGroupMembers.all { it.collaborationGroupId == conversationId })
+        requireNotNull(deterministicAction).also { require(PinnedDesktopTeam.PIN in it.parameters) }
+    } else if (approvedHealthDiscussion || isolatedFileRead) null
         else CollaborationRoutingPolicy.seed(turnId, AgentTurnMentionRegistry.peek(turnId))
     val supervisedProject = phoneControl || groupSeed == null && AgentPhoneAgentLoopRoutingPolicy.shouldUseSupervisedLoop(
         goal = goal,
@@ -559,7 +564,9 @@ internal fun MainActivity.executeConcurrentAgentGoal(
                     conversationContext,
                     turnId,
                     executionMode,
-                    requestedMembers = AgentTurnMentionRegistry.take(turnId).takeUnless { approvedHealthDiscussion }.orEmpty()
+                    requestedMembers = confirmedGroupMembers.ifEmpty {
+                        AgentTurnMentionRegistry.take(turnId).takeUnless { approvedHealthDiscussion }.orEmpty()
+                    }
                 )
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE

@@ -1073,8 +1073,7 @@ object AppStore {
         if (adapter != null) {
             contact.put("adapter", JSONObject(adapter.toString()))
         }
-        val capabilities = agent.optJSONArray("capabilities")
-            ?: adapter?.optJSONArray("capabilities")
+        val capabilities = PinnedDesktopTeam.routingCapabilities(agent)
         if (capabilities != null) {
             contact.put("capabilities", JSONArray(capabilities.toString()))
             contact.put("capabilities_hash", capabilities.toString().hashCode().toUInt().toString(16))
@@ -1086,6 +1085,7 @@ object AppStore {
             contact.put("invocation_profile", JSONObject(profile.toString()))
         }
         contact.put("private_health_report_vision_v1", agent.optBoolean("private_health_report_vision_v1"))
+        contact.put(PinnedDesktopTeam.CAPABILITY, PinnedDesktopTeam.advertised(agent))
         val protocols = agent.optJSONArray("protocols")
             ?: adapter?.optJSONArray("protocols")
         if (protocols != null) {

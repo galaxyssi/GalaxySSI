@@ -560,33 +560,11 @@ object GalaxySSIMqttClient {
             ?.let(::AgentTaskBudgetStore)
             ?.load()
             ?: AgentTaskBudget.forProfile(AgentTaskBudgetProfile.ADAPTIVE)
-        val payload = JSONObject()
-            .put("type", "text")
-            .put("content", content)
-            .put("contact_id", contactId)
-            .put("task_id", resolvedTaskId)
-            .put("conversation_id", resolvedConversationId)
-            .put("turn_id", resolvedTurnId)
-            .put("execution_mode", resolvedExecutionMode.wireValue)
-            .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
-            .put("time", System.currentTimeMillis())
-        connectorTaskMode.trim().takeIf(String::isNotBlank)?.let {
-            payload.put("connector_task_mode", it.take(96))
-        }
-        boundedExecutionPolicyPrompt.takeIf(String::isNotBlank)?.let {
-            payload.put("execution_policy_prompt", it)
-        }
-        (requestKind.takeIf { it == PhoneAssistantTaskControl.SCREEN_ANALYSIS_REQUEST_KIND }
-            ?: PhoneAssistantTaskControl.requestKind(resolvedTurnId)).takeIf(String::isNotBlank)?.let {
-            payload.put("request_kind", it)
-        }
-        AgentInvocationRequestJsonCodec.encode(agentModelId, agentReasoningEffort)?.let {
-            payload.put("agent_invocation", it)
-        }
+        val payload = desktopAgentRequestPayload(content, contactId, resolvedTaskId, resolvedConversationId,
+            resolvedTurnId, resolvedExecutionMode, taskBudget, connectorTaskMode, boundedExecutionPolicyPrompt,
+            requestKind, agentModelId, agentReasoningEffort, runId, resultContract, teamId, agentInstanceId,
+            agentTeamMessage)
         recordPublishStage("payload_ready", "chars=${content.length}")
-        runId.trim().takeIf(String::isNotBlank)?.let { payload.put("run_id", it) }
-        CollaborationResultContract.encode(payload, resultContract, teamId, agentInstanceId)
-        if (agentTeamMessage) payload.put("agent_team_message", true)
         val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
             .orEmpty()
         if (resolvedTraceId.isNotBlank()) {

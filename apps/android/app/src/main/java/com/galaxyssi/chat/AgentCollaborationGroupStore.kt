@@ -18,6 +18,11 @@ internal class CollaborationGroupStore(context: Context) {
         group
     }
 
+    fun create(group: CollaborationGroup): CollaborationGroup = synchronized(LOCK) {
+        check(load(group.conversationId) == null) { "A collaboration group already exists" }
+        update(group.conversationId) { group }
+    }
+
     fun update(conversationId: String, transform: (CollaborationGroup) -> CollaborationGroup): CollaborationGroup =
         synchronized(LOCK) {
             val before = load(conversationId) ?: CollaborationGroup(conversationId)

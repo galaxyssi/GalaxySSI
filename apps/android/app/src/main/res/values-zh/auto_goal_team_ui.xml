@@ -16,4 +16,7 @@
     <string name="auto_goal_team_active">本会话已有团队正在工作。请等待完成，或输入 /team stop 停止任务。</string>
     <string name="auto_goal_team_inactive">本会话没有可停止的临时团队任务。</string>
     <string name="auto_goal_team_error">未能完成团队命令。请先查看当前会话，再决定是否重试。</string>
+    <string name="desktop_team_update">请更新已配对的 GalaxySSI 桌面端，然后等待 Codex 报告支持锁定团队路由。未发送团队请求。</string>
+    <string name="desktop_team_name">Codex 研究小组</string>
+    <string name="desktop_team_confirm">在 %1$s 上为两位 Codex 成员创建独立研究小组？\n模型：%2$s\n推理强度：%3$s\n\n智能体自行决定如何分工。新小组只接收下方目标，不接收本会话记录或附件。可以使用常规协作工具，也可暂停或停止。\n\n请确认目标不含临床或个人健康数据，且可以发送至此桌面端：\n\n%4$s</string>
 </resources>

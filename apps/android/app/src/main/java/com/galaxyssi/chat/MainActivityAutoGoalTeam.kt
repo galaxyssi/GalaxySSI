@@ -156,6 +156,11 @@ internal fun allowsModelTeamTurn(chat: AgentConversation, goal: String, hasAttac
 
 internal fun MainActivity.handleAutoGoalTeam(chat: AgentConversation, text: String, hasExtras: Boolean): Boolean {
     val command = AutoGoalTeamCommand.parse(text) ?: return false
+    if (command is AutoGoalTeamCommand.Start &&
+        PinnedDesktopTeam.manualCodex(AgentModelSelectionSettings.selection(this, chat.id))) {
+        reviewDesktopTeam(chat, text, command.objective, hasExtras)
+        return true
+    }
     reviewAutoGoalTeam(chat, command, text, hasExtras, fromModel = false)
     return true
 }
@@ -221,7 +226,19 @@ private fun MainActivity.reviewAutoGoalTeam(chat: AgentConversation, command: Au
         AutoGoalTeamCommand.TooLong -> notice(R.string.auto_goal_team_limit)
         AutoGoalTeamCommand.PrivateObjective -> notice(R.string.auto_goal_team_health)
         AutoGoalTeamCommand.Stop -> background {
-            completed(AutoGoalTeamJobs.stop(ctx, chat.id), R.string.auto_goal_team_inactive)
+            val turn = CollaborationGroupStore(ctx).load(chat.id)?.confirmedDesktopTurn.orEmpty()
+            if (turn.isBlank()) completed(AutoGoalTeamJobs.stop(ctx, chat.id), R.string.auto_goal_team_inactive)
+            else {
+                val run = AgentTeamDispatchIds.supervisorRunId(PinnedDesktopTeam.teamId(chat.id))
+                val team = globalSuperAgentRuntime.agentTeamSnapshot(run)
+                val active = team == null || team.conversationId == chat.id && team.taskId == turn &&
+                    (!team.state.isTerminal || team.state == AgentTeamExecutionState.INTERRUPTED)
+                if (active) {
+                    AgentTeamDurableControl(ctx).set(run, AgentTeamUserControl.STOP)
+                    globalSuperAgentRuntime.cancelAgentTeam(run)
+                }
+                completed(active, R.string.auto_goal_team_inactive)
+            }
         }
         is AutoGoalTeamCommand.Start -> background {
             fun eligibleChat() = agentTranscriptStore.conversation(chat.id)?.takeIf {

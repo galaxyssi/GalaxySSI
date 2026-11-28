@@ -16,4 +16,7 @@
     <string name="auto_goal_team_active">A team is already active in this chat. Wait for it to finish or use /team stop.</string>
     <string name="auto_goal_team_inactive">There is no active team to stop in this chat.</string>
     <string name="auto_goal_team_error">Could not complete the team command. Check this chat before trying again.</string>
+    <string name="desktop_team_update">Update the paired GalaxySSI Desktop, then wait for Codex to report pinned team support. No team request was sent.</string>
+    <string name="desktop_team_name">Codex research group</string>
+    <string name="desktop_team_confirm">Create a separate research group with two Codex members on %1$s?\nModel: %2$s\nReasoning: %3$s\n\nThe agents decide how to divide the work. The new group receives only the objective below, not this chat or its attachments. Normal collaboration tools and pause/stop controls apply.\n\nConfirm that the objective contains no clinical or personal health data and may be sent to this Desktop:\n\n%4$s</string>
 </resources>

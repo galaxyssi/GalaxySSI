@@ -57,6 +57,9 @@ TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".galaxyssi" / "codex_conversation_threads.json"
 CONVERSATION_THREAD_VERSION = "v8"
 CODEX_THREAD_CONFIG = {"web_search": "live"}
+# The phone owns member assignment. A pinned member may not delegate to an
+# unpinned provider-native child with its own agent or model defaults.
+PINNED_MEMBER_CONFIG = {"features.multi_agent": False, "features.multi_agent_v2": False}
 CODEX_TASK_POLICY = """
 GalaxySSI execution policy:
 - Do not inspect or invoke personal Codex Skills. Execute the request with the model and available tools directly.
@@ -178,6 +181,7 @@ class CodexRun:
     failure_counts: dict[str, int] = field(default_factory=dict)
     observed_failure_items: set[tuple[str, str]] = field(default_factory=set)
     replan_inflight: bool = False
+    verifying_recovered_pin: bool = False
     finished: bool = False
     prefers_chinese: bool = False
     first_output_emitted: bool = False
@@ -374,6 +378,9 @@ class CodexAppServer:
             prompt,
             attachments=[*(image_paths or []), *(fresh_thread_image_paths or [])],
         )
+        pinned = resolved_policy.pinned_codex_model
+        if pinned and model != pinned:
+            raise RuntimeError(f"Pinned Codex model {pinned} does not match the requested model")
         fast_chat = (
             resolved_policy.task_kind == AgentTaskKind.CHAT
             and not local_images
@@ -414,7 +421,8 @@ class CodexAppServer:
                         raise CodexConversationBusyError(active_run.task_id)
                     self._runs[task_id] = run
                     conversation_key = self._conversation_key(clean_conversation_id)
-                    run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
+                    # A cached thread may have been created with provider fallback enabled.
+                    run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key and not pinned else ""
                     # This active reservation prevents eviction of a loaded thread.
                     # Warm turns need not wait for unrelated lifecycle RPCs.
                     thread_loaded = run.thread_id in self._loaded_thread_ids
@@ -441,12 +449,14 @@ class CodexAppServer:
                 # Bind before the next lifecycle operation can evict an idle
                 # thread. This lock never guards notification/RPC delivery.
                 with self._thread_lifecycle_lock:
-                    run.thread_id = self._start_thread_with_retry(
+                    start_thread = self._start_thread if pinned else self._start_thread_with_retry
+                    run.thread_id = start_thread(
                         cwd,
                         model,
                         clean_conversation_id,
                         approval_policy=approval_policy,
                         sandbox=sandbox,
+                        **({"exact_model": True} if pinned else {}),
                     )
         except Exception:
             self._discard_run(run)
@@ -495,7 +505,7 @@ class CodexAppServer:
                     include_task_policy=False,
                 )
             except RuntimeError as exc:
-                if private_report or self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
+                if pinned or private_report or self._experiment_boundary is not None or not run.thread_id or not self._is_thread_not_found_error(exc):
                     raise
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
@@ -530,6 +540,8 @@ class CodexAppServer:
         except Exception:
             self._discard_run(run)
             raise
+        if pinned and run.finished:
+            return run
         run.turn_id = str((response.get("turn") or {}).get("id") or "")
         if run.turn_id:
             if planner_receipt is not None:
@@ -590,6 +602,9 @@ class CodexAppServer:
         image_paths: list[str] | None = None,
     ) -> CodexRun:
         """Reconnect to a turn or continue its goal from the durable checkpoint."""
+        pinned = execution_policy.pinned_codex_model if execution_policy else ""
+        if pinned and model != pinned:
+            raise RuntimeError(f"Pinned Codex model {pinned} does not match the recovery model")
         if self._experiment_boundary is not None:
             policy = execution_policy or execution_policy_for(original_prompt)
             self._experiment_boundary.admit(conversation_id, cwd, model, policy.reasoning_effort.value, image_paths or [])
@@ -623,6 +638,7 @@ class CodexAppServer:
             last_event_monotonic=now,
             prefers_chinese=self._contains_chinese(original_prompt),
             execution_policy=execution_policy or execution_policy_for(original_prompt),
+            verifying_recovered_pin=bool(pinned),
             working_directory=str(Path(cwd).expanduser().resolve()) if cwd else "",
             sandbox=sandbox,
             model=model,
@@ -660,18 +676,23 @@ class CodexAppServer:
                 self._make_loaded_thread_room(incoming_thread_id=clean_thread_id)
                 response = self._request("thread/resume", {
                     "threadId": clean_thread_id,
+                    **({"model": pinned} if pinned else {}),
                     "approvalPolicy": approval_policy,
                     "sandbox": thread_sandbox(run.conversation_id, sandbox),
-                    "config": thread_config(run.conversation_id, CODEX_THREAD_CONFIG),
+                    "config": {**thread_config(run.conversation_id, CODEX_THREAD_CONFIG),
+                               **(PINNED_MEMBER_CONFIG if pinned else {})},
                     "developerInstructions": thread_policy(run.conversation_id, CODEX_TASK_POLICY),
                 }, timeout=30)
+                if pinned and (response.get("model") != pinned or (response.get("thread") or {}).get("id") != clean_thread_id):
+                    raise RuntimeError(f"Codex did not confirm the recovered thread and pinned model {pinned}")
+                run.verifying_recovered_pin = False
                 with self._lock:
                     self._mark_thread_loaded_locked(clean_thread_id)
             if run.finished:
                 return run
             thread = response.get("thread") or {}
             turns = thread.get("turns") or []
-            if not turns:
+            if pinned or not turns:
                 response = self._request("thread/read", {
                     "threadId": clean_thread_id,
                     "includeTurns": True,
@@ -839,7 +860,7 @@ class CodexAppServer:
             from codex_experiment_boundary import reject
             reject("checkpoint_not_reusable")
         clean_conversation_id = str(conversation_id or "").strip()
-        if clean_conversation_id:
+        if clean_conversation_id and not (execution_policy and execution_policy.pinned_codex_model):
             with self._lock:
                 self._conversation_threads.pop(
                     self._conversation_key(clean_conversation_id),
@@ -1331,11 +1352,14 @@ class CodexAppServer:
         *,
         approval_policy: str = "never",
         sandbox: str = "workspace-write",
+        exact_model: bool = False,
     ) -> str:
         with self._thread_lifecycle_lock:
             self._make_loaded_thread_room()
             private_report = is_private_report(conversation_id)
             config = thread_config(conversation_id, CODEX_THREAD_CONFIG)
+            if exact_model:
+                config = {**config, **PINNED_MEMBER_CONFIG}
             if private_report:
                 current = self._request("config/read", {"cwd": self._resolved_path(cwd), "includeLayers": False}, timeout=30)
                 servers = (current.get("config") or {}).get("mcp_servers") or {}
@@ -1348,9 +1372,12 @@ class CodexAppServer:
                 "config": config,
                 "developerInstructions": thread_policy(conversation_id, CODEX_TASK_POLICY),
                 "dynamicTools": thread_tools(conversation_id, self._dynamic_tools),
+                **({"allowProviderModelFallback": False} if exact_model else {}),
                 **({"environments": [], "runtimeWorkspaceRoots": []} if private_report else {}),
             }, timeout=30)
             thread_id = str((response.get("thread") or {}).get("id") or "")
+            if exact_model and response.get("model") != model:
+                raise RuntimeError(f"Codex did not confirm the pinned model {model}")
             if thread_id and private_report:
                 inventory = self._request("mcpServerStatus/list", {"threadId": thread_id}, timeout=30)
                 rows = inventory.get("data")
@@ -1364,7 +1391,7 @@ class CodexAppServer:
                 with self._lock:
                     self._mark_thread_loaded_locked(thread_id)
                     conversation_key = self._conversation_key(conversation_id)
-                    if conversation_key:
+                    if conversation_key and not exact_model:
                         self._conversation_threads.pop(conversation_key, None)
                         self._conversation_threads[conversation_key] = thread_id
                         self._save_conversation_threads()
@@ -2091,7 +2118,6 @@ class CodexAppServer:
             return
         if method == "model/rerouted":
             self._capture_provider_usage(params, kind="model_rerouted")
-            return
         if method == "thread/compacted" and not params.get("turnId"):
             # A thread-only notification cannot finish a newer turn's phase.
             # Its watcher reconciles the exact owned turn with thread/read.
@@ -2106,7 +2132,8 @@ class CodexAppServer:
                 key for key, candidate in list(self._runs.items())
                 if thread_id and candidate.thread_id == thread_id and not candidate.finished
                 and (not turn_id or candidate.turn_id == turn_id
-                     or (method == "turn/started" and not candidate.turn_id))
+                    or (not candidate.turn_id and (method == "turn/started" or
+                        (method == "model/rerouted" and candidate.execution_policy.pinned_codex_model))))
             ]
             task_id = candidates[0] if len(candidates) == 1 else ""
         run = self._runs.get(task_id)
@@ -2115,6 +2142,19 @@ class CodexAppServer:
         if thread_id and run.thread_id != thread_id:
             return
         if turn_id and run.turn_id and run.turn_id != turn_id:
+            return
+        if method == "model/rerouted":
+            pinned = run.execution_policy.pinned_codex_model
+            if pinned and thread_id and turn_id and params.get("toModel") != pinned:
+                self._discard_run(run)
+                error = f"Provider rerouted pinned Codex model {pinned}; alternate output rejected"
+                self.on_event(task_id, {"thread_id": thread_id, "turn_id": turn_id, "status": "failed",
+                                        "current_step": "", "result": error, "error": error})
+                # The reader must remain free to receive the interrupt acknowledgement.
+                threading.Thread(target=self._interrupt_rerouted_turn, args=(thread_id, turn_id), daemon=True).start()
+            return
+        if run.verifying_recovered_pin:
+            # Recovery reads the authoritative turn after validating thread/resume.
             return
         now = time.monotonic()
         run.last_event_monotonic = now
@@ -2385,6 +2425,12 @@ class CodexAppServer:
                     self.on_event(task_id, {**common, "status": "running", "current_step": "Codex is working"})
                 elif "waitingOnUserInput" in detail:
                     self.on_event(task_id, {**common, "status": "waiting_input", "current_step": "Waiting for user input"})
+
+    def _interrupt_rerouted_turn(self, thread_id: str, turn_id: str) -> None:
+        try:
+            self._request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id}, timeout=10)
+        except Exception:
+            log.warning("Could not interrupt rerouted Codex turn", exc_info=True)
 
     def _capture_provider_usage(self, params: dict, *, kind="usage_snapshot", status="") -> None:
         from codex_provider_usage import normalize

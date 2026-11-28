@@ -974,7 +974,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         parentConversationId: String = "",
         globalTopicKey: String = "",
         privateMode: Boolean = false,
-        trackingPaused: Boolean = false
+        trackingPaused: Boolean = false,
+        initialSelection: AgentModelSelection? = null
     ): AgentConversation {
         val memoryBaseline = AgentSessionMemoryBudgetRuntime.begin()
         val now = System.currentTimeMillis()
@@ -993,7 +994,8 @@ class AgentTranscriptStore(context: Context, private val windowKey: String = "")
         check(conversationDatabase.insertIfAbsent(conversation)) {
             "Agent conversation could not be persisted"
         }
-        AgentModelSelectionSettings.initializeConversation(appContext, conversation.id, useRememberedSelection = false)
+        AgentModelSelectionSettings.initializeConversation(appContext, conversation.id, useRememberedSelection = false,
+            initialSelection = initialSelection)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
         AgentConversationWindows.changed()

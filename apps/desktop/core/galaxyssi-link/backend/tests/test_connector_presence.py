@@ -128,7 +128,7 @@ class ConnectorPresenceTest(unittest.TestCase):
 
         self.assertEqual(1, len(agents))
         self.assertNotIn("adapter", agents[0])
-        self.assertNotIn("capabilities", agents[0])
+        self.assertEqual(["pinned_team_codex_v1"], agents[0]["capabilities"])
         self.assertNotIn("provider_profile", agents[0])
         self.assertNotIn("reputation", agents[0])
         self.assertEqual(

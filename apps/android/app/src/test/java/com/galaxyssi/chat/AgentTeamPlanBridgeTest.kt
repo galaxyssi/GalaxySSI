@@ -8,6 +8,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentTeamPlanBridgeTest {
+    @Test fun confirmedDesktopGroupCompilesToTwoDistinctPeopleWithOnePinnedRoute() {
+        val id = "desktop_fixture:codex"
+        val route = PinnedDesktopTeam.Route(id, "fixture-model", AgentModelReasoningEffort.HIGH, "Fixture", "pin")
+        val group = PinnedDesktopTeam.newGroup("fixture-chat", "turn", route, listOf("One", "Two"))
+        val selected = group.requested(emptyList())
+        val seed = requireNotNull(CollaborationRoutingPolicy.seed("turn", selected)).let {
+            it.copy(parameters = it.parameters + mapOf(PinnedDesktopTeam.PIN to route.digest,
+                "agent_reasoning_effort" to route.effort.wireValue))
+        }
+        val resources = listOf(target(id, AgentConnectorKind.AGENT))
+        val compiled = AgentTeamPlanCompiler.compile(plan(seed), resources, enabled = false,
+            registrations = targetRegistrations(resources), requestedMembers = selected)
+        val action = compiled.actions.single()
+        val spec = requireNotNull(AgentTeamDispatchSpecCodec.decode(action.parameters.getValue(AGENT_TEAM_SPEC_PARAMETER)))
+        assertEquals(2, spec.definition.members.map { it.memberId }.distinct().size)
+        assertEquals("high", action.parameters["agent_reasoning_effort"])
+        assertEquals(action, action.rekeyAgentTeamForRetry())
+        assertTrue(PinnedDesktopTeam.ownsSpec(group, spec, "turn", route))
+        assertTrue(!PinnedDesktopTeam.ownsSpec(group, spec, "another-turn", route))
+        assertTrue(!PinnedDesktopTeam.ownsSpec(group, spec, "turn", route.copy(model = "other")))
+        assertTrue(!PinnedDesktopTeam.ownsSpec(group.copy(members = group.members.dropLast(1)), spec, "turn", route))
+        assertEquals(group, CollaborationGroupCodec.decode(CollaborationGroupCodec.encode(group)))
+    }
+
     @Test fun groupRolesNeverInheritTheProvidersSoftwareSpecialty() {
         val resources = listOf(target("codex", AgentConnectorKind.AGENT))
         val selected = listOf("Turing", "Curie", "Hopper").mapIndexed { index, name ->

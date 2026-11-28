@@ -477,6 +477,16 @@ class AgentTaskBudgetExceeded(RuntimeError):
 
 
 COLLABORATION_WORKSPACE_RESULT = "galaxyssi.collaboration-workspace.v1"
+PINNED_TEAM_CODEX_CAPABILITY = "pinned_team_codex_v1"
+
+
+def requested_team_codex_model(agent_id: str, payload: dict) -> str:
+    invocation = payload.get("agent_invocation")
+    if (agent_id != "codex" or payload.get("result_contract") != COLLABORATION_WORKSPACE_RESULT
+            or not isinstance(invocation, dict)):
+        return ""
+    fields = (payload.get("team_id"), payload.get("agent_instance_id"), invocation.get("model_id"))
+    return fields[-1].strip() if all(isinstance(v, str) and v.strip() for v in fields) else ""
 
 
 @dataclass(frozen=True)
@@ -495,6 +505,7 @@ class AgentExecutionPolicy:
     execution_mode: AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE
     task_budget: AgentTaskBudget = field(default_factory=AgentTaskBudget)
     result_contract: str = ""
+    pinned_codex_model: str = ""
 
     def public(self) -> dict:
         return {
@@ -509,6 +520,7 @@ class AgentExecutionPolicy:
             "max_same_failure_attempts": self.max_same_failure_attempts,
             "requires_artifact": self.requires_artifact,
             "result_contract": self.result_contract,
+            **({"pinned_codex_model": self.pinned_codex_model} if self.pinned_codex_model else {}),
             "target_platform": self.target_platform,
             "verify_installation": self.verify_installation,
             "absolute_timeout_seconds": None,
@@ -574,6 +586,7 @@ class AgentExecutionPolicy:
             task_budget=AgentTaskBudget.from_public(value.get("task_budget")),
             result_contract=(COLLABORATION_WORKSPACE_RESULT
                              if value.get("result_contract") == COLLABORATION_WORKSPACE_RESULT else ""),
+            pinned_codex_model=str(value.get("pinned_codex_model") or ""),
         )
 
 

@@ -6,6 +6,10 @@ import org.json.JSONObject
 internal object CollaborationResultContract {
     const val PARAMETER = "result_contract"
     const val WORKSPACE = "galaxyssi.collaboration-workspace.v1"
+    private val instance = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,95}")
+    private val team = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+
+    fun encodable(teamId: String, instanceId: String) = team.matches(teamId) && instance.matches(instanceId)
 
     fun assignment(groupId: String): Map<String, String> =
         if (groupId.isBlank()) emptyMap() else mapOf(PARAMETER to WORKSPACE)
@@ -18,9 +22,9 @@ internal object CollaborationResultContract {
     }.orEmpty()
 
     fun encode(payload: JSONObject, value: String, teamId: String, agentInstanceId: String) {
-        agentInstanceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,95}")) }
+        agentInstanceId.trim().takeIf(instance::matches)
             ?.let { payload.put("agent_instance_id", it) }
-        teamId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
+        teamId.trim().takeIf(team::matches)
             ?.let { payload.put("team_id", it) }
         if (value == WORKSPACE && payload.optString("team_id").isNotBlank() &&
             payload.optString("agent_instance_id").isNotBlank()) payload.put(PARAMETER, WORKSPACE)

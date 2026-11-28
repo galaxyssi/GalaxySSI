@@ -12,6 +12,7 @@ data class AgentPlannerRecoverySpec(
 )
 
 internal class AgentSelectedNativeActionPlanner(private val action: AgentAction) : AgentPlanner {
+    val pinnedDesktopGroup get() = PinnedDesktopTeam.PIN in action.parameters
     override fun recoverySpec() = AgentPlannerRecoverySpec(AgentPlannerRecoveryKind.NATIVE_ACTION, action)
     override fun plan(request: AgentRequest) = AgentPlanFactory.actions(request, listOf(action)).copy(
         plannerProfile = "deterministic-native-route",
