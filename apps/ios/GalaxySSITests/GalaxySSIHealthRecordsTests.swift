@@ -4416,6 +4416,124 @@ final class GalaxySSIHealthRecordsTests: XCTestCase {
   }
 
   @MainActor
+  func testRestoreFinalizationVerifiesOriginalsWithoutReplayingCommittedRecords() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    _ = try store.list()
+    try records.write(.init(metric: .weight, value: 60))
+    let before = try records.load().revisions
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "synthetic.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: pdf.count, sha256: GalaxySSIHealthLinkedExport.digest(pdf))
+    let receipt = UUID()
+    try store.withRestoreLease { lease in
+      try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease)
+      try records.commitRestore(records.load(), receipt: receipt, originals: [original], notify: false)
+    }
+    let pending = GalaxySSIHealthPortableBackup.RestoreResult(owner: "fixture", receipt: receipt, originals: [original])
+    XCTAssertFalse(pending.originalsReady)
+    let staged = root.appendingPathComponent("restore-staging").appendingPathComponent(receipt.uuidString)
+      .appendingPathComponent(original.id.uuidString)
+    let valid = try Data(contentsOf: staged)
+    var corrupt = valid
+    corrupt[corrupt.count - 1] ^= 1
+    try corrupt.write(to: staged)
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store))
+    XCTAssertEqual(try records.load().revisions, before)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+    try valid.write(to: staged)
+    try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store)
+    try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store)
+    XCTAssertEqual(try store.read(original), pdf)
+    XCTAssertEqual(try records.load().revisions, before)
+    XCTAssertEqual(try records.load().restoreReceipts?.count, 1)
+  }
+
+  @MainActor
+  func testRestoreFinalizationRejectsUncommittedForeignAndChangedSourceTokens() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    _ = try store.list()
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    let original = GalaxySSIHealthOriginalStore.Original(id: UUID(), name: "synthetic.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: Date(), bytes: pdf.count, sha256: GalaxySSIHealthLinkedExport.digest(pdf))
+    let receipt = UUID()
+    try store.withRestoreLease { lease in try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease) }
+    let pending = GalaxySSIHealthPortableBackup.RestoreResult(owner: "fixture", receipt: receipt, originals: [original])
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.id.uuidString).path))
+    try records.commitRestore(records.load(), receipt: receipt, originals: [original], notify: false)
+    let foreign = GalaxySSIHealthPortableBackup.RestoreResult(owner: "other", receipt: receipt, originals: [original])
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.resumeRestore(foreign, records: records, originals: store))
+    let changed = GalaxySSIHealthOriginalStore.Original(id: original.id, name: "changed.pdf", kind: .pdf,
+      fileExtension: "pdf", importedAt: original.importedAt, bytes: original.bytes, sha256: original.sha256)
+    let mismatched = GalaxySSIHealthPortableBackup.RestoreResult(owner: "fixture", receipt: receipt, originals: [changed])
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.resumeRestore(mismatched, records: records, originals: store))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.id.uuidString).path))
+    try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store)
+    XCTAssertEqual(try store.read(original), pdf)
+  }
+
+  @MainActor
+  func testRestoreFinalizationCannotResurrectAnExplicitlyRemovedOriginal() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("records"), secrets = HealthFixtureSecrets()
+    let records = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: file)
+    let store = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: root, restoreRecordsFile: file)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try store.store(pdf, name: "synthetic.pdf")
+    let original = try XCTUnwrap(store.list().originals.first), receipt = UUID()
+    try records.commitRestore(records.load(), receipt: receipt, notify: false)
+    let pending = GalaxySSIHealthPortableBackup.RestoreResult(owner: "fixture", receipt: receipt, originals: [original])
+    try store.remove(store.previewRemoval(original))
+    try store.withRestoreLease { lease in try store.stageRestore([(original, pdf)], receipt: receipt, lease: lease) }
+    XCTAssertThrowsError(try GalaxySSIHealthPortableBackup.resumeRestore(pending, records: records, originals: store))
+    XCTAssertThrowsError(try store.read(original))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(original.id.uuidString).path))
+    XCTAssertTrue(try store.list().originals.isEmpty)
+  }
+
+  @MainActor
+  func testRestoreReturnsVerifiedFileCompletionAndKeepsResumeIdempotent() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let sourceRoot = root.appendingPathComponent("source"), targetRoot = root.appendingPathComponent("target")
+    try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: targetRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let secrets = HealthFixtureSecrets(), sourceFile = sourceRoot.appendingPathComponent("records"), targetFile = targetRoot.appendingPathComponent("records")
+    let source = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: sourceFile)
+    let target = GalaxySSIHealthRecords(owner: "fixture", secrets: secrets, isolatedFile: targetFile)
+    let sourceStore = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: sourceRoot, restoreRecordsFile: sourceFile)
+    let targetStore = GalaxySSIHealthOriginalStore(owner: "fixture", secrets: secrets, fixtureDirectory: targetRoot, restoreRecordsFile: targetFile)
+    let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 100, height: 100)).pdfData { $0.beginPage() }
+    try sourceStore.store(pdf, name: "synthetic.pdf")
+    try source.write(.init(metric: .weight, value: 60))
+    let plan = try GalaxySSIHealthPortableBackup.plan(records: source, originals: sourceStore)
+    let (payload, _) = try GalaxySSIHealthPortableBackup.prepare(plan, records: source, originals: sourceStore)
+    let encrypted = try GalaxySSIHealthPortableBackup.seal(payload, password: "fixture-password")
+    let input = try GalaxySSIHealthPortableBackup.unlock(encrypted, password: "fixture-password")
+    let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: target, originals: targetStore)
+    let result = try GalaxySSIHealthPortableBackup.restore(input, expected: preview, records: target, originals: targetStore)
+    XCTAssertTrue(result.originalsReady)
+    XCTAssertEqual(result.owner, "fixture")
+    XCTAssertEqual(result.originals.count, 1)
+    let revisions = try target.load().revisions, receipts = try target.load().restoreReceipts
+    try GalaxySSIHealthPortableBackup.resumeRestore(result, records: target, originals: targetStore)
+    XCTAssertEqual(try target.load().revisions, revisions)
+    XCTAssertEqual(try target.load().restoreReceipts, receipts)
+  }
+
+  @MainActor
   func testCommittedHealthRestoreAuthenticatesStagedOriginalBeforePublishing() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -37,6 +37,7 @@ struct GalaxySSIHealthBackupView: View {
   @State private var restorePreview: GalaxySSIHealthPortableBackup.RestorePreview?
   @State private var acknowledged = false
   @State private var restored = false
+  @State private var pendingRestore: GalaxySSIHealthPortableBackup.RestoreResult?
   @State private var shownConflicts = 30
   @State private var replacements: Set<UUID> = []
 
@@ -98,9 +99,17 @@ struct GalaxySSIHealthBackupView: View {
         }
         if let restorePreview { restoreSection(restorePreview) }
         if restored { Text(t("restored", "Health backup restored")) }
+        if pendingRestore != nil {
+          Section(t("originals_pending", "Original file recovery pending")) {
+            Text(t("originals_pending_note", "Measurements were committed. Some original files are not yet available."))
+              .foregroundColor(.secondary)
+            Button(t("originals_retry", "Retry original file recovery"), action: resumeRestore).disabled(task != nil)
+          }
+        }
         if task != nil { ProgressView(t("working", "Processing backup")) }
         if error {
-          Text(restoring ? t("restore_failed", "Could not restore this backup. Check its password, owner and contents, or reopen it if local data changed.") :
+          Text(pendingRestore != nil ? t("originals_retry_failed", "Original files are still unavailable. The committed measurements were not imported again.") :
+            restoring ? t("restore_failed", "Could not restore this backup. Check its password, owner and contents, or reopen it if local data changed.") :
             t("failed", "Could not prepare or verify this backup. Check its size, password and contents."))
             .foregroundColor(.secondary)
         }
@@ -335,15 +344,26 @@ struct GalaxySSIHealthBackupView: View {
   private func restore() {
     guard scene == .active, acknowledged, let restoreInput, let restorePreview else { return }
     do {
-      try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
-                                                originals: originals, replacing: replacements)
+      let result = try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
+                                                            originals: originals, replacing: replacements)
       reset()
-      restored = true
+      restored = result.originalsReady
+      pendingRestore = result.originalsReady ? nil : result
     } catch {
       reset()
       restoring = true
       error = true
     }
+  }
+
+  private func resumeRestore() {
+    guard scene == .active, task == nil, let pendingRestore else { return }
+    do {
+      try GalaxySSIHealthPortableBackup.resumeRestore(pendingRestore, records: records, originals: originals)
+      self.pendingRestore = nil
+      restored = true
+      error = false
+    } catch { error = true }
   }
 
   private func run(_ work: @escaping @Sendable () throws -> WorkResult) {
@@ -392,6 +412,7 @@ struct GalaxySSIHealthBackupView: View {
     password = ""; repeated = ""
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
     restoring = false; restoreInput = nil; restorePreview = nil; acknowledged = false; restored = false; shownConflicts = 30
+    pendingRestore = nil
     replacements = []
   }
 
