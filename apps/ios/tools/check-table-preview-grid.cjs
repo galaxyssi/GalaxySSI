@@ -18,7 +18,12 @@ function between(s, start, end) {
 }
 function validate(file, source) {
   assert([view, grid, fixture].includes(file));
+  if (file === view) source = structured(file, source);
   assert.equal(source, show(approved, file), 'Exact bounded grid, owned worker/lifecycle and fixture source: ' + file);
+}
+function structured(file, source) {
+  const tool = path.join(__dirname, 'check-structured-originals.cjs');
+  return fs.existsSync(tool) ? require(tool).retained(file, source) : source;
 }
 module.exports = {validate};
 if (require.main === module) {
@@ -32,7 +37,7 @@ if (require.main === module) {
   assert.equal(tail(source), tail(show(base, view)), 'Exact raw save, UTI, confirmation labels and FileDocument implementation');
   for (const name of ['GalaxySSIHealthTableImport', 'GalaxySSIHealthXLSX']) {
     const f = app + name + '.swift';
-    assert.equal(read(f), show(base, f), 'No clinical parser, source mapping or formula-consent changes');
+    assert.equal(structured(f, read(f)), show(base, f), 'Only explicitly owned preview parser extensions; clinical policy retained');
   }
   const oldFixture = 'apps/ios/GalaxySSITests/GalaxySSIHealthRecordsTests.swift';
   const start = '  func testStructuredOriginalPreviewBoundsDoNotMutateSourceTable()',
@@ -72,7 +77,7 @@ if (require.main === module) {
     [grid, 'selected = nil }\n  }', '// clear removed\n  }']
   ];
   for (const [f, from, to] of mutations) {
-    const s = read(f); assert(s.includes(from), from);
+    const s = f === view ? structured(f, read(f)) : read(f); assert(s.includes(from), from);
     assert.throws(() => validate(f, s.replace(from, to)), undefined, from);
   }
   console.log('Table preview grid source contracts passed; ' + mutations.length + ' negative source mutations. Native behavior unexecuted.');
