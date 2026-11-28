@@ -11,7 +11,7 @@ function show(ref, file) {
   return memo.get(key);
 }
 function once(source, from, to) {
-  assert(from.length > 0); assert.equal(source.split(from).length, 2, 'Exact unique physical admission hunk');
+  assert(from.length > 0); assert.equal(source.split(from).length, 2, 'Exact unique physical admission hunk: ' + from.slice(0, 220));
   return source.replace(from, to);
 }
 function retained(file, source) {
