@@ -29,6 +29,8 @@ function normalizeConflictSources(source) {
   return fs.existsSync(tool) ? require(tool).retainedBackup(source) : source;
 }
 function normalizeReceiptView(source) {
+  const operation = path.join(__dirname, 'check-backup-operation.cjs');
+  if (fs.existsSync(operation)) source = require(operation).retainedView(source);
   const tool = path.join(__dirname, 'check-restore-receipts.cjs');
   return fs.existsSync(tool) ? require(tool).retainedView(source) : source;
 }
