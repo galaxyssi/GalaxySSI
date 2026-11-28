@@ -21,6 +21,15 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     XCTAssertEqual(archive.tableEvidence?.first?.target.revision, 2)
     XCTAssertEqual(archive.tableEvidence?.first?.source.dateOnlyDecision?.chosenMinute, 480)
     XCTAssertEqual(archive.tableEvidence?.first?.source.excelDate1904, false)
+    let firstReceipt = try XCTUnwrap(archive.restoreHistory?.first)
+    XCTAssertEqual(firstReceipt.counts.readings, 2)
+    XCTAssertEqual(firstReceipt.counts.replaced, 1)
+    XCTAssertEqual(firstReceipt.counts.conflicts, 1)
+    XCTAssertEqual(firstReceipt.counts.sourcesAdded, 2)
+    XCTAssertEqual(firstReceipt.counts.sourcesSkipped, 2)
+    XCTAssertEqual(firstReceipt.counts.originalsAdded, 1)
+    XCTAssertEqual(firstReceipt.counts.tablesAdded, 1)
+    XCTAssertTrue(archive.restoreReceipts?.contains(firstReceipt.id) == true)
     let fresh = try GalaxySSIHealthPortableBackup.previewRestore(input, records: fixture.target, originals: fixture.targetStore)
     try GalaxySSIHealthPortableBackup.restore(input, expected: fresh, records: fixture.target,
       originals: fixture.targetStore, replacing: [fixture.second.id])
@@ -29,6 +38,15 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     XCTAssertEqual(Set(archive.tableEvidence?.map(\.target.record) ?? []), Set([fixture.first.id, fixture.second.id]))
     XCTAssertEqual(archive.reportEvidence?.count, 2)
     XCTAssertEqual(archive.tableEvidence?.count, 2)
+    XCTAssertEqual(archive.restoreHistory?.count, 2)
+    let secondReceipt = try XCTUnwrap(archive.restoreHistory?.first)
+    XCTAssertEqual(secondReceipt.counts.duplicates, 1)
+    XCTAssertEqual(secondReceipt.counts.replaced, 1)
+    XCTAssertEqual(secondReceipt.counts.conflicts, 0)
+    XCTAssertEqual(secondReceipt.counts.sourcesAdded, 2)
+    XCTAssertEqual(secondReceipt.counts.sourcesReused, 2)
+    XCTAssertEqual(secondReceipt.counts.sourcesSkipped, 0)
+    XCTAssertEqual(secondReceipt.counts.originalsReused, 1)
   }
 
   @MainActor
@@ -42,6 +60,7 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     var archive = try fixture.target.load()
     archive.tableBatches = [tableAlias]
     try fixture.target.persistQuickReport(archive)
+    XCTAssertNil(try fixture.target.load().restoreHistory)
     let input = try fixture.input()
     let preview = try GalaxySSIHealthPortableBackup.previewRestore(input, records: fixture.target, originals: fixture.targetStore)
     XCTAssertEqual(preview.originals, 0)
@@ -56,6 +75,8 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     XCTAssertEqual(archive.tableEvidence?.first?.target.revision, 2)
     XCTAssertEqual(archive.tableEvidence?.first?.source.dateOnlyDecision?.resolvedTime, fixture.first.measuredAt)
     XCTAssertEqual(archive.tableEvidence?.first?.source.excelDate1904, false)
+    XCTAssertEqual(archive.restoreHistory?.first?.counts.originalsReused, 1)
+    XCTAssertEqual(archive.restoreHistory?.first?.counts.originalsAdded, 0)
   }
 
   @MainActor
@@ -81,6 +102,8 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     XCTAssertEqual(archive.current.first { $0.id == fixture.first.id }?.revision, 2)
     XCTAssertEqual(archive.reportEvidence?.map(\.target.record), [foreign.id])
     XCTAssertEqual(archive.tableEvidence?.map(\.target.record), [foreign.id])
+    XCTAssertEqual(archive.restoreHistory?.first?.counts.sourcesSkipped, 4)
+    XCTAssertEqual(archive.restoreHistory?.first?.counts.sourcesAdded, 0)
   }
 
   @MainActor
@@ -99,6 +122,65 @@ final class GalaxySSIHealthRestoreConflictSourceTests: XCTestCase {
     XCTAssertTrue(archive.reportEvidence?.isEmpty ?? true)
     XCTAssertTrue(archive.tableEvidence?.isEmpty ?? true)
     XCTAssertTrue(archive.restoreReceipts?.isEmpty ?? true)
+    XCTAssertNil(archive.restoreHistory)
+  }
+
+  func testReceiptBoundsRejectOverflowAndConservationFailures() throws {
+    var counts = emptyCounts()
+    XCTAssertTrue(counts.isValid)
+    counts.added = Int.max
+    XCTAssertFalse(counts.isValid)
+    counts.added = -1
+    XCTAssertFalse(counts.isValid)
+    counts.added = 1
+    XCTAssertFalse(counts.isValid)
+    counts.readings = 1
+    XCTAssertTrue(counts.isValid)
+    let invalid = GalaxySSIHealthRestoreReceipt(id: UUID(), at: Date(), backupFingerprint: String(repeating: "a", count: 64),
+      first: nil, last: nil, counts: counts)
+    XCTAssertFalse(invalid.isValid)
+  }
+
+  func testReceiptHistoryIsBoundedWithoutPruningCommitAuthority() throws {
+    var history: [GalaxySSIHealthRestoreReceipt] = []
+    var committed = Set<UUID>()
+    for index in 0..<105 {
+      let receipt = GalaxySSIHealthRestoreReceipt(id: UUID(), at: Date(timeIntervalSince1970: Double(index)),
+        backupFingerprint: String(repeating: "a", count: 64), first: nil, last: nil, counts: emptyCounts())
+      history = try GalaxySSIHealthRestoreReceipt.recording(receipt, in: history, committed: committed)
+      committed.insert(receipt.id)
+    }
+    XCTAssertEqual(history.count, 100)
+    XCTAssertEqual(committed.count, 105)
+    XCTAssertEqual(history.first?.at, Date(timeIntervalSince1970: 104))
+    XCTAssertTrue(GalaxySSIHealthRestoreReceipt.validHistory(history, committed: committed))
+    XCTAssertFalse(GalaxySSIHealthRestoreReceipt.validHistory(history, committed: []))
+    XCTAssertThrowsError(try GalaxySSIHealthRestoreReceipt.recording(XCTUnwrap(history.first), in: history, committed: committed))
+  }
+
+  @MainActor
+  func testInvalidDetailCannotCommitAndGenericStagingPreservesHistory() throws {
+    let fixture = try Fixture()
+    defer { fixture.cleanup() }
+    let original = try fixture.target.load()
+    let id = UUID()
+    let receipt = GalaxySSIHealthRestoreReceipt(id: id, at: Date(), backupFingerprint: String(repeating: "a", count: 64),
+      first: nil, last: nil, counts: emptyCounts())
+    XCTAssertThrowsError(try fixture.target.commitRestore(original, receipt: UUID(), receiptDetail: receipt))
+    XCTAssertNil(try fixture.target.load().restoreHistory)
+    try fixture.target.commitRestore(original, receipt: id, receiptDetail: receipt)
+    try fixture.target.commitRestore(original, receipt: UUID())
+    let reopened = try fixture.target.load()
+    XCTAssertEqual(reopened.restoreHistory, [receipt])
+    XCTAssertTrue(reopened.restoreReceipts?.contains(id) == true)
+    XCTAssertEqual(reopened.restoreReceipts?.count, 2)
+    XCTAssertThrowsError(try fixture.target.commitRestore(reopened, receipt: id, receiptDetail: receipt))
+  }
+
+  private func emptyCounts() -> GalaxySSIHealthRestoreReceipt.Counts {
+    .init(readings: 0, added: 0, duplicates: 0, conflicts: 0, replaced: 0,
+      originals: 0, originalsAdded: 0, originalsReused: 0, originalsRepaired: 0, originalsUnavailable: 0,
+      tablesAdded: 0, sources: 0, sourcesAdded: 0, sourcesReused: 0, sourcesSkipped: 0, missingReferences: 0)
   }
 
   @MainActor

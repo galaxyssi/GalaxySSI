@@ -37,6 +37,7 @@ struct GalaxySSIHealthBackupView: View {
   @State private var restorePreview: GalaxySSIHealthPortableBackup.RestorePreview?
   @State private var acknowledged = false
   @State private var restored = false
+  @State private var latestRestoreReceipt: GalaxySSIHealthRestoreReceipt?
   @State private var shownConflicts = 30
   @State private var replacements: Set<UUID> = []
 
@@ -98,6 +99,19 @@ struct GalaxySSIHealthBackupView: View {
         }
         if let restorePreview { restoreSection(restorePreview) }
         if restored { Text(t("restored", "Health backup restored")) }
+        if let latestRestoreReceipt {
+          Section {
+            GalaxySSIHealthRestoreReceiptRows(receipt: latestRestoreReceipt)
+          }
+        }
+        if entry == .all || entry == .restore || entry == .history {
+          Section {
+            NavigationLink(destination: GalaxySSIHealthRestoreHistoryView(records: records)) {
+              Label(GalaxySSILocalization.string("galaxyssi.health.restore_receipt.title", fallback: "Restore history", language: language),
+                    systemImage: "clock.arrow.circlepath")
+            }
+          }
+        }
         if task != nil { ProgressView(t("working", "Processing backup")) }
         if error {
           Text(restoring ? t("restore_failed", "Could not restore this backup. Check its password, owner and contents, or reopen it if local data changed.") :
@@ -337,7 +351,9 @@ struct GalaxySSIHealthBackupView: View {
     do {
       try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
                                                 originals: originals, replacing: replacements)
+      let receipt = (try? records.load())?.restoreHistory?.first
       reset()
+      latestRestoreReceipt = receipt
       restored = true
     } catch {
       reset()
@@ -393,6 +409,7 @@ struct GalaxySSIHealthBackupView: View {
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
     restoring = false; restoreInput = nil; restorePreview = nil; acknowledged = false; restored = false; shownConflicts = 30
     replacements = []
+    latestRestoreReceipt = nil
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
