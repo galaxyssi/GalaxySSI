@@ -40,6 +40,8 @@ function normalizeCompanions(file, source) {
   const paper = path.join(__dirname, 'check-photo-paper-hints.cjs');
   if (['GalaxySSIHealthPhotoDraft', 'GalaxySSIHealthPhotoCaptureView', 'GalaxySSIHealthOriginalStore'].some(name => file === app + name + '.swift') && fs.existsSync(paper))
     source = require(paper).retained(file, source);
+  const resave = path.join(__dirname, 'check-original-export-resave.cjs');
+  if (file === app + 'GalaxySSIHealthOriginalStore.swift' && fs.existsSync(resave)) source = require(resave).retained(file, source);
   return source;
 }
 module.exports = {retained, retainedFixtures};
