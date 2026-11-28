@@ -65,6 +65,8 @@ struct LocalModelAgentPlanningProvider: AgentModelPlanningProviding {
         return AgentMcpJSONCodec.stringify(object)
       }
       return result.text
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       throw AgentModelPlanningProviderError.unavailable(error.localizedDescription)
     }

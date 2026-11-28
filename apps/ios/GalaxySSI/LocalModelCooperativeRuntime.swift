@@ -192,17 +192,23 @@ final class LocalModelCooperativeRuntime {
     let startedAt = Date()
     var planningBrief = ""
     if let planner = plan.plannerProfile {
-      planningBrief = (try? await runtime.generateAsync(
-        profile: planner,
-        systemPrompt: Self.plannerSystemPrompt,
-        userPrompt: String(userPrompt.prefix(Self.maximumPlannerInputCharacters)),
-        maximumTokens: Self.plannerMaximumTokens,
-        temperature: 0.1,
-        thinkingMode: plan.plannerThinkingMode,
-        workClass: workClass,
-        taskId: taskId,
-        cancellation: cancellation
-      ).text.toPlanningBrief()) ?? ""
+      do {
+        planningBrief = try await runtime.generateAsync(
+          profile: planner,
+          systemPrompt: Self.plannerSystemPrompt,
+          userPrompt: String(userPrompt.prefix(Self.maximumPlannerInputCharacters)),
+          maximumTokens: Self.plannerMaximumTokens,
+          temperature: 0.1,
+          thinkingMode: plan.plannerThinkingMode,
+          workClass: workClass,
+          taskId: taskId,
+          cancellation: cancellation
+        ).text.toPlanningBrief()
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        planningBrief = ""
+      }
     }
     try Self.checkCancellation(cancellation)
 
@@ -255,6 +261,8 @@ final class LocalModelCooperativeRuntime {
         return result.withElapsedMillis(
           max(result.elapsedMillis, Int64(Date().timeIntervalSince(startedAt) * 1_000))
         )
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
         try Self.checkCancellation(cancellation)
         lastError = error

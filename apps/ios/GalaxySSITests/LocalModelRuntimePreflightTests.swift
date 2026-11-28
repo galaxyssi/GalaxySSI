@@ -102,6 +102,16 @@ final class LocalModelRuntimePreflightTests: XCTestCase {
     XCTAssertEqual(fixture.executions, 1)
   }
 
+  func testBackendCompatibilityRetainsLegacyCancellationError() {
+    let fixture = LegacyCancellationFixtureBackend { throw CancellationError() }
+    let backend: LocalModelInferenceBackend = fixture
+    XCTAssertThrowsError(try backend.generate(systemPrompt: "Synthetic", userPrompt: "No model",
+      maximumTokens: 1, temperature: 0, cancellation: .none)) { error in
+      XCTAssertTrue(error is CancellationError)
+    }
+    XCTAssertEqual(fixture.executions, 1)
+  }
+
   func testBackendCancellationOverloadDispatchesThroughProtocol() {
     let source = AgentModelToolLoopCancellationSource()
     source.cancel()
