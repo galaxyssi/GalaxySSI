@@ -219,7 +219,8 @@ enum AgentPhoneNativeToolCatalog {
       visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: resolvedWebIntelligenceProvider) +
-      mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
+      mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis,
+        initialAvailability: AgentIOSMediaNativeToolCatalog.uncheckedAvailability) +
       selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
       mcpExecutableDefinitions(provider: resolvedMcpProvider) +
@@ -304,10 +305,12 @@ enum AgentPhoneNativeToolCatalog {
 
   static func mediaExecutableDefinitions(
     provider: AgentIOSMediaNativeToolProviding,
-    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSMediaNativeToolExecutor(provider: provider, nowMillis: nowMillis)
-    return AgentIOSMediaNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentIOSMediaNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: initialAvailability).map(executor.executableDefinition)
   }
 
   private static func defaultMediaProvider(
