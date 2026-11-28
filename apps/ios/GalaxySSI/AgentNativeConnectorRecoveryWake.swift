@@ -15,7 +15,7 @@ struct AgentNativeConnectorRecoveryWake: Equatable {
       observation: AgentDesktopReplyRecoveryRecord, nowMillis: Int64, lastWakeMillis: Int64?) -> Self? {
     let binding = observation.binding
     guard nowMillis > 0, !pending.actionId.isBlank, pending.metadata["awaiting_response"] == "true",
-      managed.state == .pending, managed.response == nil, binding.isValid,
+      managed.state == .pending, managed.response == nil, !managed.agentId.isBlank, binding.isValid,
       binding.goalWork != true, binding.teamSource == nil, binding.attemptSourceId == nil,
       let owner = binding.managedSource,
       owner.ownerRunId == managed.ownerRunId, owner.sourceMessageId == managed.sourceMessageId,

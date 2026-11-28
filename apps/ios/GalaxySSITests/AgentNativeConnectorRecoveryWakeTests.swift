@@ -101,6 +101,8 @@ final class AgentNativeConnectorRecoveryWakeTests: XCTestCase {
     XCTAssertNil(next(changed))
     changed = f; changed.2.sequence = -1
     XCTAssertNil(next(changed))
+    changed = f; changed.1.agentId = ""; changed.0.metadata["control_plane_agent_id"] = ""
+    XCTAssertNil(next(changed))
   }
   func testCommittedManagedResultsStopTerminalPolling() throws {
     for state in [AgentManagedResponseState.completed, .applied] {
