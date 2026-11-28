@@ -99,6 +99,7 @@ struct GalaxySSIHealthReportCropView: View {
   @Environment(\.scenePhase) private var scene
   let store: GalaxySSIHealthOriginalStore
   var initialOriginalID: UUID? = nil
+  var initialPaper: GalaxySSIHealthPhotoDraft.PaperHint? = nil
   @State private var openedInitialOriginal = false
   @State private var files: [GalaxySSIHealthOriginalStore.Original] = []
   @State private var selected: GalaxySSIHealthOriginalStore.Original?
@@ -256,6 +257,12 @@ struct GalaxySSIHealthReportCropView: View {
     } catch { saveFailed = true }
     let generation = UUID()
     token = generation
+    if item.id == initialOriginalID, let initialPaper, initialPaper.isValid, initialPaper.sha256 == item.sha256 {
+      suggested = initialPaper.bounds
+      if !modified, let bounds = initialPaper.bounds { crop = bounds }
+      finished = true
+      return
+    }
     running = true
     task = Task {
       let worker = Task.detached(priority: .userInitiated) { try GalaxySSIHealthPaperEdges.suggestion(preview) }

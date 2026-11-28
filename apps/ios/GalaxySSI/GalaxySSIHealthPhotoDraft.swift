@@ -12,10 +12,31 @@ enum GalaxySSIHealthPhotoDraft {
 
   enum Hint: String, Codable, Equatable, Sendable { case small, dark, glare, lowDetail }
 
+  struct PaperHint: Codable, Equatable, Sendable {
+    let sha256: String
+    let bounds: CGRect?
+
+    var isValid: Bool {
+      sha256.utf8.count == 64 && sha256.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) &&
+        (bounds.map { GalaxySSIHealthCropEncoder.valid($0) } ?? true)
+    }
+  }
+
+  struct Inspection: Sendable {
+    let hints: [Hint]
+    let paper: PaperHint?
+  }
+
   struct Entry: Codable, Identifiable, Equatable {
     let id: UUID
     let original: GalaxySSIHealthOriginalStore.Original
     let hints: [Hint]
+    var paper: PaperHint? = nil
+
+    var validatedPaper: PaperHint? {
+      guard let paper, paper.isValid, paper.sha256 == original.sha256 else { return nil }
+      return paper
+    }
   }
 
   struct Batch: Codable, Equatable {
@@ -24,11 +45,13 @@ enum GalaxySSIHealthPhotoDraft {
     let mode: Mode
     var pages: [Entry] = []
 
-    mutating func install(_ original: GalaxySSIHealthOriginalStore.Original, hints: [Hint], replacing pageID: UUID?) throws {
+    mutating func install(_ original: GalaxySSIHealthOriginalStore.Original, hints: [Hint], replacing pageID: UUID?,
+                          paper: PaperHint? = nil) throws {
       guard original.kind == .image,
+            paper.map({ mode == .report && $0.isValid && $0.sha256 == original.sha256 }) ?? true,
             !pages.contains(where: { $0.id != pageID && $0.original.sha256 == original.sha256 })
       else { throw GalaxySSIHealthRecords.Failure.duplicate }
-      let page = Entry(id: pageID ?? UUID(), original: original, hints: hints)
+      let page = Entry(id: pageID ?? UUID(), original: original, hints: hints, paper: paper)
       if let pageID {
         guard let index = pages.firstIndex(where: { $0.id == pageID }) else { throw GalaxySSIHealthRecords.Failure.stale }
         pages[index] = page
@@ -98,5 +121,18 @@ enum GalaxySSIHealthPhotoDraft {
       if detail < 7 * (w - 2) * (h - 2) { hints.append(.lowDetail) }
     }
     return hints
+  }
+
+  static func inspectCapture(_ bytes: Data, mode: Mode) throws -> Inspection {
+    let hints = try inspect(bytes)
+    try Task.checkCancellation()
+    guard mode == .report else { return .init(hints: hints, paper: nil) }
+    guard let image = GalaxySSIHealthPaperEdges.preview(bytes) else { return .init(hints: hints, paper: nil) }
+    let bounds: CGRect?
+    do { bounds = try GalaxySSIHealthPaperEdges.suggestion(image) }
+    catch is CancellationError { throw CancellationError() }
+    catch { return .init(hints: hints, paper: nil) }
+    try Task.checkCancellation()
+    return .init(hints: hints, paper: .init(sha256: GalaxySSIHealthLinkedExport.digest(bytes), bounds: bounds))
   }
 }
