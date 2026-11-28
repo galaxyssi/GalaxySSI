@@ -278,7 +278,7 @@ extension GalaxySSIHealthPortableBackup {
                       originals: GalaxySSIHealthOriginalStore, replacing selected: Set<UUID> = []) throws {
     try originals.withRestoreLease { lease in
       try originals.reconcileRestores(lease: lease)
-      let (fresh, proposed, files) = try restoreWork(input, records: records, originals: originals, lease: lease)
+      let (fresh, proposed, files, context) = try restoreWork(input, records: records, originals: originals, lease: lease)
       let accepted = fresh.conflicts.filter { selected.contains($0.id) && $0.restriction == nil }
       guard fresh == expected, fresh.hasChanges || !selected.isEmpty,
             accepted.count == selected.count else { throw Failure.stale }
@@ -294,10 +294,23 @@ extension GalaxySSIHealthPortableBackup {
         replacements.append(revision)
       }
       archive.revisions.append(contentsOf: replacements)
+      let selectedSources = try restoreSelectedSources(context.payload, selected: selected, archive: &archive, staged: files,
+                                                       originals: originals, lease: lease)
       let receipt = UUID()
+      let counts = GalaxySSIHealthRestoreReceipt.Counts(readings: context.payload.readings.count, added: fresh.readings,
+        duplicates: fresh.duplicates, conflicts: fresh.conflicts.count - replacements.count, replaced: replacements.count,
+        originals: context.payload.originals.count + context.payload.unreadableOriginals,
+        originalsAdded: context.originalsAdded, originalsReused: context.originalsReused,
+        originalsRepaired: context.originalsRepaired, originalsUnavailable: context.originalsUnavailable,
+        tablesAdded: fresh.tables, sources: context.payload.sourceFrames?.count ?? 0,
+        sourcesAdded: fresh.newLinks + selectedSources.added, sourcesReused: fresh.reusedLinks + selectedSources.reused,
+        sourcesSkipped: fresh.skippedLinks - selectedSources.added - selectedSources.reused,
+        missingReferences: context.baseMissing + context.sourceMissing.union(selectedSources.missingKeys).count)
+      let detail = GalaxySSIHealthRestoreReceipt(id: receipt, at: Date(), backupFingerprint: digest(input.plaintext),
+        first: input.summary.start, last: input.summary.end, counts: counts)
       do {
         try originals.stageRestore(files, receipt: receipt, lease: lease)
-        try records.commitRestore(archive, receipt: receipt, originals: files.map { $0.0 }, notify: false)
+        try records.commitRestore(archive, receipt: receipt, originals: files.map { $0.0 }, receiptDetail: detail, notify: false)
       } catch {
         try? originals.reconcileRestores(lease: lease)
         throw error
@@ -313,7 +326,7 @@ extension GalaxySSIHealthPortableBackup {
   private static func restoreWork(_ input: RestoreInput, records: GalaxySSIHealthRecords,
                                   originals: GalaxySSIHealthOriginalStore,
                                   lease: GalaxySSIHealthOriginalStore.RestoreLease) throws
-    -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)]) {
+    -> (RestorePreview, GalaxySSIHealthRecords.Archive, [(GalaxySSIHealthOriginalStore.Original, Data)], RestoreContext) {
     let payload = try JSONDecoder().decode(Payload.self, from: input.plaintext)
     guard payload.owner == records.owner, originals.owner == records.owner,
           originals.restoreRecordsFile == records.isolatedFile else { throw Failure.owner }
@@ -370,10 +383,12 @@ extension GalaxySSIHealthPortableBackup {
     var usedDigests = Set<String>()
     var newFiles = 0
     var newBytes = 0
+    var availableOriginalHashes = Set<String>()
     let indexed = listing.originals + listing.unavailableOriginals
     for file in payload.originals {
       let candidates = indexed.filter { $0.sha256 == file.manifest.sha256 }
       if candidates.contains(where: { (try? originals.read($0, lease: lease)) != nil }) {
+        availableOriginalHashes.insert(file.manifest.sha256)
         snapshot.append("verified:\(file.manifest.sha256)")
         continue
       }
@@ -434,7 +449,36 @@ extension GalaxySSIHealthPortableBackup {
       originals: files.count, tables: newTables.count, missing: missing + links.missing,
       newLinks: links.added, reusedLinks: links.reused, skippedLinks: links.skipped,
       repairedLinks: links.repaired, snapshot: snapshot.sorted())
-    return (preview, archive, files)
+    availableOriginalHashes.formUnion(files.map { $0.0.sha256 })
+    let unavailable = payload.originals.filter { !availableOriginalHashes.contains($0.manifest.sha256) }.count
+    let context = RestoreContext(payload: payload, baseMissing: missing, sourceMissing: links.missingKeys,
+      originalsAdded: newFiles, originalsReused: payload.originals.count - unavailable - files.count,
+      originalsRepaired: files.count - newFiles, originalsUnavailable: unavailable + payload.unreadableOriginals)
+    return (preview, archive, files, context)
+  }
+
+  private struct RestoreContext {
+    let payload: Payload
+    let baseMissing: Int
+    let sourceMissing: Set<String>
+    let originalsAdded: Int
+    let originalsReused: Int
+    let originalsRepaired: Int
+    let originalsUnavailable: Int
+  }
+
+  @MainActor
+  private static func restoreSelectedSources(_ payload: Payload, selected: Set<UUID>, archive: inout GalaxySSIHealthRecords.Archive,
+                                            staged: [(GalaxySSIHealthOriginalStore.Original, Data)],
+                                            originals: GalaxySSIHealthOriginalStore,
+                                            lease: GalaxySSIHealthOriginalStore.RestoreLease) throws -> SourceRestore {
+    guard !selected.isEmpty else { return .init() }
+    let readings = payload.readings.filter { selected.contains($0.id) }
+    let current = Dictionary(uniqueKeysWithValues: archive.current.map { ($0.id, $0) })
+    guard Set(readings.map(\.id)) == selected, selected.allSatisfy({ current[$0] != nil }) else { throw Failure.stale }
+    let frames = (payload.sourceFrames ?? []).filter { $0.target.map { selected.contains($0.record) } == true }
+    return try restoreSourceFrames(frames, readings: readings, archive: &archive, previous: current,
+      listing: originals.list(lease: lease), staged: staged, originals: originals, lease: lease)
   }
 
   private enum SourceSlot: Hashable {
@@ -457,7 +501,8 @@ extension GalaxySSIHealthPortableBackup {
     var reused = 0
     var skipped = 0
     var repaired = 0
-    var missing = 0
+    var missingKeys = Set<String>()
+    var missing: Int { missingKeys.count }
     var fingerprint: String?
   }
 
@@ -552,7 +597,8 @@ extension GalaxySSIHealthPortableBackup {
         if tableIDs[source.sha256] == nil { missing.insert("table:\(source.sha256)") }
         mapped = .init(report: nil, table: .init(target: .init(record: target.record, revision: target.revision),
           source: .init(batch: tableIDs[source.sha256] ?? source.batch, row: source.row, sha256: source.sha256,
-            sheet: source.sheet, worksheetPath: source.worksheetPath, columns: source.columns)))
+            sheet: source.sheet, worksheetPath: source.worksheetPath, columns: source.columns,
+            dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904)))
       } else { throw Failure.invalid }
       if let owners = slots[slot] {
         guard owners == Set([target]) else { result.skipped += 1; continue }
@@ -569,7 +615,7 @@ extension GalaxySSIHealthPortableBackup {
           let source = existing.source
           priorTables[index] = .init(target: existing.target, source: .init(batch: link.source.batch,
             row: source.row, sha256: source.sha256, sheet: source.sheet, worksheetPath: source.worksheetPath,
-            columns: source.columns))
+            columns: source.columns, dateOnlyDecision: source.dateOnlyDecision, excelDate1904: source.excelDate1904))
           result.repaired += 1
         }
       } else {
@@ -584,7 +630,7 @@ extension GalaxySSIHealthPortableBackup {
     if !reports.isEmpty || result.repaired > 0 { archive.reportEvidence = priorReports + reports }
     if !tables.isEmpty || result.repaired > 0 { archive.tableEvidence = priorTables + tables }
     result.added = added.count
-    result.missing = missing.count
+    result.missingKeys = missing
     result.fingerprint = "links:\(try framesDigest(sourceFrames(archive, readings: current)))"
     return result
   }

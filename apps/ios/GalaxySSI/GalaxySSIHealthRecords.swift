@@ -194,6 +194,7 @@ struct GalaxySSIHealthRecords {
     var version = 1
     var recordingReminders: GalaxySSIHealthRecordingReminders.Ledger?
     var restoreReceipts: Set<UUID>?
+    var restoreHistory: [GalaxySSIHealthRestoreReceipt]?
     var revisions: [GalaxySSIHealthReading] = []
     var lastMeasurementDeletion: MeasurementDeletion?
     var metricDeletionHistory: [GalaxySSIHealthMetricDeletion.Audit]?
@@ -3514,14 +3515,22 @@ struct GalaxySSIHealthRecords {
   }
 
   func commitRestore(_ archive: Archive, receipt: UUID, originals: [GalaxySSIHealthOriginalStore.Original] = [],
-                     notify: Bool = true) throws {
+                     receiptDetail: GalaxySSIHealthRestoreReceipt? = nil, notify: Bool = true) throws {
+    let current = try load()
     var updated = archive
     if !originals.isEmpty {
-      guard var index = updated.originalIndex, try load().originalIndex == index else { throw Failure.stale }
+      guard var index = updated.originalIndex, current.originalIndex == index else { throw Failure.stale }
       for original in originals { try index.include(original) }
       updated.originalIndex = index
     }
-    var receipts = updated.restoreReceipts ?? []
+    updated.restoreHistory = current.restoreHistory
+    if let receiptDetail {
+      guard receiptDetail.id == receipt else { throw Failure.stale }
+      updated.restoreHistory = try GalaxySSIHealthRestoreReceipt.recording(receiptDetail, in: current.restoreHistory ?? [],
+        committed: current.restoreReceipts ?? [])
+    }
+    var receipts = current.restoreReceipts ?? []
+    receipts.formUnion(updated.restoreReceipts ?? [])
     receipts.insert(receipt)
     updated.restoreReceipts = receipts
     try persist(updated, notify: notify)

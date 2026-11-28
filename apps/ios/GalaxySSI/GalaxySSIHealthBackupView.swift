@@ -37,6 +37,7 @@ struct GalaxySSIHealthBackupView: View {
   @State private var restorePreview: GalaxySSIHealthPortableBackup.RestorePreview?
   @State private var acknowledged = false
   @State private var restored = false
+  @State private var latestRestoreReceipt: GalaxySSIHealthRestoreReceipt?
   @State private var shownConflicts = 30
   @State private var replacements: Set<UUID> = []
 
@@ -83,6 +84,19 @@ struct GalaxySSIHealthBackupView: View {
           if verifyingSave { ProgressView(t("working", "Processing backup")) }
           if saveAttempt != nil && !verifyingSave {
             Button(t("dismiss_save", "Dismiss unverified save")) { finishSave(.failure(CancellationError())) }
+          }
+          if let latestRestoreReceipt {
+            Section {
+              GalaxySSIHealthRestoreReceiptRows(receipt: latestRestoreReceipt)
+            }
+          }
+          if entry == .all || entry == .restore || entry == .history {
+            Section {
+              NavigationLink(destination: GalaxySSIHealthRestoreHistoryView(records: records)) {
+                Label(GalaxySSILocalization.string("galaxyssi.health.restore_receipt.title", fallback: "Restore history", language: language),
+                      systemImage: "clock.arrow.circlepath")
+              }
+            }
           }
         }
         if let outcome {
@@ -335,9 +349,12 @@ struct GalaxySSIHealthBackupView: View {
   private func restore() {
     guard scene == .active, acknowledged, let restoreInput, let restorePreview else { return }
     do {
+      let previousReceipts = try records.load().restoreReceipts ?? []
       try GalaxySSIHealthPortableBackup.restore(restoreInput, expected: restorePreview, records: records,
                                                 originals: originals, replacing: replacements)
+      let receipt = (try? records.load())?.restoreHistory?.first { !previousReceipts.contains($0.id) }
       reset()
+      latestRestoreReceipt = receipt
       restored = true
     } catch {
       reset()
@@ -393,6 +410,7 @@ struct GalaxySSIHealthBackupView: View {
     plan = nil; verificationInput = nil; generated = nil; outcome = nil; error = false
     restoring = false; restoreInput = nil; restorePreview = nil; acknowledged = false; restored = false; shownConflicts = 30
     replacements = []
+    latestRestoreReceipt = nil
   }
 
   private func t(_ key: String, _ fallback: String) -> String {
