@@ -388,7 +388,8 @@ struct GalaxySSIHealthBackupView: View {
       do {
         let result = try await withTaskCancellationHandler(operation: { try await worker.value },
                                                            onCancel: { worker.cancel() })
-        guard token == request, scene != .background else { return }
+        guard token == request else { return }
+        guard scene != .background else { reset(); return }
         switch result {
         case .created(let data, let summary):
           guard let generationRequest else { throw GalaxySSIHealthPortableBackup.Failure.stale }
@@ -404,7 +405,8 @@ struct GalaxySSIHealthBackupView: View {
         plan = nil
         verificationInput = nil
       } catch {
-        guard token == request, scene != .background else { return }
+        guard token == request else { return }
+        guard scene != .background else { reset(); return }
         if generationID != nil {
           if let generationRequest { GalaxySSIHealthBackupOperation.release(generationRequest) }
           try? history.recover()
