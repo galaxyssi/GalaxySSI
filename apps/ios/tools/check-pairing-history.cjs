@@ -16,6 +16,8 @@ function revocation(source) {
   return source.slice(begin, end);
 }
 function retainedPairingServices(source) {
+  const parallel = path.join(__dirname, 'check-parallel-native-dispatch-ownership.cjs');
+  if (fs.existsSync(parallel)) source = require(parallel).retainedServices(source);
   const query = path.join(__dirname, 'check-native-recovery-query-ownership.cjs');
   if (fs.existsSync(query)) source = require(query).retainedServices(source);
   const expiry = path.join(__dirname, 'check-native-observation-expiry-scope.cjs');
