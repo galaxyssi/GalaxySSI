@@ -3,7 +3,12 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
 const base = '43fa7602dad7ba6df27ac67c992421d5b25cf408';
 const clean = value => value.replace(/\r\n/g, '\n');
-const read = file => clean(fs.readFileSync(path.join(root, file), 'utf8'));
+const read = file => {
+  const source = clean(fs.readFileSync(path.join(root, file), 'utf8'));
+  const readiness = path.join(__dirname, 'check-capture-live-readiness.cjs');
+  return file === app + 'AgentIOSVisibleCaptureNativeTools.swift' && fs.existsSync(readiness)
+    ? require(readiness).retained(file, source) : source;
+};
 const old = file => clean(cp.execFileSync('git', ['show', base + ':' + file], {cwd: root, encoding: 'utf8', maxBuffer: 8_000_000}));
 const pairingFile = path.join(__dirname, 'check-pairing-history.cjs');
 const pairing = fs.existsSync(pairingFile) && fs.readFileSync(pairingFile, 'utf8').includes('function retainedPairingStore(') ? require(pairingFile) : null;
