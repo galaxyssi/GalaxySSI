@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 protocol CloudConversationLegacySending {
   func send(contact: GalaxySSIContact, store: GalaxySSIStore, turns: [ChatMessage]) async throws -> String
@@ -77,6 +78,8 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     var call: AssembledToolCall
     var output: String?
     var errorMessage: String?
+    var failureCode: String? = nil
+    var replayed = false
     var startedAtMillis: Int64
     var finishedAtMillis: Int64
   }
@@ -85,6 +88,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private let streamClient: CloudModelStreamClient
   private let legacySender: CloudConversationLegacySending?
   private let toolExecutor: CloudConversationToolExecuting
+  private let toolJournal: AgentModelLoopJournal
   private let disclosureStore: AgentDataDisclosureStore
   private let elapsedMillis: () -> Int64
   private let timingClock: () -> Int64
@@ -102,12 +106,14 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     ),
     elapsedMillis: @escaping () -> Int64 = CloudConversationStreamEngine.defaultElapsedMillis,
     timingClock: @escaping () -> Int64 = CloudModelRoundTiming.monotonicMillis,
-    timingSink: @escaping CloudModelRoundTiming.Sink = CloudModelRoundTiming.log
+    timingSink: @escaping CloudModelRoundTiming.Sink = CloudModelRoundTiming.log,
+    toolJournal: AgentModelLoopJournal = CloudToolInvocationDatabase()
   ) {
     self.modelClient = modelClient
     self.streamClient = streamClient
     self.legacySender = legacySender
     self.toolExecutor = toolExecutor
+    self.toolJournal = toolJournal
     self.disclosureStore = disclosureStore
     self.elapsedMillis = elapsedMillis
     self.timingClock = timingClock
@@ -296,6 +302,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     let conversationId = turns.last?.conversationId ?? ""
     let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
     let disclosureOwner = await MainActor.run { store.profile.identityFingerprint }
+    let transientToolJournal = InMemoryAgentModelLoopJournal()
+    let toolSession = await MainActor.run { store.agentSession(id: conversationId) }
+    let retainToolInvocations = toolSession.map { !$0.privateMode && !$0.trackingPaused } ?? false
     let routingUsageAllowed = await MainActor.run {
       store.profile.identityFingerprint == disclosureOwner && AgentRoutingUsageEligibility.allows(store.agentSession(id: conversationId))
     }
@@ -973,6 +982,22 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             readOnlyAnalysis: turns.last?.readOnlyAnalysis ?? false,
             researchDisclosure: researchDisclosure
           ),
+          journal: retainToolInvocations ? toolJournal : transientToolJournal,
+          binding: CloudToolInvocationJournal.Binding(owner: disclosureOwner, contactID: contact.id,
+            conversationID: conversationId, turnID: turnId, requestID: requestId, round: currentRound, slot: 0,
+            requestSHA256: AgentModelLoopRecoveryIdentity.sha256(roundRequest),
+            collaborationOwner: collaborationRecallScope?.ownershipDigest),
+          validateOwner: { @MainActor in
+            let current = store.agentSession(id: conversationId)
+            guard store.profile.identityFingerprint == disclosureOwner, store.canReadAgentTranscript,
+              UIApplication.shared.isProtectedDataAvailable,
+              !PhoneExecutionAuthority.isCancelled(taskId: turnId),
+              current.map({ $0.status == .active && $0.mergedIntoConversationId.isBlank }) ?? true,
+              current?.privateMode == toolSession?.privateMode, current?.trackingPaused == toolSession?.trackingPaused,
+              current?.collaborationRoster == toolSession?.collaborationRoster,
+              current?.status == toolSession?.status, current?.mergedIntoConversationId == toolSession?.mergedIntoConversationId
+            else { throw AgentModelLoopRecoveryError(code: "cloud_tool_scope_changed") }
+          },
           onObservation: { call, output in
             await recovery?.record(call: call, output: output, store: store)
           },
@@ -985,6 +1010,10 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         if let scope = collaborationEvidence {
           for index in outcomes.indices {
             let outcome = outcomes[index]
+            if outcome.replayed {
+              if let output = outcome.output { outcomes[index].output = Self.cloudEvidenceOutput(output, receipt: nil) }
+              continue
+            }
             if outcome.call.name == CloudModelStreamMutableConversation.collaborationRecallName ||
                 outcome.call.name == publishName { continue }
             let evidence = AgentCollaborationCloudToolEvidence(scope: scope, round: round,
@@ -1009,8 +1038,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         if let failedOutcome = outcomes.first(where: { $0.errorMessage != nil }) {
           publishPreview("", at: elapsedMillis())
           let streamError = ModelStreamError(
-            code: "INVALID_TOOL_ARGUMENTS",
-            message: "Tool arguments were incomplete: \(failedOutcome.errorMessage ?? "unknown error")"
+            code: failedOutcome.failureCode ?? "INVALID_TOOL_ARGUMENTS",
+            message: failedOutcome.errorMessage ?? "Tool execution failed",
+            retryable: false
           )
           AgentDataDisclosureLedger.update(
             store: disclosureStore,
@@ -1097,7 +1127,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
             continue
           }
           if progress.record(toolName: outcome.call.name, arguments: arguments, output: output) {
-            newResearchEvidence = research.observe(tool: outcome.call.name, output: output) || newResearchEvidence
+            if !outcome.replayed {
+              newResearchEvidence = research.observe(tool: outcome.call.name, output: output) || newResearchEvidence
+            }
             madeProgress = true
             if AgentCollaborationCandidateRecall.isHistoryCall(outcome.call.name, arguments) { continue }
             if outcome.call.name.lowercased() != CloudImageAnnotationPlan.toolName &&
@@ -1310,6 +1342,9 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
   private func executeToolCalls(
     _ calls: [AssembledToolCall],
     context: CloudConversationToolExecutionContext,
+    journal: AgentModelLoopJournal,
+    binding: CloudToolInvocationJournal.Binding,
+    validateOwner: @escaping () async throws -> Void,
     onObservation: ((AssembledToolCall, String) async -> Void)? = nil,
     remainingResearchMillis: (() -> Int64)? = nil,
     milestoneRead: GoalWorkHandler? = nil,
@@ -1339,27 +1374,39 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 }
                 executionContext.researchToolTimeoutMillis = min(context.researchToolTimeoutMillis, remaining)
               }
-              let output: String
-              if call.name == AgentGoalWorkMilestoneRead.toolID, let milestoneRead {
-                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
-                output = await AgentMcpJSONCodec.stringify(milestoneRead(args))
-              } else if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
-                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
-                let recalled = await collaborationRecall?(args)
-                output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
-              } else if call.name == CloudModelStreamMutableConversation.collaborationPublishName {
-                let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
-                let receipt = await collaborationPublish?(args)
-                output = AgentMcpJSONCodec.stringify(receipt ?? ["success": .bool(false), "status": .string("unavailable")])
-              } else {
-                guard milestoneRead == nil else { throw AgentTeamHistoryDatabase.Failure.stale }
-                output = try toolExecutor.executeTool(call: call, context: executionContext)
+              var invocationBinding = binding
+              invocationBinding.slot = start + offset
+              let recorded = try await CloudToolInvocationJournal(journal: journal).execute(
+                binding: invocationBinding, call: call, validateOwner: validateOwner,
+                restoreResult: { output in
+                  if call.name == CloudImageAnnotationPlan.toolName {
+                    try CloudImageAnnotationSession.restoreResult(output, context: executionContext)
+                  }
+                }) {
+                let output: String
+                if call.name == AgentGoalWorkMilestoneRead.toolID, let milestoneRead {
+                  let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                  output = await AgentMcpJSONCodec.stringify(milestoneRead(args))
+                } else if call.name == CloudModelStreamMutableConversation.collaborationRecallName {
+                  let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                  let recalled = await collaborationRecall?(args)
+                  output = AgentMcpJSONCodec.stringify(recalled ?? ["status": .string("unavailable")])
+                } else if call.name == CloudModelStreamMutableConversation.collaborationPublishName {
+                  let args = try CloudModelStreamJSON.mcpObject(from: call.argumentsJson)
+                  let receipt = await collaborationPublish?(args)
+                  output = AgentMcpJSONCodec.stringify(receipt ?? ["success": .bool(false), "status": .string("unavailable")])
+                } else {
+                  guard milestoneRead == nil else { throw AgentTeamHistoryDatabase.Failure.stale }
+                  output = try toolExecutor.executeTool(call: call, context: executionContext)
+                }
+                return output
               }
               return ToolExecutionOutcome(
                 index: start + offset,
                 call: call,
-                output: output,
+                output: recorded.replayed ? Self.replayedToolOutput(recorded.output, toolName: call.name) : recorded.output,
                 errorMessage: nil,
+                replayed: recorded.replayed,
                 startedAtMillis: started, finishedAtMillis: AgentControlPlaneClock.nowMillis()
               )
             } catch {
@@ -1368,6 +1415,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
                 call: call,
                 output: nil,
                 errorMessage: error.localizedDescription.ifBlank(String(describing: error)),
+                failureCode: "CLOUD_TOOL_RECOVERY_REQUIRED",
                 startedAtMillis: started, finishedAtMillis: AgentControlPlaneClock.nowMillis()
               )
             }
@@ -1376,7 +1424,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
 
         var completed: [ToolExecutionOutcome] = []
         for await outcome in group {
-          if let output = outcome.output { await onObservation?(outcome.call, output) }
+          if let output = outcome.output, !outcome.replayed { await onObservation?(outcome.call, output) }
           completed.append(outcome)
         }
         return completed.sorted { $0.index < $1.index }
@@ -1398,6 +1446,18 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         "status": .string("not_durable"), "do_not_reexecute": .bool(true)
       ])
     }
+    return AgentMcpJSONCodec.stringify(object)
+  }
+
+  static func replayedToolOutput(_ output: String, toolName: String) -> String {
+    var object = (try? CloudModelStreamJSON.mcpObject(from: output)) ?? ["output": .string(output)]
+    if toolName == CloudModelStreamMutableConversation.collaborationPublishName {
+      object["replayed"] = .bool(true)
+      object["new_execution"] = .bool(false)
+    }
+    object["galaxyssi_cloud_invocation"] = .object([
+      "replayed": .bool(true), "new_execution": .bool(false), "fresh_observation": .bool(false)
+    ])
     return AgentMcpJSONCodec.stringify(object)
   }
 

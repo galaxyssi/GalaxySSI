@@ -1168,6 +1168,7 @@ final class GalaxySSIStore: ObservableObject {
     agentReplyUnreadStore.clear()
     agentConversationDatabase.destroyAllData()
     researchCheckpointStore.removeAll()
+    CloudToolInvocationDatabase.destroyPersistentStore(secrets: secrets)
     chatHistoryDatabase.destroyAllData()
     AgentDesktopResultRecovery(ownerId: profile.identityFingerprint, secrets: secrets).destroyAllData()
     UserDefaultsAgentTerminalDeliveryStore.destroyPersistentStore(defaults: defaults, secrets: secrets)
