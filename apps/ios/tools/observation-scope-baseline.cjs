@@ -22,6 +22,8 @@ function normalizePending(file, source) {
     source = optional('check-mcp-readiness-preparation-scope', 'retained', file, source);
   if (file.endsWith('/AgentPhoneNativeToolCatalogDefaults.swift'))
     source = optional('check-workspace-preparation-scope', 'retained', file, source);
+  if (file.endsWith('/AgentRunPolicyTests.swift'))
+    source = optional('check-startup-local-recovery-order', 'retained', file, source);
   if (file.endsWith('/GalaxySSIServices.swift')) {
     for (const [name, method] of [['check-pinned-desktop-team', 'retainedServices'],
       ['check-browser-view-ownership', 'retainedBrowserServices'],
