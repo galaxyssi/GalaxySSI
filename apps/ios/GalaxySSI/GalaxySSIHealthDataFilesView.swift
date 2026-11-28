@@ -6,6 +6,7 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
   @Environment(\.galaxySSIInterfaceLanguage) private var language
   @Environment(\.scenePhase) private var scene
   @Environment(\.dynamicTypeSize) private var typeSize
+  @Environment(\.timeZone) private var timeZone
   let records: GalaxySSIHealthRecords
   let metrics: () -> Metrics
   let review: () -> Review
@@ -177,7 +178,6 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
 
   private func fileRow(_ item: GalaxySSIHealthDataFiles.Recent) -> some View {
     let original = item.original
-    let kind = original.kind == .pdf ? "PDF" : original.fileExtension.uppercased()
     let size = ByteCountFormatter.string(fromByteCount: Int64(original.bytes), countStyle: .file)
     let source: String
     switch original.acquisition {
@@ -191,8 +191,36 @@ struct GalaxySSIHealthDataFilesView<Metrics: View, Review: View>: View {
     case .unlinked: status = t("unlinked", "Unlinked")
     case .unavailable: status = t("unavailable", "Original unavailable")
     }
-    return manage(original.name, [kind + " " + size, source, status].joined(separator: " \u{00B7} "),
-                  icon: original.kind == .pdf ? "doc.text" : "photo", accent: .blue)
+    let accent: Color = original.kind == .image ? .orange : .blue
+    let metadata = [fileDate(original.importedAt), source, size].joined(separator: " \u{00B7} ")
+    return HStack(spacing: 12) {
+      Image(systemName: original.kind == .image ? "photo" : "doc.text")
+        .foregroundColor(accent).frame(width: 36, height: 36)
+        .background(accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(original.name).font(.body.weight(.semibold)).lineLimit(2)
+        Text(metadata).font(.caption).foregroundColor(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        Text(status).font(.caption.weight(.semibold))
+          .foregroundColor(item.status == .linked ? .green : .orange)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(12)
+    .frame(minHeight: 64)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+
+  private func fileDate(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: language)
+    formatter.timeZone = timeZone
+    formatter.dateStyle = .medium
+    formatter.timeStyle = .short
+    return formatter.string(from: date)
   }
 
   private func heading(_ text: String, size: Font = .headline) -> some View {
