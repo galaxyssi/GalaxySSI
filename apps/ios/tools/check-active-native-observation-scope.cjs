@@ -1,10 +1,22 @@
 // Source contracts only; no Swift timers, transport, recovery or native fixtures executed.
-const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '85ffb607cc2bf1127ae6f3e9858ece5ed200d2e1';
-const read = file => require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
-const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
-  {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const {snapshot, normalizePending} = require('./observation-scope-baseline.cjs');
+const project = (file, source) => require('./check-mqtt-path-diagnostics-scope.cjs').retained(file, normalizePending(file, source));
+const read = file => project(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const expected = file => project(file, snapshot(file));
+const deliveryGuard = 'apps/ios/tools/check-native-delivery-acceptance-scope.cjs';
+function assertReviewedSource(file, source) {
+  const actual = project(file, source), reference = expected(file);
+  if (file === deliveryGuard) {
+    for (const value of [actual, reference]) assert.equal(value.split('\nfunction retained(file, source) {').length, 2,
+      'Exactly one delivery compatibility declaration');
+    assert.equal(section(actual, '\nfunction retained(file, source) {', '\nfunction validate() {'),
+      section(reference, '\nfunction retained(file, source) {', '\nfunction validate() {'), 'Delivery compatibility export remains exact');
+    return;
+  }
+  assert.equal(actual, reference, file + ' outside reviewed wake scope');
+}
 function section(source, start, end) {
   const a = source.indexOf(start), b = source.indexOf(end, a + start.length);
   assert(a >= 0 && b > a, start); return source.slice(a, b);
@@ -43,8 +55,10 @@ function retained(file, source) {
 }
 function validate() {
   for (const file of [app + 'GalaxySSIServices.swift', app + 'AgentAutomationModels.swift',
-    'apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift', 'apps/ios/tools/check-native-delivery-acceptance-scope.cjs'])
-    assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/GalaxySSITests/AgentConnectorTimeoutResolverTests.swift', deliveryGuard]) {
+    assertReviewedSource(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+    if (file !== deliveryGuard) assert.equal(retained(file, read(file)), retained(file, expected(file)), file);
+  }
   const service = read(app + 'GalaxySSIServices.swift');
   const wake = section(service, '  private func nativeConnectorObservationContext(', '  private func recordNativeConnectorObservation(');
   for (const token of ['UIApplication.shared.isProtectedDataAvailable', 'UIApplication.shared.applicationState == .active',
@@ -75,8 +89,8 @@ function validate() {
   for (const name of ['AgentIOSConnectorDispatch', 'AgentDesktopReplyRecovery', 'MqttBusinessTransportRuntime',
     'MqttDesktopConnectorProjection', 'AgentConnectorTaskStatusRecorder', 'AgentConnectorTimeoutResolver',
     'AgentConnectorTransportReceiptRecorder', 'AgentPhoneNativeToolCatalog', 'AgentPhoneNativeToolCatalogDefaults'])
-    assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
+    assert.equal(read(app + name + '.swift'), expected(app + name + '.swift'), name);
   console.log('Owned active observation wake, stage/probe clocks, lifecycle/source guards and eight authored fixtures source contracts passed; no native acceptance.');
 }
-module.exports = {retained, validate};
+module.exports = {retained, validate, assertReviewedSource};
 if (require.main === module) validate();

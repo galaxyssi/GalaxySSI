@@ -1,11 +1,15 @@
 // Source contracts only, not executed Swift, transport or timeout acceptance.
-const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process'), path = require('node:path');
+const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path');
 const root = path.resolve(__dirname, '../../..'), app = 'apps/ios/GalaxySSI/';
-const base = '8a794e82ebe8f09790e41139295ffb7ac1ee9701';
-const read = file => require('./check-native-delivery-acceptance-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
-const old = file => cp.execFileSync('git', ['show', `${base}:${file}`],
-  {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
+const {snapshot, normalizePending} = require('./observation-scope-baseline.cjs');
+function project(file, source) {
+  return require('./check-native-delivery-acceptance-scope.cjs').retained(file, normalizePending(file, source));
+}
+const read = file => project(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const old = file => retained(file, project(file, snapshot(file)));
+function assertReviewedSource(file, source) {
+  assert.equal(project(file, source), project(file, snapshot(file)), file + ' outside reviewed composition');
+}
 const acceptance = '    // Authenticated remote status proves acceptance; later progress must not restart that clock.\n' +
   '    if result.metadata["transport_accepted_at"] == nil {\n' +
   '      result.metadata["transport_accepted_at"] = String(observation.lastResponseAt)\n    }\n';
@@ -36,7 +40,10 @@ function validate() {
   for (const file of [app + 'AgentIOSConnectorDispatch.swift', app + 'AgentConnectorTaskStatusRecorder.swift',
     'apps/ios/GalaxySSITests/AgentControlPlaneActionExecutorTests.swift',
     'apps/ios/GalaxySSITests/AgentNativeConnectorStatusObservationTests.swift',
-    'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) assert.equal(retained(file, read(file)), old(file), file);
+    'apps/ios/tools/check-desktop-probe-owner-scope.cjs']) {
+    assertReviewedSource(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+    assert.equal(retained(file, read(file)), old(file), file);
+  }
   const prepare = section(read(app + 'AgentIOSConnectorDispatch.swift'), '  static func prepare(', '  func matchesWaitingAction(');
   assert(!prepare.includes('"remote_task_status"'));
   for (const token of ['message: "Queued"', '"awaiting_response": "true"', '"completion_verified": "false"',
@@ -65,5 +72,5 @@ function validate() {
     assert.equal(read(app + name + '.swift'), old(app + name + '.swift'), name);
   console.log('Local queue vs remote acceptance, first authenticated status anchor, retained identity/timeout kernels and four authored fixtures source contracts passed; no native acceptance.');
 }
-module.exports = {retained, validate};
+module.exports = {retained, validate, assertReviewedSource};
 if (require.main === module) validate();

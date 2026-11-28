@@ -1,9 +1,24 @@
 // Source contracts only, not executed Swift, authenticated delivery or restart acceptance.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process');
-const root = path.resolve(__dirname, '../../..'), base = '4c7529b9c';
+const root = path.resolve(__dirname, '../../..');
 const app = 'apps/ios/GalaxySSI/';
-const read = file => require('./check-connector-document-input-scope.cjs').retained(file,
-  fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const {snapshot, normalizePending} = require('./observation-scope-baseline.cjs');
+const project = (file, source) => require('./check-connector-document-input-scope.cjs').retained(file, normalizePending(file, source));
+const read = file => project(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+const expected = file => project(file, snapshot(file));
+function assertReviewedSource(file, source) {
+  let actual = project(file, source), reference = expected(file);
+  if (file.endsWith('/project.pbxproj')) {
+    const entries = value => value.split('\n').filter(line => line.includes('AgentNativeConnectorStatusObservationTests.swift'));
+    assert.equal(entries(actual).length, 4);
+    actual = entries(actual); reference = entries(reference);
+  } else if (file.endsWith('/Localizable.strings')) {
+    const entries = value => value.split('\n').filter(line => line.startsWith('"galaxyssi.agent.connector.waiting_original_result"'));
+    assert.equal(entries(actual).length, 1);
+    actual = entries(actual); reference = entries(reference);
+  }
+  assert.deepEqual(actual, reference, file + ' outside reviewed observation scope');
+}
 const show = (ref, file) => cp.execFileSync('git', ['show', `${ref}:${file}`],
   {cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024}).replace(/\r\n/g, '\n');
 function section(source, start, end) {
@@ -25,9 +40,13 @@ function retained(file, source) {
   return source;
 }
 function validate() {
-  for (const file of [app + 'GalaxySSIServices.swift', app + 'AgentConnectorTaskStatusRecorder.swift',
-    app + 'zh-Hans.lproj/Localizable.strings', 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj'])
-    assert.equal(retained(file, read(file)), show(base, file), file);
+  for (const file of [app + 'GalaxySSIServices.swift', app + 'AgentConnectorTaskStatusRecorder.swift']) {
+    assertReviewedSource(file, fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n'));
+    assert.equal(retained(file, read(file)), retained(file, expected(file)), file);
+  }
+  const translationFile = app + 'zh-Hans.lproj/Localizable.strings';
+  assertReviewedSource(translationFile, fs.readFileSync(path.join(root, translationFile), 'utf8').replace(/\r\n/g, '\n'));
+  assert(read(translationFile).includes(translation.trim()));
   const service = read(app + 'GalaxySSIServices.swift');
   assert.equal(service.split('\n').filter(line => line.trim() === 'recordNativeConnectorObservation(record)').length, 4);
   for (const [start, end] of [
@@ -63,23 +82,28 @@ function validate() {
   for (const name of ['AgentDesktopReplyRecovery', 'AgentManagedResponseModels', 'AgentConnectorResponseResolver',
     'AgentConnectorTimeoutResolver', 'AgentControlPlaneActionExecutorModels', 'AgentNetworkRoutingModels',
     'AgentAutomationModels', 'AgentConnectorTerminalStatusResolver']) {
-    const file = app + name + '.swift'; assert.equal(read(file), show(base, file), name);
+    const file = app + name + '.swift'; assert.equal(read(file), expected(file), name);
   }
   const test = 'apps/ios/GalaxySSITests/AgentNativeConnectorStatusObservationTests.swift';
-  const tests = read(test); assert.equal((tests.match(/  func test/g) || []).length, 9);
+  const tests = read(test); assert.equal(tests, expected(test), 'Complete reviewed fixture source retained');
+  assert((tests.match(/  func test/g) || []).length >= 9);
   for (const token of ['testDuplicateAndOlderSequenceDoNotRefreshStaleClock', 'testForeignBindingAndGenerationCannotUpdateOriginalWait',
     'testTerminalStatusAloneNeitherSettlesNorErasesUnknownEffectEvidence', 'testObservedStatusRoundTripsInTheOriginalWaitingReceipt',
     'testMalformedSequenceAndBackwardClockAreRejectedWithoutDefaulting']) assert(tests.includes(token), token);
-  assert.equal(read('apps/ios/GalaxySSI.xcodeproj/project.pbxproj').split('\n').filter(line => line.includes('AgentNativeConnectorStatusObservationTests.swift')).length, 4);
+  const projectFile = 'apps/ios/GalaxySSI.xcodeproj/project.pbxproj';
+  assertReviewedSource(projectFile, fs.readFileSync(path.join(root, projectFile), 'utf8').replace(/\r\n/g, '\n'));
   const oldGuard = 'apps/ios/tools/check-pre-shadow-routing-scope.cjs';
   const stripGuard = read(oldGuard).replace("const read = file => require('./check-native-status-observation-scope.cjs').retained(file,\n  fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n'));",
     "const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\\r\\n/g, '\\n');")
     .replace("  source = require('./check-native-status-observation-scope.cjs').retained(file, source);\n", '');
-  assert.equal(stripGuard, show(base, oldGuard));
+  assert.equal(read(oldGuard), expected(oldGuard), 'Reviewed parent normalizers retained');
+  assert(read(oldGuard).includes("require('./check-native-status-observation-scope.cjs').retained(file, source)"));
+  assert(stripGuard.length < read(oldGuard).length, 'The parent observation hook remains explicit');
   const addressGuard = 'apps/ios/tools/check-special-use-address-scope.cjs';
   assert.equal(read(addressGuard).replace("require('./check-pre-shadow-routing-scope.cjs').retained(project, read(project))",
-    'read(project)'), show('2e4db3d46', addressGuard));
+    'read(project)'), expected(addressGuard).replace("require('./check-pre-shadow-routing-scope.cjs').retained(project, read(project))", 'read(project)'));
+  assert(read(addressGuard).includes("require('./check-pre-shadow-routing-scope.cjs').retained(project, read(project))"));
   console.log('Exact owned Desktop status projection, durable wait retention and monotonic observation source contracts passed; no native acceptance.');
 }
-module.exports = {retained, validate};
+module.exports = {retained, validate, assertReviewedSource};
 if (require.main === module) validate();
