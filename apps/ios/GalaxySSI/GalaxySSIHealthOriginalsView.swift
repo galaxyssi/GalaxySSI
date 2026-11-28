@@ -127,7 +127,7 @@ struct GalaxySSIHealthOriginalsView: View {
         if scene == .active {
           if let item = exactOriginal {
             Button { open(item) } label: {
-              Label(item.name, systemImage: item.kind == .pdf ? "doc.text" : "photo")
+              Label(item.name, systemImage: item.kind == .image ? "photo" : "doc.text")
             }
           }
           if error {
@@ -213,7 +213,7 @@ struct GalaxySSIHealthOriginalsView: View {
           Picker(t("type", "File type"), selection: $filter) {
             tabTitle(t("tab_all", "All"), count: available.count).tag("all")
             tabTitle(t("tab_photos", "Photos"), count: photos).tag("image")
-            tabTitle(t("tab_files", "Files"), count: available.count - photos).tag("pdf")
+            tabTitle(t("tab_files", "Files"), count: available.count - photos).tag("file")
           }
           .pickerStyle(.segmented)
           Picker(t("date_filter", "Import date"), selection: $recentDays) {
@@ -324,7 +324,7 @@ struct GalaxySSIHealthOriginalsView: View {
       }
       .navigationViewStyle(.stack)
     }
-    .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .pdf]) { result in
+    .fileImporter(isPresented: $importing, allowedContentTypes: [.image, .pdf] + GalaxySSIHealthStructuredOriginal.contentTypes) { result in
       guard scene == .active else { return }
       do { try store.importFile(result.get()); reload() }
       catch { error = true }
@@ -403,6 +403,8 @@ struct GalaxySSIHealthOriginalsView: View {
           GalaxySSIHealthOriginalPDFPreview(document: pdf, name: item.name)
         } else if let image = item.image {
           Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(Text(item.name))
+        } else if item.original.kind == .structured {
+          GalaxySSIHealthStructuredOriginalView(store: store, original: item.original)
         }
         }.padding()
       }
@@ -469,7 +471,7 @@ struct GalaxySSIHealthOriginalsView: View {
   }
 
   private func filtered(_ originals: [GalaxySSIHealthOriginalStore.Original]) -> [GalaxySSIHealthOriginalStore.Original] {
-    dateFiltered(originals).filter { filter == "all" || $0.kind.rawValue == filter }
+    dateFiltered(originals).filter { filter == "all" || (filter == "file" ? $0.kind != .image : $0.kind.rawValue == filter) }
   }
 
   private func fileRow(_ item: GalaxySSIHealthOriginalStore.Original) -> some View {
@@ -599,7 +601,9 @@ struct GalaxySSIHealthOriginalsView: View {
     guard scene == .active else { return }
     do {
       let data = try store.read(item)
-      if item.kind == .pdf {
+      if item.kind == .structured {
+        preview = Preview(original: item)
+      } else if item.kind == .pdf {
         guard let pdf = PDFDocument(data: data), pdf.isLocked || pdf.pageCount > 0 else { error = true; return }
         preview = Preview(original: item, pdf: pdf)
       } else {
@@ -636,7 +640,8 @@ struct GalaxySSIHealthOriginalsView: View {
     do {
       let data = try store.read(item)
       guard let type = UTType(filenameExtension: item.fileExtension),
-            (item.kind == .pdf ? type.conforms(to: .pdf) : type.conforms(to: .image))
+            (item.kind == .structured ? GalaxySSIHealthStructuredOriginal.extensions.contains(item.fileExtension) :
+              (item.kind == .pdf ? type.conforms(to: .pdf) : type.conforms(to: .image)))
       else { throw GalaxySSIHealthOriginalStore.Failure.invalid }
       exportAttempt = nil
       singleAttempt = item
@@ -750,13 +755,13 @@ struct GalaxySSIHealthOriginalsView: View {
         if let image {
           Image(uiImage: image).resizable().scaledToFit()
         } else {
-          Image(systemName: item.kind == .pdf ? "doc.richtext" : "photo")
+          Image(systemName: item.kind == .image ? "photo" : "doc.richtext")
         }
       }
       .clipped()
       .accessibilityHidden(true)
       .task(id: item.id) { @MainActor in
-        guard scene == .active, !Task.isCancelled, let data = try? store.read(item) else { return }
+        guard scene == .active, !Task.isCancelled, item.kind.isReport, let data = try? store.read(item) else { return }
         if item.kind == .pdf {
           image = PDFDocument(data: data)?.page(at: 0)?.thumbnail(of: CGSize(width: 240, height: 240), for: .cropBox)
         } else {
@@ -979,7 +984,7 @@ private struct OriginalZIPShareSheet: UIViewControllerRepresentable {
 }
 
 private struct OriginalExportDocument: FileDocument {
-  static var readableContentTypes: [UTType] { [.zip, .pdf, .image] }
+  static var readableContentTypes: [UTType] { [.zip, .pdf, .image] + GalaxySSIHealthStructuredOriginal.contentTypes }
   let data: Data
 
   init(data: Data) { self.data = data }

@@ -74,6 +74,16 @@ struct GalaxySSIHealthXLSX {
       formulas: body.map(\.formulas), date1904: date1904, isoDates: body.map(\.isoDates))
   }
 
+  func previewRows(_ id: String) throws -> [SheetRow] {
+    guard let sheet = sheets.first(where: { $0.id == id }), let part = parts[sheet.path]
+    else { throw GalaxySSIHealthTableImport.Failure.mapping }
+    let parser = SheetXML(strings: strings, sampleOnly: true)
+    do { try AgentOfficeDocumentExtractor.parseXML(part, delegate: parser) }
+    catch { if !parser.sampleComplete { throw error } }
+    try Task.checkCancellation()
+    return parser.rows
+  }
+
   enum Timestamp {
     case resolved(Date, usedDateOnlyTime: Bool)
     case needsTime
@@ -260,6 +270,8 @@ private final class StringsXML: NSObject, XMLParserDelegate {
 private final class SheetXML: NSObject, XMLParserDelegate {
   let strings: [String]
   var rows: [GalaxySSIHealthXLSX.SheetRow] = []
+  let sampleOnly: Bool
+  private(set) var sampleComplete = false
   private var row = 0
   private var column = -1
   private var cells: [Int: String] = [:]
@@ -273,12 +285,14 @@ private final class SheetXML: NSObject, XMLParserDelegate {
   private var collecting = false
   private var formula = false
 
-  init(strings: [String]) { self.strings = strings }
+  init(strings: [String], sampleOnly: Bool = false) { self.strings = strings; self.sampleOnly = sampleOnly }
 
   func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?,
               qualifiedName: String?, attributes attrs: [String: String]) {
     switch tag(name) {
     case "row":
+      if sampleOnly, rows.count == 21 { sampleComplete = true; parser.abortParsing(); return }
+      if Task.isCancelled { parser.abortParsing(); return }
       let next = attrs["r"].flatMap(Int.init) ?? row + 1
       guard next > row, next <= 1_048_576, rows.count < 501 else { parser.abortParsing(); return }
       row = next
@@ -289,7 +303,7 @@ private final class SheetXML: NSObject, XMLParserDelegate {
       formulaText = [:]
     case "c":
       let next = attrs["r"].flatMap { Self.column($0, row: row) } ?? (attrs["r"] == nil ? column + 1 : -1)
-      guard next > column, next < 64 else { parser.abortParsing(); return }
+      guard next > column, next < (sampleOnly ? 16_384 : 64) else { parser.abortParsing(); return }
       column = next
       type = attrs["t", default: "n"]
       text = ""

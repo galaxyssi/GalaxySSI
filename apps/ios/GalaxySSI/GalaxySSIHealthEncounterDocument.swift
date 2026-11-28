@@ -67,6 +67,7 @@ enum GalaxySSIHealthEncounterDocument {
 
   static func render(_ data: Data, kind: GalaxySSIHealthOriginalStore.Kind, page: Int) throws -> (UIImage, Int) {
     switch kind {
+    case .structured: throw GalaxySSIHealthRecords.Failure.stale
     case .pdf:
       guard let pdf = PDFDocument(data: data), !pdf.isLocked, page > 0,
             page <= pdf.pageCount, let source = pdf.page(at: page - 1)

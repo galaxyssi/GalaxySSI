@@ -2935,7 +2935,7 @@ struct GalaxySSIHealthRecords {
   @discardableResult
   func enqueueRecognition(original: GalaxySSIHealthOriginalStore.Original, pageCount: Int,
                           requiresPDFPassword: Bool = false) throws -> GalaxySSIHealthRecognitionJobs.Job {
-    guard (1...GalaxySSIHealthRecognitionJobs.maximumPages).contains(pageCount),
+    guard original.kind.isReport, (1...GalaxySSIHealthRecognitionJobs.maximumPages).contains(pageCount),
           original.kind == .pdf || (pageCount == 1 && !requiresPDFPassword),
           GalaxySSIHealthRecognitionJobs.validDigest(original.sha256) else { throw Failure.invalid }
     var archive = try load()

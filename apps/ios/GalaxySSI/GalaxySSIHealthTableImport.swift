@@ -292,26 +292,36 @@ enum GalaxySSIHealthTableImport {
   }
 
   private static func parseCSV(_ data: Data) throws -> Table {
+    let rows = try csvRecords(data)
+    guard let header = rows.first, header.count >= 2, rows.count > 1,
+          rows.dropFirst().allSatisfy({ $0.count <= header.count }) else { throw Failure.malformed }
+    return Table(headers: header, rows: Array(rows.dropFirst()))
+  }
+
+  static func csvRecords(_ data: Data, sampleOnly: Bool = false) throws -> [[String]] {
+    guard !data.isEmpty, data.count <= maximumBytes else { throw Failure.limit }
     guard String(data: data, encoding: .utf8) != nil else { throw Failure.malformed }
     let bytes = Array(data)
     var index = bytes.starts(with: [239, 187, 191]) ? 3 : 0
     var rows: [[String]] = [], row: [String] = [], field: [UInt8] = []
     var quoted = false, closed = false
     func endField() throws {
-      guard row.count < maximumColumns, field.count <= 8_192 else { throw Failure.limit }
+      guard row.count < (sampleOnly ? 16_384 : maximumColumns), field.count <= 8_192 else { throw Failure.limit }
       row.append(String(decoding: field, as: UTF8.self))
       field.removeAll(keepingCapacity: true)
       closed = false
     }
     func endRow() throws {
       try endField()
-      if row.contains(where: { !$0.isEmpty }) {
-        guard rows.count < maximumRows + 1 else { throw Failure.limit }
+      if sampleOnly || row.contains(where: { !$0.isEmpty }) {
+        guard rows.count < (sampleOnly ? 21 : maximumRows + 1) else { throw Failure.limit }
         rows.append(row)
       }
       row.removeAll(keepingCapacity: true)
     }
     while index < bytes.count {
+      if sampleOnly, rows.count == 21 { return rows }
+      if index.isMultiple(of: 4096) { try Task.checkCancellation() }
       let byte = bytes[index]
       index += 1
       if quoted {
@@ -333,9 +343,7 @@ enum GalaxySSIHealthTableImport {
     }
     guard !quoted else { throw Failure.malformed }
     if !row.isEmpty || !field.isEmpty || closed { try endRow() }
-    guard let header = rows.first, header.count >= 2, rows.count > 1,
-          rows.dropFirst().allSatisfy({ $0.count <= header.count }) else { throw Failure.malformed }
-    return Table(headers: header, rows: Array(rows.dropFirst()))
+    return rows
   }
 
   private struct JSONRow: Decodable {

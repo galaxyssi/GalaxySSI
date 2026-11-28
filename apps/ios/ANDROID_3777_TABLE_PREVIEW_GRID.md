@@ -25,14 +25,42 @@ Android reference: `69c58da3a`, especially `HealthStructuredOriginalPreview.kt`.
 - Keep original and linked ZIP save confirmation, fresh linked-reading scope,
   date-only provenance, clinical mapping and storage/recognition formats unchanged.
 
-## Deliberately not claimed
+## Raw original-library extension
 
-The route still starts from an existing encrypted table-import batch. It does not
-yet add generic CSV/JSON/XLSX to the image/PDF original library, preview arbitrary
-JSON roots, stream an initial sample from files exceeding the clinical parser's
-row/column limits, or change backup original kinds. Those are separate remaining
-integration work, not hidden behind a new UI. Existing XLSX/CSV/JSON parsing limits
-and parser behavior are retained. The character bound is Swift grapheme-based,
+CSV, JSON and XLSX can now be selected in the original library without clinical
+mapping. They use the existing authenticated/encrypted original index and files,
+removal, exact-byte single-save, ZIP export and portable backup paths. A new
+`structured` kind is validated against its canonical extension and previewable
+content on storage/restore. Truncated display names are not used to recover the
+format. Existing `image` and `pdf` raw values stay unchanged; older clients that
+do not know `structured` cannot read these newer archives and must be upgraded.
+
+The Files tab includes both PDFs and structured originals. A new foreground-only,
+request/owner/dataset-scoped worker previews the authenticated original, rechecks
+its exact indexed selection before publishing, and clears on removal/index events.
+The existing parent owns explicit raw-save/removal confirmation. Empty JSON roots
+and worksheets show an empty state. JSON root objects, arrays and scalars are
+supported, preserving raw numeric lexemes, duplicate key rows and source order.
+Foundation validates JSON syntax; a delimiter-aware scan extracts already-valid
+raw fragments rather than decoding numbers into floating-point display values.
+CSV reuses the existing parser in a separately bounded sample mode, including its
+first source record. XLSX uses the existing ZIP/XML readers with a preview-only
+21-nonempty-row lookahead and 16,384-column bound. Clinical import still has its
+existing 500-row/64-column policy, header requirements and formula consent.
+
+Both the recognition enqueue API and worker reject structured originals; the
+recognition/visit-document pickers exclude them. Report-linked exports classify a
+structured original as mismatched instead of treating it as a PDF. Backup restore
+uses the stored canonical extension plus exact content/size/digest validation.
+
+## Remaining differences and verification limits
+
+Input is limited to 1 MiB (Android's text-preview budget is 2 MiB). Existing XLSX
+ZIP expansion/shared-string/cell budgets still apply. Preview-only CSV/XLSX tails
+after the lookahead are not validated or described as fully imported; original
+bytes are kept intact. JSON validation can reject Foundation-unrepresentable
+numbers despite valid JSON syntax. Nested JSON uses raw fragments rather than
+Android's six-field summaries. The character bound is Swift grapheme-based,
 not Android's UTF-16 bound. Native parsing is not forcibly preemptible: cancellation
 prevents publishing after it returns; it is not instant interruption or heap erasure.
 
@@ -40,8 +68,11 @@ prevents publishing after it returns; it is not instant interruption or heap era
 
 Only JavaScript source contracts, negative source mutations, the existing iOS
 project-structure check and whitespace checks are permitted for this work.
-Four dedicated Swift fixtures cover limits, exact-boundary values, sparse source
+Four grid Swift fixtures cover limits, exact-boundary values, sparse source
 rows/formula caches and configuration bounds. They are authored and registered,
-not executed. No Swift compilation, XCTest execution, device, simulator, UI,
+not executed. Six more authored raw-original fixtures cover JSON lexemes/roots,
+CSV quoted records, large sparse worksheet sampling, input rejection and encrypted
+storage/reopen/type/recognition exclusion. They are also not executed.
+No Swift compilation, XCTest execution, device, simulator, UI,
 storage fault, parser execution, picker, CI, IPA or live acceptance evidence is
 claimed. Source checks cannot establish Swift typing or visual/runtime correctness.

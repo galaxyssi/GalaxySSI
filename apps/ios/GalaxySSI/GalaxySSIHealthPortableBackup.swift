@@ -189,7 +189,9 @@ enum GalaxySSIHealthPortableBackup {
       guard (1...GalaxySSIHealthOriginalStore.maximumFileBytes).contains(entry.manifest.bytes),
             entry.manifest.name.count <= 180, (1...8).contains(ext.count),
             ext.allSatisfy({ (48...57).contains($0) || (97...122).contains($0) }),
-            entry.manifest.kind != .pdf || entry.manifest.fileExtension == "pdf" else { throw Failure.invalid }
+            entry.manifest.kind != .pdf || entry.manifest.fileExtension == "pdf",
+            entry.manifest.kind != .structured || GalaxySSIHealthStructuredOriginal.extensions.contains(entry.manifest.fileExtension)
+      else { throw Failure.invalid }
       if let data = entry.bytes {
         guard data.count == entry.manifest.bytes, digest(data) == entry.manifest.sha256 else { throw Failure.invalid }
         size += data.count

@@ -217,24 +217,12 @@ struct GalaxySSIHealthTableSourceView: View {
       let batch = try batch()
       let digest = GalaxySSIHealthTableImport.digest(batch.data)
       let ext = URL(fileURLWithPath: batch.name).pathExtension.lowercased()
+      let headers = [t("json_key", "Key"), t("json_value", "Value")]
       let worker = Task.detached(priority: .userInitiated) { [data = batch.data] in
         try Task.checkCancellation()
-        let result: LoadedPreview
-        if ext == "xlsx" {
-          let contents = try GalaxySSIHealthXLSX(data)
-          let choices = contents.sheets.map { Worksheet(id: $0.id, name: $0.name) }
-          guard let first = choices.first,
-                selected.isEmpty || choices.contains(where: { $0.id == selected })
-          else { throw GalaxySSIHealthTableImport.Failure.stale }
-          let id = selected.isEmpty ? first.id : selected
-          let rows = try contents.rows(id)
-          result = LoadedPreview(sheets: choices, sheetID: id,
-            sample: GalaxySSIHealthTableSourceSample(sheetRows: rows, rowLimit: 20, cellLimit: 512))
-        } else {
-          let table = try GalaxySSIHealthTableImport.parse(data, json: ext == "json")
-          result = LoadedPreview(sheets: [], sheetID: "",
-            sample: GalaxySSIHealthTableSourceSample(table, rowLimit: 20, cellLimit: 512))
-        }
+        let loaded = try GalaxySSIHealthStructuredOriginal.read(data, fileExtension: ext, sheetID: selected, jsonHeaders: headers)
+        let result = LoadedPreview(sheets: loaded.sheets.map { Worksheet(id: $0.id, name: $0.name) },
+          sheetID: loaded.sheetID, sample: loaded.sample)
         try Task.checkCancellation()
         return result
       }
