@@ -19,6 +19,8 @@ function between(s, start, end) {
 }
 function retained(file, source) {
   assert([store, view].includes(file));
+  const pdf = path.join(__dirname, 'check-pdf-preparation.cjs');
+  if (file === view && fs.existsSync(pdf)) source = require(pdf).retainedView(source);
   const marker = file === store ? '  private var exportSaveScope:' : '  @State private var savingExport = false';
   if (!source.includes(marker)) {
     assert(!source.includes('GalaxySSIHealthOriginalExportSave') && !source.includes('finishExportSave(')); return source;
