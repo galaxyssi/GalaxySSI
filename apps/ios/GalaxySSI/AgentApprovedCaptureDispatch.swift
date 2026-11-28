@@ -19,8 +19,20 @@ enum AgentApprovedCaptureDispatch {
       executionAction.parameters["_galaxyssi_conversation_id"] == wait.conversationId,
       executionAction.parameters["_galaxyssi_turn_id"] == wait.turnId,
       executionAction.parameters["_galaxyssi_contact_id"] == wait.contactId else { return nil }
-    let plan = task.activePlan ?? AgentPlanFactory.singleAction(
-      request: AgentPlanRequest(goal: task.goal, screen: screen), action: original)
+    let plan: AgentPlan
+    if let active = task.activePlan { plan = active }
+    else {
+      let actions = task.pendingActions
+      let scope = AgentPlanContinuationScope(conversationId: wait.conversationId, turnId: wait.turnId)
+      guard task.planContext == nil, task.pendingPlanning == nil, !task.blocked,
+        task.taskId == wait.turnId, task.sessionId == wait.conversationId,
+        actions.first == original, Set(actions.map(\.id)).count == actions.count,
+        actions.allSatisfy({ !$0.id.isBlank && [.callNativeTool, .callConnector].contains($0.kind) &&
+          [.proposed, .pendingConfirmation].contains($0.status) && scope.owns($0) }) else { return nil }
+      // Retain the queue without rewriting actions or approving their later execution.
+      plan = AgentPlan(goal: task.goal, screen: screen, steps: [], actions: actions,
+        selectedAgentOrModel: task.targetTitle, plannerProfile: "legacy-capture-dispatch")
+    }
     guard let node = AgentSequentialPlanNodeDispatch.prepare(plan: plan, action: executionAction, screen: screen,
         sessionId: task.sessionId.ifBlank(outgoing.conversationId), conversationId: outgoing.conversationId,
         turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)) else { return nil }
