@@ -16,7 +16,7 @@ function optional(name, method, file, source) {
 }
 function project(file, source) {
   for (const name of ['check-connector-deadline-checkpoint', 'check-scoped-member-recall',
-    'check-pinned-desktop-outbox', 'check-native-recovery-query-ownership']) {
+    'check-native-recovery-query-ownership']) {
     source = optional(name, 'retained', file, source);
   }
   if (file.endsWith('/GalaxySSIServices.swift')) {
