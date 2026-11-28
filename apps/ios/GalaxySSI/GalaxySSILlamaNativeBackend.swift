@@ -37,13 +37,37 @@ final class GalaxySSILlamaNativeBackend: LocalModelInferenceBackend {
     maximumTokens: Int,
     temperature: Double
   ) throws -> String {
-    let pointer = systemPrompt.withCString { system in
-      userPrompt.withCString { user in
-        galaxyssi_llama_generate(system, user, Int32(maximumTokens), Float(temperature))
+    try generate(systemPrompt: systemPrompt, userPrompt: userPrompt,
+      maximumTokens: maximumTokens, temperature: temperature, cancellation: .none)
+  }
+
+  func generate(
+    systemPrompt: String,
+    userPrompt: String,
+    maximumTokens: Int,
+    temperature: Double,
+    cancellation: AgentModelToolLoopCancellationToken
+  ) throws -> String {
+    let cancellationContext = GalaxySSILlamaCancellationContext(cancellation)
+    guard !cancellationContext.isCancellationRequested else { throw CancellationError() }
+    let context = Unmanaged.passUnretained(cancellationContext).toOpaque()
+    let pointer = withExtendedLifetime(cancellationContext) {
+      systemPrompt.withCString { system in
+        userPrompt.withCString { user in
+          galaxyssi_llama_generate_cancellable(system, user, Int32(maximumTokens), Float(temperature), { context in
+            guard let context else { return 1 }
+            let value = Unmanaged<GalaxySSILlamaCancellationContext>.fromOpaque(context).takeUnretainedValue()
+            return value.isCancellationRequested ? 1 : 0
+          }, context)
+        }
       }
     }
-    guard let pointer else { throw LocalModelInferenceError.generationFailed(lastError()) }
+    guard let pointer else {
+      if cancellationContext.isCancellationRequested { throw CancellationError() }
+      throw LocalModelInferenceError.generationFailed(lastError())
+    }
     defer { galaxyssi_llama_free_string(pointer) }
+    guard !cancellationContext.isCancellationRequested else { throw CancellationError() }
     let response = String(cString: pointer)
     if response.isEmpty {
       let error = lastError()
@@ -61,6 +85,24 @@ final class GalaxySSILlamaNativeBackend: LocalModelInferenceBackend {
   }
 }
 
+private final class GalaxySSILlamaCancellationContext {
+  private let token: AgentModelToolLoopCancellationToken
+  private let lock = NSLock()
+  private var observed = false
+
+  init(_ token: AgentModelToolLoopCancellationToken) { self.token = token }
+
+  var isCancellationRequested: Bool {
+    let requested = token.isCancellationRequested
+    lock.lock()
+    defer { lock.unlock() }
+    observed = observed || requested
+    return observed
+  }
+}
+
+private typealias GalaxySSILlamaCancellationCallback = @convention(c) (UnsafeMutableRawPointer?) -> Int32
+
 @_silgen_name("galaxyssi_llama_initialize")
 private func galaxyssi_llama_initialize() -> Int32
 
@@ -77,6 +119,16 @@ private func galaxyssi_llama_generate(
   _ userPrompt: UnsafePointer<CChar>,
   _ maximumTokens: Int32,
   _ temperature: Float
+) -> UnsafeMutablePointer<CChar>?
+
+@_silgen_name("galaxyssi_llama_generate_cancellable")
+private func galaxyssi_llama_generate_cancellable(
+  _ systemPrompt: UnsafePointer<CChar>,
+  _ userPrompt: UnsafePointer<CChar>,
+  _ maximumTokens: Int32,
+  _ temperature: Float,
+  _ cancellationRequested: GalaxySSILlamaCancellationCallback?,
+  _ cancellationContext: UnsafeMutableRawPointer?
 ) -> UnsafeMutablePointer<CChar>?
 
 @_silgen_name("galaxyssi_llama_free_string")

@@ -149,8 +149,10 @@ final class LocalModelCooperativeRuntime {
     executionProfile: AgentExecutionProfile? = nil,
     workClass: LocalModelWorkClass = .interactive,
     preferredProfileId: String = "",
-    taskId: String = ""
+    taskId: String = "",
+    cancellation: AgentModelToolLoopCancellationToken = .none
   ) async throws -> LocalModelInferenceResult {
+    try Self.checkCancellation(cancellation)
     let preferredId = preferredProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
     let resolvedExecutionProfile = executionProfile ?? AgentExecutionProfile.forGoal(
       userPrompt,
@@ -190,17 +192,25 @@ final class LocalModelCooperativeRuntime {
     let startedAt = Date()
     var planningBrief = ""
     if let planner = plan.plannerProfile {
-      planningBrief = (try? await runtime.generateAsync(
-        profile: planner,
-        systemPrompt: Self.plannerSystemPrompt,
-        userPrompt: String(userPrompt.prefix(Self.maximumPlannerInputCharacters)),
-        maximumTokens: Self.plannerMaximumTokens,
-        temperature: 0.1,
-        thinkingMode: plan.plannerThinkingMode,
-        workClass: workClass,
-        taskId: taskId
-      ).text.toPlanningBrief()) ?? ""
+      do {
+        planningBrief = try await runtime.generateAsync(
+          profile: planner,
+          systemPrompt: Self.plannerSystemPrompt,
+          userPrompt: String(userPrompt.prefix(Self.maximumPlannerInputCharacters)),
+          maximumTokens: Self.plannerMaximumTokens,
+          temperature: 0.1,
+          thinkingMode: plan.plannerThinkingMode,
+          workClass: workClass,
+          taskId: taskId,
+          cancellation: cancellation
+        ).text.toPlanningBrief()
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        planningBrief = ""
+      }
     }
+    try Self.checkCancellation(cancellation)
 
     let answerPrompt: String
     if planningBrief.isEmpty {
@@ -221,6 +231,7 @@ final class LocalModelCooperativeRuntime {
 
     var lastError: Error?
     for (index, candidate) in candidates.enumerated() {
+      try Self.checkCancellation(cancellation)
       do {
         let mode: LocalModelThinkingMode
         if index == 0 {
@@ -243,18 +254,28 @@ final class LocalModelCooperativeRuntime {
           temperature: temperature,
           thinkingMode: mode,
           workClass: workClass,
-          taskId: taskId
+          taskId: taskId,
+          cancellation: cancellation
         )
+        try Self.checkCancellation(cancellation)
         return result.withElapsedMillis(
           max(result.elapsedMillis, Int64(Date().timeIntervalSince(startedAt) * 1_000))
         )
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
+        try Self.checkCancellation(cancellation)
         lastError = error
       }
     }
     throw lastError ?? LocalModelInferenceError.generationFailed(
       "No enabled local model could complete the task"
     )
+  }
+
+  private static func checkCancellation(_ cancellation: AgentModelToolLoopCancellationToken) throws {
+    try Task.checkCancellation()
+    guard !cancellation.isCancellationRequested else { throw CancellationError() }
   }
 
   private func readyProfiles(

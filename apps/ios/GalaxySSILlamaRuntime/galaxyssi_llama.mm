@@ -176,9 +176,19 @@ std::vector<llama_token> tokenize_prompt_locked(const std::string &prompt) {
     return tokens;
 }
 
-void decode_prompt_locked(const std::vector<llama_token> &tokens) {
+struct GenerationCancelled : std::exception {
+    const char *what() const noexcept override { return "Local generation cancelled"; }
+};
+
+void check_generation_cancelled(galaxyssi_llama_cancel_callback callback, void *context) {
+    if (callback != nullptr && callback(context) != 0) throw GenerationCancelled();
+}
+
+void decode_prompt_locked(const std::vector<llama_token> &tokens,
+                          galaxyssi_llama_cancel_callback callback, void *context) {
     const int32_t batch_size = static_cast<int32_t>(llama_n_batch(loaded_context));
     for (size_t offset = 0; offset < tokens.size(); offset += static_cast<size_t>(batch_size)) {
+        check_generation_cancelled(callback, context);
         const int32_t count = std::min<int32_t>(
             batch_size,
             static_cast<int32_t>(tokens.size() - offset)
@@ -188,6 +198,7 @@ void decode_prompt_locked(const std::vector<llama_token> &tokens) {
             count
         );
         const int32_t result = llama_decode(loaded_context, batch);
+        check_generation_cancelled(callback, context);
         if (result != 0) {
             throw std::runtime_error(
                 "llama.cpp failed while processing the prompt: " + std::to_string(result)
@@ -280,6 +291,18 @@ extern "C" char *galaxyssi_llama_generate(
     int32_t maximum_tokens,
     float temperature
 ) {
+    return galaxyssi_llama_generate_cancellable(system_prompt_value, user_prompt_value,
+        maximum_tokens, temperature, nullptr, nullptr);
+}
+
+extern "C" char *galaxyssi_llama_generate_cancellable(
+    const char *system_prompt_value,
+    const char *user_prompt_value,
+    int32_t maximum_tokens,
+    float temperature,
+    galaxyssi_llama_cancel_callback cancellation_requested,
+    void *cancellation_context
+) {
     std::lock_guard<std::mutex> guard(runtime_mutex);
     if (loaded_model == nullptr || loaded_context == nullptr) {
         set_error("No verified local model is loaded");
@@ -287,6 +310,7 @@ extern "C" char *galaxyssi_llama_generate(
     }
     llama_sampler *sampler = nullptr;
     try {
+        check_generation_cancelled(cancellation_requested, cancellation_context);
         llama_memory_clear(llama_get_memory(loaded_context), false);
         const std::string prompt = formatted_prompt_locked(
             c_string(system_prompt_value),
@@ -298,7 +322,7 @@ extern "C" char *galaxyssi_llama_generate(
         if (static_cast<int32_t>(prompt_tokens.size()) + generation_limit + 8 > context_size) {
             throw std::runtime_error("Compiled prompt exceeds the local model context window");
         }
-        decode_prompt_locked(prompt_tokens);
+        decode_prompt_locked(prompt_tokens, cancellation_requested, cancellation_context);
 
         sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
         if (sampler == nullptr) throw std::runtime_error("llama.cpp could not create a sampler");
@@ -312,11 +336,13 @@ extern "C" char *galaxyssi_llama_generate(
         std::string response;
         const llama_vocab *vocab = llama_model_get_vocab(loaded_model);
         for (int32_t generated = 0; generated < generation_limit; ++generated) {
+            check_generation_cancelled(cancellation_requested, cancellation_context);
             llama_token token = llama_sampler_sample(sampler, loaded_context, -1);
             if (llama_vocab_is_eog(vocab, token)) break;
             response += token_piece_locked(token);
             llama_batch batch = llama_batch_get_one(&token, 1);
             const int32_t decode_result = llama_decode(loaded_context, batch);
+            check_generation_cancelled(cancellation_requested, cancellation_context);
             if (decode_result != 0) {
                 llama_sampler_free(sampler);
                 sampler = nullptr;
@@ -325,10 +351,17 @@ extern "C" char *galaxyssi_llama_generate(
                 );
             }
         }
+        check_generation_cancelled(cancellation_requested, cancellation_context);
         llama_sampler_free(sampler);
         sampler = nullptr;
         last_error.clear();
         return copy_string(response);
+    } catch (const GenerationCancelled &error) {
+        if (sampler != nullptr) llama_sampler_free(sampler);
+        llama_memory_t memory = llama_get_memory(loaded_context);
+        if (memory != nullptr) llama_memory_clear(memory, true);
+        set_error(error.what());
+        return nullptr;
     } catch (const std::exception &error) {
         if (sampler != nullptr) llama_sampler_free(sampler);
         set_error(error.what());

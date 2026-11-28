@@ -14,6 +14,17 @@ char *galaxyssi_llama_generate(
     int32_t maximum_tokens,
     float temperature
 );
+typedef int32_t (*galaxyssi_llama_cancel_callback)(void *context);
+// Synchronous callback/context; neither is retained after this call returns.
+// Called with the generation mutex held: do not reenter any runtime function.
+char *galaxyssi_llama_generate_cancellable(
+    const char *system_prompt,
+    const char *user_prompt,
+    int32_t maximum_tokens,
+    float temperature,
+    galaxyssi_llama_cancel_callback cancellation_requested,
+    void *cancellation_context
+);
 void galaxyssi_llama_free_string(char *value);
 void galaxyssi_llama_unload(void);
 const char *galaxyssi_llama_backend_info(void);

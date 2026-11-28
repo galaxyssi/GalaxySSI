@@ -158,7 +158,10 @@ final class AgentIOSLocalModelWebToolSession: AgentModelAdapter {
       hasAttachments: hasAttachments,
       executionProfile: AgentExecutionProfile.forGoal(userPrompt, hasAttachments: hasAttachments),
       preferredProfileId: preferredProfileID,
-      taskId: taskID
+      taskId: taskID,
+      cancellation: AgentModelToolLoopCancellationToken {
+        cancellation.isCancellationRequested || self.inferenceCancellation.isCancellationRequested
+      }
     )
     lastInference = result
     return result
