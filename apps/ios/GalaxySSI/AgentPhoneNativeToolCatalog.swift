@@ -216,7 +216,8 @@ enum AgentPhoneNativeToolCatalog {
       hardwareExecutableDefinitions() +
       homeAssistantExecutableDefinitions(provider: homeAssistantProvider, nowMillis: nowMillis) +
       notificationExecutableDefinitions(provider: resolvedNotificationProvider, nowMillis: nowMillis) +
-      visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
+      visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider,
+        initialAvailability: AgentIOSVisibleCaptureNativeToolCatalog.uncheckedAvailability) +
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: resolvedWebIntelligenceProvider) +
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
@@ -271,10 +272,12 @@ enum AgentPhoneNativeToolCatalog {
   }
 
   static func visibleCaptureExecutableDefinitions(
-    provider: AgentIOSVisibleCaptureToolProviding
+    provider: AgentIOSVisibleCaptureToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSVisibleCaptureNativeToolExecutor(provider: provider)
-    return AgentIOSVisibleCaptureNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentIOSVisibleCaptureNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: initialAvailability).map(executor.executableDefinition)
   }
 
   static func webIntelligenceExecutableDefinitions(
