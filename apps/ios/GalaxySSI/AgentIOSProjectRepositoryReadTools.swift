@@ -22,10 +22,11 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
   static let toolIds: Set<String> = [observe, inspect, diff, log]
 
   static func definitions(
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSProjectRepositoryReadOperation.allCases.map { operation in
-      definition(operation, runtimeProvider: runtimeProvider)
+      definition(operation, runtimeProvider: runtimeProvider, initialAvailability: initialAvailability)
     }
   }
 
@@ -41,7 +42,8 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
 
   private static func definition(
     _ operation: AgentIOSProjectRepositoryReadOperation,
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability?
   ) -> AgentPhoneNativeToolDefinition {
     let descriptor = try! AgentNativeToolDescriptor(
       id: toolId(operation),
@@ -76,7 +78,7 @@ enum AgentIOSProjectRepositoryReadToolCatalog {
       timeoutMillis: 2 * 60_000,
       idempotency: .idempotent,
       concurrency: .parallelReadOnly,
-      availability: runtimeProvider.availability(operation: .execute)
+      availability: initialAvailability ?? runtimeProvider.availability(operation: .execute)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,

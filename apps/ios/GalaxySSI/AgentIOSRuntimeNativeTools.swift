@@ -96,6 +96,9 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
     execute
   ]
   static let toolIds: Set<String> = Set(orderedToolIds)
+  static let uncheckedAvailability = AgentNativeToolAvailability(
+    status: .unavailable, reason: "Runtime readiness has not been checked"
+  )
   static let requiredPacks = [
     "linux-base",
     "python-uv",
@@ -109,10 +112,11 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
   ]
 
   static func definitions(
-    provider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+    provider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider(),
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSOnDeviceRuntimeToolOperation.allCases.map { operation in
-      definition(provider: provider, operation: operation)
+      definition(provider: provider, operation: operation, initialAvailability: initialAvailability)
     }
   }
 
@@ -201,7 +205,8 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
 
   private static func definition(
     provider: AgentIOSOnDeviceRuntimeToolProviding,
-    operation: AgentIOSOnDeviceRuntimeToolOperation
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    initialAvailability: AgentNativeToolAvailability?
   ) -> AgentPhoneNativeToolDefinition {
     let descriptor = try! AgentNativeToolDescriptor(
       id: toolId(operation),
@@ -225,7 +230,7 @@ enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
       timeoutMillis: timeoutMillis(operation),
       idempotency: readOnlyObservationOperations.contains(operation) ? .idempotent : .nonIdempotent,
       concurrency: readOnlyObservationOperations.contains(operation) ? .parallelReadOnly : .serial,
-      availability: provider.availability(operation: operation)
+      availability: initialAvailability ?? provider.availability(operation: operation)
     )
     var metadata = provenance(operation)
     metadata["implementation"] = provider.implementationId

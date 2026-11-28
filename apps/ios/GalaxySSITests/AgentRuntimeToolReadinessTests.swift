@@ -3,6 +3,51 @@ import XCTest
 @testable import GalaxySSI
 
 final class AgentRuntimeToolReadinessTests: XCTestCase {
+  func testRuntimeDeferredCatalogDoesNotProbeUntilDiscovery() throws {
+    let state = State()
+    try checkDeferred(AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: Runtime(state),
+      initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability), state: state)
+  }
+
+  func testProjectReadDeferredCatalogDoesNotProbeUntilDiscovery() throws {
+    let state = State()
+    try checkDeferred(AgentIOSProjectRepositoryReadToolCatalog.definitions(runtimeProvider: Runtime(state),
+      initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability), state: state)
+    XCTAssertTrue(state.probes.allSatisfy { $0 == "execute" })
+  }
+
+  func testProjectMutationDeferredCatalogDoesNotProbeUntilDiscovery() throws {
+    let state = State()
+    try checkDeferred(AgentIOSProjectRepositoryMutationToolCatalog.definitions(runtimeProvider: Runtime(state),
+      initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability), state: state)
+    XCTAssertTrue(state.probes.allSatisfy { $0 == "execute" })
+  }
+
+  func testEvolutionDeferredCatalogDoesNotProbeUntilDiscovery() throws {
+    let state = State()
+    try checkDeferred(AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: Evolution(state),
+      initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability), state: state)
+  }
+
+  func testExecutableCatalogHelpersForwardDeferredReadinessWithoutProbing() throws {
+    let state = State(), initial = AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability
+    let executables = AgentPhoneNativeToolCatalog.onDeviceRuntimeExecutableDefinitions(provider: Runtime(state),
+      initialAvailability: initial) +
+      AgentPhoneNativeToolCatalog.projectRepositoryReadExecutableDefinitions(runtimeProvider: Runtime(state),
+        initialAvailability: initial) +
+      AgentPhoneNativeToolCatalog.projectRepositoryMutationExecutableDefinitions(runtimeProvider: Runtime(state),
+        initialAvailability: initial) +
+      AgentPhoneNativeToolCatalog.selfEvolutionExecutableDefinitions(provider: Evolution(state), initialAvailability: initial)
+    XCTAssertEqual(executables.count, 27)
+    XCTAssertTrue(state.probes.isEmpty)
+    let registry = try AgentNativeToolRegistry().registerExecutables(executables)
+    _ = registry.registeredContractFingerprint()
+    XCTAssertTrue(state.probes.isEmpty)
+    XCTAssertTrue(registry.descriptors().allSatisfy { $0.availability.status == .requiresSetup })
+    XCTAssertEqual(state.probes.count, executables.count)
+    XCTAssertEqual(state.invocations, 0)
+  }
+
   func testRuntimeCatalogReflectsSetupRecoveryAndFailure() throws {
     let state = State()
     try checkRefresh(AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: Runtime(state)), state: state)
@@ -50,6 +95,7 @@ final class AgentRuntimeToolReadinessTests: XCTestCase {
   }
 
   private func checkRefresh(_ definitions: [AgentPhoneNativeToolDefinition], state: State) throws {
+    XCTAssertEqual(state.probes.count, definitions.count, "Explicit catalog calls retain eager compatibility")
     let registry = try AgentNativeToolRegistry().registerAll(definitions)
     let identity = registry.registeredContractFingerprint()
     XCTAssertTrue(registry.descriptors().allSatisfy { $0.availability.status == .requiresSetup })
@@ -90,6 +136,23 @@ final class AgentRuntimeToolReadinessTests: XCTestCase {
     state.readiness = .available
     _ = registry.invoke(tool, input: input, context: context(permissions: false))
     XCTAssertEqual(state.invocations, 1)
+  }
+
+  private func checkDeferred(_ definitions: [AgentPhoneNativeToolDefinition], state: State) throws {
+    XCTAssertFalse(definitions.isEmpty)
+    XCTAssertTrue(state.probes.isEmpty)
+    XCTAssertTrue(definitions.allSatisfy { $0.descriptor.availability ==
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability })
+    let registry = try AgentNativeToolRegistry().registerAll(definitions)
+    let fingerprint = registry.registeredContractFingerprint()
+    XCTAssertTrue(state.probes.isEmpty)
+    XCTAssertTrue(registry.descriptors().allSatisfy { $0.availability.status == .requiresSetup })
+    XCTAssertEqual(state.probes.count, definitions.count)
+    state.readiness = .available
+    registry.refreshAvailability()
+    XCTAssertTrue(registry.descriptors().allSatisfy { $0.availability.status == .available })
+    XCTAssertEqual(registry.registeredContractFingerprint(), fingerprint)
+    XCTAssertEqual(state.invocations, 0)
   }
 
   private final class State {

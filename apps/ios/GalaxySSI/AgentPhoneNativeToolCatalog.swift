@@ -220,12 +220,16 @@ enum AgentPhoneNativeToolCatalog {
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: resolvedWebIntelligenceProvider) +
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
-      selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
+      selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis,
+        initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
       mcpExecutableDefinitions(provider: resolvedMcpProvider) +
-      onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider) +
-      projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
-      projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider) +
+      onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider,
+        initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability) +
+      projectRepositoryReadExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider,
+        initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability) +
+      projectRepositoryMutationExecutableDefinitions(runtimeProvider: resolvedOnDeviceRuntimeProvider,
+        initialAvailability: AgentIOSOnDeviceRuntimeNativeToolCatalog.uncheckedAvailability) +
       AgentSystemEvidenceNativeToolCatalog.executableDefinitions(nowMillis: nowMillis) +
       AgentToolInspectionCatalog.executableDefinitions() +
       (voiceReminderTool.map { [$0] } ?? [])
@@ -425,10 +429,12 @@ enum AgentPhoneNativeToolCatalog {
 
   static func selfEvolutionExecutableDefinitions(
     provider: AgentIOSSelfEvolutionToolProviding,
-    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSSelfEvolutionNativeToolExecutor(provider: provider, nowMillis: nowMillis)
-    return AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: initialAvailability).map(executor.executableDefinition)
   }
 
   static func desktopRemoteExecutableDefinitions(
@@ -446,30 +452,34 @@ enum AgentPhoneNativeToolCatalog {
   }
 
   static func onDeviceRuntimeExecutableDefinitions(
-    provider: AgentIOSOnDeviceRuntimeToolProviding
+    provider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSOnDeviceRuntimeNativeToolExecutor(
       provider: provider,
       workspaceManager: provider.runtimeWorkspaceManager
     )
-    return AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+    return AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider,
+      initialAvailability: initialAvailability).map(executor.executableDefinition)
   }
 
   static func projectRepositoryReadExecutableDefinitions(
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSProjectRepositoryReadToolExecutor(runtimeProvider: runtimeProvider)
     return AgentIOSProjectRepositoryReadToolCatalog
-      .definitions(runtimeProvider: runtimeProvider)
+      .definitions(runtimeProvider: runtimeProvider, initialAvailability: initialAvailability)
       .map(executor.executableDefinition)
   }
 
   static func projectRepositoryMutationExecutableDefinitions(
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSProjectRepositoryMutationToolExecutor(runtimeProvider: runtimeProvider)
     return AgentIOSProjectRepositoryMutationToolCatalog
-      .definitions(runtimeProvider: runtimeProvider)
+      .definitions(runtimeProvider: runtimeProvider, initialAvailability: initialAvailability)
       .map(executor.executableDefinition)
   }
 

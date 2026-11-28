@@ -25,10 +25,11 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
   static let toolIds: Set<String> = [clone, fetch, checkout, commit, pull, push]
 
   static func definitions(
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability? = nil
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSProjectRepositoryMutationOperation.allCases.map {
-      definition($0, runtimeProvider: runtimeProvider)
+      definition($0, runtimeProvider: runtimeProvider, initialAvailability: initialAvailability)
     }
   }
 
@@ -46,7 +47,8 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
 
   private static func definition(
     _ operation: AgentIOSProjectRepositoryMutationOperation,
-    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    initialAvailability: AgentNativeToolAvailability?
   ) -> AgentPhoneNativeToolDefinition {
     let descriptor = try! AgentNativeToolDescriptor(
       id: toolId(operation),
@@ -85,7 +87,7 @@ enum AgentIOSProjectRepositoryMutationToolCatalog {
         ? 30 * 60_000
         : 5 * 60_000,
       idempotency: operation == .commit || operation == .push ? .idempotencyKeyRequired : .idempotent,
-      availability: runtimeProvider.availability(operation: .execute)
+      availability: initialAvailability ?? runtimeProvider.availability(operation: .execute)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
