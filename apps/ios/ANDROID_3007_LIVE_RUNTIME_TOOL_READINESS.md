@@ -51,12 +51,20 @@ compatibility. They are not end-to-end provider acceptance.
 No Swift/native build, XCTest execution, full repository check, CI inspection,
 simulator/device/live network/model execution, IPA or private evidence is included.
 
-Local integration with sixteen pending branches (#4664 and #4671-#4685) had no
+The initial live-callback revision integrated with sixteen pending branches (#4664 and #4671-#4685) without a
 textual or Xcode registration conflict. All twenty-two focused source guards,
 `npm run check:ios` and `git diff --check` passed on that combined tree. No guard
 in another branch required modification for this change. The registry's original
 committed-result replay precedes live admission and remains untouched; no remote
 PR is approved or merged by this verification.
+
+The later deferred-registration revision integrated through #4688 with one
+adjacent MCP/runtime registration-list conflict. The local-only merge retained
+both exact deferred parameters. All 24 scoped source guards, `npm run check:ios`
+and `git diff --check` passed on the combined tree. The original #4685 branch
+adds only an optional exact runtime-normalizer composition hook; it does not
+duplicate this feature's application code. The earlier no-conflict statement
+describes the initial callback-only revision, not this later merge.
 
 ## Remaining work
 
