@@ -35,6 +35,9 @@ function retained(file, source) {
   return show(base, file);
 }
 function normalizeCompanions(file, source) {
+  const structured = path.join(__dirname, 'check-structured-originals.cjs');
+  if ([app + 'GalaxySSIHealthOriginalStore.swift', app + 'GalaxySSIHealthRecords.swift'].includes(file) && fs.existsSync(structured))
+    source = require(structured).retained(file, source);
   const tool = path.join(__dirname, 'check-restore-receipts.cjs');
   if (file === app + 'GalaxySSIHealthRecords.swift' && fs.existsSync(tool)) source = require(tool).retainedRecords(source);
   const paper = path.join(__dirname, 'check-photo-paper-hints.cjs');
