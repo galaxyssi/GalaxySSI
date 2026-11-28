@@ -6,10 +6,29 @@ struct GalaxySSIHealthRecordCenterSnapshot {
     let sourceID: UUID
     let sha256: String
     let items: [GalaxySSIHealthReportReview.Item]
+    let addedAt: Date
     var id: String { sourceID.uuidString + ":" + sha256 }
+  }
+  enum Review: Identifiable {
+    case report(Pending)
+    case table(GalaxySSIHealthReviewReminders.TableDraft)
+
+    var id: String {
+      switch self {
+      case .report(let report): return "report:" + report.id
+      case .table(let table): return "table:" + table.id.uuidString + ":" + table.version.uuidString
+      }
+    }
+    var at: Date {
+      switch self {
+      case .report(let report): return report.addedAt
+      case .table(let table): return table.at.timeIntervalSinceReferenceDate.isFinite ? table.at : .distantPast
+      }
+    }
   }
   let confirmed: [GalaxySSIHealthReading]
   let pending: [Pending]
+  let reviews: [Review]
   let draft: GalaxySSIHealthDraft?
 
   init(archive: GalaxySSIHealthRecords.Archive, originals: [GalaxySSIHealthOriginalStore.Original]) {
@@ -18,11 +37,20 @@ struct GalaxySSIHealthRecordCenterSnapshot {
     let grouped = Dictionary(grouping: archive.reportReview ?? []) {
       $0.source.original.uuidString + ":" + $0.source.sha256
     }
-    pending = grouped.keys.sorted().compactMap { key in
+    pending = grouped.keys.sorted().compactMap { key -> Pending? in
       guard let items = grouped[key], let source = items.first?.source else { return nil }
       let original = originals.first { $0.id == source.original && $0.sha256 == source.sha256 }
-      return Pending(original: original, sourceID: source.original, sha256: source.sha256, items: items)
-    }
+      let jobDate = (archive.recognitionJobs ?? []).filter {
+        $0.original.id == source.original && $0.original.sha256 == source.sha256
+      }.map(\.addedAt).filter { $0.timeIntervalSinceReferenceDate.isFinite }.max()
+      let originalDate = original?.importedAt
+      let stagedDate = items.compactMap(\.stagedAt).filter { $0.timeIntervalSinceReferenceDate.isFinite }.max()
+      let addedAt = jobDate ?? originalDate.flatMap { $0.timeIntervalSinceReferenceDate.isFinite ? $0 : nil }
+        ?? stagedDate ?? .distantPast
+      return Pending(original: original, sourceID: source.original, sha256: source.sha256, items: items, addedAt: addedAt)
+    }.sorted { ($0.addedAt, $0.id) > ($1.addedAt, $1.id) }
+    reviews = (pending.map(Review.report) + (archive.tableReviews ?? []).map(Review.table))
+      .sorted { ($0.at, $0.id) > ($1.at, $1.id) }
   }
 }
 
@@ -30,6 +58,8 @@ struct GalaxySSIHealthRecordCenterSnapshot {
 struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
   @Environment(\.scenePhase) private var scene
   @Environment(\.galaxySSIInterfaceLanguage) private var language
+  @Environment(\.locale) private var locale
+  @ScaledMetric(relativeTo: .body) private var entryMinimumWidth: CGFloat = 325
   let records: GalaxySSIHealthRecords
   let devices: () -> Devices
   let addManual: (GalaxySSIHealthMetric?) -> Void
@@ -38,6 +68,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
   @State private var failed = false
   @State private var pendingLimit = 3
   @State private var recentLimit = 3
+  @State private var entryWidth: CGFloat = 0
   private var originals: GalaxySSIHealthOriginalStore {
     GalaxySSIHealthOriginalStore(owner: records.owner, secrets: records.secrets)
   }
@@ -46,18 +77,8 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     List {
       if scene == .active {
         Section(t("record_center.entry", "Record health data")) {
-          NavigationLink {
-            GalaxySSIHealthPhotoCaptureView(records: records, originals: originals)
-          } label: { Label(t("record_center.photos", "Capture health photos"), systemImage: "camera") }
-          Button { addManual(nil) } label: {
-            Label(t("manual", "Record measurement"), systemImage: "square.and.pencil")
-          }
-          NavigationLink {
-            GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
-          } label: { Label(t("record_center.files", "Import files"), systemImage: "folder") }
-          NavigationLink(destination: devices) {
-            Label(t("sources", "Devices & Data Sources"), systemImage: "externaldrive.connected.to.line.below")
-          }
+          entries
+            .listRowSeparator(.hidden)
         }
         if failed {
           Text(t("unavailable", "Health records could not be accessed."))
@@ -68,26 +89,13 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
             if snapshot.draft != nil {
               Button { addManual(nil) } label: { Label(t("resume_draft", "Resume draft"), systemImage: "doc.text") }
             }
-            if snapshot.pending.isEmpty, snapshot.draft == nil {
+            if snapshot.reviews.isEmpty, snapshot.draft == nil {
               Text(t("record_center.no_pending", "No pending reviews")).foregroundColor(.secondary)
             }
-            ForEach(snapshot.pending.prefix(pendingLimit)) { group in
-              if let original = group.original {
-                NavigationLink {
-                  GalaxySSIHealthReportBatchView(records: records, store: originals, original: original)
-                } label: {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(original.name)
-                    Text(String(format: t("record_center.review_count", "%lld reviewed drafts"), Int64(group.items.count)))
-                      .font(.caption).foregroundColor(.secondary)
-                  }
-                }
-              } else {
-                Label(t("record_center.source_missing", "Review source unavailable or changed"), systemImage: "exclamationmark.triangle")
-                  .foregroundColor(.secondary)
-              }
+            ForEach(snapshot.reviews.prefix(pendingLimit)) { review in
+              reviewRow(review)
             }
-            if snapshot.pending.count > pendingLimit {
+            if snapshot.reviews.count > pendingLimit {
               Button(t("record_center.all_pending", "Show all pending reviews")) { pendingLimit += 30 }
             }
             NavigationLink {
@@ -102,7 +110,7 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
               Button { edit(reading) } label: {
                 VStack(alignment: .leading, spacing: 4) {
                   Text(reading.metric.title(language: language))
-                  Text((reading.value?.formatted() ?? "") + " " + reading.unit).foregroundColor(.secondary)
+                  Text(summary(reading)).foregroundColor(.secondary)
                   Text(reading.measuredAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
                 }
               }.disabled(snapshot.draft != nil)
@@ -127,6 +135,95 @@ struct GalaxySSIHealthRecordCenterView<Devices: View>: View {
     .onReceive(NotificationCenter.default.publisher(for: GalaxySSIHealthRecords.recordsChanged)) { notification in
       if notification.object as? String == records.owner { reload() }
     }
+  }
+
+  @ViewBuilder
+  private func reviewRow(_ review: GalaxySSIHealthRecordCenterSnapshot.Review) -> some View {
+    switch review {
+    case .report(let group):
+      if let original = group.original {
+        NavigationLink {
+          GalaxySSIHealthReportBatchView(records: records, store: originals, original: original)
+        } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Label(original.name, systemImage: "doc.text")
+            Text(String(format: t("record_center.review_count", "%lld reviewed drafts"), Int64(group.items.count)))
+              .font(.caption).foregroundColor(.secondary)
+            if group.addedAt != .distantPast {
+              Text(group.addedAt, format: .dateTime).font(.caption).foregroundColor(.secondary)
+            }
+          }
+        }
+      } else {
+        Label(t("record_center.source_missing", "Review source unavailable or changed"), systemImage: "exclamationmark.triangle")
+          .foregroundColor(.secondary)
+      }
+    case .table(let draft):
+      NavigationLink {
+        GalaxySSIHealthTableImportView(records: records, resumeReviewID: draft.id, resumeReviewVersion: draft.version)
+      } label: {
+        VStack(alignment: .leading, spacing: 4) {
+          Label(draft.name, systemImage: "tablecells")
+          if review.at != .distantPast {
+            Text(review.at, format: .dateTime).font(.caption).foregroundColor(.secondary)
+          }
+        }
+      }
+    }
+  }
+
+  private var entries: some View {
+    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8),
+                            count: entryWidth < entryMinimumWidth ? 1 : 2), alignment: .leading, spacing: 8) {
+      NavigationLink {
+        GalaxySSIHealthPhotoCaptureView(records: records, originals: originals)
+      } label: {
+        entry(t("record_center.scan", "Scan with camera"),
+              t("record_center.photo_note", "Lab reports and device readings"), icon: "camera", accent: .orange)
+      }.accessibilityIdentifier("health-record-center-camera")
+      Button { addManual(nil) } label: {
+        entry(t("record_center.manual", "Enter manually"),
+              t("record_center.manual_note", "Values, units, time, and conditions"), icon: "square.and.pencil", accent: .green)
+      }.accessibilityIdentifier("health-record-center-manual")
+      NavigationLink {
+        GalaxySSIHealthImportView(store: originals, records: records, initialAction: .files)
+      } label: {
+        entry(t("record_center.files", "Import files"),
+              t("record_center.import_note", "Photos, PDF reports, and tables"), icon: "square.and.arrow.down", accent: .blue)
+      }.accessibilityIdentifier("health-record-center-import")
+      NavigationLink(destination: devices) {
+        entry(t("record_center.devices", "Connect a device"),
+              t("record_center.sources_note", "Health platforms and Bluetooth devices"),
+              icon: "externaldrive.connected.to.line.below", accent: .purple)
+      }.accessibilityIdentifier("health-record-center-sources")
+    }
+    .buttonStyle(.plain)
+    .background(GeometryReader { geometry in
+      Color.clear.onAppear { entryWidth = geometry.size.width }
+        .onChange(of: geometry.size.width) { entryWidth = $0 }
+    })
+  }
+
+  private func entry(_ title: String, _ note: String, icon: String, accent: Color) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Image(systemName: icon).font(.system(size: 20))
+        .frame(width: 36, height: 36).foregroundColor(accent)
+        .background(RoundedRectangle(cornerRadius: 8).fill(accent.opacity(0.12)))
+        .accessibilityHidden(true)
+      Text(title).font(.body.weight(.semibold)).foregroundColor(.primary)
+      Text(note).font(.subheadline).foregroundColor(.secondary)
+    }
+    .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+    .padding(12).frame(maxWidth: .infinity, minHeight: 140, alignment: .topLeading)
+    .background(RoundedRectangle(cornerRadius: 8).stroke(Color(uiColor: .separator), lineWidth: 0.5))
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+
+  private func summary(_ reading: GalaxySSIHealthReading) -> String {
+    let value = reading.reported?.raw ?? reading.value?.formatted(.number.locale(locale)) ?? ""
+    let lower = reading.diastolic.map { "/" + $0.formatted(.number.locale(locale)) } ?? ""
+    return value + lower + (reading.unit.isEmpty ? "" : " " + reading.unit)
   }
 
   private func reload() {
