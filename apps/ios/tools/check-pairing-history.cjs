@@ -37,6 +37,8 @@ function retainedPairingServices(source) {
   return source.replace(defaults, defaults.replace('deleteMessages: Bool = false', 'deleteMessages: Bool = true').replace('preserveHistory: Bool = true', 'preserveHistory: Bool = false'));
 }
 function retainedPairingStore(source) {
+  const pin = path.join(__dirname, 'check-pinned-desktop-capability.cjs');
+  if (fs.existsSync(pin)) source = require(pin).retainedStore(source);
   const cloud = path.join(__dirname, 'check-cloud-tool-invocation-journal.cjs');
   if (fs.existsSync(cloud)) source = require(cloud).retainedStore(source);
   return source === show(approved, 'GalaxySSIStore') ? show(baseline, 'GalaxySSIStore') : source;
