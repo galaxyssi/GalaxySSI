@@ -90,7 +90,9 @@ final class AgentModelToolLoop {
     if checkpoint?.cancelled == true { return cancelled(state) }
     if checkpoint?.failure != nil { return recoveryFailed(state) }
     emit(state, .loopStarted, publish: checkpoint?.restored != true)
-    return await advance(state, initialCalls: [])
+    return await withTaskCancellationHandler(operation: {
+      await advance(state, initialCalls: [])
+    }, onCancel: { state.taskCancellation.cancel() })
   }
 
   func resume(
@@ -109,6 +111,16 @@ final class AgentModelToolLoop {
     pendingApprovals.removeValue(forKey: handle.confirmationId)
     approvalLock.unlock()
 
+    return await withTaskCancellationHandler(operation: {
+      await resumeOwned(pending, handle: handle, decision: decision)
+    }, onCancel: { pending.state.taskCancellation.cancel() })
+  }
+
+  private func resumeOwned(
+    _ pending: PendingApproval,
+    handle: AgentModelToolApprovalHandle,
+    decision: AgentModelToolApprovalDecision
+  ) async -> AgentModelToolLoopOutcome {
     let state = pending.state
     if let terminal = terminalGuard(state) {
       return terminal
@@ -1279,6 +1291,7 @@ final class AgentModelToolLoop {
 
   private final class LoopState {
     var request: AgentModelToolLoopRequest
+    let taskCancellation: AgentModelToolLoopCancellationSource
     var messages: [AgentModelMessage]
     var events: [AgentModelToolLoopEvent] = []
     var manifestJson: String
@@ -1311,7 +1324,13 @@ final class AgentModelToolLoop {
       checkpoint: AgentModelLoopCheckpoint? = nil,
       observationHistory: AgentModelObservationHistory? = nil
     ) {
+      let taskCancellation = AgentModelToolLoopCancellationSource()
+      self.taskCancellation = taskCancellation
       self.request = request
+      // Keep the source alive with paused approvals; native workers do not inherit Swift task context.
+      self.request.cancellationToken = AgentModelToolLoopCancellationToken {
+        request.cancellationToken.isCancellationRequested || taskCancellation.token.isCancellationRequested
+      }
       self.messages = messages
       self.manifestJson = manifestJson
       self.manifestSha256 = manifestSha256
